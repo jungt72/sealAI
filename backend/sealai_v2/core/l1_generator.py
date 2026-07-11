@@ -21,6 +21,7 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.technical_answer import (
     TechnicalAnswer,
+    TechnicalClaim,
     TechnicalAnswerValidationError,
     calibrate_technical_answer,
     validate_technical_answer,
@@ -304,9 +305,40 @@ class L1Generator:
                     }
                     missing_facets = required_knowledge_facets - covered_facets
                     if missing_facets:
-                        raise TechnicalAnswerValidationError(
-                            "knowledge_facet_coverage:"
-                            + ",".join(sorted(missing_facets))
+                        supplemented = list(technical.claims)
+                        unused_ids = [
+                            evidence_id
+                            for evidence_id in evidence_facts
+                            if evidence_id not in used_evidence
+                        ]
+                        while missing_facets:
+                            best_id = max(
+                                unused_ids,
+                                key=lambda evidence_id: len(
+                                    evidence_facets.get(evidence_id, set())
+                                    & missing_facets
+                                ),
+                                default="",
+                            )
+                            covered_now = (
+                                evidence_facets.get(best_id, set()) & missing_facets
+                            )
+                            if not best_id or not covered_now:
+                                raise TechnicalAnswerValidationError(
+                                    "knowledge_facet_coverage:"
+                                    + ",".join(sorted(missing_facets))
+                                )
+                            supplemented.append(
+                                TechnicalClaim(
+                                    text=evidence_facts[best_id].text,
+                                    evidence_ids=[best_id],
+                                    criticality="supporting",
+                                )
+                            )
+                            unused_ids.remove(best_id)
+                            missing_facets -= covered_now
+                        technical = technical.model_copy(
+                            update={"claims": supplemented}
                         )
                 return technical, result
 
