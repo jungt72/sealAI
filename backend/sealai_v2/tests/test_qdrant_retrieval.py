@@ -326,6 +326,53 @@ def test_material_overview_policy_does_not_override_focused_property_query():
     assert _select_material_overview(points, 5, "Ozonbestaendigkeit von NBR") is None
 
 
+def test_material_comparison_balances_parameter_evidence_across_subjects():
+    def point(card_id: str, material: str, facets: list[str], score: float):
+        return _FakePoint(
+            {
+                "review_state": "reviewed",
+                "card_id": card_id,
+                "claim_kind": "system_dependent",
+                "answer_facets": facets,
+                "scope": {"material": [material]},
+            },
+            score,
+        )
+
+    ptfe = [
+        point("FK-PTFE-DEF", "PTFE", ["definition"], 0.99),
+        point("FK-PTFE-VAR", "PTFE", ["variants"], 0.98),
+        point("FK-PTFE-PROP", "PTFE", ["properties"], 0.97),
+        point("FK-PTFE-TEMP", "PTFE", ["parameters"], 0.96),
+        point("FK-PTFE-MEDIA", "PTFE", ["media_compatibility"], 0.95),
+        point("FK-PTFE-OPS", "PTFE", ["operating_factors"], 0.94),
+        point("FK-PTFE-LIMIT", "PTFE", ["limits"], 0.93),
+        point("FK-PTFE-SELECT", "PTFE", ["selection_inputs"], 0.92),
+    ]
+    nbr = [
+        point("FK-NBR-DEF", "NBR", ["definition"], 0.89),
+        point("FK-NBR-VAR", "NBR", ["variants", "tradeoffs"], 0.88),
+        point("FK-NBR-PROP", "NBR", ["properties", "media_compatibility"], 0.87),
+        point(
+            "FK-NBR-DAUERTEMP",
+            "NBR",
+            ["parameters", "limits", "failure_modes", "operating_factors"],
+            0.86,
+        ),
+        point("FK-NBR-SELECT", "NBR", ["selection_inputs"], 0.85),
+    ]
+    selected = _select_material_overview(
+        [*ptfe, *nbr],
+        12,
+        "Vergleiche NBR und PTFE: Temperatur, Medienverhalten und Grenzen.",
+    )
+
+    assert selected is not None
+    selected_ids = {item.payload["card_id"] for item in selected}
+    assert "FK-PTFE-TEMP" in selected_ids
+    assert "FK-NBR-DAUERTEMP" in selected_ids
+
+
 def test_seal_type_overview_does_not_pull_material_cards_that_only_name_an_application():
     seal_profile = [
         _FakePoint(
