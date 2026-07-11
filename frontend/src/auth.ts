@@ -53,6 +53,13 @@ declare module "next-auth/jwt" {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: AUTH_SECRET,
 
+  // Never expose Auth.js' generic English 500 page to users. Known expired Keycloak callbacks are
+  // recovered earlier in the route handler; genuinely unexpected auth failures land on a stable,
+  // noindex recovery surface instead of looking like an application outage.
+  pages: {
+    error: "/auth/error",
+  },
+
   providers: [
     KeycloakProvider({
       clientId: KEYCLOAK_CLIENT_ID as string,

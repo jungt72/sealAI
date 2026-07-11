@@ -6,7 +6,10 @@ import { Menu, X } from "lucide-react";
 
 import { PARTNER_HREF, REGISTER_HREF } from "@/lib/marketing/homeContent";
 
-const LOGIN_HREF = "/login";
+// The dashboard owns its OIDC/PKCE session. Sending the primary product login through the
+// marketing app's separate Auth.js client first created two parallel login transactions and made a
+// stale Keycloak form capable of ending on Auth.js' generic Configuration error page.
+const LOGIN_HREF = "/dashboard/";
 
 /** Must match the header's rendered height (h-[56px] below) and the
  * `.section-anchor { scroll-margin-top }` value in globals.css. */
