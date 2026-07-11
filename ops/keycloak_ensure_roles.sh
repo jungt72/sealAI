@@ -85,6 +85,9 @@ declare -a roles=(
   "user_pro"
   "manufacturer"
   "admin"
+  "capability_reviewer"
+  "knowledge_reviewer"
+  "decision_reviewer"
 )
 
 for role in "${roles[@]}"; do
