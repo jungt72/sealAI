@@ -63,7 +63,7 @@ def _pipeline(client, *, verify: bool = True) -> Pipeline:
 # --- divergence fixtures (item 5 headline, as executable mechanism tests) ----------------
 
 
-def test_trap02_epdm_polar_is_corrected_away():
+def test_source_less_trap02_blocks_without_asserting_a_counterclaim():
     client = ScriptedFakeLlmClient(
         [
             "EPDM ist ein polarer Kautschuk, deshalb quillt es in Mineralöl.",  # the M1 error
@@ -80,10 +80,9 @@ def test_trap02_epdm_polar_is_corrected_away():
         )
     )
     assert res.verified is True
-    assert res.verifier.action == VerifierAction.CORRECTED
-    assert not _asserts_epdm_polar(
-        res.answer.text
-    )  # final answer no longer asserts polar
+    assert res.verifier.action == VerifierAction.BLOCKED_HEDGE
+    assert not _asserts_epdm_polar(res.answer.text)
+    assert "UNPOLAR" not in res.answer.text
 
 
 def test_trap02_hedges_when_regeneration_still_wrong():

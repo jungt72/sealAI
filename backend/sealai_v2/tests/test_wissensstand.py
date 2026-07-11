@@ -49,22 +49,30 @@ def test_order_is_fixed_regardless_of_kwarg_order():
 # --- build_pipeline() wiring ----------------------------------------------------------------
 
 
-def test_default_pipeline_wires_all_five_catalog_versions():
+def test_default_pipeline_omits_the_unmigrated_matrix_catalog():
     p = build_pipeline(Settings(), FakeLlmClient("x"))
     assert (
         p.wissensstand
     )  # non-empty by default (ground_enabled + verify_enabled both True)
-    for label in ("fk:", "mx:", "trap:", "calc:", "vm:"):
+    for label in ("fk:", "trap:", "calc:", "vm:"):
         assert label in p.wissensstand
+    assert "mx:" not in p.wissensstand
 
 
 def test_wissensstand_matches_the_loaded_catalog_versions():
     p = build_pipeline(Settings(), FakeLlmClient("x"))
     assert f"fk:{p.retriever.catalog.version}" in p.wissensstand
-    assert f"mx:{p.matrix.catalog.version}" in p.wissensstand
+    assert p.matrix is None
     assert f"trap:{p.catalog.version}" in p.wissensstand
     assert f"calc:{p.engine.registry.version}" in p.wissensstand
     assert f"vm:{p.versagensmodi.catalog.version}" in p.wissensstand
+
+
+def test_evidence_migration_flag_wires_matrix_version_explicitly():
+    p = build_pipeline(Settings(compatibility_matrix_enabled=True), FakeLlmClient("x"))
+
+    assert p.matrix is not None
+    assert f"mx:{p.matrix.catalog.version}" in p.wissensstand
 
 
 def test_ground_disabled_drops_fk_mx_vm_but_keeps_trap_and_calc():

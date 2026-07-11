@@ -118,6 +118,97 @@ class V2DurableFact(Base):
     as_of_turn: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class V2CaseRecord(Base):
+    """Durable tenant-scoped sealing case, separate from chat sessions."""
+
+    __tablename__ = "v2_case_records"
+
+    tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    risk_class: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="normal"
+    )
+    owner_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    current_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2CaseSnapshot(Base):
+    """Immutable, content-addressed state of a case at one revision."""
+
+    __tablename__ = "v2_case_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "case_id",
+            "revision",
+            name="uq_v2_case_snapshot_revision",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    case_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    state_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    evidence_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    open_points_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2DecisionRecord(Base):
+    """Evidence-bound decision candidate based on one immutable case snapshot."""
+
+    __tablename__ = "v2_decision_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    case_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    decision_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="review_required"
+    )
+    conclusion: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    uncertainty: Mapped[str] = mapped_column(String(64), nullable=False)
+    responsibilities_json: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    approvals_required_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    supersedes_decision_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2DecisionApproval(Base):
+    """Append-only human review; never a sealingAI component release."""
+
+    __tablename__ = "v2_decision_approvals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    decision_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    approval_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
 class V2HerstellerPartner(Base):
     """Hersteller-PARTNER (owner business model) — GLOBAL (not tenant-scoped; manufacturers serve all
     tenants). The dashboard-editable paid-membership + company + lead-routing + capability record.
@@ -166,6 +257,68 @@ class V2Lead(Base):
     briefing_body: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
+
+
+class V2ManufacturerCapabilityProfile(Base):
+    """Technical capability evidence, independent from commercial membership."""
+
+    __tablename__ = "v2_manufacturer_capability_profiles"
+
+    manufacturer_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    regions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    contacts_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    seal_types_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    materials_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    compounds_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    size_ranges_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    manufacturing_processes_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    tolerances_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    special_capabilities_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    industries_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    certificates_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    test_capabilities_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    approvals_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    documents_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    services_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    application_limits_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    exclusions_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    evidence_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    submitted_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    verified_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    verified_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    review_expires_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    change_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class V2ManufacturerCapabilityReview(Base):
+    """Append-only review transition for a manufacturer capability profile."""
+
+    __tablename__ = "v2_manufacturer_capability_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    manufacturer_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )
+    from_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_relation: Mapped[str] = mapped_column(String(64), nullable=False)
+    conflict_of_interest: Mapped[str] = mapped_column(String(32), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
 class V2Contribution(Base):
@@ -404,6 +557,17 @@ class V2KnowledgeClaim(Base):
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     scope_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     sources_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    evidence_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    applicability_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    uncertainty: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="not_sufficiently_supported"
+    )
+    transferability: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="not_assessed"
+    )
+    conflicts_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    review_expires_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    change_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
     provenance_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, index=True

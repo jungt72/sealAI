@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 import sealai_v2.db.models  # noqa: F401
@@ -28,15 +29,23 @@ def _ledger(tmp_path):
     return PostgresKnowledgeLedger(sf), sf
 
 
-def _catalog(*, text="PTFE ist chemisch bestaendig.", reviewed=False):
+def _catalog(*, text="PTFE ist chemisch bestaendig.", reviewed=False, with_source=True):
     status = "reviewed" if reviewed else "draft"
     claim = {
         "text": text,
         "review_state": status,
         "kind": "family_tendency",
-        "sources": ["DIN EN ISO 1"] if reviewed else [],
+        "sources": ["DIN EN ISO 1"] if reviewed and with_source else [],
         "provenance": ["owner:test"] if reviewed else ["paperless-draft:test"],
     }
+    if reviewed:
+        claim.update(
+            {
+                "reviewed_by": "domain-reviewer:alice",
+                "reviewed_at": NOW,
+                "review_expires_at": "2099-07-10T10:00:00Z",
+            }
+        )
     return FachkartenCatalog(
         cards=(
             _card(
@@ -128,6 +137,20 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
     else:
         raise AssertionError("approval without evidence was accepted")
 
+    with pytest.raises(KnowledgeLedgerError, match="expiry"):
+        ledger.review_claim(
+            tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+            claim_id=claim_id,
+            to_status="approved",
+            actor="owner",
+            now=NOW,
+            evidence=("DIN EN ISO 1, owner checked",),
+            applicability={"material": ["PTFE"]},
+            uncertainty="conditional",
+            transferability="family_level_orientation",
+            review_expires_at="not-a-date",
+        )
+
     ledger.review_claim(
         tenant_id=GLOBAL_KNOWLEDGE_TENANT,
         claim_id=claim_id,
@@ -135,10 +158,20 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
         actor="owner",
         now=NOW,
         evidence=("DIN EN ISO 1, owner checked",),
+        applicability={"material": ["PTFE"]},
+        uncertainty="conditional",
+        transferability="family_level_orientation",
+        review_expires_at="2099-07-10T10:00:00Z",
+        change_reason="owner review",
     )
     resolved = ledger.resolve_claims((claim_id,), tenant_id="customer-a")
     assert resolved[claim_id]["review_state"] == "reviewed"
     assert resolved[claim_id]["document_id"] == result.document_id
+    assert resolved[claim_id]["evidence"][0]["citation"]
+    assert resolved[claim_id]["applicability"] == {"material": ["PTFE"]}
+    assert resolved[claim_id]["uncertainty"] == "conditional"
+    assert resolved[claim_id]["review_expires_at"] == "2099-07-10T10:00:00Z"
+    assert resolved[claim_id]["reviewed_by"] == "owner"
 
     ledger.review_claim(
         tenant_id=GLOBAL_KNOWLEDGE_TENANT,
@@ -159,6 +192,31 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
         ]
 
 
+def test_expired_approved_claim_is_not_resolved(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
+    with sf() as session:
+        claim_id = session.scalar(select(V2KnowledgeClaim.id))
+    ledger.review_claim(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        claim_id=claim_id,
+        to_status="approved",
+        actor="domain-reviewer:alice",
+        now=NOW,
+        evidence=("DIN EN ISO 1",),
+        applicability={"material": ["PTFE"]},
+        uncertainty="conditional",
+        transferability="family_level_orientation",
+        review_expires_at="2099-07-10T10:00:00Z",
+    )
+    with sf() as session:
+        row = session.get(V2KnowledgeClaim, claim_id)
+        row.review_expires_at = "2020-01-01T00:00:00Z"
+        session.commit()
+
+    assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}
+
+
 def test_automated_reingest_cannot_downgrade_reviewed_claim(tmp_path):
     ledger, sf = _ledger(tmp_path)
     ledger.replace_catalog(
@@ -170,3 +228,50 @@ def test_automated_reingest_cannot_downgrade_reviewed_claim(tmp_path):
     with sf() as session:
         row = session.scalar(select(V2KnowledgeClaim))
         assert row.review_status == "approved"
+
+
+def test_declared_reviewed_claim_without_source_is_quarantined(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(
+        _document(),
+        _catalog(reviewed=True, with_source=False),
+        now=NOW,
+        actor="owner-bootstrap",
+    )
+
+    with sf() as session:
+        row = session.scalar(select(V2KnowledgeClaim))
+        assert row.review_status == "quarantined"
+        assert row.evidence_json == []
+        claim_id = row.id
+        review = session.scalar(select(V2KnowledgeReview))
+        assert review.to_status == "quarantined"
+    assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}
+
+
+def test_evidence_removal_quarantines_previously_approved_claim(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(
+        _document(), _catalog(reviewed=True), now=NOW, actor="owner-bootstrap"
+    )
+    ledger.replace_catalog(
+        _document(),
+        _catalog(reviewed=True, with_source=False),
+        now="2026-07-10T11:00:00Z",
+        actor="policy-reconciliation",
+    )
+
+    with sf() as session:
+        row = session.scalar(select(V2KnowledgeClaim))
+        assert row.review_status == "quarantined"
+        reviews = session.scalars(
+            select(V2KnowledgeReview).order_by(V2KnowledgeReview.id)
+        ).all()
+        assert [(item.from_status, item.to_status) for item in reviews] == [
+            ("unreviewed", "approved"),
+            ("approved", "quarantined"),
+        ]
+        events = session.scalars(
+            select(V2KnowledgeOutbox).order_by(V2KnowledgeOutbox.id)
+        ).all()
+        assert [item.event_type for item in events] == ["upsert", "delete"]

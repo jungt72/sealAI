@@ -94,6 +94,57 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
     assert maturity["horizons"]["H4"]["status"] != "verified_available"
     assert maturity["horizons"]["H5"]["status"] != "verified_available"
     assert maturity["modes"]["manufacturer_fit"]["status"] != "verified_available"
+    assert maturity["horizons"]["H1"]["status"] == "in_build"
+    assert (
+        "independent_domain_review_of_seed_claims"
+        in maturity["modes"]["knowledge"]["activation_blockers"]
+    )
+
+
+def test_seed_review_state_never_launders_model_review_into_authority() -> None:
+    import sys
+
+    sys.path.insert(0, str(REPO / "backend"))
+    from sealai_v2.knowledge.fachkarten import load_fachkarten
+
+    catalog = load_fachkarten()
+    for card in catalog.cards:
+        for claim in card.reviewed_claims():
+            assert claim.reviewed_by
+            assert claim.reviewed_at
+            assert claim.review_expires_at
+            assert not any(
+                marker in claim.reviewed_by.lower()
+                for marker in ("codex", "llm", "model", "agent")
+            )
+
+
+def test_runtime_maturity_projection_matches_governance_manifest() -> None:
+    runtime_manifest = json.loads(
+        (REPO / "backend" / "sealai_v2" / "config" / "product_maturity.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert runtime_manifest == _json("product-maturity.json")
+
+
+def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> None:
+    compose = (REPO / "docker-compose.deploy.yml").read_text(encoding="utf-8")
+
+    for setting in (
+        "SEALAI_V2_KNOWLEDGE_MODE_ENABLED",
+        "SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED",
+        "SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED",
+        "SEALAI_V2_CASE_DECISION_RECORDS_ENABLED",
+        "SEALAI_V2_CAPABILITY_PROFILES_ENABLED",
+        "SEALAI_V2_MANUFACTURER_FIT_ENABLED",
+        "SEALAI_V2_MANUFACTURER_HANDOFF_ENABLED",
+        "SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE",
+        "SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE",
+        "SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE",
+    ):
+        assert setting in compose
 
 
 def test_owner_decisions_and_companion_contracts_are_present() -> None:

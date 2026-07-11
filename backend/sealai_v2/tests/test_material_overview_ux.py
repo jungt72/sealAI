@@ -5,6 +5,7 @@ import asyncio
 from sealai_v2.core.output_guard import fail_closed_answer
 from sealai_v2.core.response_contract import build_guard_contract
 from sealai_v2.knowledge.retrieval import InProcessRetriever
+from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
 _INCIDENT_QUESTIONS = (
@@ -15,7 +16,7 @@ _INCIDENT_QUESTIONS = (
 
 
 def test_incident_phrasings_retrieve_a_balanced_reviewed_nbr_overview():
-    retriever = InProcessRetriever()
+    retriever = InProcessRetriever(independently_reviewed_test_catalog())
     for question in _INCIDENT_QUESTIONS:
         result = asyncio.run(retriever.retrieve(question, tenant_id="ux-regression"))
         overview = [
@@ -35,7 +36,9 @@ def test_incident_phrasings_retrieve_a_balanced_reviewed_nbr_overview():
 
 def test_general_fail_closed_answer_remains_a_useful_overview():
     result = asyncio.run(
-        InProcessRetriever().retrieve("Details ueber NBR", tenant_id="ux-regression")
+        InProcessRetriever(independently_reviewed_test_catalog()).retrieve(
+            "Details ueber NBR", tenant_id="ux-regression"
+        )
     )
     overview = tuple(
         fact for fact in result.grounding_facts if fact.card_id == "FK-NBR-UEBERBLICK"

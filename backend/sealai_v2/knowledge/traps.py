@@ -55,6 +55,7 @@ class TrapEntry:
     # drafting. This is deliberately explicit rather than inferred from prose or selected by an LLM.
     retrieval_terms: tuple[str, ...] = ()
     retrieval_min_hits: int = 0
+    sources: tuple[str, ...] = ()
 
     @property
     def reviewed(self) -> bool:
@@ -64,6 +65,11 @@ class TrapEntry:
     def has_split(self) -> bool:
         """True iff this trap carries a topic-scoped recommendation (→ L3 gates it on `applies_to`)."""
         return bool(self.correct_recommendation.strip())
+
+    @property
+    def corrective(self) -> bool:
+        """Only source-evidenced policy entries may supply a replacement fact."""
+        return self.reviewed and bool(self.sources) and bool(self.correct.strip())
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,7 @@ def _entry(raw: dict, review_state: str) -> TrapEntry:
         applies_to=tuple(str(a) for a in raw.get("applies_to", [])),
         retrieval_terms=tuple(str(t) for t in raw.get("retrieval_terms", [])),
         retrieval_min_hits=int(raw.get("retrieval_min_hits", 0)),
+        sources=tuple(str(source) for source in raw.get("sources", [])),
     )
 
 
@@ -178,6 +185,8 @@ def retrieve_reviewed_trap_facts(
     q_tokens = query_tokens(q_norm)
     matches: list[tuple[int, TrapEntry]] = []
     for entry in catalog.reviewed():
+        if not entry.corrective:
+            continue
         if not entry.retrieval_terms:
             continue
         hits = reviewed_trap_retrieval_hits(entry, q_norm, q_tokens=q_tokens)
@@ -192,6 +201,7 @@ def retrieve_reviewed_trap_facts(
                 f"({', '.join(entry.provenance)})"
             ),
             card_id=entry.id,
+            sources=entry.sources,
             kind="trap",
         )
         for _hits, entry in matches[:k]

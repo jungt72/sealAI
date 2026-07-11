@@ -5,8 +5,8 @@ from sealai_v2.core.knowledge_answer import (
     build_knowledge_answer_plan,
     knowledge_retrieval_limit,
 )
-from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.retrieval import InProcessRetriever
+from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
 def test_ptfe_question_builds_engineering_material_profile() -> None:
@@ -123,7 +123,7 @@ def test_unknown_but_explicit_sealing_medium_uses_medium_method_without_guessing
     import asyncio
 
     result = asyncio.run(
-        InProcessRetriever().retrieve(
+        InProcessRetriever(independently_reviewed_test_catalog()).retrieve(
             "Details zu Skydrol als Dichtungsmedium", tenant_id="test", k=12
         )
     )
@@ -157,7 +157,7 @@ def test_only_explicit_knowledge_turns_expand_retrieval() -> None:
 
 
 def test_reviewed_expert_profiles_cover_core_subjects() -> None:
-    catalog = load_fachkarten()
+    catalog = independently_reviewed_test_catalog()
     expected = {
         "FK-PTFE-ENGINEERING-PROFILE": "material",
         "FK-NBR-UEBERBLICK": "material",
@@ -177,7 +177,7 @@ def test_inprocess_retrieval_returns_deep_rwdr_profile() -> None:
     import asyncio
 
     result = asyncio.run(
-        InProcessRetriever().retrieve(
+        InProcessRetriever(independently_reviewed_test_catalog()).retrieve(
             "Erklaere einen RWDR im Detail", tenant_id="test", k=12
         )
     )

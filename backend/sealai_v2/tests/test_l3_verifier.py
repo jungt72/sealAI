@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 
 from sealai_v2.core.contracts import (
     Answer,
@@ -31,6 +32,7 @@ _REVIEWED = TrapEntry(
     gates=("confident_wrong", "walked_into_trap"),
     provenance=("eval:TRAP-02",),
     review_state="reviewed",
+    sources=("test-source",),
 )
 _DRAFT = TrapEntry(
     id="D1",
@@ -525,6 +527,7 @@ _PREC = TrapEntry(
     gates=("invented_precision",),
     provenance=("eval:UNCERT-01",),
     review_state="reviewed",
+    sources=("test-source",),
 )
 
 
@@ -668,6 +671,14 @@ def test_precision_draft_check_via_verify():
 from sealai_v2.knowledge.traps import load_traps as _load_traps  # noqa: E402
 
 _REAL = _load_traps()
+_REAL_CORRECTIVE = TrapCatalog(
+    entries=tuple(
+        replace(entry, sources=("test-source",)) if entry.reviewed else entry
+        for entry in _REAL.entries
+    ),
+    version=_REAL.version,
+    source=_REAL.source,
+)
 _ACETONE_Q = (
     "Ich brauche eine Dichtung, die gegen Aceton beständig ist, dauerhaft 180 °C "
     "aushält und möglichst günstig ist."
@@ -689,7 +700,9 @@ def _epdm_finding() -> VerifierFinding:
 
 
 def _real_verifier(client) -> L3Verifier:
-    return L3Verifier(client, VerifierPromptAssembler(), ModelConfig("fake-l3"), _REAL)
+    return L3Verifier(
+        client, VerifierPromptAssembler(), ModelConfig("fake-l3"), _REAL_CORRECTIVE
+    )
 
 
 def _real_generator(client) -> L1Generator:
@@ -698,8 +711,10 @@ def _real_generator(client) -> L1Generator:
 
 def test_topic_scope_pure_acetone_general_only_no_oil_rec():
     # an EPDM-MINERALOEL finding on an ACETONE question: general (polarity) injected, oil rec suppressed
-    note = build_correction_note(_REAL, (_epdm_finding(),), question=_ACETONE_Q)
-    hedge = build_hedge((_epdm_finding(),), _REAL, question=_ACETONE_Q)
+    note = build_correction_note(
+        _REAL_CORRECTIVE, (_epdm_finding(),), question=_ACETONE_Q
+    )
+    hedge = build_hedge((_epdm_finding(),), _REAL_CORRECTIVE, question=_ACETONE_Q)
     for out in (note, hedge):
         assert out is not None
         assert (
@@ -728,7 +743,7 @@ def test_topic_scope_e2e_acetone_hedge_no_oil_recommendation():
         run_verify(
             _real_verifier(client),
             _real_generator(client),
-            _REAL,
+            _REAL_CORRECTIVE,
             _ACETONE_Q,
             draft,
             flags=Flags(),
@@ -746,8 +761,8 @@ def test_topic_scope_e2e_acetone_hedge_no_oil_recommendation():
 
 def test_topic_scope_home_topic_mineraloil_keeps_recommendation():
     # NO-REGRESSION: on a mineral-oil question the oil recommendation IS injected (scopes, not strips)
-    note = build_correction_note(_REAL, (_epdm_finding(),), question=_OIL_Q)
-    hedge = build_hedge((_epdm_finding(),), _REAL, question=_OIL_Q)
+    note = build_correction_note(_REAL_CORRECTIVE, (_epdm_finding(),), question=_OIL_Q)
+    hedge = build_hedge((_epdm_finding(),), _REAL_CORRECTIVE, question=_OIL_Q)
     for out in (note, hedge):
         assert "unpolar" in out.lower()
         assert "NBR" in out and "FKM" in out  # topic matches → recommendation present
@@ -758,7 +773,7 @@ def test_topic_scope_home_topic_default01_nbr_dauertemp_keeps_recommendation():
     nbr = VerifierFinding(
         "TRAP-NBR-DAUERTEMP", "confident_wrong", "reviewed", "NBR wie immer"
     )
-    note = build_correction_note(_REAL, (nbr,), question=_DEFAULT01_Q)
+    note = build_correction_note(_REAL_CORRECTIVE, (nbr,), question=_DEFAULT01_Q)
     assert "HNBR" in note and "FKM" in note
 
 
@@ -798,11 +813,20 @@ def test_recommendation_applies_unit_table():
 
 def test_topic_scope_unsplit_trap_unchanged():
     # an unsplit reviewed trap still injects its whole `correct` (fallback), regardless of question
-    leck = _REAL.by_id("CONF-PAUSCHAL-BESTAENDIG")  # method trap, no split
+    leck = _REAL_CORRECTIVE.by_id("CONF-PAUSCHAL-BESTAENDIG")
     assert not leck.has_split
     f = VerifierFinding(leck.id, "confident_wrong", "reviewed", "pauschal ja")
-    note = build_correction_note(_REAL, (f,), question="irgendeine Frage")
+    note = build_correction_note(_REAL_CORRECTIVE, (f,), question="irgendeine Frage")
     assert leck.correct[:30] in note  # full correct injected unchanged
+
+
+def test_source_less_reviewed_trap_blocks_without_counterclaim() -> None:
+    note = build_correction_note(_REAL, (_epdm_finding(),), question=_OIL_Q)
+    hedge = build_hedge((_epdm_finding(),), _REAL, question=_OIL_Q)
+
+    assert note is None
+    assert "unpolar" not in hedge.lower()
+    assert "NBR" not in hedge and "FKM" not in hedge
 
 
 def test_recommends_topic_unsuitable_material_detector():

@@ -40,6 +40,8 @@ _NON_BEHAVIOR_FIELDS = frozenset(
         "auth_tenant_claim",
         "auth_admin_role",
         "auth_manufacturer_role",
+        "auth_capability_reviewer_role",
+        "auth_decision_reviewer_role",
         "legal_ip_hash_pepper",
         "llm_telemetry_enabled",
         "metrics_enabled",

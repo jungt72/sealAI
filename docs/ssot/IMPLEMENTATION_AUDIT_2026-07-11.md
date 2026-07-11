@@ -57,3 +57,31 @@ status corrections remain audited and derived Qdrant data is rebuildable.
 - G7 was closed in the foundation change: the production workflow is manual and
   final-only, and the release wrapper rejects candidates unless `APP_ENV` is
   explicitly `development`, `test`, or `staging`.
+- Every seed claim lacking an explicit independent human reviewer, review time,
+  and future review expiry is now quarantined, excluded from retrieval, and
+  deleted from the derived index. This currently places all 79 formerly
+  declared-reviewed claims in quarantine: 51 are source-backed candidates for
+  domain adjudication, while 28 additionally lack external evidence. The 522
+  draft claims remain non-authoritative review material. No test or release
+  bootstrap identity substitutes for a domain reviewer.
+- Claims carry typed evidence, applicability, uncertainty, transferability,
+  conflicts, reviewer identity, review time, and expiry. Expired or incomplete
+  approvals are excluded again at authoritative Postgres resolution.
+- A separately gated `knowledge_reviewer` API exposes the authoritative review
+  queue and records independent human adjudication without activating H1.
+- Source-less trap entries remain usable as defensive block policies but cannot
+  inject or render a technical counterclaim. The legacy unsourced compatibility
+  matrix is default-off until its cells enter the same evidence lifecycle.
+- Knowledge, manufacturer-fit, and manufacturer-handoff modes now fail closed
+  behind explicit runtime flags and expose a shared maturity projection.
+- Capability Profile v0 is technically and operationally separated from
+  commercial partner metadata. Manufacturers submit; a dedicated independent
+  reviewer role verifies; explicit conflict attestation, self-recusal, and a
+  future review expiry are mandatory. The technical projection contains no
+  commercial contact, visibility, plan, or payment fields.
+- Tenant-scoped case records now support immutable snapshots, evidence-bound
+  decision records, responsibilities, and append-only human technical reviews.
+  Reviews use the SSoT states Approved, Rejected, and Conditional, reject
+  self-review, and keep component and manufacturer release authority external.
+- H1 remains `in_build` and fail-closed. Independent domain adjudication of the
+  seed plus the exact final M15 replay are external activation prerequisites.

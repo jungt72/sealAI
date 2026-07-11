@@ -7,6 +7,7 @@ when ``SEALAI_V2_OPENAI_API_KEY`` is unset (see ``llm.factory``).
 
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -103,6 +104,9 @@ class Settings(BaseSettings):
     # L2 grounding (M3): retrieve reviewed Fachkarten into L1/L3. Default ON (core trust layer);
     # off → every answer is "vorläufig". Not a product feature flag — an incident kill-switch.
     ground_enabled: bool = True
+    # Compatibility verdicts are technical claims. The legacy matrix remains
+    # inactive until every cell has typed source evidence and applicability.
+    compatibility_matrix_enabled: bool = False
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
@@ -197,6 +201,40 @@ class Settings(BaseSettings):
     exact_answer_cache_enabled: bool = False
     exact_answer_cache_max_entries: int = 512
     exact_answer_cache_ttl_s: float = 3600.0
+    # SSoT M15/G8: general sealing knowledge, material knowledge, and material
+    # comparison are a separately activated product mode. The mode remains
+    # fail-closed until its complete reference set and exact final replay have
+    # been human-adjudicated. Engineering case work and smalltalk are unaffected.
+    knowledge_mode_enabled: bool = False
+    # Back-office claim adjudication is independent from serving H1 answers.
+    # It may be enabled for reviewers while knowledge_mode_enabled stays false.
+    knowledge_review_enabled: bool = False
+    # H2 write/read surface for immutable cases and decisions.
+    case_decision_records_enabled: bool = False
+    # Capability submission/review plane. Technical fit and handoff depend on it
+    # but activate separately.
+    capability_profiles_enabled: bool = False
+    # SSoT H4/G5: technical manufacturer fit is based only on independently
+    # verified Capability Profiles. Commercial membership is not an input.
+    manufacturer_fit_enabled: bool = False
+    # Lead handoff is a separate activation and additionally requires a valid
+    # commercial routing relationship and legal readiness.
+    manufacturer_handoff_enabled: bool = False
+
+    @model_validator(mode="after")
+    def validate_product_mode_dependencies(self) -> "Settings":
+        if self.manufacturer_fit_enabled and not self.capability_profiles_enabled:
+            raise ValueError(
+                "manufacturer_fit_enabled requires capability_profiles_enabled"
+            )
+        if self.manufacturer_handoff_enabled and not (
+            self.capability_profiles_enabled and self.manufacturer_fit_enabled
+        ):
+            raise ValueError(
+                "manufacturer_handoff_enabled requires capability profiles and fit"
+            )
+        return self
+
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
     # smalltalk_navigation prompt family. OFF (default) -> Pipeline.run() is byte-identical to
     # pre-Phase-2D behavior even with route_optimization_enabled=True (the smalltalk generator is
@@ -274,6 +312,14 @@ class Settings(BaseSettings):
     # Keycloak realm role for the manufacturer SELF-SERVICE surface (manage own partner record + leads).
     # Env: SEALAI_V2_AUTH_MANUFACTURER_ROLE.
     auth_manufacturer_role: str = "manufacturer"
+    # Independent capability-review role. Admin or manufacturer roles alone do
+    # not authorize technical verification.
+    auth_capability_reviewer_role: str = "capability_reviewer"
+    # Independent human domain/evidence reviewer for technical claims.
+    auth_knowledge_reviewer_role: str = "knowledge_reviewer"
+    # Human review role for decision records. This records an internal technical
+    # review only; manufacturer/component release remains external.
+    auth_decision_reviewer_role: str = "decision_reviewer"
 
     # Legal-by-Design (Phase B): fail-closed-gates chat/briefing/anfrage/compute on a CURRENT
     # (version-matching) V2LegalAcceptance row per tenant. OFF by default — the draft legal texts

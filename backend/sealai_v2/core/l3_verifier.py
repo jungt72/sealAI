@@ -168,7 +168,9 @@ def _trap_payload(catalog: TrapCatalog, question: str = "") -> list[dict]:
                 "id": e.id,
                 "trigger": e.trigger,
                 "wrong": list(e.wrong),
-                "correct": e.correct,
+                # A source-less reviewed trap remains a blocking policy, but it
+                # cannot inject a technical counterclaim into the verifier.
+                "correct": e.correct if e.corrective else "",
                 "gates": list(e.gates),
             }
         )
@@ -395,7 +397,7 @@ def build_correction_note(
         if f.trap_id in seen:
             continue
         entry = catalog.by_id(f.trap_id)
-        if entry is None or not entry.reviewed or not entry.correct.strip():
+        if entry is None or not entry.corrective:
             continue
         seen.add(f.trap_id)
         facts.append(_scoped_fact(entry, question, case_context))
@@ -431,7 +433,7 @@ def build_hedge(
             if f.trap_id in seen:
                 continue
             entry = catalog.by_id(f.trap_id)
-            if entry is not None and entry.reviewed and entry.correct.strip():
+            if entry is not None and entry.corrective:
                 seen.add(f.trap_id)
                 correct_facts.append(_scoped_fact(entry, question, case_context))
     if correct_facts:

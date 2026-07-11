@@ -243,7 +243,9 @@ def test_reviewed_backfill_is_noop_once_reviewed_target_is_met():
 def test_claim_points_one_per_claim_with_payload():
     cat = load_fachkarten()
     pts = list(claim_points(cat))
-    assert len(pts) == sum(len(c.claims) for c in cat.cards)  # one point per CLAIM
+    assert len(pts) == sum(
+        1 for card in cat.cards for claim in card.claims if not claim.quarantined
+    )
     ids = set()
     required = {
         "card_id",
@@ -266,9 +268,9 @@ def test_claim_points_one_per_claim_with_payload():
         ids.add(pid)
     assert len(ids) == len(pts)  # unique → idempotent upsert keys
     reviewed = [p for _i, _t, p in pts if p["review_state"] == "reviewed"]
-    assert reviewed and all("reviewed" in p["quelle"] for p in reviewed)
+    assert reviewed == []  # Seed claims await independent human adjudication.
     drafts = [p for _i, _t, p in pts if p["review_state"] == "draft"]
-    assert all("vorläufig" in p["quelle"] for p in drafts)
+    assert drafts and all("vorläufig" in p["quelle"] for p in drafts)
 
 
 def test_material_overview_selects_faceted_definition_strength_limit_and_qualification():
