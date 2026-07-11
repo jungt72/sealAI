@@ -71,6 +71,7 @@ class AllowedClaim:
         str, ...
     ] = ()  # owner-verified primary sources (Parker handbook, ISO ...)
     kind: str = "card"  # provenance lane: "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix)
+    claim_kind: str = ""  # Fachkarte epistemics; empty for matrix/trap/legacy facts
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +80,7 @@ class AllowedClaim:
             "severity": self.severity,
             "sources": list(self.sources),
             "kind": self.kind,
+            "claim_kind": self.claim_kind,
         }
 
 
@@ -153,6 +155,7 @@ def _allowed_claims(
             severity=_severity(gf, disqualified, basis),
             sources=gf.sources,
             kind=gf.kind,
+            claim_kind=gf.claim_kind,
         )
         for gf in grounding_facts
     )

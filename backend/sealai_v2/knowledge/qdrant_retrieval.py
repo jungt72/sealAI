@@ -54,6 +54,13 @@ _REVIEWED_BACKFILL_TARGET_FACTS = 3
 # its OWN ratio, chosen against that mode's OWN score distribution — see qdrant_hybrid_enabled callers.
 _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE = 0.75
 _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID = 0.10
+_OVERVIEW_KIND_SLOTS = (
+    "definition",
+    "family_tendency",
+    "family_tendency",
+    "safety_caution",
+    "qualification_required",
+)
 
 
 def _query_text(q: str, prefix: str = "query: ") -> str:
@@ -86,6 +93,7 @@ def _hits_to_result(points) -> RetrievalResult:
             card_id=p.get("card_id", ""),
             sources=tuple(p.get("sources", ())),
             kind="card",
+            claim_kind=p.get("claim_kind", ""),
         )
         bucket = reviewed if p.get("review_state") == "reviewed" else provisional
         bucket.append(fact)
@@ -153,6 +161,77 @@ def _matches_material_scope(point, material_tokens: set[str]) -> bool:
     return _point_matches_scope(
         point, "material", material_tokens
     ) or _card_id_matches_material(point, material_tokens)
+
+
+def _select_material_overview(points, k: int, query: str):
+    """Select a balanced reviewed evidence set for a broad single-material question.
+
+    Vector similarity answers "which passages resemble the text?", not "which facets make a useful
+    overview?". For a query like "Details zu NBR" that distinction used to produce two isolated risk
+    limits and no definition. This post-retrieval policy is deterministic and corpus-driven: it only
+    reorders already-retrieved, reviewed claims and never invents content.
+
+    A focused material+medium/property/application query keeps native semantic ranking. The overview
+    path requires a material subject and no second technical scope dimension or comparison language.
+    When a material-specific card contains a reviewed definition, its claims form the coherent source
+    set; otherwise normal ranking remains untouched.
+    """
+    candidates = list(points)
+    limit = max(0, k)
+    if not candidates or limit == 0:
+        return None
+    material_tokens = _detected_scope_tokens(candidates, query, "material")
+    if not material_tokens:
+        return None
+    if any(
+        _detected_scope_tokens(candidates, query, dim)
+        for dim in ("medium", "property", "application")
+    ):
+        return None
+    query_lower = (query or "").lower()
+    if any(
+        marker in query_lower
+        for marker in (" vs ", " versus ", "vergleich", "unterschied")
+    ):
+        return None
+
+    eligible = [
+        point
+        for point in candidates
+        if _review_state(point) == "reviewed"
+        and _matches_material_scope(point, material_tokens)
+    ]
+    definition_cards = {
+        str(_payload(point).get("card_id", ""))
+        for point in eligible
+        if _payload(point).get("claim_kind") == "definition"
+        and _card_id_matches_material(point, material_tokens)
+    }
+    if not definition_cards:
+        return None
+    coherent = [
+        point
+        for point in eligible
+        if str(_payload(point).get("card_id", "")) in definition_cards
+    ]
+
+    selected = []
+    used: set[int] = set()
+    for claim_kind in _OVERVIEW_KIND_SLOTS:
+        for index, point in enumerate(coherent):
+            if index in used or _payload(point).get("claim_kind") != claim_kind:
+                continue
+            selected.append(point)
+            used.add(index)
+            break
+        if len(selected) >= limit:
+            break
+    for index, point in enumerate(coherent):
+        if len(selected) >= limit:
+            break
+        if index not in used:
+            selected.append(point)
+    return selected if len(selected) >= min(3, limit) else None
 
 
 class _ScoredPoint:
@@ -271,6 +350,7 @@ def claim_points(catalog: FachkartenCatalog):
                 "card_id": card.id,
                 "review_state": claim.review_state,
                 "claim_text": claim.text,
+                "claim_kind": claim.kind,
                 "sources": list(claim.sources),
                 "provenance": list(card.provenance),
                 "scope": {k: list(v) for k, v in card.scope.items()},
@@ -586,14 +666,15 @@ class QdrantFachkartenRetriever:
         # branch above produced) BEFORE any reranking — the cross-encoder only rescores its own top-N
         # slice, leaving the untouched tail on the old scale, so comparing a post-rerank top_score
         # against a pre-rerank tail score would silently mix two incompatible scales (same incident).
-        selected = _select_points_with_reviewed_backfill(
+        overview_selected = _select_material_overview(points, k, query)
+        selected = overview_selected or _select_points_with_reviewed_backfill(
             points, k, query, min_relative_score=min_relative_score
         )
 
         # Rerank is a pure ORDERING refinement over the already-selected small set (top-k + backfill,
         # never more than k + _REVIEWED_BACKFILL_MAX_FACTS), not a pre-filter over the wide candidate
         # pool — keeps it cheap and keeps its score scale fully isolated from backfill selection.
-        if self._rerank_enabled and selected:
+        if self._rerank_enabled and selected and overview_selected is None:
             selected = _rerank_points(
                 query,
                 selected,

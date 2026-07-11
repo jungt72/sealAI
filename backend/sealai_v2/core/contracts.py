@@ -222,6 +222,10 @@ class GroundingFact:
     # cell) | "trap" (owner-reviewed policy/failure-mode fact). L1-neutral (the assembler renders
     # text+quelle only). L3 still receives matrix and trap catalogs through their dedicated lanes.
     kind: str = "card"
+    # Epistemic claim type from the Fachkarte (definition, family_tendency, safety_caution, ...).
+    # Separate from ``kind`` above, which identifies the provenance lane. This lets retrieval and
+    # fail-closed rendering preserve a balanced overview instead of sorting every card fact alike.
+    claim_kind: str = ""
 
 
 @dataclass(frozen=True)

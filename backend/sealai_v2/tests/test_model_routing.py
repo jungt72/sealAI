@@ -18,6 +18,7 @@ from sealai_v2.llm.factory import (
     build_client_factory,
 )
 from sealai_v2.pipeline.pipeline import build_pipeline
+from sealai_v2.pipeline.route_telemetry import LoggingRouteTelemetrySink
 from sealai_v2.security.tenant import TenantContext
 from sealai_v2.tests._fakes import FakeLlmClient
 
@@ -43,6 +44,11 @@ def test_default_role_models_and_temperatures_unchanged():
         "gpt-5.4-mini",
         0.0,
     )
+
+
+def test_execution_policy_wires_safe_route_telemetry():
+    p = build_pipeline(Settings(execution_policy_enabled=True), FakeLlmClient("x"))
+    assert isinstance(p.route_telemetry_sink, LoggingRouteTelemetrySink)
 
 
 def test_default_run_uses_l1_and_helper_models():

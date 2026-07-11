@@ -21,15 +21,6 @@ from sealai_v2.knowledge.fachkarten import Fachkarte, FachkartenCatalog, load_fa
 # pulling every card. Deliberately simple; semantic recall is the deferred Qdrant adapter's job.
 _MIN_SCOPE_HITS = 2
 
-_OVERVIEW_MARKERS = (
-    "details zu",
-    "informationen zu",
-    "überblick zu",
-    "ueberblick zu",
-    "was ist",
-    "eigenschaften von",
-)
-
 # P2-D (owner Leitbild-Audit 2026-07-02, Quellenhierarchie/Konfliktlogik §4.3): a claim-epistemics-
 # based tie-break — used ONLY when two cards tie on scope-hit score (previously an arbitrary
 # alphabetical card.id tie-break, see git history). A card carrying safety-relevant claims must not
@@ -86,11 +77,18 @@ def _is_material_overview(card: Fachkarte, query_lower: str) -> bool:
     matched = any(tag_matches(material, tokens, query_lower) for material in materials)
     if not matched:
         return False
-    if any(marker in query_lower for marker in _OVERVIEW_MARKERS):
-        return True
-    # A bare material name is itself an unambiguous overview request in chat.
-    return len(tokens) == 1 and any(
-        material.lower() in tokens for material in materials
+    # Broadness is structural, not a list of guessed question phrases: one material subject with no
+    # medium/property/application tag is an overview. Focused questions retain the stricter 2-scope
+    # rule. Comparison language is handled by the full engineering route, not this overview path.
+    if any(
+        tag_matches(str(tag), tokens, query_lower)
+        for dim in ("medium", "property", "application")
+        for tag in card.scope.get(dim, ())
+    ):
+        return False
+    return not any(
+        marker in query_lower
+        for marker in (" vs ", " versus ", "vergleich", "unterschied")
     )
 
 
@@ -139,6 +137,7 @@ class InProcessRetriever:
                         quelle=_quelle(card, reviewed=True),
                         card_id=card.id,
                         sources=claim.sources,  # M6c: owner-verified primary sources for the citation
+                        claim_kind=claim.kind,
                     )
                 )
             for claim in card.draft_claims():
@@ -148,6 +147,7 @@ class InProcessRetriever:
                         quelle=_quelle(card, reviewed=False),
                         card_id=card.id,
                         sources=claim.sources,
+                        claim_kind=claim.kind,
                     )
                 )
         return RetrievalResult(

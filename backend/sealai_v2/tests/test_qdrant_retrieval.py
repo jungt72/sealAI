@@ -16,6 +16,7 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     _make_embedder,
     _quelle,
     _rerank_points,
+    _select_material_overview,
     _select_points_with_reviewed_backfill,
     claim_points,
     delete_card_points,
@@ -39,6 +40,7 @@ def test_hits_to_result_splits_reviewed_and_provisional():
                 "review_state": "reviewed",
                 "card_id": "FK-EPDM",
                 "sources": ["DIN 1234"],
+                "claim_kind": "definition",
                 "quelle": "Fachkarte FK-EPDM (reviewed; owner:thorsten)",
             }
         ),
@@ -57,6 +59,7 @@ def test_hits_to_result_splits_reviewed_and_provisional():
     gf = res.grounding_facts[0]
     assert gf.text == "EPDM ist unpolar" and gf.card_id == "FK-EPDM"
     assert gf.sources == ("DIN 1234",) and gf.kind == "card"
+    assert gf.claim_kind == "definition"
     assert (
         len(res.provisional) == 1 and res.provisional[0].text == "VMQ breit beständig"
     )
@@ -244,6 +247,7 @@ def test_claim_points_one_per_claim_with_payload():
         "card_id",
         "review_state",
         "claim_text",
+        "claim_kind",
         "sources",
         "provenance",
         "scope",
@@ -263,6 +267,61 @@ def test_claim_points_one_per_claim_with_payload():
     assert reviewed and all("reviewed" in p["quelle"] for p in reviewed)
     drafts = [p for _i, _t, p in pts if p["review_state"] == "draft"]
     assert all("vorläufig" in p["quelle"] for p in drafts)
+
+
+def test_material_overview_selects_definition_strengths_limit_and_qualification():
+    scope = {"material": ["NBR"], "medium": [], "property": [], "application": []}
+
+    def point(kind: str, text: str, score: float):
+        return _FakePoint(
+            {
+                "review_state": "reviewed",
+                "card_id": "FK-NBR-UEBERBLICK",
+                "claim_kind": kind,
+                "claim_text": text,
+                "scope": scope,
+            },
+            score,
+        )
+
+    caution = point("safety_caution", "Grenze", 0.99)
+    family_1 = point("family_tendency", "Staerke", 0.98)
+    definition = point("definition", "Definition", 0.90)
+    qualification = point("qualification_required", "Pruefung", 0.89)
+    family_2 = point("family_tendency", "Trade-off", 0.88)
+    selected = _select_material_overview(
+        [caution, family_1, definition, qualification, family_2],
+        5,
+        "Hallo, bitte gib mir Details ueber NBR",
+    )
+
+    assert selected is not None
+    assert [p.payload["claim_kind"] for p in selected] == [
+        "definition",
+        "family_tendency",
+        "family_tendency",
+        "safety_caution",
+        "qualification_required",
+    ]
+
+
+def test_material_overview_policy_does_not_override_focused_property_query():
+    points = [
+        _FakePoint(
+            {
+                "review_state": "reviewed",
+                "card_id": "FK-NBR-UEBERBLICK",
+                "claim_kind": "definition",
+                "scope": {
+                    "material": ["NBR"],
+                    "property": ["Ozonbestaendigkeit"],
+                },
+            },
+            1.0,
+        )
+    ]
+
+    assert _select_material_overview(points, 5, "Ozonbestaendigkeit von NBR") is None
 
 
 def test_retrieve_rejects_blank_tenant():
