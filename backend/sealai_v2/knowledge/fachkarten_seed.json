@@ -613,7 +613,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:nbr-overview"
       ],
-      "version": "primary-review-20260711-orthography",
+      "version": "primary-review-20260711-coverage",
       "matrix_crosscheck": "not-applicable-overview",
       "scope": {
         "material": [
@@ -640,6 +640,7 @@
         {
           "text": "NBR (Nitrilkautschuk) ist eine Familie ungesättigter Copolymere aus Butadien und Acrylnitril.",
           "kind": "definition",
+          "answer_facets": ["definition", "properties"],
           "review_state": "reviewed",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
@@ -652,6 +653,7 @@
         {
           "text": "Der Acrylnitril-Anteil beeinflusst die Eigenschaften des fertigen NBR-Compounds: Ein höherer Anteil verbessert familientypisch die Öl- und Kraftstoffbeständigkeit, steht aber im Zielkonflikt mit Elastizität und Druckverformungsrest.",
           "kind": "family_tendency",
+          "answer_facets": ["properties", "variants", "tradeoffs"],
           "review_state": "reviewed",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
@@ -664,6 +666,7 @@
         {
           "text": "Typische Stärken von NBR sind die Beständigkeit gegen viele Mineralöle, Kraftstoffe und Fette sowie gute mechanische, Abrieb- und Verschleißeigenschaften; deshalb wird die Werkstofffamilie unter anderem für Dichtungen, O-Ringe und Schläuche eingesetzt.",
           "kind": "family_tendency",
+          "answer_facets": ["media_compatibility", "properties", "applications"],
           "review_state": "reviewed",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
@@ -676,6 +679,7 @@
         {
           "text": "Eine wesentliche Familiengrenze ist die geringe Ozon- und Witterungsbeständigkeit von Standard-NBR; für entsprechende Umgebungen muss ein konkret geeigneter Compound oder eine andere Werkstofffamilie geprüft werden.",
           "kind": "safety_caution",
+          "answer_facets": ["limits", "failure_modes", "operating_factors"],
           "review_state": "reviewed",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
@@ -688,6 +692,7 @@
         {
           "text": "Die Werkstofffamilie NBR allein ist keine Eignungsfreigabe: Acrylnitril-Anteil, Rezeptur und konkrete Betriebsbedingungen bestimmen die Eigenschaften des fertigen Compounds, weshalb die anwendungsbezogene Auswahl gegen Datenblatt und Herstellerangaben zu prüfen ist.",
           "kind": "qualification_required",
+          "answer_facets": ["selection_inputs", "standards_validation"],
           "review_state": "reviewed",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
@@ -878,7 +883,7 @@
       "provenance": [
         "trap-correct:TRAP-NBR-OZON"
       ],
-      "version": "fachkarten_seed_v0",
+      "version": "fachkarten_seed_v0-coverage",
       "matrix_crosscheck": "unchecked",
       "scope": {
         "material": [
@@ -904,6 +909,7 @@
       "claims": [
         {
           "text": "NBR ist anfällig für Ozon-, UV- und Witterungsrissbildung und damit für den Dauer-Außeneinsatz problematisch.",
+          "answer_facets": ["limits", "failure_modes", "operating_factors"],
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-NBR-OZON"
@@ -911,6 +917,7 @@
         },
         {
           "text": "Alternativen je nach Medium: HNBR, EPDM oder CR.",
+          "answer_facets": ["variants", "applications"],
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-NBR-OZON"
@@ -918,6 +925,7 @@
         },
         {
           "text": "Bei Öl-Kontakt im Außeneinsatz bietet HNBR Ölbeständigkeit mit besserer Ozonbeständigkeit.",
+          "answer_facets": ["tradeoffs", "applications", "media_compatibility"],
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-NBR-OZON"
@@ -1159,7 +1167,7 @@
       "provenance": [
         "trap-correct:TRAP-NBR-DAUERTEMP"
       ],
-      "version": "fachkarten_seed_v0",
+      "version": "fachkarten_seed_v0-coverage",
       "matrix_crosscheck": "unchecked",
       "scope": {
         "material": [
@@ -1181,6 +1189,7 @@
       "claims": [
         {
           "text": "NBR liegt bei etwa 100–120 °C an der Dauertemperaturgrenze; dauerhaft darüber (z. B. 130 °C) drohen Verhärtung, Versprödung und kürzere Lebensdauer.",
+          "answer_facets": ["parameters", "limits", "failure_modes", "operating_factors"],
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-NBR-DAUERTEMP"
@@ -1188,6 +1197,7 @@
         },
         {
           "text": "Bei höherer Dauertemperatur: HNBR oder FKM.",
+          "answer_facets": ["variants", "applications"],
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-NBR-DAUERTEMP"
@@ -1195,6 +1205,7 @@
         },
         {
           "text": "Synthetiköle/Additive (Estertyp) können NBR zusätzlich angreifen.",
+          "answer_facets": ["media_compatibility", "limits"],
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-NBR-DAUERTEMP"
