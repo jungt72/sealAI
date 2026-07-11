@@ -421,7 +421,7 @@ Evidenzstatus: {{ knowledge_answer_plan.evidence_status }};
 {% if grounding_facts %}
 # Belegte Fakten (für diese Antwort herangezogen — Spezifika hieraus belegen und zitieren)
 {% for f in grounding_facts %}
-- {{ f.text }}  [Quelle: {{ f.quelle }}]
+- {% if knowledge_answer_plan %}[Evidenz-ID: {{ f.claim_id or f.card_id }}] {% endif %}{{ f.text }}  [Quelle: {{ f.quelle }}]
 {% endfor %}
 Stütze quantitative/normative Aussagen auf diese Fakten und kennzeichne die Quelle. Aussagen aus
 Allgemeinwissen markierst du als solche — Zahlen dabei nur außerhalb der Sperr-Domänen.

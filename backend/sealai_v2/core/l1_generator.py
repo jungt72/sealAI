@@ -207,9 +207,32 @@ class L1Generator:
             risk_flags=risk_flags,
         )
         if self._structured_output_enabled:
-            allowed_ids = frozenset(
-                fact.card_id for fact in grounding_facts if fact.card_id
-            )
+            claim_level_evidence = knowledge_answer_plan is not None
+            evidence_facts: dict[str, GroundingFact] = {}
+            for fact in grounding_facts:
+                evidence_id = (
+                    (fact.claim_id or fact.card_id)
+                    if claim_level_evidence
+                    else fact.card_id
+                )
+                if evidence_id:
+                    evidence_facts[evidence_id] = fact
+            allowed_ids = frozenset(evidence_facts)
+            required_knowledge_facets: set[str] = set()
+            evidence_facets: dict[str, set[str]] = {}
+            if knowledge_answer_plan is not None:
+                from sealai_v2.core.knowledge_answer import facets_for_fact
+
+                required_knowledge_facets = {
+                    str(facet)
+                    for section in knowledge_answer_plan.get("sections", ())
+                    for facet in section.get("covered_facets", ())
+                    if str(facet)
+                }
+                for evidence_id, fact in evidence_facts.items():
+                    evidence_facets.setdefault(evidence_id, set()).update(
+                        facets_for_fact(fact)
+                    )
             structured_instruction = (
                 "\n\nCreate the internal TechnicalAnswer object. Do not write user-facing "
                 "Markdown. Use only these evidence_ids: "
@@ -226,6 +249,18 @@ class L1Generator:
                     "to none with an empty summary and no conditions; selection inputs belong in "
                     "the evidenced claims, not in a recommendation block."
                 )
+                if required_knowledge_facets:
+                    facet_map = "; ".join(
+                        f"{evidence_id}=>{','.join(sorted(facets)) or 'none'}"
+                        for evidence_id, facets in evidence_facets.items()
+                    )
+                    structured_instruction += (
+                        " Across all claims, the cited evidence_ids must collectively cover every "
+                        "required engineering facet. Required facets: "
+                        f"{', '.join(sorted(required_knowledge_facets))}. "
+                        f"Evidence facet map: {facet_map}. Multiple evidence_ids may be attached "
+                        "to one claim when that claim faithfully combines their content."
+                    )
 
             async def _call(current_system: str):
                 technical, result = await generate_structured(
@@ -256,6 +291,23 @@ class L1Generator:
                     allowed_evidence_ids=allowed_ids,
                     require_evidence_for_all_claims=knowledge_answer_plan is not None,
                 )
+                if required_knowledge_facets:
+                    used_evidence = {
+                        evidence_id
+                        for claim in technical.claims
+                        for evidence_id in claim.evidence_ids
+                    }
+                    covered_facets = {
+                        facet
+                        for evidence_id in used_evidence
+                        for facet in evidence_facets.get(evidence_id, ())
+                    }
+                    missing_facets = required_knowledge_facets - covered_facets
+                    if missing_facets:
+                        raise TechnicalAnswerValidationError(
+                            "knowledge_facet_coverage:"
+                            + ",".join(sorted(missing_facets))
+                        )
                 return technical, result
 
             try:
