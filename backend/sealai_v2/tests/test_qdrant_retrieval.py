@@ -736,6 +736,49 @@ def test_retrieve_augments_semantic_results_with_exact_reviewed_subject_profile(
     }
 
 
+def test_retrieve_balances_exact_profiles_for_both_comparison_subjects():
+    def point(claim_id: str, material: str, facet: str, score: float = 0.0):
+        return _FakePoint(
+            {
+                "claim_id": claim_id,
+                "claim_text": f"{material} {facet}",
+                "card_id": f"FK-{material}-PROFILE",
+                "review_state": "reviewed",
+                "subject_type": "material",
+                "answer_facets": [facet],
+                "scope": {"material": [material]},
+            },
+            score,
+        )
+
+    semantic = [point("ptfe-semantic", "PTFE", "definition", 0.9)]
+    exact_profiles = [
+        point("ptfe-parameters", "PTFE", "parameters"),
+        point("nbr-definition", "NBR", "definition"),
+        point("nbr-parameters", "NBR", "parameters"),
+    ]
+    client = _FakeClient(points=semantic, profile_points=exact_profiles)
+    retriever = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=False),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+    )
+
+    result = asyncio.run(
+        retriever.retrieve("Vergleiche NBR und PTFE", tenant_id="customer-a", k=12)
+    )
+
+    card_ids = {fact.card_id for fact in result.grounding_facts}
+    assert "FK-NBR-PROFILE" in card_ids
+    assert "FK-PTFE-PROFILE" in card_ids
+    scope_condition = next(
+        condition
+        for condition in client.last_scroll_kwargs["scroll_filter"].must
+        if condition.key == "scope.material"
+    )
+    assert set(scope_condition.match.any) == {"NBR", "PTFE"}
+
+
 def test_retrieve_does_not_scroll_subject_profiles_for_focused_case_question():
     client = _FakeClient(points=[])
     retriever = QdrantFachkartenRetriever(
