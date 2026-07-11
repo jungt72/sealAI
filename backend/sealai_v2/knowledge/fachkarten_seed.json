@@ -1,7 +1,104 @@
 {
-  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710",
-  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated). 2026-07-10 adds two owner-reviewed operational cards from SAFETY-02 and UNDER-03: Pharma-SIP qualification and unknown replacement-seal identification. | + 38 challenge-verified PROVISIONAL Fachkarten (4-round GPT-5.5 challenge -> GO; review_state=draft -> served as provisional/pre-check; Herstellerfreigabe = final gate)",
+  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710+nbr-overview-20260711",
+  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated). 2026-07-10 adds two owner-reviewed operational cards from SAFETY-02 and UNDER-03: Pharma-SIP qualification and unknown replacement-seal identification. 2026-07-11 adds a primary-source-reviewed NBR overview from ARLANXEO and Parker. | + 38 challenge-verified PROVISIONAL Fachkarten (4-round GPT-5.5 challenge -> GO; review_state=draft -> served as provisional/pre-check; Herstellerfreigabe = final gate)",
   "cards": [
+    {
+      "id": "FK-NBR-UEBERBLICK",
+      "review_state": "reviewed",
+      "provenance": [
+        "deep-research:codex-2026-07-11:nbr-overview"
+      ],
+      "version": "primary-review-20260711",
+      "matrix_crosscheck": "not-applicable-overview",
+      "scope": {
+        "material": [
+          "NBR",
+          "Nitrilkautschuk",
+          "Acrylnitril-Butadien-Kautschuk",
+          "Acrylonitrile-butadiene rubber"
+        ],
+        "medium": [],
+        "property": [
+          "Oel- und Kraftstoffbestaendigkeit",
+          "Abrieb- und Verschleissbestaendigkeit",
+          "Ozon- und Witterungsbestaendigkeit",
+          "ACN-Gehalt"
+        ],
+        "application": [
+          "Dichtungen",
+          "O-Ringe",
+          "Schlaeuche",
+          "Hydraulik und Pneumatik"
+        ]
+      },
+      "claims": [
+        {
+          "text": "NBR (Nitrilkautschuk) ist eine Familie ungesaettigter Copolymere aus Butadien und Acrylnitril.",
+          "kind": "definition",
+          "review_state": "reviewed",
+          "provenance": [
+            "deep-research:codex-2026-07-11:nbr-overview"
+          ],
+          "sources": [
+            "ARLANXEO: Nitrile Butadiene Rubber (https://www.arlanxeo.com/en/families/nbr)",
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)"
+          ]
+        },
+        {
+          "text": "Der Acrylnitril-Anteil beeinflusst die Eigenschaften des fertigen NBR-Compounds: Ein hoeherer Anteil verbessert familientypisch die Oel- und Kraftstoffbestaendigkeit, steht aber im Zielkonflikt mit Elastizitaet und Druckverformungsrest.",
+          "kind": "family_tendency",
+          "review_state": "reviewed",
+          "provenance": [
+            "deep-research:codex-2026-07-11:nbr-overview"
+          ],
+          "sources": [
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)",
+            "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)"
+          ]
+        },
+        {
+          "text": "Typische Staerken von NBR sind die Bestaendigkeit gegen viele Mineraloele, Kraftstoffe und Fette sowie gute mechanische, Abrieb- und Verschleisseigenschaften; deshalb wird die Werkstofffamilie unter anderem fuer Dichtungen, O-Ringe und Schlaeuche eingesetzt.",
+          "kind": "family_tendency",
+          "review_state": "reviewed",
+          "provenance": [
+            "deep-research:codex-2026-07-11:nbr-overview"
+          ],
+          "sources": [
+            "ARLANXEO: Nitrile Butadiene Rubber (https://www.arlanxeo.com/en/families/nbr)",
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)"
+          ]
+        },
+        {
+          "text": "Eine wesentliche Familiengrenze ist die geringe Ozon- und Witterungsbestaendigkeit von Standard-NBR; fuer entsprechende Umgebungen muss ein konkret geeigneter Compound oder eine andere Werkstofffamilie geprueft werden.",
+          "kind": "safety_caution",
+          "review_state": "reviewed",
+          "provenance": [
+            "deep-research:codex-2026-07-11:nbr-overview"
+          ],
+          "sources": [
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)",
+            "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)"
+          ]
+        },
+        {
+          "text": "Die Werkstofffamilie NBR allein ist keine Eignungsfreigabe: Acrylnitril-Anteil, Rezeptur und konkrete Betriebsbedingungen bestimmen die Eigenschaften des fertigen Compounds, weshalb die anwendungsbezogene Auswahl gegen Datenblatt und Herstellerangaben zu pruefen ist.",
+          "kind": "qualification_required",
+          "review_state": "reviewed",
+          "provenance": [
+            "deep-research:codex-2026-07-11:nbr-overview"
+          ],
+          "sources": [
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)",
+            "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)"
+          ]
+        }
+      ],
+      "xrefs": [
+        "FK-NBR-OZON",
+        "FK-NBR-DAUERTEMP",
+        "FK-DRAFT-NBR-ACRYLNITRIL-BUTADIEN-KAUTSCHUK-DICHT"
+      ]
+    },
     {
       "id": "FK-FKM-DAMPF",
       "review_state": "reviewed",

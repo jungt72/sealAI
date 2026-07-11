@@ -11,6 +11,7 @@ from sealai_v2.core.contracts import Intent
 from sealai_v2.pipeline.routing import (
     RouteName,
     classify_route,
+    classify_route_deterministic,
     detect_engineering_signals,
 )
 
@@ -40,6 +41,28 @@ class TestSmalltalkNavigation:
         assert d.route == RouteName.ENGINEERING_CASE
         assert d.forced_full_pipeline is True
 
+    def test_greeting_never_hides_material_knowledge(self) -> None:
+        for question in (
+            "Hallo und guten Morgen, bitte gebe mir Details zu NBR",
+            "Hallo, kannst du mir sagen, was NBR ist?",
+            "Ich brauche Informationen ueber NBR",
+        ):
+            for decision in (
+                classify_route(question, intent=Intent.GESPRAECH),
+                classify_route_deterministic(question),
+            ):
+                assert decision.route is RouteName.MATERIAL_KNOWLEDGE, question
+                assert decision.forced_full_pipeline is False
+
+    def test_unknown_content_after_greeting_is_never_swallowed_as_smalltalk(
+        self,
+    ) -> None:
+        decision = classify_route_deterministic(
+            "Hallo, ordne bitte das unbekannte Fachthema ZetaSeal ein"
+        )
+        assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+        assert decision.forced_full_pipeline is True
+
 
 class TestGeneralAndMaterialKnowledge:
     def test_general_ptfe_knowledge_question_routes_material_knowledge(self) -> None:
@@ -58,6 +81,31 @@ class TestGeneralAndMaterialKnowledge:
     def test_faktfrage_with_material_name_is_material_knowledge(self) -> None:
         d = classify_route("Ist FKM ein Elastomer?", intent=Intent.FAKTFRAGE)
         assert d.route == RouteName.MATERIAL_KNOWLEDGE
+        assert d.forced_full_pipeline is False
+
+    def test_catalog_material_term_routes_without_router_code_change(self) -> None:
+        d = classify_route_deterministic(
+            "Bitte erklaere mir AEM",
+            material_terms=("AEM", "Ethylen-Acrylat-Kautschuk"),
+        )
+        assert d.route is RouteName.MATERIAL_KNOWLEDGE
+        assert d.forced_full_pipeline is False
+
+    def test_ambiguous_short_catalog_term_requires_canonical_uppercase(self) -> None:
+        assert (
+            classify_route_deterministic(
+                "Was bedeutet die EU-Regel?", material_terms=("EU",)
+            ).route
+            is not RouteName.MATERIAL_KNOWLEDGE
+        )
+        assert (
+            classify_route_deterministic("Details zu CR", material_terms=("CR",)).route
+            is RouteName.MATERIAL_KNOWLEDGE
+        )
+
+    def test_current_knowledge_question_outranks_existing_case_context(self) -> None:
+        d = classify_route_deterministic("Details ueber NBR", case_state_nonempty=True)
+        assert d.route is RouteName.MATERIAL_KNOWLEDGE
         assert d.forced_full_pipeline is False
 
 
@@ -86,6 +134,11 @@ class TestMaterialComparison:
 
 
 class TestEngineeringCase:
+    def test_request_for_a_seal_is_an_application_not_general_knowledge(self) -> None:
+        d = classify_route_deterministic("Ich brauche eine Dichtung")
+        assert d.route is RouteName.ENGINEERING_CASE
+        assert d.forced_full_pipeline is True
+
     def test_concrete_rwdr_case_with_dimensions_forces_full_pipeline(self) -> None:
         d = classify_route(
             "RWDR 45x62x8 FKM, 1500 U/min, welches Material?", intent=Intent.FALLARBEIT

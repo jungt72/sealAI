@@ -39,6 +39,7 @@ from enum import Enum
 from sealai_v2.core.contracts import Intent
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
+from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.pipeline.stages import is_alternativen_request
 
 
@@ -140,9 +141,11 @@ _SUITABILITY_QUESTION_RE = re.compile(
     r"\b(passt\s+(?:\w+\s+){0,2}(?:das|dazu|hierzu|hierf[uü]r)|reicht\s+das|"
     r"ist\s+das\s+(?:so\s+)?(?:in\s+)?ordnung|"
     r"k[oö]nnen\s+sie\s+best[aä]tigen|"
-    r"(?:ich\s+brauche|brauche\s+ich|ich\s+ben[oö]tige|ben[oö]tige\s+ich)|"
+    r"(?:ich\s+brauche|ich\s+ben[oö]tige)\s+(?:eine[nr]?\s+)?"
+    r"(?:dichtung|o-?ring|rwdr|wellendichtring)|"
+    r"welche[rns]?\s+(?:dichtung|o-?ring|rwdr|wellendichtring)\s+passt|"
     r"welche[rns]?\s+\w+\s+(?:nehme\s+ich|soll\s+ich|empfiehlst\s+du|empfehlst\s+du)|"
-    r"kannst\s+du\s+mir\s+sagen|worauf\s+sollte\s+ich|"
+    r"worauf\s+sollte\s+ich\s+bei\s+(?:der|einer)\s+(?:auswahl|auslegung)\s+achten|"
     r"empfiehl\s+mir|empfehl\s+mir|was\s+nehme\s+ich|was\s+ist\s+da\s+los)\b",
     re.IGNORECASE,
 )
@@ -167,7 +170,7 @@ _META_INSTRUCTION_RE = re.compile(
 # NEVER as a standalone forcing signal (see module docstring: a bare mention is a knowledge
 # question, not an engineering case).
 _MATERIAL_NAME_RE = re.compile(
-    r"\b(ptfe|fkm|viton|epdm|nbr|hnbr|ffkm|vmq|silikon|silicone|pu|tpu|au|eu|pom|peek)\b",
+    r"\b(ptfe|fkm|viton|epdm|nbr|hnbr|ffkm|vmq|silikon|silicone|pu|tpu|pom|peek)\b",
     re.IGNORECASE,
 )
 
@@ -183,6 +186,30 @@ _SMALLTALK_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A greeting is only smalltalk when the REST of the message is social as well. Previously every
+# greeting-prefixed message below 160 characters was accepted, so "Guten Morgen, Details zu NBR"
+# silently lost its technical intent. Unknown residual content now fails conservative (full path)
+# instead of being swallowed by a social prefix.
+_SOCIAL_REMAINDER_RE = re.compile(
+    r"^\s*[,!?.-]*\s*(?:"
+    r"(?:dir|euch)|"
+    r"f(?:ue|ü)r\s+die\s+hilfe|"
+    r"wie\s+geht(?:'s|\s+es)(?:\s+(?:dir|euch))?|"
+    r"sch[oö]n,?\s+dass\s+es\s+(?:dich|euch)\s+gibt|"
+    r"ich\s+hoffe,?\s+es\s+geht\s+(?:dir|euch)\s+gut|"
+    r"freut\s+mich(?:,?\s+(?:dich|euch)\s+kennenzulernen)?|"
+    r"danke(?:\s+dir|\s+euch)?|"
+    r"(?:einen\s+)?sch[oö]nen\s+(?:morgen|tag|abend)"
+    r")\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+_CONVERSATION_META_RE = re.compile(
+    r"^\s*(?:ich\s+habe\s+\d+\s+fragen(?:\s+an\s+dich)?|"
+    r"ich\s+h[aä]tte\s+eine\s+frage|kannst\s+du\s+mir\s+helfen)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
 
 def _is_smalltalk_shape(question: str) -> bool:
     """Recognize a short social turn after engineering/security signals were ruled out.
@@ -193,10 +220,12 @@ def _is_smalltalk_shape(question: str) -> bool:
     A length cap keeps open-ended requests on the conservative ambiguous route.
     """
     text = (question or "").strip()
-    return bool(
-        _SMALLTALK_RE.fullmatch(text)
-        or (len(text) <= 160 and _SMALLTALK_PREFIX_RE.match(text))
-    )
+    if _SMALLTALK_RE.fullmatch(text) or _CONVERSATION_META_RE.fullmatch(text):
+        return True
+    prefix = _SMALLTALK_PREFIX_RE.match(text)
+    if not prefix:
+        return False
+    return bool(_SOCIAL_REMAINDER_RE.fullmatch(text[prefix.end() :]))
 
 
 _DOMAIN_KNOWLEDGE_RE = re.compile(
@@ -206,10 +235,50 @@ _DOMAIN_KNOWLEDGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_KNOWLEDGE_REQUEST_RE = re.compile(
+    r"\b(was\s+ist|was\s+sind|erkl[aä]r\w*|definition|grundlagen|"
+    r"details|informationen|[uü]berblick|eigenschaften|wie\s+funktioniert)\b",
+    re.IGNORECASE,
+)
+
+_SHORT_MATERIAL_CONTEXT_RE = re.compile(
+    r"\b(werkstoff|material|elastomer|kautschuk|gummi|dichtung|o-?ring|"
+    r"details|informationen|[uü]berblick|eigenschaften)\b",
+    re.IGNORECASE,
+)
+
 
 def requests_calculation(question: str) -> bool:
     """Whether the user explicitly asks for a kernel quantity or calculation context."""
     return bool(_CALC_TERM_RE.search(question))
+
+
+def _has_material_topic(question: str, material_terms: tuple[str, ...] = ()) -> bool:
+    """Recognise a material subject from the stable core vocabulary plus the live knowledge catalog.
+
+    The catalog terms are injected by ``build_pipeline``. This removes the old architectural ceiling
+    where adding an AEM/ACM/CR card did not make its subject routable until somebody also remembered to
+    extend this module's regex. ``tag_matches`` keeps matching word-boundary safe.
+    """
+    if _MATERIAL_NAME_RE.search(question or ""):
+        return True
+    tokens = query_tokens(question or "")
+    normalized = (question or "").lower()
+    for term in material_terms:
+        if not term:
+            continue
+        if len(term) <= 2:
+            # Short engineering symbols (CR, AU, EU, WC) are valid, but case-insensitive matching
+            # would turn ordinary words/acronyms such as "EU" into material questions. Require the
+            # canonical uppercase spelling for these inherently ambiguous two-letter terms.
+            if re.search(rf"\b{re.escape(term.upper())}\b", question or "") and (
+                (question or "").strip().upper() == term.upper()
+                or _SHORT_MATERIAL_CONTEXT_RE.search(question or "")
+            ):
+                return True
+        elif tag_matches(term, tokens, normalized):
+            return True
+    return False
 
 
 def detect_engineering_signals(
@@ -219,6 +288,7 @@ def detect_engineering_signals(
     decode_result: dict | None = None,
     diagnosis: dict | None = None,
     gegencheck_verdict: dict | None = None,
+    material_terms: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     """Every deterministic engineering signal that fires, by name. Pre-computed pipeline values
     (``decode_result``/``diagnosis``/``gegencheck_verdict``/``case_state_nonempty``) are accepted
@@ -259,16 +329,16 @@ def detect_engineering_signals(
     # Material/medium: a BARE mention of either alone is a knowledge-question profile ("was ist
     # PTFE?") and must NOT force the full pipeline — only the two TOGETHER in one message reflect
     # a described operating situation, not a definition request.
-    has_material = bool(extract_seal_spec(question))
+    has_material = bool(extract_seal_spec(question)) or _has_material_topic(
+        question, material_terms
+    )
     has_medium = bool(extract_medium_facts(question))
     if has_material and has_medium:
         signals.append("material_and_medium_in_message")
 
     # Comparative-suitability language about a material is the L3 trap catalog's sharpest edge
     # (unauthorized comparative-ranking claims) — force the full path even with no medium stated.
-    if _COMPARISON_RE.search(question) and (
-        has_material or _MATERIAL_NAME_RE.search(question)
-    ):
+    if _COMPARISON_RE.search(question) and has_material:
         signals.append("comparison_with_material")
 
     return tuple(signals)
@@ -295,16 +365,20 @@ def classify_route(
     diagnosis: dict | None = None,
     gegencheck_verdict: dict | None = None,
     intent: Intent | None = None,
+    material_terms: tuple[str, ...] = (),
 ) -> RouteDecision:
     """The full two-stage gate. ``intent`` is the soft ``understand()`` classification — pass
     ``None`` when it is unavailable (understand disabled, or not yet resolved); doing so is always
     safe because a missing intent maps to ``unsupported_or_ambiguous`` (forced full pipeline)."""
+    # Current-turn signals always win. Existing case state is evaluated only AFTER a self-contained
+    # knowledge topic has had a chance to route, so an old case cannot hijack "Was ist NBR?".
     signals = detect_engineering_signals(
         question,
-        case_state_nonempty=case_state_nonempty,
+        case_state_nonempty=False,
         decode_result=decode_result,
         diagnosis=diagnosis,
         gegencheck_verdict=gegencheck_verdict,
+        material_terms=material_terms,
     )
     if signals:
         return RouteDecision(
@@ -313,6 +387,40 @@ def classify_route(
             confidence=1.0,
             forced_full_pipeline=True,
             deterministic_signal_count=len(signals),
+        )
+
+    # A technical subject in the current utterance outranks social language and the soft LLM intent.
+    # This is entity-first routing: "Guten Morgen, Details zu NBR" remains material knowledge even if
+    # the annotate-only helper guessed ``gespraech`` from the greeting.
+    if _has_material_topic(question, material_terms):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason=(
+                f"intent={intent.value}"
+                if intent in (Intent.WISSENSFRAGE, Intent.FAKTFRAGE)
+                else "current_turn_material_topic"
+            ),
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question) and (
+        not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
+    ):
+        return RouteDecision(
+            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
+            reason="current_turn_domain_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if case_state_nonempty:
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="existing_case_context",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
         )
 
     # Stage 2 — zero deterministic signals. Any doubt still forces the full pipeline.
@@ -325,7 +433,7 @@ def classify_route(
             deterministic_signal_count=0,
         )
 
-    if intent == Intent.GESPRAECH:
+    if intent == Intent.GESPRAECH and _is_smalltalk_shape(question):
         return RouteDecision(
             route=RouteName.SMALLTALK_NAVIGATION,
             reason="intent=gespraech",
@@ -337,7 +445,7 @@ def classify_route(
     if intent in (Intent.WISSENSFRAGE, Intent.FAKTFRAGE):
         route = (
             RouteName.MATERIAL_KNOWLEDGE
-            if _MATERIAL_NAME_RE.search(question)
+            if _has_material_topic(question, material_terms)
             else RouteName.GENERAL_SEALING_KNOWLEDGE
         )
         return RouteDecision(
@@ -366,6 +474,7 @@ def classify_route_deterministic(
     decode_result: dict | None = None,
     diagnosis: dict | None = None,
     gegencheck_verdict: dict | None = None,
+    material_terms: tuple[str, ...] = (),
 ) -> RouteDecision:
     """LLM-free production router.
 
@@ -375,10 +484,11 @@ def classify_route_deterministic(
     """
     signals = detect_engineering_signals(
         question,
-        case_state_nonempty=case_state_nonempty,
+        case_state_nonempty=False,
         decode_result=decode_result,
         diagnosis=diagnosis,
         gegencheck_verdict=gegencheck_verdict,
+        material_terms=material_terms,
     )
     if signals:
         return RouteDecision(
@@ -388,26 +498,36 @@ def classify_route_deterministic(
             forced_full_pipeline=True,
             deterministic_signal_count=len(signals),
         )
+    if _has_material_topic(question, material_terms):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason="deterministic_material_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question) and (
+        not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
+    ):
+        return RouteDecision(
+            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
+            reason="deterministic_domain_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if case_state_nonempty:
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="existing_case_context",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
+        )
     if _is_smalltalk_shape(question):
         return RouteDecision(
             route=RouteName.SMALLTALK_NAVIGATION,
             reason="deterministic_smalltalk_shape",
-            confidence=1.0,
-            forced_full_pipeline=False,
-            deterministic_signal_count=0,
-        )
-    if _MATERIAL_NAME_RE.search(question):
-        return RouteDecision(
-            route=RouteName.MATERIAL_KNOWLEDGE,
-            reason="deterministic_material_knowledge_shape",
-            confidence=1.0,
-            forced_full_pipeline=False,
-            deterministic_signal_count=0,
-        )
-    if _DOMAIN_KNOWLEDGE_RE.search(question):
-        return RouteDecision(
-            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
-            reason="deterministic_domain_knowledge_shape",
             confidence=1.0,
             forced_full_pipeline=False,
             deterministic_signal_count=0,

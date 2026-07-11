@@ -476,6 +476,10 @@ class Pipeline:
     execution_policy_enabled: bool = False
     answer_cache: InProcessExactAnswerCache | None = None
     answer_cache_namespace: str = ""
+    # Material subject lexicon derived once from the versioned Fachkarten catalog. Routing can
+    # therefore recognise every material the knowledge layer actually serves without a second,
+    # drifting hard-coded allowlist.
+    knowledge_material_terms: tuple[str, ...] = ()
     understand_prompt_assembler: UnderstandPromptAssembler = field(
         default_factory=UnderstandPromptAssembler
     )
@@ -769,6 +773,7 @@ class Pipeline:
                 decode_result=decode_result,
                 diagnosis=diagnosis,
                 gegencheck_verdict=gegencheck_verdict,
+                material_terms=self.knowledge_material_terms,
             )
             if self.execution_policy_enabled
             else None
@@ -955,6 +960,7 @@ class Pipeline:
                         intent=understanding.intent
                         if understanding is not None
                         else None,
+                        material_terms=self.knowledge_material_terms,
                     )
                 # Phase 2B safety correction: a stress test against the real eval seed cases (with
                 # an adversarially-uniform "wissensfrage" intent guess) found real cases where
@@ -1937,10 +1943,23 @@ def build_pipeline(
     # its fachkarten version is read once via ``load_fachkarten()`` — the git-tracked seed that the
     # served collection was ingested from (not a live Qdrant-content hash; see core/wissensstand.py).
     fachkarten_version = ""
+    fachkarten_catalog = None
     if isinstance(retriever, InProcessRetriever):
-        fachkarten_version = retriever.catalog.version
+        fachkarten_catalog = retriever.catalog
+        fachkarten_version = fachkarten_catalog.version
     elif retriever is not None:
-        fachkarten_version = load_fachkarten().version
+        fachkarten_catalog = load_fachkarten()
+        fachkarten_version = fachkarten_catalog.version
+    knowledge_material_terms = tuple(
+        dict.fromkeys(
+            term.strip()
+            for card in (
+                fachkarten_catalog.cards if fachkarten_catalog is not None else ()
+            )
+            for term in card.scope.get("material", ())
+            if term.strip()
+        )
+    )
     wissensstand = compute_wissensstand(
         fachkarten_version=fachkarten_version,
         matrix_version=matrix.catalog.version if matrix is not None else "",
@@ -2011,6 +2030,7 @@ def build_pipeline(
             f"{wissensstand}:execution-policy.v1:{settings.standard_provider}/"
             f"{settings.standard_model}:structured={settings.structured_answer_enabled}"
         ),
+        knowledge_material_terms=knowledge_material_terms,
         understand_prompt_assembler=UnderstandPromptAssembler(),
         understand_enabled=settings.understand_enabled,
         archetypes=archetypes,
@@ -2038,7 +2058,9 @@ def build_pipeline(
         wissensstand=wissensstand,
         route_optimization_enabled=settings.route_optimization_enabled,
         route_telemetry_sink=(
-            LoggingRouteTelemetrySink() if settings.route_optimization_enabled else None
+            LoggingRouteTelemetrySink()
+            if settings.route_optimization_enabled or settings.execution_policy_enabled
+            else None
         ),
         route_prompt_families_enabled=settings.route_prompt_families_enabled,
         smalltalk_generator=smalltalk_generator,

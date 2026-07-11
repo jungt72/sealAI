@@ -15,14 +15,14 @@ def _write(tmp_path, cards):
     return p
 
 
-def test_seed_loads_eleven_reviewed_cards():
-    # The original 9 reviewed cards are joined by two owner-reviewed operational cards for Pharma-SIP
-    # qualification and unknown replacement-seal identification; 38 research cards remain draft.
+def test_seed_loads_twelve_reviewed_cards():
+    # The original 11 reviewed cards are joined by the primary-source-reviewed NBR overview;
+    # the remaining research cards stay draft.
     cat = load_fachkarten()
-    assert len(cat.reviewed()) == 11
+    assert len(cat.reviewed()) == 12
     assert cat.by_id("FK-PHARMA-SIP-VALIDIERUNG").review_state == "reviewed"
     assert cat.by_id("FK-ERSATZDICHTUNG-IDENTIFIKATION").review_state == "reviewed"
-    assert len(cat.cards) == 49
+    assert len(cat.cards) == 50
     # circularity guard held: every reviewed claim is owner/trap-grounded (path i) or sourced (path ii)
     # — checked across ALL cards (a draft card's reviewed_claims() is always empty by construction, so
     # this is equivalent to iterating cat.reviewed(), just doesn't assume which cards are reviewed).
@@ -31,20 +31,17 @@ def test_seed_loads_eleven_reviewed_cards():
             assert cl.owner_grounded or cl.sources, f"{c.id}: ungrounded reviewed claim"
 
 
-def test_seed_provenance_is_owner_grounded():
-    # reviewed = owner-grounded: each REVIEWED card names a path-(i) grounding origin —
-    # owner:/eval:/trap-correct: (require a grounding prefix, NOT merely non-empty). The
-    # trap-correct:-only assertion was an over-narrow M3 artifact; FK-ORING-VERPRESSUNG is
-    # bootstrapped from the owner-confirmed CALC-02 eval seed → provenance eval:CALC-02 +
-    # owner:nutauslegung (still owner-grounded path (i)).
-    # Scoped to cat.reviewed() (not cat.cards): the 38 draft/provisional cards (2026-06-28 promotion)
-    # are LLM-researched (provenance "claude-research:...") by design — draft claims carry no source
-    # requirement (fachkarten.py's circularity guard only fires for review_state="reviewed"), so this
-    # owner-grounding invariant was always meant for reviewed cards only.
+def test_reviewed_seed_uses_owner_or_primary_source_grounding():
+    # Reviewed claims may use path (i), owner/trap grounding, or path (ii), verified primary sources.
+    # This mirrors the loader's circularity guard instead of incorrectly requiring every reviewed
+    # card to use the older owner-only path.
     grounding = ("owner", "eval:", "trap-correct:")
     cat = load_fachkarten()
     for c in cat.reviewed():
-        assert any(p.startswith(grounding) for p in c.provenance), c.id
+        card_owner_grounded = any(p.startswith(grounding) for p in c.provenance)
+        assert card_owner_grounded or all(
+            claim.owner_grounded or claim.sources for claim in c.reviewed_claims()
+        ), c.id
 
 
 def test_foodgrade_carries_owner_vmq_nuance():

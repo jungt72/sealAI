@@ -427,14 +427,31 @@ def fail_closed_answer(contract: dict) -> str:
     number, source, or recommendation.
     """
     claims = list(contract.get("allowed_claims", ()))
-    priority = {"disqualify": 0, "caution": 1, "info": 2}
-    claims.sort(
-        key=lambda claim: (
-            priority.get(claim.get("severity"), 3),
-            claim.get("id", ""),
+    is_general = contract.get("status") == "GENERAL"
+    if is_general:
+        # An overview is pedagogical, not an incident report: definition and balanced family
+        # tendencies precede cautions. Stable sorting preserves retrieval's diversified order for
+        # repeated kinds. Suitability contracts retain their safety-first severity ordering below.
+        kind_priority = {
+            "definition": 0,
+            "family_tendency": 1,
+            "system_dependent": 2,
+            "safety_caution": 3,
+            "qualification_required": 4,
+            "regulatory_status": 5,
+            "safety_nogo": 6,
+            "example_value": 7,
+        }
+        claims.sort(key=lambda claim: kind_priority.get(claim.get("claim_kind"), 8))
+    else:
+        priority = {"disqualify": 0, "caution": 1, "info": 2}
+        claims.sort(
+            key=lambda claim: (
+                priority.get(claim.get("severity"), 3),
+                claim.get("id", ""),
+            )
         )
-    )
-    if contract.get("status") == "GENERAL":
+    if is_general:
         sections = [
             "Zu dieser Wissensfrage kann ich aus den aktuell freigegebenen Quellen "
             "Folgendes belastbar festhalten:"
