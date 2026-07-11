@@ -174,3 +174,7 @@ def test_inprocess_retrieval_returns_deep_rwdr_profile() -> None:
         "failure_modes",
         "standards_validation",
     } <= facets
+    assert all(fact.claim_id for fact in result.grounding_facts)
+    assert len({fact.claim_id for fact in result.grounding_facts}) == len(
+        result.grounding_facts
+    )

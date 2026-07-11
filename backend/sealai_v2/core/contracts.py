@@ -234,6 +234,10 @@ class GroundingFact:
     # The card's subject class (material | medium | seal_type | method | general). This is metadata
     # for deterministic planning/telemetry and never changes the claim's epistemic status.
     subject_type: str = "general"
+    # Stable claim-level identity when the retrieval backend provides one. Structured knowledge
+    # answers use this instead of the broader card id so evidence coverage can be validated per
+    # engineering facet. Other answer paths continue to use ``card_id`` unchanged.
+    claim_id: str = ""
 
 
 @dataclass(frozen=True)

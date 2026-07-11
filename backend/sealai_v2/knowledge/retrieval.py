@@ -211,30 +211,18 @@ class InProcessRetriever:
         reviewed: list[GroundingFact] = []
         provisional: list[GroundingFact] = []
         for _s, card in scored[: max(0, k)]:
-            for claim in card.reviewed_claims():
-                reviewed.append(
-                    GroundingFact(
-                        text=claim.text,
-                        quelle=_quelle(card, reviewed=True),
-                        card_id=card.id,
-                        sources=claim.sources,  # M6c: owner-verified primary sources for the citation
-                        claim_kind=claim.kind,
-                        answer_facets=claim.answer_facets,
-                        subject_type=card.subject_type,
-                    )
+            for claim_index, claim in enumerate(card.claims):
+                fact = GroundingFact(
+                    text=claim.text,
+                    quelle=_quelle(card, reviewed=claim.reviewed),
+                    card_id=card.id,
+                    sources=claim.sources,  # M6c: owner-verified primary sources for the citation
+                    claim_kind=claim.kind,
+                    answer_facets=claim.answer_facets,
+                    subject_type=card.subject_type,
+                    claim_id=f"{card.id}:{claim_index}",
                 )
-            for claim in card.draft_claims():
-                provisional.append(
-                    GroundingFact(
-                        text=claim.text,
-                        quelle=_quelle(card, reviewed=False),
-                        card_id=card.id,
-                        sources=claim.sources,
-                        claim_kind=claim.kind,
-                        answer_facets=claim.answer_facets,
-                        subject_type=card.subject_type,
-                    )
-                )
+                (reviewed if claim.reviewed else provisional).append(fact)
         return RetrievalResult(
             grounding_facts=tuple(reviewed), provisional=tuple(provisional)
         )

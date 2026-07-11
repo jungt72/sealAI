@@ -70,7 +70,15 @@ class PromptAssembler:
         risk_flags: list[str] | None = None,
     ) -> str:
         flags = flags or Flags()
-        gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
+        gf = [
+            {
+                "text": f.text,
+                "quelle": f.quelle,
+                "card_id": getattr(f, "card_id", ""),
+                "claim_id": getattr(f, "claim_id", ""),
+            }
+            for f in (grounding_facts or [])
+        ]
         return self._template.render(
             anrede=anrede,
             grounding_facts=gf,

@@ -39,6 +39,7 @@ def test_hits_to_result_splits_reviewed_and_provisional():
                 "claim_text": "EPDM ist unpolar",
                 "review_state": "reviewed",
                 "card_id": "FK-EPDM",
+                "claim_id": "claim-epdm-definition",
                 "sources": ["DIN 1234"],
                 "claim_kind": "definition",
                 "quelle": "Fachkarte FK-EPDM (reviewed; owner:thorsten)",
@@ -60,6 +61,7 @@ def test_hits_to_result_splits_reviewed_and_provisional():
     assert gf.text == "EPDM ist unpolar" and gf.card_id == "FK-EPDM"
     assert gf.sources == ("DIN 1234",) and gf.kind == "card"
     assert gf.claim_kind == "definition"
+    assert gf.claim_id == "claim-epdm-definition"
     assert (
         len(res.provisional) == 1 and res.provisional[0].text == "VMQ breit beständig"
     )

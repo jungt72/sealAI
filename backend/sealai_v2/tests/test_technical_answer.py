@@ -144,6 +144,56 @@ def test_knowledge_answer_drops_redundant_recommendation_block():
     assert "PTFE nur nach Prüfung einsetzen" not in answer.text
 
 
+def test_knowledge_answer_repairs_missing_claim_level_facet_coverage():
+    plan = _knowledge_plan()
+    plan["sections"] = [
+        {
+            "heading": "Kennwerte",
+            "instruction": "Definition und Parameter abdecken.",
+            "facets": ["definition", "parameters"],
+            "covered_facets": ["definition", "parameters"],
+            "missing_facets": [],
+        }
+    ]
+    client = ScriptedFakeLlmClient(
+        [
+            _payload(evidence_ids=["claim-definition"]),
+            _payload(evidence_ids=["claim-definition", "claim-parameters"]),
+        ]
+    )
+    facts = (
+        GroundingFact(
+            "PTFE definition",
+            "ledger",
+            card_id="FK-PTFE",
+            answer_facets=("definition",),
+            claim_id="claim-definition",
+        ),
+        GroundingFact(
+            "PTFE parameter",
+            "ledger",
+            card_id="FK-PTFE",
+            answer_facets=("parameters",),
+            claim_id="claim-parameters",
+        ),
+    )
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Was ist PTFE?",
+            flags=Flags(),
+            grounding_facts=facts,
+            knowledge_answer_plan=plan,
+            case_revision=7,
+        )
+    )
+
+    assert len(client.calls) == 2
+    assert "claim-definition, claim-parameters" in client.calls[0]["system"]
+    assert "EV-1" not in client.calls[0]["system"]
+    assert "geprüft belegt" in answer.text
+
+
 def test_second_semantic_failure_stops_without_retry_loop():
     client = ScriptedFakeLlmClient(
         [_payload(evidence_ids=["BAD-1"]), _payload(evidence_ids=["BAD-2"])]

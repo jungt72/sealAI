@@ -93,6 +93,7 @@ def _hits_to_result(points) -> RetrievalResult:
             claim_kind=p.get("claim_kind", ""),
             answer_facets=tuple(p.get("answer_facets", ())),
             subject_type=p.get("subject_type", "general"),
+            claim_id=str(p.get("claim_id") or ""),
         )
         bucket = reviewed if p.get("review_state") == "reviewed" else provisional
         bucket.append(fact)
