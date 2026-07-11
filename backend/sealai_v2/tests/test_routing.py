@@ -108,6 +108,28 @@ class TestGeneralAndMaterialKnowledge:
         assert d.route is RouteName.MATERIAL_KNOWLEDGE
         assert d.forced_full_pipeline is False
 
+    def test_explicit_oring_design_overview_is_not_misrouted_as_a_case(self) -> None:
+        question = (
+            "Erkläre die technische Auslegung eines O-Rings auf Ingenieursniveau: "
+            "Dichtprinzip, Verpressung, Einbaudehnung, Nutfüllgrad, Extrusionsspalt, "
+            "Toleranzkette, Oberflächen, Werkstoff-/Medieneinfluss, Versagensbilder und "
+            "die Rolle von ISO 3601."
+        )
+        for decision in (
+            classify_route(question, intent=Intent.WISSENSFRAGE),
+            classify_route_deterministic(question),
+        ):
+            assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+            assert decision.forced_full_pipeline is False
+            assert decision.deterministic_signal_count == 0
+
+    def test_short_oring_compression_explanation_is_knowledge(self) -> None:
+        decision = classify_route_deterministic(
+            "Erkläre die Verpressung und Auslegung eines O-Rings."
+        )
+        assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert decision.forced_full_pipeline is False
+
 
 class TestMaterialComparison:
     def test_explicit_comparison_question_forces_full_pipeline(self) -> None:
@@ -178,6 +200,20 @@ class TestEngineeringCase:
         d = classify_route(
             "Wie viel Verpressung braucht der O-Ring?", intent=Intent.FALLARBEIT
         )
+        assert d.forced_full_pipeline is True
+
+    def test_concrete_values_keep_explanation_shaped_design_question_on_full_path(
+        self,
+    ) -> None:
+        d = classify_route_deterministic(
+            "Erkläre die Auslegung meines O-Rings bei 10 bar und 120 °C."
+        )
+        assert d.route is RouteName.ENGINEERING_CASE
+        assert d.forced_full_pipeline is True
+
+    def test_possessive_case_reference_keeps_design_question_on_full_path(self) -> None:
+        d = classify_route_deterministic("Erkläre meine O-Ring-Auslegung.")
+        assert d.route is RouteName.ENGINEERING_CASE
         assert d.forced_full_pipeline is True
 
 
