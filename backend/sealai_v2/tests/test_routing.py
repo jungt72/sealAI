@@ -194,6 +194,29 @@ class TestMaterialComparison:
         assert d.route == RouteName.MATERIAL_COMPARISON
         assert d.forced_full_pipeline is True
 
+    def test_comparison_axes_do_not_become_a_reported_failure(self) -> None:
+        question = (
+            "Vergleiche NBR und PTFE als Dichtungswerkstoffe auf Ingenieursniveau. "
+            "Nutze dieselben Achsen: Werkstoffklasse, Rückstellung/Kriechen, Temperatur, "
+            "Medienverhalten, Reibung/Verschleiß, Bauformen, typische Anwendungen, Grenzen, "
+            "Versagensmechanismen und Auswahlparameter. Nenne keinen universellen Sieger."
+        )
+        decision = classify_route_deterministic(
+            question,
+            diagnosis={"ursache": "RWDR-Verschleiß", "fix": "Welle prüfen"},
+        )
+        assert decision.route is RouteName.MATERIAL_COMPARISON
+        assert decision.forced_full_pipeline is True
+        assert decision.deterministic_signal_count == 1
+
+    def test_concrete_comparison_with_operating_value_is_not_suppressed(self) -> None:
+        decision = classify_route_deterministic(
+            "NBR oder PTFE für meine Dichtung bei 130 °C: was ist besser?",
+            diagnosis={"ursache": "Schaden", "fix": "prüfen"},
+        )
+        assert decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
+        assert decision.forced_full_pipeline is True
+
     def test_comparison_forces_even_when_intent_says_knowledge(self) -> None:
         """The trap catalog's sharpest edge (comparative-suitability claims) must force the full
         path regardless of what the soft LLM intent guessed — the deterministic signal wins."""
