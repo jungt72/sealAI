@@ -338,7 +338,8 @@ class L1Generator:
                                     "status": "none",
                                     "conditions": [],
                                 }
-                            )
+                            ),
+                            "needs_human_review": False,
                         }
                     )
                 validate_technical_answer(
