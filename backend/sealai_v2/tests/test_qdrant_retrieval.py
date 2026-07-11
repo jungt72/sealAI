@@ -481,13 +481,19 @@ class _FakeQueryResult:
 
 
 class _FakeClient:
-    def __init__(self, points=None) -> None:
+    def __init__(self, points=None, profile_points=None) -> None:
         self._points = points if points is not None else []
+        self._profile_points = profile_points if profile_points is not None else []
         self.last_query_points_kwargs: dict | None = None
+        self.last_scroll_kwargs: dict | None = None
 
     def query_points(self, collection, **kwargs):
         self.last_query_points_kwargs = kwargs
         return _FakeQueryResult(self._points)
+
+    def scroll(self, collection, **kwargs):
+        self.last_scroll_kwargs = kwargs
+        return self._profile_points, None
 
 
 def test_rerank_points_reorders_head_and_leaves_tail_untouched():
@@ -628,6 +634,74 @@ def test_retrieve_dense_only_when_hybrid_disabled_no_prefetch():
     assert (
         kwargs["using"] == "dense"
     )  # unchanged dense-only path, byte-identical to pre-hybrid
+
+
+def test_retrieve_augments_semantic_results_with_exact_reviewed_subject_profile():
+    semantic = [
+        _FakePoint(
+            {
+                "claim_id": "definition",
+                "claim_text": "PTFE definition",
+                "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+                "review_state": "reviewed",
+                "subject_type": "material",
+                "answer_facets": ["definition"],
+                "scope": {"material": ["PTFE"]},
+            },
+            0.9,
+        )
+    ]
+    exact_profile_tail = _FakePoint(
+        {
+            "claim_id": "media",
+            "claim_text": "PTFE filler and medium interaction",
+            "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+            "review_state": "reviewed",
+            "subject_type": "material",
+            "answer_facets": ["media_compatibility"],
+            "scope": {"material": ["PTFE"]},
+        }
+    )
+    client = _FakeClient(points=semantic, profile_points=[exact_profile_tail])
+    retriever = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=False),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+    )
+
+    result = asyncio.run(
+        retriever.retrieve("Technische Details zu PTFE", tenant_id="customer-a", k=12)
+    )
+
+    assert {fact.text for fact in result.grounding_facts} == {
+        "PTFE definition",
+        "PTFE filler and medium interaction",
+    }
+    assert client.last_scroll_kwargs is not None
+    conditions = client.last_scroll_kwargs["scroll_filter"].must
+    assert {condition.key for condition in conditions} == {
+        "tenant_id",
+        "review_state",
+        "subject_type",
+        "scope.material",
+    }
+
+
+def test_retrieve_does_not_scroll_subject_profiles_for_focused_case_question():
+    client = _FakeClient(points=[])
+    retriever = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=False),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+    )
+
+    asyncio.run(
+        retriever.retrieve(
+            "PTFE bei 120 Grad und 8 bar auslegen", tenant_id="customer-a", k=5
+        )
+    )
+
+    assert client.last_scroll_kwargs is None
 
 
 def test_retrieve_revalidates_qdrant_payload_against_postgres_ledger():
