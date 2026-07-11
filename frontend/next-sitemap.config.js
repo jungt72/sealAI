@@ -86,6 +86,27 @@ module.exports = {
           "/rag/",
         ],
       },
+      // AI crawlers: separate model-training collection from live AI-search
+      // retrieval/citation. Blocking the former does not reduce eligibility
+      // for the latter — they are architecturally distinct crawlers per
+      // vendor. Matches Cloudflare's own managed-robots.txt default split
+      // (ClaudeBot/GPTBot/Google-Extended/meta-externalagent disallowed by
+      // default) rather than a single blog's opinion. Revisit if sealingAI's
+      // stance on third-party model training changes.
+      { userAgent: "GPTBot", disallow: "/" },
+      { userAgent: "ClaudeBot", disallow: "/" },
+      { userAgent: "Google-Extended", disallow: "/" },
+      { userAgent: "Applebot-Extended", disallow: "/" },
+      { userAgent: "Bytespider", disallow: "/" },
+      { userAgent: "CCBot", disallow: "/" },
+      { userAgent: "meta-externalagent", disallow: "/" },
+      // Live AI search / answer / user-fetch bots — kept open so sealingAI
+      // content stays eligible for ChatGPT/Claude/Perplexity answer citations.
+      { userAgent: "OAI-SearchBot", allow: "/" },
+      { userAgent: "ChatGPT-User", allow: "/" },
+      { userAgent: "Claude-SearchBot", allow: "/" },
+      { userAgent: "Claude-User", allow: "/" },
+      { userAgent: "PerplexityBot", allow: "/" },
     ],
   },
   transform: async (config, urlPath) => {
