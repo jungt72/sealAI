@@ -119,6 +119,17 @@ def _payload(point) -> dict:
     return getattr(point, "payload", None) or {}
 
 
+def _point_identity(point) -> tuple[str, str]:
+    payload = _payload(point)
+    claim_id = str(payload.get("claim_id") or "")
+    if claim_id:
+        return ("claim_id", claim_id)
+    return (
+        str(payload.get("card_id") or ""),
+        str(payload.get("claim_text") or ""),
+    )
+
+
 def _scope_dim(point, dim: str) -> tuple[str, ...]:
     scope = _payload(point).get("scope", {}) or {}
     return tuple(str(item) for item in scope.get(dim, ()))
@@ -648,7 +659,12 @@ class QdrantFachkartenRetriever:
             return RetrievalResult()
 
     def _retrieve_sync(self, query: str, tenant_id: str, k: int) -> RetrievalResult:
-        from qdrant_client.models import FieldCondition, Filter, MatchAny  # lazy
+        from qdrant_client.models import (  # lazy
+            FieldCondition,
+            Filter,
+            MatchAny,
+            MatchValue,
+        )
 
         tenant_filter = Filter(
             must=[
@@ -683,6 +699,68 @@ class QdrantFachkartenRetriever:
             )
             points = res.points
             min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE
+
+        # Semantic ranking is intentionally broad, but a complete engineering overview must not lose
+        # one required profile claim merely because that claim's wording is less similar to the short
+        # user query. Augment explicit knowledge turns with the reviewed subject profile through exact
+        # payload filters. Qdrant still contributes only candidate IDs/order; Postgres revalidates every
+        # appended claim below before it can ground an answer.
+        material_terms = tuple(
+            dict.fromkeys(
+                value
+                for point in points
+                for value in _scope_dim(point, "material")
+                if value
+            )
+        )
+        overview_plan = build_knowledge_answer_plan(
+            query, material_terms=material_terms
+        )
+        profile_must = None
+        if overview_plan is not None and overview_plan.subject_type in {
+            "material",
+            "medium",
+            "seal_type",
+        }:
+            profile_must = [
+                FieldCondition(
+                    key="tenant_id",
+                    match=MatchAny(any=[tenant_id, GLOBAL_TENANT]),
+                ),
+                FieldCondition(key="review_state", match=MatchValue(value="reviewed")),
+                FieldCondition(
+                    key="subject_type",
+                    match=MatchValue(value=overview_plan.subject_type),
+                ),
+            ]
+            subject_scope_key = {
+                "material": "scope.material",
+                "seal_type": "scope.application",
+            }.get(overview_plan.subject_type)
+            if subject_scope_key and overview_plan.subjects:
+                profile_must.append(
+                    FieldCondition(
+                        key=subject_scope_key,
+                        match=MatchAny(any=list(overview_plan.subjects)),
+                    )
+                )
+            elif overview_plan.subject_type != "medium":
+                profile_must = None
+
+        if profile_must is not None:
+            profile_points, _next_offset = self._client.scroll(
+                self._collection,
+                scroll_filter=Filter(must=profile_must),
+                limit=128,
+                with_payload=True,
+                with_vectors=False,
+            )
+            seen = {_point_identity(point) for point in points}
+            for point in profile_points:
+                identity = _point_identity(point)
+                if identity not in seen:
+                    points.append(point)
+                    seen.add(identity)
 
         if self._knowledge_ledger is not None:
             claim_ids = tuple(
