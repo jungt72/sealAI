@@ -34,6 +34,46 @@ def test_grounds_fkm_dampf():
     assert "FK-FKM-DAMPF" in {f.card_id for f in res.grounding_facts}
 
 
+def test_broad_ptfe_overview_is_grounded_with_one_explicit_material_scope_hit():
+    res = asyncio.run(_r().retrieve("Bitte gib mir Details zu PTFE.", tenant_id="t"))
+
+    ptfe = [f for f in res.grounding_facts if f.card_id == "FK-PTFE-KALTFLUSS"]
+    assert len(ptfe) >= 8
+    assert any("thermoplast" in fact.text.lower() for fact in ptfe)
+    assert any("füllstoff" in fact.text.lower() for fact in ptfe)
+
+
+def test_bare_material_name_is_an_overview_request():
+    res = asyncio.run(_r().retrieve("PTFE", tenant_id="t"))
+
+    assert "FK-PTFE-KALTFLUSS" in {f.card_id for f in res.grounding_facts}
+
+
+def test_overview_prefers_a_reviewed_material_card_over_draft_only_ties():
+    reviewed = _card("FK-REVIEWED", "definition", material="ptfe", medium="unused")
+    draft = Fachkarte(
+        id="FK-DRAFT-SAFETY",
+        scope={"material": ["ptfe"]},
+        claims=(
+            Claim(
+                text="draft-only safety note",
+                review_state="draft",
+                provenance=("draft:x",),
+                kind="safety_nogo",
+            ),
+        ),
+        review_state="draft",
+        provenance=("draft:x",),
+    )
+    res = asyncio.run(
+        InProcessRetriever(FachkartenCatalog(cards=(draft, reviewed))).retrieve(
+            "Details zu PTFE", tenant_id="t", k=1
+        )
+    )
+
+    assert {fact.card_id for fact in res.grounding_facts} == {"FK-REVIEWED"}
+
+
 def test_grounds_foodgrade_over_plain_epdm():
     res = asyncio.run(
         _r().retrieve(

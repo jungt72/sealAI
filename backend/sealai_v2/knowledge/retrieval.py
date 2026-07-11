@@ -13,12 +13,22 @@ Postgres/Qdrant adapters land.
 from __future__ import annotations
 
 from sealai_v2.core.contracts import GroundingFact, RetrievalResult
+from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.fachkarten import Fachkarte, FachkartenCatalog, load_fachkarten
 
 # A card is retrieved when at least this many of its scope tags appear in the query. Two keeps it
 # precise (one material + its medium/application), avoiding a single shared material (e.g. "FKM")
 # pulling every card. Deliberately simple; semantic recall is the deferred Qdrant adapter's job.
 _MIN_SCOPE_HITS = 2
+
+_OVERVIEW_MARKERS = (
+    "details zu",
+    "informationen zu",
+    "überblick zu",
+    "ueberblick zu",
+    "was ist",
+    "eigenschaften von",
+)
 
 # P2-D (owner Leitbild-Audit 2026-07-02, Quellenhierarchie/Konfliktlogik §4.3): a claim-epistemics-
 # based tie-break — used ONLY when two cards tie on scope-hit score (previously an arbitrary
@@ -59,6 +69,31 @@ def _score(card: Fachkarte, query_lower: str) -> int:
     return sum(1 for tok in card.scope_tokens() if tok in query_lower)
 
 
+def _is_material_overview(card: Fachkarte, query_lower: str) -> bool:
+    """Allow one explicit material hit for a broad knowledge question.
+
+    Compatibility and design queries still require two scope dimensions. A request such as
+    "Details zu PTFE" necessarily names only the subject, though; requiring a medium or application
+    there makes the deterministic eval/fallback retriever falsely ungrounded while production Qdrant
+    retrieves the same reviewed material card semantically.
+    """
+    tokens = query_tokens(query_lower)
+    materials = tuple(
+        str(material).strip()
+        for material in card.scope.get("material", ())
+        if str(material).strip()
+    )
+    matched = any(tag_matches(material, tokens, query_lower) for material in materials)
+    if not matched:
+        return False
+    if any(marker in query_lower for marker in _OVERVIEW_MARKERS):
+        return True
+    # A bare material name is itself an unambiguous overview request in chat.
+    return len(tokens) == 1 and any(
+        material.lower() in tokens for material in materials
+    )
+
+
 class InProcessRetriever:
     """Implements the ``Retriever`` Protocol over an in-memory ``FachkartenCatalog``."""
 
@@ -81,11 +116,19 @@ class InProcessRetriever:
             (s, c)
             for c in self._catalog.cards
             if (s := _score(c, q)) >= _MIN_SCOPE_HITS
+            or (s >= 1 and _is_material_overview(c, q))
         ]
         # strongest scope match first (unchanged); ties broken by claim severity (P2-D), THEN id —
         # still fully deterministic, but a safety-relevant card no longer loses an arbitrary
         # alphabetical tie against a purely generic one right at the top-k cutoff.
-        scored.sort(key=lambda sc: (-sc[0], -_card_severity(sc[1]), sc[1].id))
+        scored.sort(
+            key=lambda sc: (
+                -sc[0],
+                -int(bool(sc[1].reviewed_claims()) and _is_material_overview(sc[1], q)),
+                -_card_severity(sc[1]),
+                sc[1].id,
+            )
+        )
         reviewed: list[GroundingFact] = []
         provisional: list[GroundingFact] = []
         for _s, card in scored[: max(0, k)]:
