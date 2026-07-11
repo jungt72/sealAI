@@ -11,6 +11,7 @@ from sealai_v2.eval.general_guard_eval import (
     GENERAL_GUARD_KNOWN_LIMITATION_CASES,
     seed_general_guard_overblock_report,
 )
+from sealai_v2.knowledge.fachkarten import load_fachkarten
 
 
 def test_realistic_grounded_answers_never_overblock():
@@ -45,3 +46,17 @@ def test_known_limitations_still_correctly_block():
         assert detail["action"] == "BLOCK", detail
         kinds = {v["kind"] for v in detail["violations"]}
         assert case["expected_violation_kind"] in kinds, (case["id"], kinds)
+
+
+def test_reviewed_ptfe_card_supports_a_broad_knowledge_answer_with_primary_sources():
+    card = next(c for c in load_fachkarten().cards if c.id == "FK-PTFE-KALTFLUSS")
+    reviewed = card.reviewed_claims()
+
+    assert len(reviewed) >= 8
+    assert any("thermoplast" in claim.text.lower() for claim in reviewed)
+    assert any("füllstoff" in claim.text.lower() for claim in reviewed)
+    sourced = [claim for claim in reviewed if claim.sources]
+    assert len(sourced) >= 5
+    assert all(
+        source.startswith("https://") for claim in sourced for source in claim.sources
+    )

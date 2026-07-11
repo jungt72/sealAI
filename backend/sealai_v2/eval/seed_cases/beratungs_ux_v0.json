@@ -46,6 +46,30 @@
       "notiz": "GPT-5.5 Testfall 2 — Wissensfrage muss tief bleiben. CREDIBILITY-only (kein Gate): über-Kürzen ist ein Qualitätsverlust, keine Falle. must_contain prüft, dass die Mechanismus-Tiefe da ist."
     },
     {
+      "id": "BUX-PTFE-OVERVIEW-01",
+      "klass": "Beratungs-UX (BERATUNGS_UX)",
+      "input": "Bitte gib mir Details zu PTFE.",
+      "must_contain": [
+        "PTFE als thermoplastischen Dichtungswerkstoff einordnen und die fehlende elastomere Rückstellung erklären",
+        "die wesentlichen Stärken nennen: sehr hohe chemische und thermische Beständigkeit sowie niedrige Reibung",
+        "die konstruktiv wichtigen Grenzen erklären: Kriechen/Kaltfluss unter Last und begrenzte Rückstellung beziehungsweise Verschleißfestigkeit von ungefülltem PTFE",
+        "gefüllte beziehungsweise modifizierte PTFE-Compounds und vorgespannte Dichtungsbauformen als konstruktive Lösungswege einordnen",
+        "für eine konkrete Auswahl nach Bauform, Medium, Temperatur, Druck, Bewegung/Geschwindigkeit und Gegenlauffläche fragen"
+      ],
+      "must_catch": "Breite Wissensfrage zu PTFE → ein nützliches, quellengeerdetes Grundlagenbild liefern; ein einzelner Alternativsatz oder ein Guard-Fallback ist keine angemessene Antwort",
+      "must_avoid": [
+        "behaupten, die Antwort könne nicht widerspruchsfrei ausgegeben werden, obwohl freigegebene PTFE-Grundlagen vorliegen",
+        "nur federvorgespannte PTFE-Dichtung, ummantelten O-Ring oder Compound aufzählen, ohne PTFE selbst zu erklären",
+        "ungeerdete konkrete Temperatur-, Druck- oder Geschwindigkeitsgrenzen nennen",
+        "eine konkrete Bauform oder ein Compound ohne Anwendungsdaten freigeben"
+      ],
+      "primary_axes": [1, 2],
+      "hard_gates": [],
+      "tags": ["beratungs-ux", "wissensfrage", "ptfe", "broad-overview", "guard-overblock-regression"],
+      "kontext": "Reine breite Wissensfrage. Der Retriever muss mehrere freigegebene PTFE-Claims bereitstellen; der General Guard darf die Antwort nicht auf einen Ein-Claim-Fallback reduzieren.",
+      "notiz": "Live-Incident 2026-07-11: top-k enthielt vier Drafts plus nur einen Reviewed-Claim; der Reviewed-Backfill stoppte zu früh und beide L1-Versuche wurden auf einen irreführenden Widerspruchsfallback reduziert."
+    },
+    {
       "id": "BUX-SPEED-TRAP-FIRSTTURN-01",
       "klass": "Beratungs-UX (BERATUNGS_UX)",
       "input": "RWDR 40x62x8, NBR, 6000 U/min, Öl. Die Temperatur weiß ich noch nicht.",

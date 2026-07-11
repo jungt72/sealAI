@@ -3,7 +3,7 @@ title: "Radialwellendichtring DIN 3760: Bauformen, Maße und Anfrageparameter"
 description: "DIN-3760-Kontext für Radialwellendichtringe: technische Orientierung, typische Angaben und strukturierte Anfragebasis für die Herstellerprüfung."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Radialwellendichtring DIN 3760: Bauformen, Maße und Anfrageparameter

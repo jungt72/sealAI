@@ -1313,10 +1313,12 @@ class Pipeline:
                         check_sentence_coverage=_check_sentence_coverage,
                     )
                     _log.info(
-                        "GOVERNANCE output_guard: regenerated (first=%s -> after=%s); first_violations=%s",
+                        "GOVERNANCE output_guard: regenerated (first=%s -> after=%s); "
+                        "first_violations=%s; second_violations=%s",
                         _gr.action,
                         _gr2.action,
                         [v.kind for v in _gr.violations],
+                        [v.kind for v in _gr2.violations],
                     )
                     if _gr2.action == "BLOCK":
                         answer = Answer(

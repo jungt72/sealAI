@@ -3,7 +3,7 @@ title: "Dichtung Anfrage vorbereiten: technische Angaben für Hersteller struktu
 description: "So wird aus einer unklaren Dichtungsfrage eine prüfbare Anfragebasis: Medium, Temperatur, Druck, Bewegung, Bauraum und offene Punkte."
 category: "RFQ-Vorbereitung"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung Anfrage vorbereiten: technische Angaben für Hersteller strukturieren

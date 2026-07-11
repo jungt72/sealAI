@@ -65,6 +65,7 @@ export default async function WissenPage({ params }: Props) {
         slug={slug}
         title={doc.metadata.title}
         dateLabel={formatContentDate(doc.metadata.dateModified)}
+        authorLabel={doc.metadata.author !== "sealingAI" ? doc.metadata.author : undefined}
       />
     </>
   );

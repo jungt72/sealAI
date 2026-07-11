@@ -47,7 +47,7 @@ if m '(^|[[:space:]])(up|build)([[:space:]]|$)' \
    && { m '(^|[[:space:]])backend-v2([[:space:]]|$)' \
         || m '--profile[[:space:]=]+v2([[:space:]]|$)' \
         || m 'COMPOSE_PROFILES=([^[:space:]]*,)?v2([,[:space:]]|$)'; }; then
-  deny "raw backend-v2 deploy is gated — use ops/release-backend-v2.sh (binds an adjudicated eval-REPLAY + bakes the start marker)."
+  deny "raw backend-v2 deploy is gated — use ops/release-backend-v2.sh --candidate or --final (bakes identity and runs release controls)."
 fi
 
 exit 0

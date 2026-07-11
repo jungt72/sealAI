@@ -15,6 +15,14 @@ on:
         description: "Optional fully qualified image ref; otherwise GHCR commit tag"
         required: false
         type: string
+      release_stage:
+        description: "candidate defers paid eval; final requires complete adjudicated replay"
+        required: true
+        default: candidate
+        type: choice
+        options:
+          - candidate
+          - final
 
 permissions:
   contents: read
@@ -69,12 +77,13 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.source.outputs.sha }}
           BACKEND_V2_IMAGE: ${{ steps.image.outputs.ref }}
+          RELEASE_STAGE: ${{ inputs.release_stage || 'candidate' }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: EXPECTED_SHA,BACKEND_V2_IMAGE
+          envs: EXPECTED_SHA,BACKEND_V2_IMAGE,RELEASE_STAGE
           script: |
             set -euo pipefail
             cd /home/thorsten/sealai
@@ -90,4 +99,8 @@ jobs:
             }
             git checkout --detach "$EXPECTED_SHA"
             test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-            BACKEND_V2_IMAGE="$BACKEND_V2_IMAGE" ./ops/release-backend-v2.sh
+            case "$RELEASE_STAGE" in
+              candidate|final) ;;
+              *) echo "invalid release stage: $RELEASE_STAGE" >&2; exit 22 ;;
+            esac
+            BACKEND_V2_IMAGE="$BACKEND_V2_IMAGE" ./ops/release-backend-v2.sh "--$RELEASE_STAGE"

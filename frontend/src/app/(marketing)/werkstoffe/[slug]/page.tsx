@@ -42,6 +42,7 @@ export default async function WerkstoffePage({ params }: Props) {
     category: "Dichtungswerkstoffe / Elastomere",
     datePublished: doc.metadata.datePublished,
     dateModified: doc.metadata.dateModified,
+    author: doc.metadata.author,
   });
   const breadcrumbJsonLd = generateBreadcrumbSchema([
     { name: "Startseite", path: "/" },
@@ -65,6 +66,7 @@ export default async function WerkstoffePage({ params }: Props) {
         slug={slug}
         title={doc.metadata.title}
         dateLabel={formatContentDate(doc.metadata.dateModified)}
+        authorLabel={doc.metadata.author !== "sealingAI" ? doc.metadata.author : undefined}
       />
     </>
   );

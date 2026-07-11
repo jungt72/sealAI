@@ -3,7 +3,7 @@ title: "Dichtung für Dampf: Temperatur, Druck und offene Prüfpunkte"
 description: "Dampf-Anwendungen über Temperatur, Druck, Kondensat und Betriebsweise für eine Herstellerprüfung strukturieren."
 category: "Medienbeständigkeit"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung für Dampf: Temperatur, Druck und offene Prüfpunkte

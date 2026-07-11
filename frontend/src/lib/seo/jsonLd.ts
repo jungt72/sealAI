@@ -48,10 +48,7 @@ export function generateArticleSchema({
     "headline": title,
     "description": description,
     "url": `${siteUrl}${path}`,
-    "author": {
-      "@type": "Organization",
-      "name": author,
-    },
+    "author": buildAuthor(author),
     "publisher": {
       "@type": "Organization",
       "name": SITE_NAME,
@@ -62,6 +59,26 @@ export function generateArticleSchema({
     },
     "datePublished": datePublished,
     "dateModified": dateModified || datePublished,
+  };
+}
+
+/**
+ * A named human author is a `Person`; only the bare organization name falls
+ * back to `Organization`. The person entity gets a stable same-page anchor
+ * (`/methodik#redaktionelle-verantwortung`) as its `url` so every article
+ * points at one consistent, verifiable place — the entity-consistency part
+ * of E-E-A-T — instead of 25 disconnected name strings.
+ */
+function buildAuthor(author: string) {
+  const siteUrl = getSiteUrl();
+  if (author === SITE_NAME) {
+    return { "@type": "Organization", "name": author };
+  }
+  return {
+    "@type": "Person",
+    "name": author,
+    "url": `${siteUrl}/methodik#redaktionelle-verantwortung`,
+    "worksFor": { "@type": "Organization", "name": SITE_NAME },
   };
 }
 
@@ -123,6 +140,7 @@ export function generateTechArticleSchema({
   category,
   datePublished,
   dateModified,
+  author = SITE_NAME,
 }: {
   title: string;
   description: string;
@@ -130,6 +148,7 @@ export function generateTechArticleSchema({
   category: string;
   datePublished?: string;
   dateModified?: string;
+  author?: string;
 }) {
   const siteUrl = getSiteUrl();
   return {
@@ -143,6 +162,7 @@ export function generateTechArticleSchema({
       "@type": "Thing",
       "name": category,
     },
+    "author": buildAuthor(author),
     "publisher": {
       "@type": "Organization",
       "name": SITE_NAME,
@@ -187,6 +207,37 @@ export function generateWebApplicationSchema() {
       "price": "0",
       "priceCurrency": "EUR",
       "description": "Kostenloser Vorcheck und kostenlose Analyse nach Login.",
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": SITE_NAME,
+      "url": siteUrl,
+    },
+  };
+}
+
+/**
+ * The free, deterministic precheck tool (src/lib/hero-precheck/precheck.ts —
+ * no LLM, real physics calc, never recommends a material). Only real,
+ * verifiable fields: no `aggregateRating`/`review` — none exist, and
+ * fabricating one is a Google spam-policy violation, not a growth hack.
+ */
+export function generatePrecheckToolSchema() {
+  const siteUrl = getSiteUrl();
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "sealingAI Dichtungsfall-Vorcheck",
+    "url": `${siteUrl}/anfrage/dichtung-auslegen-lassen`,
+    "applicationCategory": "UtilityApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "de-DE",
+    "description":
+      "Kostenloser, deterministischer Vorcheck: strukturiert Dichtungstyp, Situation, Medium und Betriebsdaten, berechnet die Umfangsgeschwindigkeit und zeigt, welche Angaben für eine belastbare Bewertung noch fehlen. Keine Materialempfehlung, kein Login erforderlich.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "EUR",
     },
     "publisher": {
       "@type": "Organization",

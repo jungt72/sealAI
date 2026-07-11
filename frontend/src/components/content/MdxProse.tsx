@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
@@ -14,6 +15,38 @@ interface MdxProseProps {
   title: string;
   /** Pre-formatted (server-side, de-DE) "Stand: ..." date — visible freshness signal matching the Article schema's dateModified. */
   dateLabel?: string;
+  /** Visible byline ("Von …") matching the Article schema's Person author. Only rendered for a named person. */
+  authorLabel?: string;
+}
+
+/** Same slug for the H2 `id` and the ToC anchor — must stay deterministic and umlaut-safe. */
+function headingId(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function nodeText(children: ReactNode): string {
+  if (typeof children === "string") return children;
+  if (Array.isArray(children)) return children.map(nodeText).join("");
+  if (children && typeof children === "object" && "props" in children) {
+    return nodeText((children as { props: { children?: ReactNode } }).props.children);
+  }
+  return "";
+}
+
+/** H2 headings from the raw markdown, for the table of contents. */
+function extractH2s(markdown: string): string[] {
+  return markdown
+    .split("\n")
+    .filter((line) => /^##\s+[^#]/.test(line))
+    .map((line) => line.replace(/^##\s+/, "").trim());
 }
 
 type RelatedLink = {
@@ -156,11 +189,15 @@ const TYPE_LABELS = {
   wissen: "Wissen",
 };
 
-export default function MdxProse({ content, type, slug, title, dateLabel }: MdxProseProps) {
+export default function MdxProse({ content, type, slug, title, dateLabel, authorLabel }: MdxProseProps) {
   // Mapping for Context-Link
   const contextParam = type === "medien" ? "medium" : type === "werkstoffe" ? "material" : "context";
   const relatedLinks = RELATED_LINKS[`${type}/${slug}`] ?? [];
   const typeLabel = TYPE_LABELS[type];
+  const tocHeadings = extractH2s(content);
+  const metaParts = [authorLabel ? `Von ${authorLabel}` : null, dateLabel ? `Stand: ${dateLabel}` : null].filter(
+    Boolean,
+  );
 
   return (
     <article className="max-w-4xl mx-auto py-12 px-6">
@@ -175,13 +212,39 @@ export default function MdxProse({ content, type, slug, title, dateLabel }: MdxP
         <span aria-hidden="true">/</span>
         <span className="font-medium text-foreground">{title}</span>
       </nav>
-      {dateLabel ? <p className="mb-8 text-xs font-medium uppercase tracking-wide text-muted-foreground">Stand: {dateLabel}</p> : null}
+      {metaParts.length > 0 ? (
+        <p className="mb-8 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {metaParts.join(" · ")}
+        </p>
+      ) : null}
+      {tocHeadings.length >= 3 ? (
+        <nav aria-label="Inhaltsverzeichnis" className="mb-10 rounded-xl border border-border bg-slate-50 p-5">
+          <p className="text-sm font-semibold text-foreground">Inhaltsverzeichnis</p>
+          <ol className="mt-3 space-y-1.5 text-sm">
+            {tocHeadings.map((heading) => (
+              <li key={heading}>
+                <a href={`#${headingId(heading)}`} className="text-muted-foreground hover:text-seal-blue">
+                  {heading}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      ) : null}
       <div className="prose-clean">
-        <ReactMarkdown 
+        <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
             h1: ({ node, ...props }) => <h1 className="text-4xl font-bold mb-8 text-seal-blue border-b border-border pb-4" {...props} />,
-            h2: ({ node, ...props }) => <h2 className="text-2xl font-bold mt-12 mb-6 text-seal-blue" {...props} />,
+            h2: ({ node, children, ...props }) => (
+              <h2
+                id={headingId(nodeText(children))}
+                className="scroll-mt-20 text-2xl font-bold mt-12 mb-6 text-seal-blue"
+                {...props}
+              >
+                {children}
+              </h2>
+            ),
             h3: ({ node, ...props }) => <h3 className="text-xl font-bold mt-8 mb-4 text-seal-blue" {...props} />,
             p: ({ node, ...props }) => <p className="text-[17px] leading-relaxed mb-6 text-foreground/80" {...props} />,
             ul: ({ node, ...props }) => <ul className="list-disc pl-6 mb-8 space-y-3" {...props} />,

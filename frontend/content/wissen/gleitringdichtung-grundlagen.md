@@ -2,6 +2,8 @@
 title: "Gleitringdichtungen (GLRD) — Technische Grundlagen"
 description: "Einführung in das Funktionsprinzip von Gleitringdichtungen: Wirkungsweise, Komponenten und typische Einsatzbereiche in Pumpensystemen."
 category: "Dichtungstechnik Grundlagen"
+datePublished: "2026-04-17"
+author: "Thorsten Jung"
 ---
 
 # Gleitringdichtungen (GLRD) — Grundlagen

@@ -3,7 +3,7 @@ title: "Wellendichtring Ausfall: Ursachen, Prüfpunkte und Anfragebasis"
 description: "Ausfall eines Wellendichtrings strukturiert erfassen: Laufspur, Medium, Temperatur, Druck, Montage, Welle und Schadensbild."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Wellendichtring Ausfall: Ursachen, Prüfpunkte und Anfragebasis

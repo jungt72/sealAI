@@ -5,14 +5,15 @@
 # Closes the bypass found in the deploy-gate audit: the V1 deploy-gate hook only
 # watches ops/release-backend.sh and checks V1 sentinels, so a raw
 # `docker compose … --profile v2 up --build backend-v2` shipped UNGATED. This
-# wrapper binds the deploy to an adjudicated eval-REPLAY of the EXACT served tree
-# and bakes a start-time marker so a raw build refuses to run.
+# wrapper supports two explicit release stages and bakes a start-time marker so
+# a raw build refuses to run: `candidate` defers the paid eval replay for live
+# validation; `final` binds the release to an adjudicated replay.
 #
 # Gate chain:
 #   1. TREE_HASH = ops/tree-hash.sh backend/sealai_v2   (served-runtime content)
 #   2. Build/pull the candidate and derive its secret-free runtime-profile hash.
-#   3. ops/v2_deploy_gate.py → an adjudicated run with that exact tree, L1 and
-#      runtime profile; all gated axes schranken_quota_final == 1.0.
+#   3. final only: ops/v2_deploy_gate.py → an adjudicated run with that exact
+#      tree, L1 and runtime profile; all gated axes are clean.
 #   4. Rollback rung, verified pre-migration backup and Alembic migration,
 #      idempotent knowledge-ledger bootstrap + derived-index drain, then recreate
 #      backend-v2 + its durable worker from the same image.
@@ -26,6 +27,27 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+usage: ops/release-backend-v2.sh [--candidate|--final]
+
+  --candidate  Deploy an explicitly unvalidated live candidate without a paid
+               eval replay. Backup, migration, identity and smoke gates remain.
+  --final      Deploy a final release. Requires a fully adjudicated eval replay.
+               This is the default when no option is supplied.
+EOF
+}
+
+RELEASE_STAGE="final"
+case "${1:-}" in
+  --candidate) RELEASE_STAGE="candidate"; shift ;;
+  --final)     shift ;;
+  "")         ;;
+  --help|-h)   usage; exit 0 ;;
+  *)           usage >&2; echo "release-backend-v2: unknown option: $1" >&2; exit 2 ;;
+esac
+[[ $# -eq 0 ]] || { usage >&2; echo "release-backend-v2: unexpected arguments: $*" >&2; exit 2; }
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
@@ -37,8 +59,13 @@ BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
 
 die() { echo "release-backend-v2: $*" >&2; exit 1; }
 
+echo ">> release stage = ${RELEASE_STAGE}"
+if [[ "${RELEASE_STAGE}" == "candidate" ]]; then
+  echo "!! CANDIDATE: paid eval replay intentionally deferred; this is not final release approval." >&2
+fi
+
 # Production is an artifact promotion. Never deploy bytes from an uncommitted
-# worktree because the eval tree hash would no longer describe the served code.
+# worktree because the content hash would no longer describe the served code.
 if [[ -n "$(git status --porcelain)" ]]; then
   die "worktree is dirty; commit and deploy the exact reviewed commit"
 fi
@@ -87,16 +114,25 @@ RUNTIME_PROFILE_HASH="$("${COMPOSE[@]}" run --rm --no-deps --entrypoint python "
 [[ "${RUNTIME_PROFILE_HASH}" =~ ^[0-9a-f]{64}$ ]] || die "invalid runtime profile hash: ${RUNTIME_PROFILE_HASH:-<empty>}"
 echo ">> runtime profile = ${RUNTIME_PROFILE_HASH}"
 
-# ── 3. GATE: exact tree + L1 + runtime profile require adjudication ──────────
-if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
-  echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}, L1 ${SERVED_L1}, runtime profile ${RUNTIME_PROFILE_HASH}" >&2
-  echo "!! run and adjudicate an eval-REPLAY under this exact production profile, then retry." >&2
-  exit 2
+# ── 3. RELEASE STAGE: candidate defers paid eval; final requires it ──────────
+if [[ "${RELEASE_STAGE}" == "final" ]]; then
+  if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
+    echo "!! refusing FINAL deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}, L1 ${SERVED_L1}, runtime profile ${RUNTIME_PROFILE_HASH}" >&2
+    echo "!! run and adjudicate the complete eval-REPLAY under this exact production profile, then retry." >&2
+    exit 2
+  fi
+  RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
+  EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
+  EVAL_DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
+  EVAL_STATUS="passed"
+  echo ">> final gate PASS — run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
+else
+  RUN_LABEL="candidate-no-eval-${GIT_SHA_FULL:0:8}"
+  EVAL_GIT_SHA=""
+  EVAL_DIRTY=""
+  EVAL_STATUS="pending"
+  echo ">> candidate gate PASS — paid eval deferred; deterministic release controls remain active"
 fi
-RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
-EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
-EVAL_DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
-echo ">> gate PASS — run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
 
 # ── 4. rollback rung: tag the RUNNING image (from the daemon, never memory) ───
 ROLLBACK_FROM="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
@@ -184,9 +220,9 @@ for i in $(seq 1 30); do
 done
 
 # ── 6. ledger (machine-readable commit→deploy index) + GOVERNANCE_LOG paste ───
-LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA_FULL" "$ROLLBACK_FROM" "$SERVED_L1" "$BACKEND_IMAGE_REF" "$RUNTIME_PROFILE_HASH" "$MIGRATION_BACKUP" <<'PY'
+LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA_FULL" "$ROLLBACK_FROM" "$SERVED_L1" "$BACKEND_IMAGE_REF" "$RUNTIME_PROFILE_HASH" "$MIGRATION_BACKUP" "$RELEASE_STAGE" "$EVAL_STATUS" <<'PY'
 import json, sys
-ts, tree_hash, run_label, image_sha, git_sha, rollback_from, served_l1, backend_image, runtime_profile_hash, migration_backup = sys.argv[1:11]
+ts, tree_hash, run_label, image_sha, git_sha, rollback_from, served_l1, backend_image, runtime_profile_hash, migration_backup, release_stage, eval_status = sys.argv[1:13]
 print(json.dumps({
     "ts": ts, "tree_hash": tree_hash, "run_label": run_label,
     "image_sha": image_sha, "git_sha": git_sha,
@@ -194,20 +230,27 @@ print(json.dumps({
     "l1": served_l1, "backend_image": backend_image or None,
     "runtime_profile_hash": runtime_profile_hash,
     "pre_migration_backup": migration_backup,
+    "release_stage": release_stage,
+    "eval_status": eval_status,
 }))
 PY
 )"
 printf '%s\n' "${LINE}" >> "${LEDGER}"
 echo ">> ledger appended: ${LEDGER}"
 
+if [[ "${RELEASE_STAGE}" == "final" ]]; then
+  RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
+else
+  RELEASE_EVIDENCE="Live candidate only. Paid eval-REPLAY intentionally deferred (eval_status=pending); this deployment is not final-release evidence."
+fi
+
 cat <<EOF
 
 ================ GOVERNANCE_LOG paste-block (owner-authored prose) ================
-## ${TS} — V2 PROD deploy: \`backend-v2\` promotion — gated via ops/release-backend-v2.sh (run ${RUN_LABEL})
+## ${TS} — V2 ${RELEASE_STAGE} deploy: \`backend-v2\` promotion via ops/release-backend-v2.sh (run ${RUN_LABEL})
 
-**Gated deploy** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` + runtime profile
-\`${RUNTIME_PROFILE_HASH}\` validated by adjudicated
-eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000.
+**Release stage: ${RELEASE_STAGE}** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` + runtime profile \`${RUNTIME_PROFILE_HASH}\`.
+${RELEASE_EVIDENCE}
 - new live \`sealai-backend-v2:latest\` = \`${IMAGE_SHA}\`
 - promoted image ref = \`${BACKEND_IMAGE_REF:-local-build}\`
 - rollback rung (read from the daemon) = \`${ROLLBACK_FROM}\`, tagged \`${ROLLBACK_TAG}\`

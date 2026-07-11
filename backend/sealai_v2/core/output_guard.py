@@ -434,10 +434,16 @@ def fail_closed_answer(contract: dict) -> str:
             claim.get("id", ""),
         )
     )
-    sections = [
-        "Die technische Antwort konnte auf Basis der geprüften Informationen nicht "
-        "widerspruchsfrei ausgegeben werden. Belastbar festhalten kann ich:"
-    ]
+    if contract.get("status") == "GENERAL":
+        sections = [
+            "Zu dieser Wissensfrage kann ich aus den aktuell freigegebenen Quellen "
+            "Folgendes belastbar festhalten:"
+        ]
+    else:
+        sections = [
+            "Die technische Antwort konnte auf Basis der geprüften Informationen nicht "
+            "widerspruchsfrei ausgegeben werden. Belastbar festhalten kann ich:"
+        ]
     approved = list(
         dict.fromkeys(
             claim.get("text", "").strip()

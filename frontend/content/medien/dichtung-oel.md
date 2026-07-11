@@ -3,7 +3,7 @@ title: "Dichtung für Öl: Werkstoff-Orientierung und notwendige Betriebsdaten"
 description: "Öl-Kontexte strukturiert klären: Öltyp, Additive, Temperatur, Druck und Dynamik als Prüfbasis für Hersteller oder Spezialist."
 category: "Medienbeständigkeit"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung für Öl: Werkstoff-Orientierung und notwendige Betriebsdaten
