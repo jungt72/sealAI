@@ -103,10 +103,8 @@ def test_unknown_evidence_id_gets_exactly_one_semantic_repair():
     assert len(client.calls) == 2
 
 
-def test_knowledge_answer_repairs_any_technical_claim_without_evidence():
-    client = ScriptedFakeLlmClient(
-        [_payload(evidence_ids=[]), _payload(evidence_ids=["EV-1"])]
-    )
+def test_knowledge_answer_falls_back_without_a_second_paid_call():
+    client = FakeLlmClient(_payload(evidence_ids=[]))
     answer = asyncio.run(
         _generator(client).generate(
             "Was ist PTFE?",
@@ -117,12 +115,13 @@ def test_knowledge_answer_repairs_any_technical_claim_without_evidence():
         )
     )
 
-    assert "geprüft belegt" in answer.text
-    assert len(client.calls) == 2
+    assert "fact (geprüft belegt)" in answer.text
+    assert answer.finish_reason == "deterministic_knowledge_fallback"
+    assert len(client.calls) == 1
 
 
 def test_knowledge_answer_drops_redundant_recommendation_block():
-    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload = json.loads(_payload(evidence_ids=["E1"]))
     payload["recommendation"] = {
         "summary": "PTFE nur nach Prüfung einsetzen.",
         "status": "provisional",
@@ -155,7 +154,7 @@ def test_knowledge_answer_supplements_missing_claim_level_facet_coverage():
             "missing_facets": [],
         }
     ]
-    client = FakeLlmClient(_payload(evidence_ids=["claim-definition"]))
+    client = FakeLlmClient(_payload(evidence_ids=["E1"]))
     facts = (
         GroundingFact(
             "PTFE definition",
@@ -184,10 +183,37 @@ def test_knowledge_answer_supplements_missing_claim_level_facet_coverage():
     )
 
     assert len(client.calls) == 1
-    assert "claim-definition, claim-parameters" in client.calls[0]["system"]
+    assert "Use only these evidence_ids: E1, E2" in client.calls[0]["system"]
+    assert "[Evidenz-ID: E1]" in client.calls[0]["system"]
+    assert "claim-definition" not in client.calls[0]["system"]
     assert "EV-1" not in client.calls[0]["system"]
     assert "geprüft belegt" in answer.text
     assert "PTFE parameter" in answer.text
+
+
+def test_knowledge_answer_hides_canonical_uuid_behind_short_alias():
+    canonical_id = "7cf25557-4816-5ec1-b8f7-03cf5346e587"
+    client = FakeLlmClient(_payload(evidence_ids=["E1"]))
+    fact = GroundingFact(
+        "O-Ring definition",
+        "ledger",
+        card_id="FK-ORING-ENGINEERING-PROFILE",
+        claim_id=canonical_id,
+    )
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Erkläre einen O-Ring.",
+            flags=Flags(),
+            grounding_facts=(fact,),
+            knowledge_answer_plan=_knowledge_plan(),
+            case_revision=7,
+        )
+    )
+
+    assert "Use only these evidence_ids: E1" in client.calls[0]["system"]
+    assert canonical_id not in client.calls[0]["system"]
+    assert answer.grounding_facts == (fact,)
 
 
 def test_second_semantic_failure_stops_without_retry_loop():

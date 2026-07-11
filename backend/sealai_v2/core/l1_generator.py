@@ -7,6 +7,7 @@ framework-/I/O-free, build-spec §3).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 
@@ -16,6 +17,7 @@ from sealai_v2.core.contracts import (
     Flags,
     GroundingFact,
     LlmClient,
+    LlmResult,
     ModelConfig,
     SystemPromptAssembler,
 )
@@ -29,6 +31,57 @@ from sealai_v2.core.technical_answer import (
 from sealai_v2.core.sourcing_guard import strip_sourcing
 from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 from sealai_v2.render.technical_answer import render_technical_answer
+
+
+logger = logging.getLogger(__name__)
+
+
+def _knowledge_evidence_context(
+    grounding_facts: tuple[GroundingFact, ...],
+) -> tuple[tuple[GroundingFact, ...], dict[str, GroundingFact]]:
+    """Give the model compact local aliases while retaining canonical evidence internally."""
+    canonical_aliases: dict[str, str] = {}
+    prompt_facts: list[GroundingFact] = []
+    evidence_facts: dict[str, GroundingFact] = {}
+    for fact in grounding_facts:
+        canonical_id = fact.claim_id or fact.card_id
+        if not canonical_id:
+            prompt_facts.append(fact)
+            continue
+        alias = canonical_aliases.setdefault(
+            canonical_id, f"E{len(canonical_aliases) + 1}"
+        )
+        evidence_facts[alias] = fact
+        prompt_facts.append(replace(fact, claim_id=alias))
+    return tuple(prompt_facts), evidence_facts
+
+
+def _deterministic_knowledge_answer(
+    *,
+    knowledge_answer_plan: dict,
+    evidence_facts: dict[str, GroundingFact],
+    case_revision: int,
+) -> TechnicalAnswer:
+    """Fail closed to reviewed claim text when provider output violates the contract."""
+    profile = str(knowledge_answer_plan.get("profile") or "engineering_knowledge")
+    return TechnicalAnswer(
+        schema_version=1,
+        intent=profile,
+        case_revision=case_revision,
+        conclusion="Technische Übersicht auf Basis der geprüften Fachquellen.",
+        assumptions=[],
+        missing_information=[],
+        claims=[
+            TechnicalClaim(
+                text=fact.text,
+                evidence_ids=[evidence_id],
+                criticality="supporting",
+            )
+            for evidence_id, fact in list(evidence_facts.items())[:8]
+        ],
+        recommendation={"summary": "", "status": "none", "conditions": []},
+        needs_human_review=False,
+    )
 
 
 def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list[str]]:
@@ -188,9 +241,15 @@ class L1Generator:
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> Answer:
+        prompt_grounding_facts = grounding_facts
+        knowledge_evidence_facts: dict[str, GroundingFact] = {}
+        if self._structured_output_enabled and knowledge_answer_plan is not None:
+            prompt_grounding_facts, knowledge_evidence_facts = (
+                _knowledge_evidence_context(grounding_facts)
+            )
         system = self._assemble_system(
             flags=flags,
-            grounding_facts=grounding_facts,
+            grounding_facts=prompt_grounding_facts,
             case_context=case_context,
             durable_context=durable_context,
             conversation_window=conversation_window,
@@ -209,15 +268,11 @@ class L1Generator:
         )
         if self._structured_output_enabled:
             claim_level_evidence = knowledge_answer_plan is not None
-            evidence_facts: dict[str, GroundingFact] = {}
-            for fact in grounding_facts:
-                evidence_id = (
-                    (fact.claim_id or fact.card_id)
-                    if claim_level_evidence
-                    else fact.card_id
-                )
-                if evidence_id:
-                    evidence_facts[evidence_id] = fact
+            evidence_facts = dict(knowledge_evidence_facts)
+            if not claim_level_evidence:
+                for fact in grounding_facts:
+                    if fact.card_id:
+                        evidence_facts[fact.card_id] = fact
             allowed_ids = frozenset(evidence_facts)
             required_knowledge_facets: set[str] = set()
             evidence_facets: dict[str, set[str]] = {}
@@ -345,14 +400,31 @@ class L1Generator:
             try:
                 technical, result = await _call(system + structured_instruction)
             except (StructuredOutputError, TechnicalAnswerValidationError) as exc:
-                repair = (
-                    "\n\nThe previous object failed deterministic validation "
-                    f"({exc}). Repair it once. Return exactly one schema-valid "
-                    "TechnicalAnswer and obey the allowed evidence IDs and case revision."
-                )
-                technical, result = await _call(
-                    system + structured_instruction + repair
-                )
+                if knowledge_answer_plan is not None and evidence_facts:
+                    logger.warning(
+                        "structured knowledge answer failed validation; using reviewed-evidence "
+                        "fallback (%s)",
+                        exc,
+                    )
+                    technical = _deterministic_knowledge_answer(
+                        knowledge_answer_plan=knowledge_answer_plan,
+                        evidence_facts=evidence_facts,
+                        case_revision=case_revision,
+                    )
+                    result = LlmResult(
+                        text="",
+                        model=self._model_config.model,
+                        finish_reason="deterministic_knowledge_fallback",
+                    )
+                else:
+                    repair = (
+                        "\n\nThe previous object failed deterministic validation "
+                        f"({exc}). Repair it once. Return exactly one schema-valid "
+                        "TechnicalAnswer and obey the allowed evidence IDs and case revision."
+                    )
+                    technical, result = await _call(
+                        system + structured_instruction + repair
+                    )
             return Answer(
                 text=strip_sourcing(render_technical_answer(technical)),
                 model=result.model,
