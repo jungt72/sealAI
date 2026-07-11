@@ -167,6 +167,26 @@ class TestGeneralAndMaterialKnowledge:
         assert decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
         assert decision.forced_full_pipeline is True
 
+    def test_engineering_method_for_unknown_hydraulic_medium_is_knowledge(self) -> None:
+        question = (
+            "Wie muss ein Dichtungsingenieur die Verträglichkeit eines unbekannten "
+            "Hydraulikmediums wie Skydrol bewerten? Nenne die erforderliche Stoffidentität, "
+            "Konzentration/Additive, Temperatur/Phase, Prüfmethodik, Werkstoffwechselwirkungen, "
+            "Systemeffekte und warum keine pauschale Freigabe zulässig ist."
+        )
+        decision = classify_route_deterministic(question)
+        assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert decision.forced_full_pipeline is False
+        assert decision.deterministic_signal_count == 0
+
+    def test_concrete_hydraulic_medium_suitability_stays_full(self) -> None:
+        decision = classify_route_deterministic(
+            "Ist NBR für mein Hydraulikmedium Skydrol bei 80 °C geeignet?"
+        )
+        assert decision.route is RouteName.ENGINEERING_CASE
+        assert decision.forced_full_pipeline is True
+        assert decision.deterministic_signal_count >= 1
+
 
 class TestMaterialComparison:
     def test_explicit_comparison_question_forces_full_pipeline(self) -> None:

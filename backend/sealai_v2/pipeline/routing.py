@@ -236,10 +236,11 @@ def _is_smalltalk_shape(question: str) -> bool:
 
 
 _DOMAIN_KNOWLEDGE_RE = re.compile(
-    r"\b(dichtung(?:en|stechnik)?|dichtungsart|dichtungsmedium|medium|medien|fluid|betriebsstoff|"
+    r"\b(dichtung(?:en|stechnik)?|dichtungs\w*|dichtungsart|dichtungsmedium|"
+    r"hydraulikmedium|medium|medien|fluid|betriebsstoff|"
     r"wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
-    r"o-?ring(?:e|s)?|gleitringdichtung|gleitdichtung|glrd|mechanical\s+seal|hydraulikdichtung|werkstoff|"
-    r"elastomer|thermoplast|nut|dichtlippe|"
+    r"o-?ring(?:e|s)?|gleitringdichtung|gleitdichtung|glrd|mechanical\s+seal|hydraulikdichtung|"
+    r"werkstoff\w*|elastomer|thermoplast|nut|dichtlippe|"
     r"gegenlauffl(?:a|ä)che|schmierung|tribologie)\b",
     re.IGNORECASE,
 )
