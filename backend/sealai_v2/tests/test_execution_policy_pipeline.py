@@ -12,6 +12,7 @@ from sealai_v2.core.contracts import (
 )
 from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.orchestration.answer_cache import InProcessExactAnswerCache
 from sealai_v2.prompts.assembler import PromptAssembler
@@ -23,10 +24,12 @@ class _RecordingClient:
         self.text = text
         self.calls: list[ModelConfig] = []
         self.systems: list[str] = []
+        self.users: list[str] = []
 
     async def generate(self, *, system, user, model_config):
         self.calls.append(model_config)
         self.systems.append(system)
+        self.users.append(user)
         return LlmResult(text=self.text, model=model_config.model, finish_reason="stop")
 
     async def generate_structured(self, **kwargs):
@@ -41,9 +44,13 @@ class _EvidenceRetriever:
     def __init__(self, count: int) -> None:
         self.count = count
         self.calls = 0
+        self.queries: list[str] = []
+        self.limits: list[int] = []
 
     async def retrieve(self, query, *, tenant_id, k=5):
         self.calls += 1
+        self.queries.append(query)
+        self.limits.append(k)
         return RetrievalResult(
             grounding_facts=tuple(
                 GroundingFact(
@@ -121,6 +128,34 @@ def test_deep_well_sourced_knowledge_stays_one_standard_call():
     assert len(standard.calls) == 1
     assert result.turn_state.execution_class == "S0"
     assert result.turn_state.model_tier == "standard"
+
+
+def test_followup_comparison_uses_typed_prior_subject_without_raw_history_prompt():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = InProcessConversationMemory()
+    session = SessionContext("comparison-session")
+    tenant = TenantContext("tenant-1")
+    first_question = "Hallo, bitte gib mir detaillierte Informationen ueber NBR"
+    second_question = "danke, bitte vergleiche mit ptfe"
+
+    asyncio.run(pipeline.run(first_question, tenant=tenant, session=session))
+    result = asyncio.run(pipeline.run(second_question, tenant=tenant, session=session))
+
+    assert result.route_name == "material_comparison"
+    assert (
+        "Aufgeloester Werkstoffvergleich: NBR und PTFE"
+        in pipeline.retriever.queries[-1]
+    )
+    assert pipeline.retriever.limits[-1] == 12
+    final_client = next(
+        client for client in (standard, frontier) if second_question in client.users
+    )
+    final_system = final_client.systems[-1]
+    assert "Profil: material_comparison" in final_system
+    assert "Gegenstand: NBR, PTFE" in final_system
+    assert first_question not in final_system
+    assert final_client.users[-1] == second_question
+    assert helper.calls == []
 
 
 def test_complex_multidocument_case_goes_frontier_directly():
