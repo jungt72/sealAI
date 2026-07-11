@@ -196,6 +196,37 @@ export function generateWebApplicationSchema() {
   };
 }
 
+/**
+ * The free, deterministic precheck tool (src/lib/hero-precheck/precheck.ts —
+ * no LLM, real physics calc, never recommends a material). Only real,
+ * verifiable fields: no `aggregateRating`/`review` — none exist, and
+ * fabricating one is a Google spam-policy violation, not a growth hack.
+ */
+export function generatePrecheckToolSchema() {
+  const siteUrl = getSiteUrl();
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "sealingAI Dichtungsfall-Vorcheck",
+    "url": `${siteUrl}/anfrage/dichtung-auslegen-lassen`,
+    "applicationCategory": "UtilityApplication",
+    "operatingSystem": "Web",
+    "inLanguage": "de-DE",
+    "description":
+      "Kostenloser, deterministischer Vorcheck: strukturiert Dichtungstyp, Situation, Medium und Betriebsdaten, berechnet die Umfangsgeschwindigkeit und zeigt, welche Angaben für eine belastbare Bewertung noch fehlen. Keine Materialempfehlung, kein Login erforderlich.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "EUR",
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": SITE_NAME,
+      "url": siteUrl,
+    },
+  };
+}
+
 type FaqItem = {
   question: string;
   answer: string;
