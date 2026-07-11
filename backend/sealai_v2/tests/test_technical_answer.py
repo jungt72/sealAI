@@ -54,6 +54,19 @@ def _generator(client):
     )
 
 
+def _knowledge_plan() -> dict:
+    return {
+        "profile": "material_overview",
+        "subjects": ["PTFE"],
+        "comparison": False,
+        "subject_coverage": [],
+        "evidence_status": "complete",
+        "evidence_fact_count": 1,
+        "evidence_document_count": 1,
+        "sections": [],
+    }
+
+
 def test_structured_answer_is_validated_and_rendered_deterministically():
     client = FakeLlmClient(_payload())
     answer = asyncio.run(
@@ -68,7 +81,8 @@ def test_structured_answer_is_validated_and_rendered_deterministically():
     )
     assert answer.model == "standard"
     assert answer.text.startswith("PTFE ist ein thermoplastischer Dichtungswerkstoff.")
-    assert "Belege: EV-1" in answer.text
+    assert "geprüft belegt" in answer.text
+    assert "EV-1" not in answer.text
     assert len(client.calls) == 1
 
 
@@ -84,8 +98,50 @@ def test_unknown_evidence_id_gets_exactly_one_semantic_repair():
             case_revision=7,
         )
     )
-    assert "Belege: EV-1" in answer.text
+    assert "geprüft belegt" in answer.text
+    assert "EV-1" not in answer.text
     assert len(client.calls) == 2
+
+
+def test_knowledge_answer_repairs_any_technical_claim_without_evidence():
+    client = ScriptedFakeLlmClient(
+        [_payload(evidence_ids=[]), _payload(evidence_ids=["EV-1"])]
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Was ist PTFE?",
+            flags=Flags(),
+            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            knowledge_answer_plan=_knowledge_plan(),
+            case_revision=7,
+        )
+    )
+
+    assert "geprüft belegt" in answer.text
+    assert len(client.calls) == 2
+
+
+def test_knowledge_answer_drops_redundant_recommendation_block():
+    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload["recommendation"] = {
+        "summary": "PTFE nur nach Prüfung einsetzen.",
+        "status": "provisional",
+        "conditions": ["Herstellerprüfung"],
+    }
+    client = FakeLlmClient(json.dumps(payload))
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Was ist PTFE?",
+            flags=Flags(),
+            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            knowledge_answer_plan=_knowledge_plan(),
+            case_revision=7,
+        )
+    )
+
+    assert "Vorläufige Orientierung" not in answer.text
+    assert "PTFE nur nach Prüfung einsetzen" not in answer.text
 
 
 def test_second_semantic_failure_stops_without_retry_loop():

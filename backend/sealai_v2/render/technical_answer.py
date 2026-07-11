@@ -18,7 +18,7 @@ def render_technical_answer(answer: TechnicalAnswer) -> str:
         claims = ["**Technische Einordnung**"]
         for claim in answer.claims:
             source = (
-                f" (Belege: {', '.join(claim.evidence_ids)})"
+                " (geprüft belegt)"
                 if claim.evidence_ids
                 else " (ohne belastbaren Beleg; vorläufig)"
             )
