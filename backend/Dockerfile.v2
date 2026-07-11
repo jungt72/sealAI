@@ -41,7 +41,8 @@ RUN python -c "import alembic, httpx, psycopg2, sqlalchemy; from openai import A
 RUN chown -R appuser:appuser /app
 
 # V2 deploy teeth — the entrypoint refuses to start an UNGATED build (empty marker).
-# ops/release-backend-v2.sh passes --build-arg GATE_TREE_HASH=<served tree_hash>; a raw
+# ops/release-backend-v2.sh passes --build-arg GATE_TREE_HASH=<served tree_hash> for
+# both candidate and final stages; a raw
 # `docker compose build backend-v2` leaves it empty → build-identity validation rejects the build.
 # The entrypoint verifies the same identity again at startup. Placed late so the per-build identity
 # never busts the dependency/COPY layers above.

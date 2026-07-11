@@ -1,9 +1,9 @@
 """D — the V2 entrypoint teeth: an UNGATED build (empty gate-tree-hash marker) refuses to start.
 
 A raw `docker compose build backend-v2` (no --build-arg GATE_TREE_HASH) bakes an EMPTY marker, so
-the container exits 1 instead of serving ungated code. ops/release-backend-v2.sh bakes a non-empty
-marker → the app starts. The marker path is env-overridable (SEALAI_GATE_MARKER) only so this test
-need not write to /etc.
+the container exits 1 instead of serving unidentified code. ops/release-backend-v2.sh bakes a
+non-empty marker for both candidate and final stages. The marker path is env-overridable
+(SEALAI_GATE_MARKER) only so this test need not write to /etc.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # docker-entrypoint-v2.sh — the V2 deploy teeth.
 #
-# ops/release-backend-v2.sh bakes the gated served tree_hash into the image
+# ops/release-backend-v2.sh bakes the identified served tree_hash into the image
 # (--build-arg GATE_TREE_HASH → /etc/sealai/gate-tree-hash). A RAW build
 # (`docker compose build backend-v2` with no --build-arg) leaves that marker
 # EMPTY — current builds already reject missing release identity arguments, and
@@ -17,7 +17,7 @@ IDENTITY="${SEALAI_RELEASE_IDENTITY:-/etc/sealai/release-identity.json}"
 
 if [ ! -s "${MARKER}" ]; then
   echo "UNGATED BUILD — refusing to start: no GATE_TREE_HASH baked in." >&2
-  echo "Deploy backend-v2 ONLY via ops/release-backend-v2.sh (it gates on an adjudicated eval-REPLAY)." >&2
+  echo "Deploy backend-v2 ONLY via ops/release-backend-v2.sh (candidate or final release stage)." >&2
   exit 1
 fi
 
