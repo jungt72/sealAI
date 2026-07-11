@@ -190,6 +190,24 @@ def test_exfil_guard_unit_kb_dump():
     assert out.model == _EXFIL_HEDGE_MODEL
 
 
+def test_exfil_guard_allows_structured_authorized_knowledge_claims():
+    claims = [f"Reviewed claim number {i} with enough distinct text." for i in range(8)]
+    answer = Answer(
+        text=" ".join(claims),
+        model="fake-l1",
+        verification_claims=tuple(claims),
+    )
+    out, verdict = _exfil_guard(
+        answer,
+        system_prompt="short prompt",
+        kb_claims=claims,
+        authorized_kb_claims=answer.verification_claims,
+    )
+    assert not verdict.leaked
+    assert verdict.kb_claims_leaked == 0
+    assert out is answer
+
+
 def test_exfil_guard_unit_clean_passthrough():
     answer = Answer(text="Eine normale, kurze fachliche Antwort.", model="fake-l1")
     out, verdict = _exfil_guard(
