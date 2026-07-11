@@ -1,8 +1,4 @@
-"""Release-stage contract for the V2 deployment wrapper.
-
-Candidate deployments may defer the paid replay while final releases remain
-fail-closed. These tests are intentionally network- and Docker-free.
-"""
+"""Release-stage contract for the V2 deployment wrapper and production CI."""
 
 from __future__ import annotations
 
@@ -40,6 +36,14 @@ def test_final_is_fail_closed_and_candidate_is_auditable():
     assert '"eval_status": eval_status' in script
 
 
+def test_candidate_is_forbidden_for_production_configuration():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'DEPLOY_ENV="${DEPLOY_ENV:-production}"' in script
+    assert "development|test|staging" in script
+    assert "candidate releases are forbidden" in script
+
+
 def test_running_rollback_artifact_is_preserved_before_local_build():
     script = SCRIPT.read_text(encoding="utf-8")
 
@@ -63,9 +67,11 @@ def test_missing_running_image_requires_identity_matched_override():
     )
 
 
-def test_ci_uses_candidate_for_iteration_and_requires_explicit_final():
+def test_production_ci_is_manual_and_final_only():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "default: candidate" in workflow
-    assert "- final" in workflow
-    assert '"--$RELEASE_STAGE"' in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "workflow_run:" not in workflow
+    assert "release_stage:" not in workflow
+    assert "--final" in workflow
+    assert "--candidate" not in workflow

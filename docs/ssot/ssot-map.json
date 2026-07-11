@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "ssot": {
+    "version": "2.0",
+    "status": "ratified",
+    "ratified_at": "2026-07-10",
+    "source": "docs/ssot/sealingAI_SSoT_v2.0.docx",
+    "source_sha256": "066dd803b7013fa8b7fdcac4703dee63c3fb183a55d7ef4e2cca76e963802580"
+  },
+  "hard_gates": {
+    "G1": {
+      "name": "Tenant",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/security/tenant.py",
+        "backend/sealai_v2/tests/test_tenant_guard.py"
+      ]
+    },
+    "G2": {
+      "name": "Evidence",
+      "status": "remediation_required",
+      "evidence": [
+        "backend/sealai_v2/knowledge/ledger.py",
+        "backend/sealai_v2/db/models.py"
+      ]
+    },
+    "G3": {
+      "name": "Kernel",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/core/calc",
+        "backend/tests/architecture/test_i5_narration_no_numbers.py"
+      ]
+    },
+    "G4": {
+      "name": "Approval",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/core/framing.py",
+        "backend/sealai_v2/tests/test_api_framing.py"
+      ]
+    },
+    "G5": {
+      "name": "Neutrality",
+      "status": "remediation_required",
+      "evidence": [
+        "backend/sealai_v2/knowledge/hersteller_partner.py"
+      ]
+    },
+    "G6": {
+      "name": "Audit",
+      "status": "partial",
+      "evidence": [
+        "backend/sealai_v2/db/models.py",
+        "backend/sealai_v2/knowledge/ledger.py"
+      ]
+    },
+    "G7": {
+      "name": "Release",
+      "status": "implemented",
+      "evidence": [
+        "ops/release-backend-v2.sh",
+        ".github/workflows/deploy.yml"
+      ]
+    },
+    "G8": {
+      "name": "Scope",
+      "status": "partial",
+      "evidence": [
+        "docs/ssot/product-maturity.json",
+        "backend/sealai_v2/config/settings.py"
+      ]
+    }
+  },
+  "changes": {
+    "M1": "implemented",
+    "M2": "implemented",
+    "M3": "partial",
+    "M4": "external_review_required",
+    "M5": "remediation_required",
+    "M6": "implemented",
+    "M7": "partial",
+    "M8": "not_implemented",
+    "M9": "partial",
+    "M10": "implemented",
+    "M11": "owner_inputs_required",
+    "M12": "pilot_required",
+    "M13": "separate_plan_required",
+    "M14": "not_implemented",
+    "M15": "adjudicated_replay_required",
+    "M16": "instrumentation_required"
+  }
+}

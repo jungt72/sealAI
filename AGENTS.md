@@ -2,14 +2,21 @@
 
 ## Purpose
 
-This repository builds **sealAI / sealing | Intelligence**: a herstellerneutrale
-Vorbewertungsinstanz für Dichtungstechnik — grounded knowledge dialogue plus a
-deterministic calculation kernel, governed by the **sealingAI Leitbild V3**.
+This repository builds **sealingAI**: the manufacturer-neutral knowledge,
+engineering, and case infrastructure for industrial sealing technology. Simple
+questions receive direct, deep answers; application-dependent questions become
+versioned, source-based, reviewable sealing cases.
 
-Active target:
+The binding operating claim is:
 
 ```text
-Freely explain. Deterministically calculate. Only claim with evidence.
+Dichtungstechnik. Von der Frage zur pruefbaren Entscheidung.
+```
+
+Trust claim:
+
+```text
+Vollstaendigkeit vor Empfehlung. Quellen vor Behauptung. Freigabe vor Einsatz.
 ```
 
 The single production backend is **`backend/sealai_v2/`**, deployed as the
@@ -18,58 +25,53 @@ runtime) was **retired 2026-06-28** — the directory is gutted (2 files, dead
 weight, kept only as git history) and its container is stopped. Do not build
 against it, do not reintroduce LangGraph anywhere in this repo.
 
-## sealingAI Leitbild V3 — the binding product doctrine
+## Ratified SSoT v2.0
 
-This is the normative basis for every architecture and product decision.
-sealAI is **not** a final technical release authority. It is a
-**herstellerneutrale Vorbewertungsinstanz** (manufacturer-neutral
-pre-assessment instance).
+The complete strategic doctrine is tracked in
+`docs/ssot/sealingAI_SSoT_v2.0.md`; its reviewed source artifact is
+`docs/ssot/sealingAI_SSoT_v2.0.docx`. The source hash and operational companions
+live in `docs/ssot/README.md`.
 
-Ten Leitsätze bind every decision:
+The twelve binding principles are:
 
-- **L1** Der Kernel entscheidet, das LLM formuliert.
-- **L2** Kein Verdikt ohne Quelle, keine Quelle ohne Status, keine Aussage ohne
-  Coverage.
-- **L3** Unsicherheit ist ein Zustand, kein Textbaustein.
-- **L4** Werkstofffamilie orientiert. Compound bewertet. Bauteil wird
-  freigegeben — aber nicht von uns.
-- **L5** Was das System nicht weiß, sagt es zuerst.
-- **L6** Matching folgt dem Verdikt, nie umgekehrt.
-- **L7** Felddaten sind Evidenz, kein Autopilot.
-- **L8** Das Produkt ist das Entscheidungsdokument.
-- **L9** Coverage-Tiefe vor Breite.
-- **L10** Die Grenzen des Systems stehen im Produkt — nicht im Kleingedruckten.
+- **P1** The kernel decides; the LLM formulates.
+- **P2** No technical claim without source, status, version, applicability, and
+  uncertainty.
+- **P3** Unknown is a domain state, never hidden prose.
+- **P4** A family orients, a compound is assessed, and a component is released
+  externally.
+- **P5** State what the system does not know first.
+- **P6** Matching follows the technical case.
+- **P7** Field experience is evidence, not autopilot.
+- **P8** The product is the decision document; chat is the interface.
+- **P9** Depth before breadth.
+- **P10** Product boundaries are visible in the product.
+- **P11** Technical fit is not purchasable.
+- **P12** Every scope extension needs a feature flag, reference set, hard gates,
+  and explicit activation.
 
-Non-negotiable regardless of what else is optimized:
-
-- The deterministic kernel is the only source of numbers. The LLM never
-  invents a value.
-- No material/compound release is ever phrased as "geeignet"/"freigegeben" —
-  only verdict + source + uncertainty.
-- No domain fact (material property, limit value, norm) may be
-  invented/hallucinated — only cited from reviewed, versioned sources.
-
-Full Leitbild text is held by the owner locally; ask for it when a decision
-needs the complete Kernprinzipien (Compound- vs. Familien-Logik, Risikoklassen,
-Coverage/Quellenhierarchie/Konfliktlogik/Versionierung).
+sealingAI supports decisions but never becomes the final engineering, legal,
+conformity, or manufacturer release authority.
 
 ## Authority Order
 
-1. This file (`AGENTS.md`) is the operating contract for coding agents.
-2. The sealingAI Leitbild V3 (above) is the binding product doctrine.
-3. `docs/V2/sealingai_v2_build_spec.md` — the executable build plan for
+1. Applicable law, binding regulation, contracts, and licenses.
+2. `docs/ssot/sealingAI_SSoT_v2.0.md` and its reviewed DOCX source.
+3. Ratified invariants, ADRs, security contracts, and
+   `docs/ssot/OWNER_DECISION_REGISTER.md`.
+4. `docs/V2/sealingai_v2_build_spec.md` — the executable build plan for
    `backend/sealai_v2/` (§11 boundary, §12 agent guardrails).
-4. `docs/V2/sealingai_v2_architektur_prinzipien.md` — the trust model + the
+5. `docs/V2/sealingai_v2_architektur_prinzipien.md` — the trust model + the
    *why* (§0/§2/§3/§4/§9).
-5. `docs/V2/sealingai_v2_1_produkt_konzept.md` /
-   `sealingai_v2_1_implementierungs_konzept_cc.md` — the V2.1/V2.2 forward SoT
-   (WHAT/HOW) for the current increment work.
-6. `docs/V2/sealingai_eval_seed_set_v0.md` — the acceptance ruler (7 axes +
+6. Build specs, data contracts, and API/SSE schemas that do not conflict with
+   the SSoT.
+7. `docs/V2/sealingai_eval_seed_set_v0.md` — the acceptance ruler (7 axes +
    hard Schranken).
-7. Tests in `backend/sealai_v2/tests/` and
+8. Tests in `backend/sealai_v2/tests/` and
    `backend/tests/architecture/test_v2_import_boundary.py` are executable
    contracts.
-8. Everything under "Retired: V1 / V10 / V1.8 (historical)" below, plus
+9. Implementation.
+10. Everything under "Retired: V1 / V10 / V1.8 (historical)" below, plus
    archived docs/audit reports/screenshots, is historical context only.
 
 If sources conflict, follow the higher item and update the lower source or
@@ -83,17 +85,20 @@ the code so future agents don't inherit ambiguity.
 - `frontend-v2/`: the dashboard (Vite, served under `/dashboard`) — the active
   frontend for `sealai_v2`.
 - `frontend/`: marketing site only. Not the product UI.
-- `docs/V2/`: the normative V2 sources (see Authority Order above).
+- `docs/ssot/`: ratified strategic SSoT, decisions, maturity, evidence, and
+  implementation mapping.
+- `docs/V2/`: subordinate build, architecture, and eval specifications. They do
+  not override the strategic SSoT.
 - `ops/`: sanctioned deploy scripts (`release-backend-v2.sh`,
   `release-frontend.sh`), backup scripts, disk safeguard.
 
 If a subdirectory contains another `AGENTS.md`, follow the more specific file
 for files inside that subtree.
 
-## Four-layer trust model + the thin pipeline
+## Trust model and reference pipeline
 
-Halluzination-resistance comes from four layers that carry together, not from
-control-determinism — this is the concrete implementation of Leitsatz L1/L2:
+Hallucination resistance comes from four layers that carry together, not from
+control determinism. This is the concrete implementation of P1/P2:
 
 - **L1 · Generator** — strong LLM + the L1 system prompt; covers the infinite
   answer space, integrated reasoning, the *why*. Must not invent precise
@@ -104,27 +109,38 @@ control-determinism — this is the concrete implementation of Leitsatz L1/L2:
 - **L3 · Verifier** — an independent critic pass against the trap catalog
   (+ matrix). Must not smooth over correct answers or invent its own source
   of truth.
-- **L4 · Human/Manufacturer** — orientation ≠ binding spec; final validation
-  and release stays outside the system (Leitsatz L4/L8).
+- **L4 · Human/Manufacturer** — orientation is not a binding specification;
+  final validation and release stay outside the system (P4/P8).
 
-The pipeline is one directed chain, no routing mesh:
-**verstehen → grounden → antworten (mit Konfidenz) → verifizieren →
-zitieren.** No deterministic intake gate, no slot-binder, no field-envelope
-state machine.
+The reference path stays explicit and typed:
+
+1. determine tenant, intent, and risk class;
+2. assemble typed conversation and case context;
+3. retrieve reviewed claims with applicability;
+4. run deterministic calculations in the kernel;
+5. build the response contract from facts, unknowns, and allowed claims;
+6. generate a draft;
+7. execute claim, number, source, approval, injection, and tenant guards;
+8. emit the final authoritative response and persist decision-relevant state.
+
+Do not introduce LangGraph for this synchronous path. Durable work that outlives
+an HTTP request belongs in the worker/outbox. A future long-running human
+workflow engine requires a separate ADR and measured need.
 
 ## Hard invariants (review criteria for every patch)
 
-- **Eval is the instrument.** The eval seed set (`docs/V2/sealingai_eval_seed_set_v0.md`)
-  is the build target *and* the regression guard. Hard Schranken-Quote = 100%
-  for every gated axis. `ops/release-backend-v2.sh` fails closed unless an
-  adjudicated replay matches the exact served tree and served L1 model.
+- **M15 and G7 fail closed.** General knowledge is default-off until the full
+  reference set, hard gates, human adjudication, exact served tree/model/runtime
+  match, and explicit activation exist. A targeted development replay does not
+  authorize final production. A live candidate is never final-release evidence.
 - **The human is the factual-correctness ORACLE; the agent never
   self-adjudicates.** The agent surfaces divergences as candidates and
   recomputes from the owner's ticked worksheet. It never ticks PASS/FAIL
   itself and never free-corrects a factual verdict.
-- **Trap-catalog provenance + reviewed-only correction.** `reviewed` entries
-  are owner-grounded and may correct/block; `drafts` are model-proposed and
-  flag-only. No fact in `reviewed` is model-sourced.
+- **Reviewed means evidenced.** Owner or trap provenance alone does not replace
+  a source. An authoritative claim carries evidence, applicability,
+  transferability, uncertainty, review lifecycle, and conflict state. Draft or
+  quarantined claims never correct/block as reviewed truth.
 - **Green-field boundary + import-purity.** No `sealai_v2.* ↔ app.*` imports,
   either direction — enforced by
   `backend/tests/architecture/test_v2_import_boundary.py`. This still applies
@@ -144,13 +160,18 @@ state machine.
   it up. This exact bug class has caused multiple real incidents in this
   repo — always add the compose passthrough in the SAME patch as the settings
   field.
+- **Manufacturer handoff fails closed.** No capability may be marked verified by
+  its submitting manufacturer. Commercial membership never changes technical
+  fit. Handoff stays disabled until Capability Profile v0, independent review,
+  conflict-of-interest controls, and legal readiness are proven.
 - **Feature work lands flag-gated, default OFF, byte-identical when unset**
   unless the owner explicitly says otherwise. Prove it with a targeted eval
   or an explicit before/after diff against live data before activating.
-- **HALT-gate rhythm.** Plan → owner gate → build → review; never auto past a
-  gate. A self-caused production incident is itself a HALT point — report and
-  stop, do not self-commit a fix to `main` without checking back with the
-  owner first, even when the fix is already tested and correct.
+- **Autonomy never bypasses a hard gate.** An explicitly authorized autonomous
+  workstream continues through non-blocking implementation and CI checkpoints.
+  It does not self-adjudicate technical truth, legal approval, independent
+  review, or final release evidence. A production incident triggers containment
+  or rollback before further promotion.
 - **Secret hygiene.** Offline tests use a fake LLM client — no key needed. A
   live eval REPLAY sources `OPENAI_API_KEY` transiently — never into logs,
   never committed. `.env*` stays never-read/printed/committed.
@@ -173,8 +194,9 @@ state machine.
 - Production deploys are triggered ONLY via `ops/release-backend-v2.sh`
   (backend) or `ops/release-frontend.sh` (marketing) — both are health-gated
   with smoke tests and an automatic rollback tag. `frontend-v2`/dashboard
-  deploys via its live `dist/` bind-mount (`npm run build` = deploy) — a
-  different mechanism, be explicit about which one you mean.
+  currently deploys via its live `dist/` bind-mount (`npm run build` = deploy).
+  This is a documented migration gap, not the target architecture; do not treat
+  it as an immutable release.
 
 ## Canonical Backend Entry Points (`backend/sealai_v2/`)
 
@@ -288,6 +310,8 @@ calculated value, open point, review required, manufacturer review basis.
 ## Definition Of Done
 
 - Touched response paths preserve the response contract / guard coverage.
+- The change maps to the current SSoT horizon, principles, hard gates, and
+  maturity state; Not-now scope remains disabled and honestly labeled.
 - Backend tests covering the touched contracts pass; full
   `pytest sealai_v2/ -q` stays green.
 - No secrets, environment files, database mutations, or dependency changes
@@ -296,6 +320,8 @@ calculated value, open point, review required, manufacturer review basis.
   proven (not assumed) before merge.
 - Historical/dead code is removed, or explicitly documented as retired with
   owner and removal criterion — not left ambiguous.
+- Claims, case decisions, manufacturer capabilities, and public maturity never
+  exceed their available evidence or review status.
 
 ## Retired: V1 / V10 / V1.8 (historical only)
 

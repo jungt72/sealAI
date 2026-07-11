@@ -1,10 +1,6 @@
 name: Deploy Backend V2
 
 on:
-  workflow_run:
-    workflows: ["Build and Push Backend V2"]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       source_sha:
@@ -15,14 +11,6 @@ on:
         description: "Optional fully qualified image ref; otherwise GHCR commit tag"
         required: false
         type: string
-      release_stage:
-        description: "candidate defers paid eval; final requires complete adjudicated replay"
-        required: true
-        default: candidate
-        type: choice
-        options:
-          - candidate
-          - final
 
 permissions:
   contents: read
@@ -34,7 +22,6 @@ env:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -44,10 +31,9 @@ jobs:
         shell: bash
         env:
           INPUT_SHA: ${{ inputs.source_sha }}
-          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          sha="${INPUT_SHA:-${WORKFLOW_SHA:-${GITHUB_SHA}}}"
+          sha="${INPUT_SHA}"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source SHA" >&2; exit 2; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "short_sha=${sha:0:8}" >> "$GITHUB_OUTPUT"
@@ -77,13 +63,12 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.source.outputs.sha }}
           BACKEND_V2_IMAGE: ${{ steps.image.outputs.ref }}
-          RELEASE_STAGE: ${{ inputs.release_stage || 'candidate' }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          envs: EXPECTED_SHA,BACKEND_V2_IMAGE,RELEASE_STAGE
+          envs: EXPECTED_SHA,BACKEND_V2_IMAGE
           script: |
             set -euo pipefail
             cd /home/thorsten/sealai
@@ -99,8 +84,4 @@ jobs:
             }
             git checkout --detach "$EXPECTED_SHA"
             test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-            case "$RELEASE_STAGE" in
-              candidate|final) ;;
-              *) echo "invalid release stage: $RELEASE_STAGE" >&2; exit 22 ;;
-            esac
-            BACKEND_V2_IMAGE="$BACKEND_V2_IMAGE" ./ops/release-backend-v2.sh "--$RELEASE_STAGE"
+            BACKEND_V2_IMAGE="$BACKEND_V2_IMAGE" ./ops/release-backend-v2.sh --final

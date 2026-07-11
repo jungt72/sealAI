@@ -6,8 +6,8 @@
 # watches ops/release-backend.sh and checks V1 sentinels, so a raw
 # `docker compose … --profile v2 up --build backend-v2` shipped UNGATED. This
 # wrapper supports two explicit release stages and bakes a start-time marker so
-# a raw build refuses to run: `candidate` defers the paid eval replay for live
-# validation; `final` binds the release to an adjudicated replay.
+# a raw build refuses to run: `candidate` is restricted to explicitly declared
+# non-production environments; `final` binds production to an adjudicated replay.
 #
 # Gate chain:
 #   1. TREE_HASH = ops/tree-hash.sh backend/sealai_v2   (served-runtime content)
@@ -31,8 +31,8 @@ usage() {
   cat <<'EOF'
 usage: ops/release-backend-v2.sh [--candidate|--final]
 
-  --candidate  Deploy an explicitly unvalidated live candidate without a paid
-               eval replay. Backup, migration, identity and smoke gates remain.
+  --candidate  Deploy an explicitly unvalidated candidate only when APP_ENV is
+               development, test, or staging. Never accepted for production.
   --final      Deploy a final release. Requires a fully adjudicated eval replay.
                This is the default when no option is supplied.
 EOF
@@ -60,9 +60,17 @@ LOCAL_BACKEND_IMAGE="sealai-backend-v2:local"
 ROLLBACK_IMAGE_OVERRIDE="${SEALAI_V2_ROLLBACK_IMAGE:-}"
 
 die() { echo "release-backend-v2: $*" >&2; exit 1; }
+env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
+
+DEPLOY_ENV="$(env_prod APP_ENV)"
+DEPLOY_ENV="${DEPLOY_ENV:-production}"
 
 echo ">> release stage = ${RELEASE_STAGE}"
 if [[ "${RELEASE_STAGE}" == "candidate" ]]; then
+  case "${DEPLOY_ENV}" in
+    development|test|staging) ;;
+    *) die "candidate releases are forbidden for APP_ENV=${DEPLOY_ENV}; production requires --final" ;;
+  esac
   echo "!! CANDIDATE: paid eval replay intentionally deferred; this is not final release approval." >&2
 fi
 
@@ -120,7 +128,6 @@ echo ">> rollback artifact preserved before build: ${ROLLBACK_HOLD_TAG} -> ${ROL
 # .env.prod (SEALAI_V2_ prefix); resolve provider/model with the settings.py defaults (provider→openai,
 # model→gpt-5.5) — pure config, no models.list() (the gate stays network-free). Read directly from
 # .env.prod (the file --env-file feeds the container) rather than the shell env. ──────────────────
-env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
 SERVED_L1_PROVIDER="$(env_prod SEALAI_V2_L1_PROVIDER)"; SERVED_L1_PROVIDER="${SERVED_L1_PROVIDER:-openai}"
 SERVED_L1_MODEL="$(env_prod SEALAI_V2_L1_MODEL)";       SERVED_L1_MODEL="${SERVED_L1_MODEL:-gpt-5.5}"
 SERVED_L1="${SERVED_L1_PROVIDER}/${SERVED_L1_MODEL}"

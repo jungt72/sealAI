@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "ssot_version": "2.0",
+  "updated_at": "2026-07-11",
+  "status_values": [
+    "verified_available",
+    "beta",
+    "pilot",
+    "in_build",
+    "planned",
+    "out_of_scope"
+  ],
+  "horizons": {
+    "H0": {
+      "name": "Governance",
+      "status": "in_build",
+      "public_label": "Im Aufbau"
+    },
+    "H1": {
+      "name": "Knowledge Core",
+      "status": "pilot",
+      "public_label": "Pilot"
+    },
+    "H2": {
+      "name": "Case Core",
+      "status": "in_build",
+      "public_label": "Im Aufbau"
+    },
+    "H3": {
+      "name": "Engineering & Failure",
+      "status": "planned",
+      "public_label": "Geplant"
+    },
+    "H4": {
+      "name": "Manufacturer Network",
+      "status": "planned",
+      "public_label": "Geplant"
+    },
+    "H5": {
+      "name": "Lifecycle",
+      "status": "planned",
+      "public_label": "Geplant"
+    }
+  },
+  "modes": {
+    "knowledge": {
+      "horizon": "H1",
+      "status": "pilot",
+      "activation_gate": "M15"
+    },
+    "comparison": {
+      "horizon": "H1",
+      "status": "pilot",
+      "activation_gate": "M15"
+    },
+    "engineering": {
+      "horizon": "H3",
+      "status": "in_build",
+      "activation_gate": "G3"
+    },
+    "case": {
+      "horizon": "H2",
+      "status": "in_build",
+      "activation_gate": "G6"
+    },
+    "failure": {
+      "horizon": "H3",
+      "status": "planned",
+      "activation_gate": "G8"
+    },
+    "substitution": {
+      "horizon": "H3",
+      "status": "planned",
+      "activation_gate": "G8"
+    },
+    "manufacturer_fit": {
+      "horizon": "H4",
+      "status": "planned",
+      "activation_gate": "M8"
+    },
+    "lifecycle": {
+      "horizon": "H5",
+      "status": "planned",
+      "activation_gate": "G8"
+    }
+  }
+}
