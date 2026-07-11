@@ -40,6 +40,29 @@ def test_final_is_fail_closed_and_candidate_is_auditable():
     assert '"eval_status": eval_status' in script
 
 
+def test_running_rollback_artifact_is_preserved_before_local_build():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    preserve = script.index('ROLLBACK_HOLD_TAG="sealai-backend-v2:rollback-hold-')
+    build = script.index('build --build-arg "GATE_TREE_HASH=${TREE_HASH}"')
+    assert preserve < build
+    assert 'docker tag "${ROLLBACK_SOURCE}" "${ROLLBACK_HOLD_TAG}"' in script
+    assert "Never `docker commit`" in script
+    assert "\ndocker commit " not in script
+
+
+def test_missing_running_image_requires_identity_matched_override():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'ROLLBACK_IMAGE_OVERRIDE="${SEALAI_V2_ROLLBACK_IMAGE:-}"' in script
+    assert '"${OVERRIDE_REVISION}" == "${RUNNING_REVISION}"' in script
+    assert '"${OVERRIDE_TREE_HASH}" == "${RUNNING_TREE_HASH}"' in script
+    assert "build_identity verify" in script
+    assert (
+        "docker image inspect --format '{{.Id}}' \"${LOCAL_BACKEND_IMAGE}\"" in script
+    )
+
+
 def test_ci_uses_candidate_for_iteration_and_requires_explicit_final():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
