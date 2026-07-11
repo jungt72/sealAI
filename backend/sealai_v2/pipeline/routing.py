@@ -316,7 +316,9 @@ def _is_explicit_knowledge_overview(
     text = question or ""
     if not _KNOWLEDGE_REQUEST_RE.search(text):
         return False
-    if not (_DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)):
+    if not (
+        _DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)
+    ):
         return False
     return not _CONCRETE_CASE_REFERENCE_RE.search(text)
 
