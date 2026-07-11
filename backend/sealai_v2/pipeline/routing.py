@@ -315,7 +315,7 @@ def is_explicit_knowledge_overview(
     """
 
     text = question or ""
-    if not _KNOWLEDGE_REQUEST_RE.search(text):
+    if not (_KNOWLEDGE_REQUEST_RE.search(text) or _COMPARISON_RE.search(text)):
         return False
     if not (
         _DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)

@@ -100,6 +100,17 @@ def test_failure_mode_vocabulary_in_knowledge_overview_is_not_a_diagnosis():
     assert res.diagnose is None
 
 
+def test_failure_mode_axes_in_material_comparison_are_not_a_diagnosis():
+    res = _run(
+        _pipeline(FakeLlmClient("Antwort")),
+        (
+            "Vergleiche NBR und PTFE als Dichtungswerkstoffe: Rückstellung/Kriechen, "
+            "Reibung/Verschleiß, Grenzen und Versagensmechanismen."
+        ),
+    )
+    assert res.diagnose is None
+
+
 def test_no_diagnosis_when_store_off():
     res = _run(
         _pipeline(FakeLlmClient("Antwort"), with_store=False),
