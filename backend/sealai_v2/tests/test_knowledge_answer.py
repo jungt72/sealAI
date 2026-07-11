@@ -160,6 +160,7 @@ def test_reviewed_expert_profiles_cover_core_subjects() -> None:
     catalog = load_fachkarten()
     expected = {
         "FK-PTFE-ENGINEERING-PROFILE": "material",
+        "FK-NBR-UEBERBLICK": "material",
         "FK-ORING-ENGINEERING-PROFILE": "seal_type",
         "FK-RWDR-ENGINEERING-PROFILE": "seal_type",
         "FK-GLRD-ENGINEERING-PROFILE": "seal_type",

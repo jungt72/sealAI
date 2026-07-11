@@ -609,6 +609,7 @@
     },
     {
       "id": "FK-NBR-UEBERBLICK",
+      "subject_type": "material",
       "review_state": "reviewed",
       "provenance": [
         "deep-research:codex-2026-07-11:nbr-overview"
