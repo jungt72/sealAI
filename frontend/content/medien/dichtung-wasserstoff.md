@@ -3,7 +3,7 @@ title: "Dichtung für Wasserstoff: Werkstofffragen und Prüfpunkte"
 description: "Wasserstoff-Anwendungen für Dichtungen einordnen: Permeation, Druck, Temperatur, Werkstoff, Freigaben und Herstellerprüfung."
 category: "Medienbeständigkeit"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung für Wasserstoff: Werkstofffragen und Prüfpunkte

@@ -43,10 +43,12 @@ document's commit, not what's planned.
 
 ## P1 — flagged, not done (needs your call, not a technical blocker)
 
-- [ ] **Named author/reviewer.** Real E-E-A-T improvement requires a real
-      named person with real credentials — not something to invent. If you
-      (or another named technical reviewer) want to be attributed, that's a
-      one-field change once you tell me who.
+- [x] **Named author/reviewer** — done 2026-07-11: owner authorized
+      "Thorsten Jung"; all 25 articles carry the author, Article/TechArticle
+      schema emits a Person entity, articles show a visible byline, and
+      /methodik#redaktionelle-verantwortung names editorial responsibility
+      (which is also the EU AI Act Art. 50(4) exemption condition, ahead of
+      the 2026-08-02 start date).
 - [ ] **`/probleme/` URL reframing.** The concept suggests problem-first URLs
       (`/probleme/wellendichtring-undicht/`) instead of the current
       `/wissen/wellendichtring-undicht`. The content already covers this
@@ -56,6 +58,11 @@ document's commit, not what's planned.
       impressions/rankings on the current URLs, not before.
 
 ## P2 — blocked on real data, not technical work
+
+- [ ] **www.sealingai.com has no DNS record** (found 2026-07-11): any
+      www backlink/type-in fails before the app's www→apex redirect can
+      run. Needs an A/CNAME record at the registrar plus cert/server_name
+      in nginx.
 
 - [ ] `/impressum` — Handelsregister, Geschäftsführer, USt-ID, Anschrift.
 - [ ] `/kontakt` — a real, monitored contact email or form backend.

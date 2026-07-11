@@ -3,7 +3,7 @@ title: "Viton-Dichtung: FKM-Bezug, Einsatzfelder und Grenzen"
 description: "Viton als Handelsname im FKM-Kontext richtig einordnen: Medien, Temperatur, Compound, Freigaben und Herstellerprüfung."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Viton-Dichtung: FKM-Bezug, Einsatzfelder und Grenzen

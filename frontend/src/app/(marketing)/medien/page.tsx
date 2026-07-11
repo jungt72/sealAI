@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Droplets, FlaskConical } from "lucide-react";
 import { getAllContentDocs } from "@/lib/content/loader";
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 import { generateBreadcrumbSchema, generateCollectionPageSchema } from "@/lib/seo/jsonLd";
 
 export const metadata: Metadata = createMetadata({
@@ -10,6 +10,7 @@ export const metadata: Metadata = createMetadata({
   description:
     "Öl, Dampf, Wasserstoff oder Chemikalien im konkreten Dichtungsfall einordnen und bessere Herstellerfragen vorbereiten.",
   path: "/medien",
+  image: DEFAULT_OG_IMAGE,
 });
 
 export default async function MedienIndexPage() {

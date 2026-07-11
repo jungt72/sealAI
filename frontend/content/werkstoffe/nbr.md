@@ -3,7 +3,7 @@ title: "NBR-Dichtung: Einsatzbereiche, Grenzen und Vergleich zu FKM"
 description: "Orientierung zu NBR-Dichtungen für ölnahe Anwendungen mit klaren Angaben für eine prüfbare technische Anfrage."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # NBR-Dichtung: Einsatzbereiche, Grenzen und Vergleich zu FKM

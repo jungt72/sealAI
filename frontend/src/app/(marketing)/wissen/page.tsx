@@ -2,7 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, BookOpen, CheckCircle2 } from "lucide-react";
 import { getAllContentDocs } from "@/lib/content/loader";
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 import { generateBreadcrumbSchema, generateCollectionPageSchema } from "@/lib/seo/jsonLd";
 
 export const metadata: Metadata = createMetadata({
@@ -10,6 +10,7 @@ export const metadata: Metadata = createMetadata({
   description:
     "SealingPedia bündelt fachliche Orientierung für konkrete Dichtungsfälle: Begriffe, Schadensbilder, Normbezug und bessere Herstellerfragen.",
   path: "/wissen",
+  image: DEFAULT_OG_IMAGE,
 });
 
 const principles = [
