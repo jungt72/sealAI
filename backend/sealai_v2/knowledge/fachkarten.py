@@ -25,6 +25,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from sealai_v2.core.knowledge_answer import ANSWER_FACETS, SUBJECT_TYPES
+
 _CATALOG_DIR = Path(__file__).resolve().parent
 _DEFAULT_FILE = _CATALOG_DIR / "fachkarten_seed.json"
 
@@ -70,6 +72,9 @@ class Claim:
         str, ...
     ] = ()  # path (i): "trap-correct:…"/"owner:…"; path (ii): research origin
     kind: str = "family_tendency"  # epistemics — see _CLAIM_KINDS (default = safe family-level tendency)
+    # Deterministic engineering-answer coverage metadata. Unlike ``kind`` (epistemic status), these
+    # facets describe where the claim belongs in a professional answer profile.
+    answer_facets: tuple[str, ...] = ()
 
     @property
     def reviewed(self) -> bool:
@@ -90,6 +95,7 @@ class Fachkarte:
     version: str = ""
     tags: tuple[str, ...] = ()
     xrefs: tuple[str, ...] = ()
+    subject_type: str = "general"
 
     def reviewed_claims(self) -> tuple[Claim, ...]:
         return tuple(c for c in self.claims if c.review_state == "reviewed")
@@ -131,12 +137,21 @@ def _claim(raw: dict, card_id: str) -> Claim:
     kind = str(raw.get("kind", "family_tendency")).strip() or "family_tendency"
     if kind not in _CLAIM_KINDS:
         raise ValueError(f"{card_id}: claim kind {kind!r} not in {_CLAIM_KINDS}")
+    answer_facets = tuple(
+        dict.fromkeys(
+            str(f).strip() for f in raw.get("answer_facets", ()) if str(f).strip()
+        )
+    )
+    unknown_facets = tuple(f for f in answer_facets if f not in ANSWER_FACETS)
+    if unknown_facets:
+        raise ValueError(f"{card_id}: unknown answer_facets {unknown_facets!r}")
     c = Claim(
         text=str(raw["text"]).strip(),
         review_state=state,
         sources=tuple(str(s) for s in raw.get("sources", [])),
         provenance=tuple(str(p) for p in raw.get("provenance", [])),
         kind=kind,
+        answer_facets=answer_facets,
     )
     if not c.text:
         raise ValueError(f"{card_id}: empty claim text")
@@ -162,6 +177,11 @@ def _card(raw: dict) -> Fachkarte:
         raise ValueError(f"{cid}: at least one claim required")
     if not raw.get("provenance"):
         raise ValueError(f"{cid}: provenance is mandatory (owner-grounding audit)")
+    subject_type = str(raw.get("subject_type", "general")).strip() or "general"
+    if subject_type not in SUBJECT_TYPES:
+        raise ValueError(
+            f"{cid}: subject_type {subject_type!r} not in {sorted(SUBJECT_TYPES)}"
+        )
     card = Fachkarte(
         id=cid,
         scope={d: [str(v) for v in scope.get(d, [])] for d in _SCOPE_DIMS},
@@ -171,6 +191,7 @@ def _card(raw: dict) -> Fachkarte:
         version=str(raw.get("version", "")),
         tags=tuple(str(t) for t in raw.get("tags", [])),
         xrefs=tuple(str(x) for x in raw.get("xrefs", [])),
+        subject_type=subject_type,
     )
     # a reviewed card must actually carry a reviewed claim (else it cannot ground anything)
     if card.review_state == "reviewed" and not card.reviewed_claims():

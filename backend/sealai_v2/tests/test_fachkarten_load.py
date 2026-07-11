@@ -15,14 +15,14 @@ def _write(tmp_path, cards):
     return p
 
 
-def test_seed_loads_twelve_reviewed_cards():
-    # The original 11 reviewed cards are joined by the primary-source-reviewed NBR overview;
-    # the remaining research cards stay draft.
+def test_seed_loads_reviewed_core_and_expert_profile_cards():
+    # The original 12 reviewed cards are joined by five primary-source-reviewed engineering
+    # profiles; the remaining research cards stay draft.
     cat = load_fachkarten()
-    assert len(cat.reviewed()) == 12
+    assert len(cat.reviewed()) == 17
     assert cat.by_id("FK-PHARMA-SIP-VALIDIERUNG").review_state == "reviewed"
     assert cat.by_id("FK-ERSATZDICHTUNG-IDENTIFIKATION").review_state == "reviewed"
-    assert len(cat.cards) == 50
+    assert len(cat.cards) == 55
     # circularity guard held: every reviewed claim is owner/trap-grounded (path i) or sourced (path ii)
     # — checked across ALL cards (a draft card's reviewed_claims() is always empty by construction, so
     # this is equivalent to iterating cat.reviewed(), just doesn't assume which cards are reviewed).

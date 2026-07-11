@@ -38,6 +38,9 @@ _TYPE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bV-Ring\b", re.IGNORECASE), "V-Ring"),
     (re.compile(r"\bNutring\b", re.IGNORECASE), "Nutring"),
     (re.compile(r"\bWellendichtring\b", re.IGNORECASE), "Wellendichtring"),
+    (re.compile(r"\bGleitringdichtung\b", re.IGNORECASE), "Gleitringdichtung"),
+    (re.compile(r"\bGLRD\b", re.IGNORECASE), "Gleitringdichtung"),
+    (re.compile(r"\bMechanical\s+Seal\b", re.IGNORECASE), "Gleitringdichtung"),
 ]
 
 

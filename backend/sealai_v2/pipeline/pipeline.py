@@ -120,7 +120,12 @@ _log = logging.getLogger("sealai_v2.pipeline")
 # pack is ever added/enabled — this list is the server-side allowlist for `suggested_seal_type`
 # (mirrors how `archetype` is validated against the archetype store's own keys), so an LLM can never
 # suggest a pack the frontend doesn't actually have.
-_KNOWN_SEAL_TYPES: tuple[str, ...] = ("rwdr", "hydraulik")
+_KNOWN_SEAL_TYPES: tuple[str, ...] = (
+    "rwdr",
+    "o-ring",
+    "gleitringdichtung",
+    "hydraulik",
+)
 
 
 def _build_retriever(settings: Settings) -> Retriever:
@@ -852,6 +857,11 @@ class Pipeline:
                     grounding_facts=cached_answer.grounding_facts
                 )
             else:
+                from sealai_v2.core.knowledge_answer import knowledge_retrieval_limit
+
+                retrieval_k = knowledge_retrieval_limit(
+                    question, material_terms=self.knowledge_material_terms
+                )
                 with _staged(timer, progress, "ground_ms", "ground"):
                     retrieval = await stages.ground(
                         self.retriever,
@@ -859,6 +869,7 @@ class Pipeline:
                         question,
                         tenant_id=scope.tenant_id,
                         case_facts=mem.case_state,
+                        k=retrieval_k,
                     )
             grounding_facts = (
                 retrieval.grounding_facts
@@ -1160,6 +1171,25 @@ class Pipeline:
                     and self.smalltalk_token_streaming_enabled
                     and token_sink is not None
                 )
+            # Deterministic engineering answer profile: only pure knowledge/comparison routes receive
+            # this structure. It specifies required facets and measured evidence coverage; it owns no
+            # technical fact and cannot relax grounding/no-fake-precision.
+            knowledge_answer_plan = None
+            if route_decision is not None and route_decision.route in {
+                RouteName.GENERAL_SEALING_KNOWLEDGE,
+                RouteName.MATERIAL_KNOWLEDGE,
+                RouteName.MATERIAL_COMPARISON,
+            }:
+                from sealai_v2.core.knowledge_answer import build_knowledge_answer_plan
+
+                _kap = build_knowledge_answer_plan(
+                    question,
+                    material_terms=self.knowledge_material_terms,
+                    grounding_facts=l1_grounding,
+                    route_name=route_decision.route.value,
+                )
+                knowledge_answer_plan = _kap.to_dict() if _kap is not None else None
+
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
             # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
             # None when OFF (byte-identical).
@@ -1236,6 +1266,7 @@ class Pipeline:
                         contract=contract,  # None → byte-identical; ON → renderer-mode (Phase 2)
                         baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
                         material_params=material_params,  # None → byte-identical no-table
+                        knowledge_answer_plan=knowledge_answer_plan,
                         risk_flags=(
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
@@ -1303,6 +1334,8 @@ class Pipeline:
                             coverage=coverage,
                             contract=contract,
                             baseline_hardening=self.baseline_hardening_enabled,
+                            material_params=material_params,
+                            knowledge_answer_plan=knowledge_answer_plan,
                             correction_note=_guard_note(_gr),
                             risk_flags=(
                                 list(risk_flags)

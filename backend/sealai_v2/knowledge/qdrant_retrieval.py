@@ -24,6 +24,10 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sealai_v2.core.contracts import GroundingFact, RetrievalResult
+from sealai_v2.core.knowledge_answer import (
+    build_knowledge_answer_plan,
+    facets_for_payload,
+)
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, load_fachkarten
 
@@ -54,13 +58,6 @@ _REVIEWED_BACKFILL_TARGET_FACTS = 3
 # its OWN ratio, chosen against that mode's OWN score distribution — see qdrant_hybrid_enabled callers.
 _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE = 0.75
 _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID = 0.10
-_OVERVIEW_KIND_SLOTS = (
-    "definition",
-    "family_tendency",
-    "family_tendency",
-    "safety_caution",
-    "qualification_required",
-)
 
 
 def _query_text(q: str, prefix: str = "query: ") -> str:
@@ -94,6 +91,8 @@ def _hits_to_result(points) -> RetrievalResult:
             sources=tuple(p.get("sources", ())),
             kind="card",
             claim_kind=p.get("claim_kind", ""),
+            answer_facets=tuple(p.get("answer_facets", ())),
+            subject_type=p.get("subject_type", "general"),
         )
         bucket = reviewed if p.get("review_state") == "reviewed" else provisional
         bucket.append(fact)
@@ -163,75 +162,111 @@ def _matches_material_scope(point, material_tokens: set[str]) -> bool:
     ) or _card_id_matches_material(point, material_tokens)
 
 
-def _select_material_overview(points, k: int, query: str):
-    """Select a balanced reviewed evidence set for a broad single-material question.
+def _point_matches_subject(point, subject: str) -> bool:
+    needle = subject.lower()
+    payload = _payload(point)
+    scope = payload.get("scope", {}) or {}
+    values = [
+        str(value).lower()
+        for dim in ("material", "medium", "application", "property")
+        for value in scope.get(dim, ())
+    ]
+    return needle in str(payload.get("card_id", "")).lower() or any(
+        needle == value or needle in value for value in values
+    )
+
+
+def _select_knowledge_overview(points, k: int, query: str):
+    """Select a facet-balanced reviewed evidence set for a broad knowledge question.
 
     Vector similarity answers "which passages resemble the text?", not "which facets make a useful
-    overview?". For a query like "Details zu NBR" that distinction used to produce two isolated risk
-    limits and no definition. This post-retrieval policy is deterministic and corpus-driven: it only
-    reorders already-retrieved, reviewed claims and never invents content.
-
-    A focused material+medium/property/application query keeps native semantic ranking. The overview
-    path requires a material subject and no second technical scope dimension or comparison language.
-    When a material-specific card contains a reviewed definition, its claims form the coherent source
-    set; otherwise normal ranking remains untouched.
+    engineering overview?". This deterministic post-retrieval policy covers the required answer
+    facets and balances comparison subjects. It only reorders already-retrieved reviewed claims and
+    never creates content. Focused application questions keep native semantic ranking because the
+    answer planner returns ``None`` for them.
     """
     candidates = list(points)
     limit = max(0, k)
     if not candidates or limit == 0:
         return None
-    material_tokens = _detected_scope_tokens(candidates, query, "material")
-    if not material_tokens:
+    material_terms = tuple(
+        dict.fromkeys(
+            value
+            for point in candidates
+            for value in _scope_dim(point, "material")
+            if value
+        )
+    )
+    plan = build_knowledge_answer_plan(query, material_terms=material_terms)
+    if plan is None:
         return None
-    if any(
-        _detected_scope_tokens(candidates, query, dim)
-        for dim in ("medium", "property", "application")
-    ):
-        return None
-    query_lower = (query or "").lower()
-    if any(
-        marker in query_lower
-        for marker in (" vs ", " versus ", "vergleich", "unterschied")
-    ):
-        return None
-
     eligible = [
         point
         for point in candidates
         if _review_state(point) == "reviewed"
-        and _matches_material_scope(point, material_tokens)
+        and (
+            not plan.subjects
+            or any(_point_matches_subject(point, subject) for subject in plan.subjects)
+        )
     ]
-    definition_cards = {
-        str(_payload(point).get("card_id", ""))
-        for point in eligible
-        if _payload(point).get("claim_kind") == "definition"
-        and _card_id_matches_material(point, material_tokens)
-    }
-    if not definition_cards:
+    if not eligible:
         return None
-    coherent = [
-        point
-        for point in eligible
-        if str(_payload(point).get("card_id", "")) in definition_cards
-    ]
+    if plan.subject_type in {"seal_type", "medium"}:
+        typed = [
+            point
+            for point in eligible
+            if _payload(point).get("subject_type") == plan.subject_type
+        ]
+        if typed:
+            eligible = typed
+    if plan.subject_type == "material" and plan.subjects:
+        subject_specific = [
+            point
+            for point in eligible
+            if any(
+                subject.lower() in str(_payload(point).get("card_id", "")).lower()
+                for subject in plan.subjects
+            )
+        ]
+        covered_subjects = {
+            subject
+            for subject in plan.subjects
+            if any(
+                subject.lower() in str(_payload(point).get("card_id", "")).lower()
+                for point in subject_specific
+            )
+        }
+        if covered_subjects == set(plan.subjects):
+            eligible = subject_specific
 
-    selected = []
+    selected: list = []
     used: set[int] = set()
-    for claim_kind in _OVERVIEW_KIND_SLOTS:
-        for index, point in enumerate(coherent):
-            if index in used or _payload(point).get("claim_kind") != claim_kind:
-                continue
-            selected.append(point)
-            used.add(index)
-            break
+    subject_slots = plan.subjects if plan.comparison and plan.subjects else ("",)
+    for facet in plan.required_facets:
+        for subject in subject_slots:
+            for index, point in enumerate(eligible):
+                if index in used or facet not in facets_for_payload(_payload(point)):
+                    continue
+                if subject and not _point_matches_subject(point, subject):
+                    continue
+                selected.append(point)
+                used.add(index)
+                break
+            if len(selected) >= limit:
+                break
         if len(selected) >= limit:
             break
-    for index, point in enumerate(coherent):
+    for index, point in enumerate(eligible):
         if len(selected) >= limit:
             break
         if index not in used:
             selected.append(point)
     return selected if len(selected) >= min(3, limit) else None
+
+
+def _select_material_overview(points, k: int, query: str):
+    """Backward-compatible name retained for tests and downstream imports."""
+    return _select_knowledge_overview(points, k, query)
 
 
 class _ScoredPoint:
@@ -351,6 +386,8 @@ def claim_points(catalog: FachkartenCatalog):
                 "review_state": claim.review_state,
                 "claim_text": claim.text,
                 "claim_kind": claim.kind,
+                "answer_facets": list(claim.answer_facets),
+                "subject_type": card.subject_type,
                 "sources": list(claim.sources),
                 "provenance": list(card.provenance),
                 "scope": {k: list(v) for k, v in card.scope.items()},
@@ -666,7 +703,7 @@ class QdrantFachkartenRetriever:
         # branch above produced) BEFORE any reranking — the cross-encoder only rescores its own top-N
         # slice, leaving the untouched tail on the old scale, so comparing a post-rerank top_score
         # against a pre-rerank tail score would silently mix two incompatible scales (same incident).
-        overview_selected = _select_material_overview(points, k, query)
+        overview_selected = _select_knowledge_overview(points, k, query)
         selected = overview_selected or _select_points_with_reviewed_backfill(
             points, k, query, min_relative_score=min_relative_score
         )

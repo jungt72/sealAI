@@ -269,7 +269,7 @@ def test_claim_points_one_per_claim_with_payload():
     assert all("vorläufig" in p["quelle"] for p in drafts)
 
 
-def test_material_overview_selects_definition_strengths_limit_and_qualification():
+def test_material_overview_selects_faceted_definition_strength_limit_and_qualification():
     scope = {"material": ["NBR"], "medium": [], "property": [], "application": []}
 
     def point(kind: str, text: str, score: float):
@@ -299,9 +299,9 @@ def test_material_overview_selects_definition_strengths_limit_and_qualification(
     assert [p.payload["claim_kind"] for p in selected] == [
         "definition",
         "family_tendency",
-        "family_tendency",
         "safety_caution",
         "qualification_required",
+        "family_tendency",
     ]
 
 
@@ -322,6 +322,47 @@ def test_material_overview_policy_does_not_override_focused_property_query():
     ]
 
     assert _select_material_overview(points, 5, "Ozonbestaendigkeit von NBR") is None
+
+
+def test_seal_type_overview_does_not_pull_material_cards_that_only_name_an_application():
+    seal_profile = [
+        _FakePoint(
+            {
+                "review_state": "reviewed",
+                "card_id": f"FK-ORING-{index}",
+                "claim_kind": kind,
+                "answer_facets": facets,
+                "subject_type": "seal_type",
+                "scope": {"application": ["O-Ring"]},
+            },
+            0.90 - index * 0.01,
+        )
+        for index, (kind, facets) in enumerate(
+            [
+                ("definition", ["definition", "mechanism"]),
+                ("system_dependent", ["design_interfaces", "parameters"]),
+                ("safety_caution", ["limits", "failure_modes"]),
+            ]
+        )
+    ]
+    material_mention = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+            "claim_kind": "definition",
+            "answer_facets": ["definition"],
+            "subject_type": "material",
+            "scope": {"material": ["PTFE"], "application": ["O-Ring"]},
+        },
+        0.99,
+    )
+
+    selected = _select_material_overview(
+        [material_mention, *seal_profile], 5, "Erklaere einen O-Ring"
+    )
+
+    assert selected is not None
+    assert all(point.payload["subject_type"] == "seal_type" for point in selected)
 
 
 def test_retrieve_rejects_blank_tenant():
