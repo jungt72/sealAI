@@ -144,7 +144,7 @@ def test_knowledge_answer_drops_redundant_recommendation_block():
     assert "PTFE nur nach Prüfung einsetzen" not in answer.text
 
 
-def test_knowledge_answer_repairs_missing_claim_level_facet_coverage():
+def test_knowledge_answer_supplements_missing_claim_level_facet_coverage():
     plan = _knowledge_plan()
     plan["sections"] = [
         {
@@ -155,12 +155,7 @@ def test_knowledge_answer_repairs_missing_claim_level_facet_coverage():
             "missing_facets": [],
         }
     ]
-    client = ScriptedFakeLlmClient(
-        [
-            _payload(evidence_ids=["claim-definition"]),
-            _payload(evidence_ids=["claim-definition", "claim-parameters"]),
-        ]
-    )
+    client = FakeLlmClient(_payload(evidence_ids=["claim-definition"]))
     facts = (
         GroundingFact(
             "PTFE definition",
@@ -188,10 +183,11 @@ def test_knowledge_answer_repairs_missing_claim_level_facet_coverage():
         )
     )
 
-    assert len(client.calls) == 2
+    assert len(client.calls) == 1
     assert "claim-definition, claim-parameters" in client.calls[0]["system"]
     assert "EV-1" not in client.calls[0]["system"]
     assert "geprüft belegt" in answer.text
+    assert "PTFE parameter" in answer.text
 
 
 def test_second_semantic_failure_stops_without_retry_loop():
