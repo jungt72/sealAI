@@ -42,7 +42,7 @@ _POINT_NAMESPACE = uuid.UUID(
 )  # uuid5 NAMESPACE_URL
 _REVIEWED_BACKFILL_FACTOR = 24
 _REVIEWED_BACKFILL_MAX_CANDIDATES = 128
-_REVIEWED_BACKFILL_MAX_FACTS = 2
+_REVIEWED_BACKFILL_TARGET_FACTS = 3
 # Incident note (2026-07-03): this ratio is SCALE-DEPENDENT — it only makes sense relative to the
 # score distribution it was calibrated against. Dense cosine similarity decays gently across rank
 # (e.g. top=0.69, rank~68/128=0.58 — still 84% of top), so 0.75 lets a genuinely-relevant reviewed
@@ -193,13 +193,14 @@ def _select_points_with_reviewed_backfill(
     *,
     min_relative_score: float = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE,
 ):
-    """Return the normal top-k, plus a tiny reviewed backfill when top-k is draft-only.
+    """Return the normal top-k, plus enough reviewed facts to ground the answer usefully.
 
     Production Qdrant stores many draft points for broad material topics. A general query such as
     "Informationen zu PTFE" can therefore rank relevant but unreviewed overview claims above the few
-    reviewed safety/caveat cards. The output contract treats only reviewed claims as grounding_facts,
-    so a draft-only top-k makes the turn falsely ungrounded even though reviewed knowledge exists just
-    below the cutoff. Keep the original top-k intact, then add a small, score-bounded reviewed tail.
+    reviewed safety/caveat cards. The output contract treats only reviewed claims as grounding_facts.
+    One reviewed point among four drafts technically grounds the turn, but leaves a broad knowledge
+    question with an unusably narrow one-claim contract. Keep the original top-k intact, then add a
+    small, score-bounded reviewed tail until the reviewed target is reached.
 
     ``min_relative_score`` is SCALE-DEPENDENT (see the constant's docstring) — callers on a non-dense
     score scale (RRF fusion) MUST pass the matching mode-specific ratio, not the dense default.
@@ -207,10 +208,11 @@ def _select_points_with_reviewed_backfill(
     limit = max(0, k)
     candidates = list(points)
     selected = candidates[:limit]
+    reviewed_count = sum(_review_state(p) == "reviewed" for p in selected)
     if (
         limit == 0
         or not candidates
-        or any(_review_state(p) == "reviewed" for p in selected)
+        or reviewed_count >= _REVIEWED_BACKFILL_TARGET_FACTS
     ):
         return selected
 
@@ -250,7 +252,8 @@ def _select_points_with_reviewed_backfill(
             if _card_id_matches_material(p, material_tokens)
         ]
 
-    for _idx, point in eligible[:_REVIEWED_BACKFILL_MAX_FACTS]:
+    missing_reviewed = _REVIEWED_BACKFILL_TARGET_FACTS - reviewed_count
+    for _idx, point in eligible[:missing_reviewed]:
         selected.append(point)
     return selected
 

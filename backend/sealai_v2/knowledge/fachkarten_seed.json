@@ -228,9 +228,12 @@
       "id": "FK-PTFE-KALTFLUSS",
       "review_state": "reviewed",
       "provenance": [
-        "trap-correct:TRAP-PTFE-KALTFLUSS"
+        "trap-correct:TRAP-PTFE-KALTFLUSS",
+        "Parker PTFE Seal Design Guide",
+        "Trelleborg O-Ring Catalogue — PTFE O-Rings",
+        "Chemours Teflon Fluoropolymers Product Selection Guide"
       ],
-      "version": "fachkarten_seed_v0",
+      "version": "fachkarten_seed_v1",
       "matrix_crosscheck": "unchecked",
       "scope": {
         "material": [
@@ -243,11 +246,17 @@
           "Kaltfluss",
           "Kriechen",
           "Rückstellung",
-          "chemische Beständigkeit"
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
         ],
         "application": [
           "statische Dichtung",
-          "O-Ring"
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
         ]
       },
       "claims": [
@@ -270,6 +279,65 @@
           "review_state": "reviewed",
           "provenance": [
             "trap-correct:TRAP-PTFE-KALTFLUSS"
+          ]
+        },
+        {
+          "text": "PTFE ist ein teilkristalliner thermoplastischer Dichtungswerkstoff mit sehr hoher chemischer und thermischer Beständigkeit sowie sehr niedriger Reibung; anders als ein Elastomer besitzt es jedoch keine elastomere Rückstellung.",
+          "review_state": "reviewed",
+          "kind": "definition",
+          "sources": [
+            "https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/o_ring_gb_en.pdf",
+            "https://www.teflon.com/en/products/product-selection-guide"
+          ],
+          "provenance": [
+            "review:codex-2026-07-11"
+          ]
+        },
+        {
+          "text": "Ungefülltes PTFE verformt sich unter anhaltender Last zeitabhängig durch Kriechen beziehungsweise Kaltfluss und weist nur geringe Rückstellfähigkeit und Verschleißfestigkeit auf; diese Grenzen müssen in der Dichtungskonstruktion berücksichtigt werden.",
+          "review_state": "reviewed",
+          "kind": "safety_caution",
+          "sources": [
+            "https://www.parker.com/literature/Packing/Packing%20-%20Literature/Catalog_PTFE-Seals_PDE3354-GB_1103.pdf",
+            "https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part2"
+          ],
+          "provenance": [
+            "review:codex-2026-07-11"
+          ]
+        },
+        {
+          "text": "Füllstoffe und modifizierte PTFE-Compounds können insbesondere Kriech-, Verschleiß- und Lasttrageigenschaften verbessern; die Wirkung hängt vom konkreten Compound, Medium, Gegenlaufpartner und Belastungskollektiv ab.",
+          "review_state": "reviewed",
+          "kind": "system_dependent",
+          "sources": [
+            "https://www.parker.com/literature/Packing/Packing%20-%20Literature/Catalog_PTFE-Seals_PDE3354-GB_1103.pdf",
+            "https://www.teflon.com/en/products/resins/ptfe-granular/nxt-granular"
+          ],
+          "provenance": [
+            "review:codex-2026-07-11"
+          ]
+        },
+        {
+          "text": "Bei PTFE-Dichtungen wird die fehlende Eigenelastizität je nach Bauform durch eine Feder oder ein elastomeres Vorspannelement kompensiert; dadurch können Verschleiß, Kaltfluss und Maßabweichungen innerhalb des Auslegungsbereichs nachgestellt werden.",
+          "review_state": "reviewed",
+          "kind": "system_dependent",
+          "sources": [
+            "https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf",
+            "https://www.trelleborg.com/en/seals/your-industry/automotive/products"
+          ],
+          "provenance": [
+            "review:codex-2026-07-11"
+          ]
+        },
+        {
+          "text": "Die Auswahl einer PTFE-Dichtung ist deshalb keine reine Werkstofffrage: Erforderlich sind mindestens Bauform, Medium, Temperatur, Druck, Bewegungsart beziehungsweise Geschwindigkeit, Gegenlauffläche und gewünschte Lebensdauer; die finale Compound- und Bauformfreigabe erfolgt anhand konkreter Herstellerdaten.",
+          "review_state": "reviewed",
+          "kind": "qualification_required",
+          "sources": [
+            "https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf"
+          ],
+          "provenance": [
+            "review:codex-2026-07-11"
           ]
         }
       ],

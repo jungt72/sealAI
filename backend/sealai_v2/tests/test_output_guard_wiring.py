@@ -131,6 +131,26 @@ def test_fail_closed_answer_preserves_only_kernel_value_and_warning():
     assert "grenzwertige Auslegung" in text
 
 
+def test_general_knowledge_fallback_names_limited_reviewed_scope_not_contradiction():
+    text = fail_closed_answer(
+        {
+            "status": "GENERAL",
+            "allowed_claims": [
+                {
+                    "id": "FK-PTFE",
+                    "text": "PTFE weist eine sehr hohe chemische Beständigkeit auf.",
+                    "severity": "info",
+                }
+            ],
+            "allowed_values": [],
+            "required_clauses": [],
+        }
+    )
+
+    assert "aktuell freigegebenen Quellen" in text
+    assert "nicht widerspruchsfrei" not in text
+
+
 # ── P0-B: response_contract_general_guard_enabled — the guard on NON-Gegencheck turns ──────────────
 
 _KQ = "Was ist FKM und wo wird es eingesetzt?"

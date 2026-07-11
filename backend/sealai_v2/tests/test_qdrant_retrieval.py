@@ -185,12 +185,54 @@ def test_reviewed_backfill_rejects_wrong_medium_for_same_material():
     assert wrong_medium not in selected_with_match
 
 
-def test_reviewed_backfill_is_noop_when_top_k_already_has_reviewed():
-    reviewed = _FakePoint({"review_state": "reviewed", "card_id": "FK-REVIEWED"}, 0.9)
-    extra = _FakePoint({"review_state": "reviewed", "card_id": "FK-EXTRA"}, 0.89)
-    pts = [_FakePoint({"review_state": "draft"}, 1.0), reviewed, extra]
+def test_reviewed_backfill_does_not_stop_after_a_single_reviewed_top_k_hit():
+    top_reviewed = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+            "scope": {"material": ["PTFE"]},
+        },
+        0.96,
+    )
+    tail_reviewed_1 = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+            "scope": {"material": ["PTFE"]},
+        },
+        0.89,
+    )
+    tail_reviewed_2 = _FakePoint(
+        {
+            "review_state": "reviewed",
+            "card_id": "FK-PTFE-KALTFLUSS",
+            "scope": {"material": ["PTFE"]},
+        },
+        0.87,
+    )
+    top = [
+        _FakePoint({"review_state": "draft", "scope": {"material": ["PTFE"]}}, 1.0),
+        top_reviewed,
+    ]
+    selected = _select_points_with_reviewed_backfill(
+        [*top, tail_reviewed_1, tail_reviewed_2],
+        k=2,
+        query="Informationen zu PTFE",
+    )
 
-    assert _select_points_with_reviewed_backfill(pts, k=2) == pts[:2]
+    assert selected[:2] == top
+    assert selected[2:] == [tail_reviewed_1, tail_reviewed_2]
+
+
+def test_reviewed_backfill_is_noop_once_reviewed_target_is_met():
+    reviewed = [
+        _FakePoint(
+            {"review_state": "reviewed", "card_id": f"FK-{idx}"}, 0.9 - idx * 0.01
+        )
+        for idx in range(4)
+    ]
+
+    assert _select_points_with_reviewed_backfill(reviewed, k=3) == reviewed[:3]
 
 
 def test_claim_points_one_per_claim_with_payload():
