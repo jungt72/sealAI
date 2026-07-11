@@ -91,6 +91,7 @@ def validate_technical_answer(
     *,
     case_revision: int,
     allowed_evidence_ids: frozenset[str],
+    require_evidence_for_all_claims: bool = False,
 ) -> None:
     errors: list[str] = []
     if answer.case_revision != case_revision:
@@ -99,6 +100,8 @@ def validate_technical_answer(
         unknown = set(claim.evidence_ids) - allowed_evidence_ids
         if unknown:
             errors.append("unknown_evidence_id")
+        if require_evidence_for_all_claims and not claim.evidence_ids:
+            errors.append("knowledge_claim_without_evidence")
         if claim.criticality == "decision_relevant" and not claim.evidence_ids:
             errors.append("decision_claim_without_evidence")
     if answer.recommendation.status in {"conditional", "not_recommended"}:

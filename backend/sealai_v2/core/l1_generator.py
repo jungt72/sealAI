@@ -217,6 +217,15 @@ class L1Generator:
                 f"case_revision must be {case_revision}. A decision_relevant claim must carry "
                 "at least one allowed evidence_id. Never invent evidence IDs or tool results."
             )
+            if knowledge_answer_plan is not None:
+                structured_instruction += (
+                    " This is a pure engineering knowledge answer: every technical claim must "
+                    "carry at least one allowed evidence_id. Do not add named fillers, standards, "
+                    "regulations, approvals, tests, products, values, or limits that are absent "
+                    "from the supplied evidence/material parameters. Set recommendation.status "
+                    "to none with an empty summary and no conditions; selection inputs belong in "
+                    "the evidenced claims, not in a recommendation block."
+                )
 
             async def _call(current_system: str):
                 technical, result = await generate_structured(
@@ -229,10 +238,23 @@ class L1Generator:
                     max_repairs=0,
                 )
                 technical = calibrate_technical_answer(technical)
+                if knowledge_answer_plan is not None:
+                    technical = technical.model_copy(
+                        update={
+                            "recommendation": technical.recommendation.model_copy(
+                                update={
+                                    "summary": "",
+                                    "status": "none",
+                                    "conditions": [],
+                                }
+                            )
+                        }
+                    )
                 validate_technical_answer(
                     technical,
                     case_revision=case_revision,
                     allowed_evidence_ids=allowed_ids,
+                    require_evidence_for_all_claims=knowledge_answer_plan is not None,
                 )
                 return technical, result
 
