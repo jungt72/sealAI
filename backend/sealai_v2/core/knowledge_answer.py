@@ -57,8 +57,13 @@ _KNOWLEDGE_RE = re.compile(
     re.IGNORECASE,
 )
 _MEDIUM_CONTEXT_RE = re.compile(
-    r"\b(dichtungsmedium|betriebsmedium|medium|medien|fluid|betriebsstoff|schmierstoff|"
+    r"\b(dichtungsmedium|betriebsmedium|hydraulikmedium\w*|medium|medien|fluid|betriebsstoff|schmierstoff|"
     r"prozessfluid|reinigungsfluid|chemikalie)\b",
+    re.IGNORECASE,
+)
+_METHOD_KNOWLEDGE_RE = re.compile(
+    r"\b(bewert\w*|pr(?:ü|ue)fmethod\w*|kompatibilit(?:ä|ae)tspr(?:ü|ue)fung\w*|"
+    r"vertr(?:ä|ae)glich\w*)\b",
     re.IGNORECASE,
 )
 
@@ -502,8 +507,12 @@ def build_knowledge_answer_plan(
     short_subject_query = (
         bool(materials or seals or media or medium_context) and len(tokens) <= 4
     )
+    explicit_medium_method = bool(medium_context and _METHOD_KNOWLEDGE_RE.search(text))
     if route_name not in _PROFILE_ROUTES and not (
-        _KNOWLEDGE_RE.search(text) or _COMPARISON_RE.search(text) or short_subject_query
+        _KNOWLEDGE_RE.search(text)
+        or _COMPARISON_RE.search(text)
+        or short_subject_query
+        or explicit_medium_method
     ):
         return None
 

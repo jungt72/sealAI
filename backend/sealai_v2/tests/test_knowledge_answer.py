@@ -132,6 +132,20 @@ def test_unknown_but_explicit_sealing_medium_uses_medium_method_without_guessing
     }
 
 
+def test_hydraulic_medium_method_gets_full_medium_profile_retrieval() -> None:
+    question = (
+        "Wie muss ein Dichtungsingenieur die Verträglichkeit eines unbekannten "
+        "Hydraulikmediums wie Skydrol bewerten?"
+    )
+    plan = build_knowledge_answer_plan(
+        question,
+        route_name="general_sealing_knowledge",
+    )
+
+    assert plan is not None and plan.profile == "medium_overview"
+    assert knowledge_retrieval_limit(question) == 12
+
+
 def test_only_explicit_knowledge_turns_expand_retrieval() -> None:
     assert knowledge_retrieval_limit("Details zu PTFE", material_terms=("PTFE",)) == 12
     assert (
