@@ -369,7 +369,7 @@ def detect_engineering_signals(
         signals.append("compression_or_interference_language")
     if _RFQ_RE.search(question):
         signals.append("rfq_language")
-    if _LEAKAGE_RE.search(question):
+    if _LEAKAGE_RE.search(question) and not explicit_knowledge_overview:
         signals.append("leakage_or_failure_language")
     if _CASE_LANGUAGE_RE.search(question) or (
         _DESIGN_TOPIC_RE.search(question) and not explicit_knowledge_overview

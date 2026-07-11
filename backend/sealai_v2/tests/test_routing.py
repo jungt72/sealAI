@@ -145,6 +145,28 @@ class TestGeneralAndMaterialKnowledge:
         assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
         assert decision.forced_full_pipeline is False
 
+    def test_glrd_overview_may_name_leakage_and_failure_mechanisms(self) -> None:
+        question = (
+            "Erkläre eine Gleitringdichtung auf Ingenieursniveau: Dichtspalt und "
+            "Leckage, Gleitflächen, Schmierfilm, Bauformen und Druckentlastung, "
+            "Werkstoffpaarungen, Prozessphase/Dampfdruck/Feststoffe, Versorgungssysteme, "
+            "Versagensmechanismen sowie ISO 21049/API 682."
+        )
+        for decision in (
+            classify_route(question, intent=Intent.WISSENSFRAGE),
+            classify_route_deterministic(question),
+        ):
+            assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+            assert decision.forced_full_pipeline is False
+            assert decision.deterministic_signal_count == 0
+
+    def test_case_bound_leakage_explanation_stays_troubleshooting(self) -> None:
+        decision = classify_route_deterministic(
+            "Erkläre, warum meine Gleitringdichtung leckt."
+        )
+        assert decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
+        assert decision.forced_full_pipeline is True
+
 
 class TestMaterialComparison:
     def test_explicit_comparison_question_forces_full_pipeline(self) -> None:
