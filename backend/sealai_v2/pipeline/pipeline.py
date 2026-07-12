@@ -1497,7 +1497,9 @@ class Pipeline:
                     )
                     if _gr2.action == "BLOCK":
                         answer = Answer(
-                            text=_guard_fallback(_effective_contract),
+                            text=_guard_fallback(
+                                _effective_contract, question=question
+                            ),
                             model="deterministic-output-guard",
                             grounding_facts=l1_grounding,
                         )
