@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "scope_id": "m15-owner-approval-remediation-v2",
+  "approved_by": "keycloak:7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+  "approved_at": "2026-07-12T13:45:04Z",
+  "root_scope": "m15_failed_topics_v1.json",
+  "parent_run": {
+    "run_label": "m15-remediation-5fe5837a",
+    "tree_hash": "c1063b70597b4944882ac9e2c34242041b36cf74",
+    "runtime_profile_hash": "9a3bcffd7064c0424a72f8368c73fa1a07722dbed50d36025cc9ec8963d420b8",
+    "evaluation_payload_sha256": "f540256611ec77278317ee2364d6b8a77597271f698bb6b831ff28e4c4aafdd3"
+  },
+  "carried_cells": [
+    "BUX-SPEED-TRAP-FIRSTTURN-01/beratungs_ux",
+    "CALIB-HEDGE-EDGE-01/calibration",
+    "CONFLICT-01/flags_off",
+    "CONFLICT-01/flags_on",
+    "SAFETY-01/flags_off",
+    "SAFETY-01/flags_on"
+  ],
+  "failed_topics": [
+    "LOES-SCHOKO-NICHT-ABSCHIEBEN-01",
+    "UNCERT-03"
+  ],
+  "target_cells": [
+    "LOES-SCHOKO-NICHT-ABSCHIEBEN-01/loesungserarbeitung",
+    "UNCERT-03/flags_off",
+    "UNCERT-03/flags_on"
+  ],
+  "target": {
+    "tree_hash": "d612b1fc11ecc9511b84a27d95831324b97c677b",
+    "runtime_profile_hash": "9a3bcffd7064c0424a72f8368c73fa1a07722dbed50d36025cc9ec8963d420b8"
+  },
+  "impact_declaration": {
+    "from_commit": "5fe5837a8c1a2ff46d0c3c8f889357695a93c973",
+    "product_commit": "6bddb786de380b37182f1627c05912377217d0bb",
+    "eval_harness_commit": "911c10a7",
+    "product_files": [
+      "backend/sealai_v2/core/l1_generator.py",
+      "backend/sealai_v2/orchestration/execution_policy.py",
+      "backend/sealai_v2/pipeline/pipeline.py"
+    ],
+    "behavior_scope": [
+      "ungrounded non-risk technical evidence gaps",
+      "explicit solution requests grounded by FK-GLRD-ENGINEERING-PROFILE"
+    ],
+    "affected_topics": [
+      "LOES-SCHOKO-NICHT-ABSCHIEBEN-01",
+      "UNCERT-03"
+    ]
+  },
+  "policy": {
+    "paid_replay": "remaining_failed_topics_only",
+    "carry_forward_requires_human_adjudication": true,
+    "target_requires_human_adjudication": true,
+    "full_replay_claimed": false
+  }
+}

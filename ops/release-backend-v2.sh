@@ -291,7 +291,7 @@ printf '%s\n' "${LINE}" >> "${LEDGER}"
 echo ">> ledger appended: ${LEDGER}"
 
 if [[ "${RELEASE_STAGE}" == "final" ]]; then
-  if [[ "${EVAL_EVIDENCE_TYPE}" == "targeted_remediation" ]]; then
+  if [[ "${EVAL_EVIDENCE_TYPE}" == targeted_remediation* ]]; then
     RELEASE_EVIDENCE="Validated by targeted remediation \`${RUN_LABEL}\` against immutable full baseline \`${EVAL_BASELINE_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false). Only the owner-approved failed topics were rerun and fully adjudicated; this is explicitly not represented as a new full replay."
   else
     RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
