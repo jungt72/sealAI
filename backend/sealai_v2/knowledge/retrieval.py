@@ -22,6 +22,57 @@ from sealai_v2.knowledge.fachkarten import Fachkarte, FachkartenCatalog, load_fa
 # pulling every card. Deliberately simple; semantic recall is the deferred Qdrant adapter's job.
 _MIN_SCOPE_HITS = 2
 
+# A single exact hit is authoritative only for a distinctive medium or seal/application
+# subject. Generic nouns remain two-hit only, and a material name alone never unlocks a
+# compatibility card for an otherwise unknown medium.
+_GENERIC_SINGLE_SCOPE = frozenset(
+    {
+        "dichtung",
+        "dichtungen",
+        "medium",
+        "dichtungsmedium",
+        "betriebsmedium",
+        "fluid",
+        "flüssigkeit",
+        "fluessigkeit",
+        "betriebsstoff",
+        "öl",
+        "oel",
+        "chemikalie",
+        "lösungsmittel",
+        "loesemittel",
+        "pumpe",
+        "rührwerk",
+        "ruehrwerk",
+        "rotationsmaschine",
+        "werkstoffauswahl",
+        "dichtungsauslegung",
+    }
+)
+_LEXICAL_STOPWORDS = frozenset(
+    {
+        "aber",
+        "auch",
+        "bitte",
+        "dass",
+        "dichtung",
+        "dichtungen",
+        "gegen",
+        "kann",
+        "meine",
+        "meiner",
+        "möglichst",
+        "nicht",
+        "oder",
+        "passt",
+        "schnellen",
+        "welche",
+        "welcher",
+        "wäre",
+    }
+)
+_SHORT_DOMAIN_TOKENS = frozenset({"gas", "cip", "sip"})
+
 # P2-D (owner Leitbild-Audit 2026-07-02, Quellenhierarchie/Konfliktlogik §4.3): a claim-epistemics-
 # based tie-break — used ONLY when two cards tie on scope-hit score (previously an arbitrary
 # alphabetical card.id tie-break, see git history). A card carrying safety-relevant claims must not
@@ -59,6 +110,84 @@ def _quelle(card: Fachkarte, *, reviewed: bool) -> str:
 
 def _score(card: Fachkarte, query_lower: str) -> int:
     return sum(1 for tok in card.scope_tokens() if tok in query_lower)
+
+
+def _ascii_fold(value: str) -> str:
+    return (
+        value.lower()
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+
+
+def _specific_single_scope_hit(card: Fachkarte, query: str) -> bool:
+    tokens = query_tokens(query)
+    query_lower = query.lower()
+    folded_query = _ascii_fold(query)
+    folded_tokens = query_tokens(folded_query)
+    has_sealing_context = any(
+        marker in folded_query
+        for marker in ("dicht", "leck", "welle", "gleitring", "o-ring", "oring", "rwdr")
+    )
+    for dimension in ("medium", "application"):
+        for tag in card.scope.get(dimension, ()):
+            normalized = str(tag).strip().lower()
+            if not normalized or len(normalized) < 4:
+                continue
+            if normalized in _GENERIC_SINGLE_SCOPE and not (
+                dimension == "application" and has_sealing_context
+            ):
+                continue
+            if tag_matches(str(tag), tokens, query_lower) or tag_matches(
+                _ascii_fold(str(tag)), folded_tokens, folded_query
+            ):
+                return True
+    return False
+
+
+def _lexical_stem(token: str) -> str:
+    for suffix in ("ern", "en", "er", "es", "e", "n", "s"):
+        if token.endswith(suffix) and len(token) - len(suffix) >= 5:
+            return token[: -len(suffix)]
+    return token
+
+
+def _related_token(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if left in _SHORT_DOMAIN_TOKENS or right in _SHORT_DOMAIN_TOKENS:
+        short, long = (left, right) if len(left) <= len(right) else (right, left)
+        return short in _SHORT_DOMAIN_TOKENS and short in long
+    a, b = _lexical_stem(left), _lexical_stem(right)
+    return min(len(a), len(b)) >= 5 and (
+        a.startswith(b) or b.startswith(a) or a in b or b in a
+    )
+
+
+def _reviewed_claim_overlap(
+    card: Fachkarte, query: str, *, material_tokens: frozenset[str]
+) -> int:
+    query_terms = {
+        token
+        for token in query_tokens(query)
+        if not token.isdigit()
+        and token not in _LEXICAL_STOPWORDS
+        and token not in material_tokens
+        and (len(token) >= 4 or token in _SHORT_DOMAIN_TOKENS)
+    }
+    if not query_terms:
+        return 0
+    best = 0
+    for claim in card.reviewed_claims():
+        claim_terms = query_tokens(claim.text)
+        matched = sum(
+            any(_related_token(query_term, claim_term) for claim_term in claim_terms)
+            for query_term in query_terms
+        )
+        best = max(best, matched)
+    return best
 
 
 def _is_material_overview(card: Fachkarte, query_lower: str) -> bool:
@@ -161,16 +290,65 @@ class InProcessRetriever:
                 )
             ),
         )
-        scored = [
-            (s, c)
-            for c in self._catalog.cards
-            if (s := _score(c, q)) >= _MIN_SCOPE_HITS
-            or _is_knowledge_overview(c, query)
-        ]
+        material_tokens = frozenset(
+            str(term).strip().lower()
+            for card in self._catalog.cards
+            for term in card.scope.get("material", ())
+            if str(term).strip()
+        )
+        candidates: list[tuple[int, int, bool, bool, Fachkarte]] = []
+        for card in self._catalog.cards:
+            scope_score = _score(card, q)
+            lexical_score = _reviewed_claim_overlap(
+                card, query, material_tokens=material_tokens
+            )
+            overview = _is_knowledge_overview(card, query)
+            specific_hit = bool(card.reviewed_claims()) and _specific_single_scope_hit(
+                card, query
+            )
+            candidates.append(
+                (scope_score, lexical_score, overview, specific_hit, card)
+            )
+
+        # Relevance tiers are intentionally exclusive. Once an exact reviewed medium/application
+        # tag exists, weak prose overlap cannot add unrelated cards. Only when scope matching finds
+        # nothing do we use the strongest reviewed-claim overlap as a bounded fallback.
+        has_specific_hit = any(item[3] for item in candidates)
+        has_structural_hit = any(
+            scope_score >= _MIN_SCOPE_HITS or overview
+            for scope_score, _lexical, overview, _specific, _card in candidates
+        )
+        max_lexical = max((item[1] for item in candidates), default=0)
+        scored: list[tuple[int, Fachkarte]] = []
+        for scope_score, lexical_score, overview, specific_hit, card in candidates:
+            structural_hit = scope_score >= _MIN_SCOPE_HITS or overview
+            eligible = (
+                structural_hit
+                or (has_specific_hit and specific_hit)
+                or (
+                    has_specific_hit
+                    and card.subject_type == "medium"
+                    and max_lexical >= 2
+                    and lexical_score == max_lexical
+                    and bool(card.reviewed_claims())
+                )
+                or (
+                    not has_specific_hit
+                    and not has_structural_hit
+                    and max_lexical >= 2
+                    and lexical_score == max_lexical
+                    and bool(card.reviewed_claims())
+                )
+            )
+            if eligible:
+                scored.append((max(scope_score, lexical_score), card))
         if (
             knowledge_turn is not None
             and knowledge_turn.subject_type == "material"
             and knowledge_turn.subjects
+            and any(
+                _is_knowledge_overview(card, query) for _score_value, card in scored
+            )
         ):
             # Prefer cards whose identity names the requested material. Multi-material compatibility
             # cards often list NBR/PTFE only as alternatives while their actual claim concerns EPDM
@@ -198,6 +376,7 @@ class InProcessRetriever:
         # otherwise strongest scope match remains first. Ties are broken by claim severity, then id.
         scored.sort(
             key=lambda sc: (
+                -int(bool(sc[1].reviewed_claims())),
                 -int(
                     knowledge_turn is not None
                     and bool(sc[1].reviewed_claims())

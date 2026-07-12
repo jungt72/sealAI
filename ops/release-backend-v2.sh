@@ -169,18 +169,22 @@ echo ">> runtime profile = ${RUNTIME_PROFILE_HASH}"
 if [[ "${RELEASE_STAGE}" == "final" ]]; then
   if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
     echo "!! refusing FINAL deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}, L1 ${SERVED_L1}, runtime profile ${RUNTIME_PROFILE_HASH}" >&2
-    echo "!! run and adjudicate the complete eval-REPLAY under this exact production profile, then retry." >&2
+    echo "!! provide either a complete adjudicated replay or the approved fully adjudicated targeted remediation under this exact production profile, then retry." >&2
     exit 2
   fi
   RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
   EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
   EVAL_DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
+  EVAL_EVIDENCE_TYPE="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("evidence_type") or "full_replay")')"
+  EVAL_BASELINE_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("baseline_run_label") or "")')"
   EVAL_STATUS="passed"
-  echo ">> final gate PASS — run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
+  echo ">> final gate PASS — ${EVAL_EVIDENCE_TYPE} run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
 else
   RUN_LABEL="candidate-no-eval-${GIT_SHA_FULL:0:8}"
   EVAL_GIT_SHA=""
   EVAL_DIRTY=""
+  EVAL_EVIDENCE_TYPE="candidate"
+  EVAL_BASELINE_LABEL=""
   EVAL_STATUS="pending"
   echo ">> candidate gate PASS — paid eval deferred; deterministic release controls remain active"
 fi
@@ -287,7 +291,11 @@ printf '%s\n' "${LINE}" >> "${LEDGER}"
 echo ">> ledger appended: ${LEDGER}"
 
 if [[ "${RELEASE_STAGE}" == "final" ]]; then
-  RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
+  if [[ "${EVAL_EVIDENCE_TYPE}" == "targeted_remediation" ]]; then
+    RELEASE_EVIDENCE="Validated by targeted remediation \`${RUN_LABEL}\` against immutable full baseline \`${EVAL_BASELINE_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false). Only the owner-approved failed topics were rerun and fully adjudicated; this is explicitly not represented as a new full replay."
+  else
+    RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
+  fi
 else
   RELEASE_EVIDENCE="Live candidate only. Paid eval-REPLAY intentionally deferred (eval_status=pending); this deployment is not final-release evidence."
 fi

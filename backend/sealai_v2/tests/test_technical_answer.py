@@ -120,6 +120,29 @@ def test_knowledge_answer_falls_back_without_a_second_paid_call():
     assert len(client.calls) == 1
 
 
+def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
+    client = FakeLlmClient(_payload(evidence_ids=[]))
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welcher Dichtungsaufbau passt?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Geprüfter technischer Zusammenhang.",
+                    "ledger",
+                    card_id="EV-1",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Geprüfter technischer Zusammenhang" in answer.text
+    assert answer.finish_reason == "deterministic_evidence_fallback"
+    assert len(client.calls) == 1
+
+
 def test_knowledge_answer_drops_redundant_recommendation_block():
     payload = json.loads(_payload(evidence_ids=["E1"]))
     payload["recommendation"] = {

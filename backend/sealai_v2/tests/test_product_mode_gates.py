@@ -59,6 +59,24 @@ def test_enabled_knowledge_mode_uses_the_owner_approved_evidence() -> None:
     assert client.calls
 
 
+def test_enabled_knowledge_mode_returns_evidence_gap_without_model_call() -> None:
+    pipeline, client = _pipeline(enabled=True)
+
+    result = asyncio.run(
+        pipeline.run(
+            "Ist FKM gegen Essigsäure beständig?",
+            tenant=TenantContext("tenant-a"),
+            session=SessionContext("case-a"),
+        )
+    )
+
+    assert result.grounded is False
+    assert result.answer.model == "deterministic-policy"
+    assert "kein unabhängig geprüfter Beleg" in result.answer.text
+    assert result.turn_state.execution_class == "D1"
+    assert client.calls == []
+
+
 def test_chat_api_exposes_structured_mode_unavailable_contract() -> None:
     pipeline = make_pipeline()
     pipeline.knowledge_mode_enabled = False

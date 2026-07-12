@@ -84,6 +84,32 @@ def _deterministic_knowledge_answer(
     )
 
 
+def _deterministic_evidence_answer(
+    *, evidence_facts: dict[str, GroundingFact], case_revision: int
+) -> TechnicalAnswer:
+    """Technical fallback that can only restate reviewed evidence and makes no recommendation."""
+    return TechnicalAnswer(
+        schema_version=1,
+        intent="evidence_bound_technical_answer",
+        case_revision=case_revision,
+        conclusion="Belastbar festhalten lässt sich auf Basis der geprüften Fachquellen:",
+        assumptions=[],
+        missing_information=[
+            "Die konkrete Auswahl und Freigabe erfordert die vollständigen Betriebsbedingungen."
+        ],
+        claims=[
+            TechnicalClaim(
+                text=fact.text,
+                evidence_ids=[evidence_id],
+                criticality="supporting",
+            )
+            for evidence_id, fact in list(evidence_facts.items())[:8]
+        ],
+        recommendation={"summary": "", "status": "none", "conditions": []},
+        needs_human_review=True,
+    )
+
+
 def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list[str]]:
     """Flatten a CalcResult into template data: computed values, not-computed reasons, notes."""
     if calc is None:
@@ -238,6 +264,7 @@ class L1Generator:
         baseline_hardening: bool = False,
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
+        require_evidence_for_all_claims: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> Answer:
@@ -267,9 +294,8 @@ class L1Generator:
             risk_flags=risk_flags,
         )
         if self._structured_output_enabled:
-            claim_level_evidence = knowledge_answer_plan is not None
             evidence_facts = dict(knowledge_evidence_facts)
-            if not claim_level_evidence:
+            if knowledge_answer_plan is None:
                 for fact in grounding_facts:
                     if fact.card_id:
                         evidence_facts[fact.card_id] = fact
@@ -317,6 +343,14 @@ class L1Generator:
                         f"Evidence facet map: {facet_map}. Multiple evidence_ids may be attached "
                         "to one claim when that claim faithfully combines their content."
                     )
+            elif require_evidence_for_all_claims:
+                structured_instruction += (
+                    " This is an evidence-bound technical answer: every technical claim must "
+                    "carry at least one allowed evidence_id. User-provided case facts belong in "
+                    "assumptions or missing_information, not as unsupported technical claims. "
+                    "Do not add values, limits, materials, standards, products or suitability "
+                    "statements that are absent from the supplied evidence or calculations."
+                )
 
             async def _call(current_system: str):
                 technical, result = await generate_structured(
@@ -346,7 +380,10 @@ class L1Generator:
                     technical,
                     case_revision=case_revision,
                     allowed_evidence_ids=allowed_ids,
-                    require_evidence_for_all_claims=knowledge_answer_plan is not None,
+                    require_evidence_for_all_claims=(
+                        knowledge_answer_plan is not None
+                        or require_evidence_for_all_claims
+                    ),
                 )
                 if required_knowledge_facets:
                     used_evidence = {
@@ -417,6 +454,21 @@ class L1Generator:
                         model=self._model_config.model,
                         finish_reason="deterministic_knowledge_fallback",
                     )
+                elif require_evidence_for_all_claims and evidence_facts:
+                    logger.warning(
+                        "structured technical answer failed evidence validation; using "
+                        "reviewed-evidence fallback (%s)",
+                        exc,
+                    )
+                    technical = _deterministic_evidence_answer(
+                        evidence_facts=evidence_facts,
+                        case_revision=case_revision,
+                    )
+                    result = LlmResult(
+                        text="",
+                        model=self._model_config.model,
+                        finish_reason="deterministic_evidence_fallback",
+                    )
                 else:
                     repair = (
                         "\n\nThe previous object failed deterministic validation "
@@ -470,6 +522,7 @@ class L1Generator:
         baseline_hardening: bool = False,
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
+        require_evidence_for_all_claims: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> AsyncIterator[L1StreamEvent]:
@@ -504,6 +557,7 @@ class L1Generator:
                     baseline_hardening=baseline_hardening,
                     material_params=material_params,
                     knowledge_answer_plan=knowledge_answer_plan,
+                    require_evidence_for_all_claims=require_evidence_for_all_claims,
                     risk_flags=risk_flags,
                     case_revision=case_revision,
                 )
