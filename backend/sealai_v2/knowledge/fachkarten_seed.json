@@ -1,11 +1,11 @@
 {
-  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710+nbr-overview-20260711+expert-profiles-20260711",
-  "source": "M3 bootstrap: reframed from the 8 OWNER-REVIEWED material-compatibility trap-correct facts (review path (i), owner-confirmed via the trap catalog). Each claim's provenance names its source trap-correct; NO new owner review. Claims restate ONLY what the source trap-correct contains; any added fact would be review_state=draft (none added here except the owner-confirmed FOODGRADE VMQ nuance, provenance=owner). PARTIAL cards (trap-relevant claims only), not full datasheets — full cards are the parallel content-track, not M3. M4a adds FK-ORING-VERPRESSUNG, reframed from the owner-confirmed CALC-02 eval seed + Verpressungs-calc-def (path (i) owner-grounded; provenance eval:CALC-02 + owner:nutauslegung); same restate-only discipline (axial ~30 % deliberately omitted — owner-parked/unadjudicated). 2026-07-10 adds two owner-reviewed operational cards from SAFETY-02 and UNDER-03: Pharma-SIP qualification and unknown replacement-seal identification. 2026-07-11 adds a primary-source-reviewed NBR overview from ARLANXEO and Parker. | + 38 challenge-verified PROVISIONAL Fachkarten (4-round GPT-5.5 challenge -> GO; review_state=draft -> served as provisional/pre-check; Herstellerfreigabe = final gate)",
+  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710+nbr-overview-20260711+expert-profiles-20260711+ssot-v2-quarantine-20260712",
+  "source": "Historical seed assembled from prior trap, owner, research, and provisional content tracks. Under ratified SSoT v2.0, none of the 79 formerly declared-reviewed claims has a current independent human domain review with evidence, applicability, uncertainty, transferability, reviewer, review time, and future expiry. They are explicitly quarantined: 51 carry source candidates for adjudication and 28 additionally lack external evidence. The remaining 522 claims stay draft and non-authoritative. Provenance is retained as history only and never substitutes for evidence or review.",
   "cards": [
     {
       "id": "FK-PTFE-ENGINEERING-PROFILE",
       "subject_type": "material",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "deep-research:codex-2026-07-11:ptfe-engineering-profile"
       ],
@@ -45,7 +45,7 @@
           "text": "PTFE ist ein teilkristalliner Fluor-Thermoplast. In der Dichtungstechnik kombiniert es sehr geringe Reibung und breite chemische Beständigkeit, besitzt aber im Unterschied zu Elastomeren keine elastomere Rückstellung; die Dichtkraft muss deshalb aus Geometrie, Systemdruck, Feder oder einem elastomeren Vorspannelement kommen.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "properties"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, chapters 1-3 (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
             "Trelleborg Turcon Variseal, General and Material Selection Guide (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
@@ -56,7 +56,7 @@
           "text": "Parker nennt für ungefülltes PTFE typische Laborwerte von 4.500 bis 5.500 psi Zugfestigkeit, etwa 450 bis 500 Prozent Bruchdehnung und Shore D 55 bis 56. Diese Werte dienen dem Werkstoffvergleich; sie sind keine Spezifikations- oder Einsatzgrenzen und berücksichtigen weder Temperatur, Druck, Medium, Geschwindigkeit noch Gegenhardware.",
           "kind": "example_value",
           "answer_facets": ["parameters", "properties", "standards_validation"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)"
           ],
@@ -66,7 +66,7 @@
           "text": "Temperaturangaben sind grade- und bauformspezifisch: Der Trelleborg-Auswahlleitfaden nennt für den reinen PTFE-Referenzgrad Turcon T01 für statische, langsam dynamische oder leicht belastete Anwendungen -253 bis +260 Grad Celsius, für den polymerverstärkten Compound T07 dagegen -60 bis +300 Grad Celsius. Diese Bereiche dürfen nicht als universelle PTFE-Familiengrenze verwendet werden.",
           "kind": "example_value",
           "answer_facets": ["parameters", "variants", "tradeoffs", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Trelleborg Turcon Variseal Material Selection Guide, Table 3, Edition July 2025 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
           ],
@@ -76,7 +76,7 @@
           "text": "Glas-, Kohlenstoff-/Graphit-, Metall- und Polymerfüllstoffe sowie modifiziertes PTFE verändern Kriechneigung, Verschleiß, Reibung, Wärmeleitung, Härte und Gegenlaufflächenverhalten. Ein Filler ist deshalb kein pauschales Upgrade: Die Auswahl muss zum Medium, zur Gegenlauffläche, Schmierung und kombinierten Druck-Geschwindigkeits-Temperatur-Last passen.",
           "kind": "system_dependent",
           "answer_facets": ["variants", "tradeoffs", "design_interfaces", "media_compatibility"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, The effect of fillers and material selection (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
             "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)"
@@ -87,7 +87,7 @@
           "text": "Typische PTFE-Dichtungsfunktionen sind federvorgespannte Lippen, druckaktivierte Slipper-Seals mit Elastomer-Energizer, Rotationslippen, Stütz- und Anti-Extrusionsringe, Flach- und Sonderdichtungen. Die Bauformen lösen unterschiedliche Aufgaben; ein massiver PTFE-O-Ring ist funktional nicht mit einer federvorgespannten PTFE-Lippe oder einem ummantelten Elastomer-O-Ring gleichzusetzen.",
           "kind": "system_dependent",
           "answer_facets": ["applications", "variants", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, product lines and decision tree (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
             "Trelleborg Static Seals overview (https://www.trelleborg.com/en/seals/products-and-solutions/static-seals)"
@@ -98,7 +98,7 @@
           "text": "Die dominante mechanische Grenze von ungefülltem PTFE ist die zeitabhängige plastische Verformung unter Last: Kriechen beziehungsweise Kaltfluss verringert die Flächenpressung; fehlende Rückstellung kann Maßabweichung, Verschleiß und Temperaturwechsel nicht selbst ausgleichen. Mögliche Folgen sind Vorspannungsverlust, Extrusion und Leckage.",
           "kind": "safety_caution",
           "answer_facets": ["limits", "failure_modes", "mechanism"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, characteristics of PTFE and spring-energized seals (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)"
           ],
@@ -108,7 +108,7 @@
           "text": "Für die Auswahl einer PTFE-Dichtung sind mindestens konkreter PTFE-Grade/Füllstoff, Bauform, Medium inklusive Additiven, Temperaturprofil, Druck und Druckrichtung, Bewegungsart und Geschwindigkeit, Gegenlauffläche, Schmierung, Spalt, Lastkollektiv sowie Reinheits-/Zulassungsanforderungen erforderlich. Herstellerdaten und ein anwendungsnaher Test bleiben die Freigabebasis.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "operating_factors", "standards_validation"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, user responsibility and application range (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
             "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)"
@@ -121,7 +121,7 @@
     {
       "id": "FK-ORING-ENGINEERING-PROFILE",
       "subject_type": "seal_type",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "deep-research:codex-2026-07-11:oring-engineering-profile"
       ],
@@ -153,7 +153,7 @@
           "text": "Ein O-Ring ist ein torusförmiges Dichtelement, das in einer Nut radial oder axial verpresst wird. Die Anfangsverpressung erzeugt den Kontakt bei niedrigem oder fehlendem Systemdruck; anstehender Druck verschiebt und aktiviert den Ring zusätzlich zur Niederdruckseite. Die Funktion ist daher immer das System aus Ring, Compound, Nut und Gegenfläche.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, O-Ring applications and gland design (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
           ],
@@ -163,7 +163,7 @@
           "text": "ISO 3601 trennt die Systemanforderungen: Teil 1 behandelt Innendurchmesser, Schnurstärken, Toleranzen und Bezeichnungscodes; ISO 3601-2:2025 die Gehäuse-/Nutabmessungen für allgemeine Anwendungen; Teil 3 Qualitätsannahmekriterien und Teil 4 Anti-Extrusionsringe. Sonderanwendungen können abweichende, zwischen Hersteller und Anwender vereinbarte Nuten erfordern.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "design_interfaces", "variants"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "ISO 3601-1:2012 (https://www.iso.org/standard/58043.html)",
             "ISO 3601-2:2025 (https://www.iso.org/standard/85921.html)",
@@ -175,7 +175,7 @@
           "text": "Die zentralen geometrischen Auslegungsachsen sind Verpressung, Einbaudehnung beziehungsweise -stauchung, Nutfüllgrad, Extrusionsspalt, Toleranzkette und thermisch/medial verursachte Volumenänderung. Sie müssen für statisch, translatorisch dynamisch, rotierend und oszillierend getrennt bewertet werden.",
           "kind": "system_dependent",
           "answer_facets": ["parameters", "operating_factors", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, Sections IV-V and design charts (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "Parker O-Ring Selector (https://discover.parker.com/ORingSelector_en)"
@@ -186,7 +186,7 @@
           "text": "Mehr Verpressung ist nicht automatisch besser: Zu wenig Verpressung gefährdet die Anfangsdichtheit; zu viel erhöht Kontaktkraft, Reibung, Wärme und Verschleiß und kann bei dynamischer Anwendung Spiralversagen begünstigen. Einbaudehnung reduziert gleichzeitig die wirksame Schnurstärke und muss in der Nuttiefe berücksichtigt werden.",
           "kind": "safety_caution",
           "answer_facets": ["tradeoffs", "limits", "failure_modes", "mechanism"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, Sections 5.9 Squeeze and 5.10 Stretch (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
           ],
@@ -196,7 +196,7 @@
           "text": "Ein pauschaler Druckgrenzwert für O-Ringe ist fachlich falsch. Extrusionsrisiko entsteht aus dem Zusammenwirken von Druck und Druckwechsel, Extrusionsspalt, Compoundhärte und -modul, Temperatur, Nutgeometrie und Bewegungsart; Anti-Extrusionsringe können den Spalt stützen, ändern aber Bauraum und Reibbedingungen.",
           "kind": "system_dependent",
           "answer_facets": ["limits", "operating_factors", "variants", "tradeoffs"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, extrusion and back-up ring guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "ISO 3601-4:2008 overview (https://www.iso.org/ics/23.100.60.html)"
@@ -207,7 +207,7 @@
           "text": "Die Polymerfamilie allein qualifiziert keinen O-Ring-Compound. Medium und Handelsrezeptur, Konzentration, Additive, Temperatur, Expositionszeit, Druckgas/Permeation sowie geforderte Zulassungen können Quellung, Schrumpfung durch Extraktion, Härtung, Erweichung oder explosiven Druckabbau auslösen und müssen am konkreten Compound bewertet werden.",
           "kind": "safety_caution",
           "answer_facets": ["media_compatibility", "properties", "failure_modes", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, elastomer properties, fluid compatibility and failure analysis (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "ISO 1817:2024 (https://www.iso.org/standard/86602.html)"
@@ -218,7 +218,7 @@
           "text": "Typische O-Ring-Schadensbilder sind Druckverformungsrest mit Vorspannungsverlust, Extrusionsfraß, Spiralversagen, Abrieb, thermische Härtung, chemische Quellung oder Schrumpfung sowie Kerben und Verdrehung aus der Montage. Eine Diagnose muss Schadensbild, Lage im Ring, Nut-/Spaltgeometrie und Betriebsverlauf zusammenführen.",
           "kind": "safety_caution",
           "answer_facets": ["failure_modes", "mechanism"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, Section VIII Failure Analysis (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
           ],
@@ -228,7 +228,7 @@
           "text": "Für eine O-Ring-Auslegung werden mindestens Dichtungsart und Bewegungsprofil, Nut- und Gegenmaß mit Toleranzen, Druckprofil und Druckrichtung, Temperaturprofil, exaktes Medium, Werkstoff/Compound und Härte, Oberflächen, Montageweg, erwartete Quellung sowie Zulassungs- und Lebensdaueranforderung benötigt. Der Nachweis erfolgt über Norm-/Herstellerdaten und anwendungsnahe Qualifikation, nicht aus der Werkstofffamilie allein.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "Parker O-Ring Selector (https://discover.parker.com/ORingSelector_en)"
@@ -241,7 +241,7 @@
     {
       "id": "FK-RWDR-ENGINEERING-PROFILE",
       "subject_type": "seal_type",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "deep-research:codex-2026-07-11:rwdr-engineering-profile"
       ],
@@ -275,7 +275,7 @@
           "text": "Ein RWDR ist eine berührende Rotationsdichtung zwischen Welle und Gehäuse. Bei der klassischen elastomeren Bauform erzeugen Lippenübermaß und häufig eine Zugfeder die radiale Anpressung; die Dichtkante trennt Schmierstoff- und Luftseite. ISO 6194-1 ordnet diese Bauart grundsätzlich dem Niederdruckbereich zu.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "ISO 6194-1:2007 (https://www.iso.org/standard/34678.html)",
             "SKF Industrial Shaft Seals catalogue (official catalogue landing: https://www.skf.com/go/18729)"
@@ -286,7 +286,7 @@
           "text": "Die Dichtkante benötigt einen tragfähigen Schmierfilm. Reibung, Wärmeeintrag und Verlustleistung werden nicht nur durch die radiale Lippenkraft bestimmt, sondern auch durch Medium, Druckdifferenz, Umfangsgeschwindigkeit, Umgebungstemperatur, Schmiermethode, Gegenlauffläche, Lippenwerkstoff sowie Lippen- und Wellenrauheit. Trockenlauf von Standard-Lippenwerkstoffen ist zu vermeiden.",
           "kind": "safety_caution",
           "answer_facets": ["mechanism", "operating_factors", "properties", "failure_modes"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "SKF Industrial Shaft Seals catalogue, Radial shaft seals - Lubrication and Friction (official catalogue landing: https://www.skf.com/go/18729)"
           ],
@@ -296,7 +296,7 @@
           "text": "Für klassische Stefa-Radial-Öldichtungen nennt der Trelleborg-Leitfaden mit Bezug auf DIN 3760 für die Welle mindestens 45 HRC und Ra 0,2 bis 0,8 Mikrometer; Trelleborg empfiehlt aus eigenen Versuchen Ra 0,2 bis 0,5 Mikrometer. Mit steigender Umfangsgeschwindigkeit und bei abrasiven Partikeln ist eine höhere Härte erforderlich; bei 10 m/s nennt der Leitfaden 60 HRC. Diese Werte sind bauartbezogene Wellenanforderungen, keine universellen Grenzwerte aller Rotationsdichtungen.",
           "kind": "example_value",
           "answer_facets": ["parameters", "design_interfaces", "limits", "standards_validation"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Trelleborg Rotary Seals, Stefa Radial Oil Seal - Design Instructions: Shaft, Edition April 2026 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
           ],
@@ -306,7 +306,7 @@
           "text": "Die Gegenlauffläche darf keinen gerichteten Drall tragen, weil Bearbeitungsspuren selbst Medium unter der Lippe fördern können. Trelleborg empfiehlt Einstichschleifen; Rundlauf und Exzentrizität sind abhängig von Drehzahl beziehungsweise Wellendurchmesser zu begrenzen, und die Dichtung soll möglichst nahe am Lager sitzen.",
           "kind": "system_dependent",
           "answer_facets": ["design_interfaces", "mechanism", "failure_modes", "selection_inputs"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Trelleborg Rotary Seals, shaft machining, runout and eccentricity guidance (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
           ],
@@ -316,7 +316,7 @@
           "text": "Werkstoff- und Bauformauswahl eines RWDR hängen gekoppelt von Medium und Additiven, Minimal-/Maximal- und Lippentemperatur, Umfangsgeschwindigkeit, Druckdifferenz, Schmierzustand, Schmutzeintrag, Wellenbewegung, Drehrichtung, Einbauraum und Gegenlauffläche ab. Nenn-Maxima aus Katalogspalten dürfen bei extremen Bedingungen nicht gleichzeitig angesetzt werden.",
           "kind": "system_dependent",
           "answer_facets": ["operating_factors", "selection_inputs", "tradeoffs", "media_compatibility"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "SKF Industrial Shaft Seals catalogue (official catalogue landing: https://www.skf.com/go/18729)",
             "Parker PTFE Seals Design Guide, application range warning (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)"
@@ -327,7 +327,7 @@
           "text": "RWDR-Bauformen unterscheiden sich unter anderem durch Elastomer- oder PTFE-Lippe, Metall- oder Gummimantel, Staublippe, Druckunterstützung und Drehrichtungs-/Rückförderstruktur. Eine federvorgespannte PTFE-Rotationslippe ist eine andere Systemlösung als ein klassischer Elastomer-RWDR und darf nicht mit der Kaltflusswarnung für einen massiven statischen PTFE-O-Ring gleichgesetzt werden.",
           "kind": "system_dependent",
           "answer_facets": ["variants", "tradeoffs", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Trelleborg Rotary Seals catalogue (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
             "ISO 16589-4:2011 (https://www.iso.org/standard/53937.html)"
@@ -338,7 +338,7 @@
           "text": "Typische RWDR-Versagenspfade sind thermisch verglaste oder verhärtete Lippen, Mangelschmierungs- und Trockenlaufverschleiß, eingelaufene Wellen, Leckage durch Drall, Lippenbeschädigung bei Montage, Schmutzunterwanderung sowie dynamischer Kontaktverlust durch Rundlauf oder Exzentrizität. Das Schadensbild ist gegen Lippe, Laufspur, Welle, Einbaulage und Betriebsverlauf zu lesen.",
           "kind": "safety_caution",
           "answer_facets": ["failure_modes", "mechanism", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "SKF Industrial Shaft Seals catalogue, failure analysis and counterface guidance (official catalogue landing: https://www.skf.com/go/18729)",
             "Trelleborg Rotary Seals catalogue (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
@@ -349,7 +349,7 @@
           "text": "ISO 6194-1 behandelt Abmessungen und Toleranzen elastomerer RWDR, ISO 6194-3 Lagerung/Handhabung/Montage und ISO 6194-4 Leistungsprüfungen; thermoplastische Lippen wie PTFE werden in ISO 16589 behandelt. Eine konkrete Freigabe benötigt daher neben der Normabmessung auch Werkstoff, Betriebsfenster, Wellenzustand, Schmierung und anwendungsbezogenen Leistungsnachweis.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "selection_inputs"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "ISO 6194-1:2007 (https://www.iso.org/standard/34678.html)",
             "ISO 6194-3:2009 (https://www.iso.org/standard/43009.html)",
@@ -364,7 +364,7 @@
     {
       "id": "FK-GLRD-ENGINEERING-PROFILE",
       "subject_type": "seal_type",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "deep-research:codex-2026-07-11:glrd-engineering-profile"
       ],
@@ -399,7 +399,7 @@
           "text": "Eine Gleitringdichtung dichtet den Durchtritt einer rotierenden Welle durch ein stationäres Gehäuse mit zwei im Wesentlichen planen, axial gegeneinander belasteten Gleitflächen. Zwischen den Flächen bildet das Medium oder ein Hilfsfluid einen sehr dünnen Schmierfilm; kontrollierte mikroskopische Leckage und Wärmeabfuhr sind Teil des Funktionsprinzips, nicht automatisch ein Defekt.",
           "kind": "definition",
           "answer_facets": ["definition", "mechanism", "properties"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Mechanical Seal - definition and elements (https://www.eagleburgmann.com/en/products/mechanical-seal/)"
           ],
@@ -409,7 +409,7 @@
           "text": "Die fünf Grundelemente sind rotierender Gleitring, Sekundärdichtung zwischen Welle und Ring, stationärer Gegenring, dessen Sekundärdichtung zum Gehäuse sowie ein Feder-/Vorspannelement. Der Primärdichtspalt und die beiden Sekundärdichtungen müssen getrennt bewertet werden.",
           "kind": "definition",
           "answer_facets": ["mechanism", "variants", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Mechanical Seal - elements of a mechanical seal (https://www.eagleburgmann.com/en/products/mechanical-seal/)"
           ],
@@ -419,7 +419,7 @@
           "text": "Technisch relevante Bauformachsen sind unter anderem einfach oder doppelt, druckentlastet oder nicht druckentlastet, rotierende oder stationäre Federung, Komponenten- oder Cartridge-Ausführung, Pusher- oder Metallbalgprinzip sowie flüssigkeits- oder gasgeschmierter Betrieb. Diese Merkmale bestimmen Druckbelastung, Wärmehaushalt, Emissionsbarriere, Montage und Hilfssystem.",
           "kind": "system_dependent",
           "answer_facets": ["variants", "tradeoffs", "mechanism", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann Mechanical Seals product classification (https://www.eagleburgmann.com/en/products/mechanical-seals/)",
             "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
@@ -430,7 +430,7 @@
           "text": "Die Auswahl wird nicht durch Druck und Temperatur allein bestimmt. Erforderlich sind unter anderem Medium und Konzentration, Viskosität, Dampfdruck/Phasenzustand, Schmierfähigkeit, Feststoffe oder Kristallisation, Korrosivität und Gefahrstoffstatus sowie Dichtungsraumdruck/-temperatur, Drehzahl, Wellendurchmesser, Rundlauf, Starts/Stopps und verfügbare Kühlung beziehungsweise Spülung.",
           "kind": "system_dependent",
           "answer_facets": ["selection_inputs", "operating_factors", "media_compatibility", "parameters"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Optimally designing mechanical seals (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
             "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
@@ -441,7 +441,7 @@
           "text": "Gleitflächenpaarungen wie Kohle gegen Siliziumkarbid oder Siliziumkarbid gegen Siliziumkarbid, Sekundärdichtungen aus Elastomer oder PTFE, Metallteile und Federn erfüllen unterschiedliche tribologische, chemische und thermische Aufgaben. Die beste chemische Beständigkeit einer Komponente kompensiert weder ungeeignete Reibpaarung noch einen instabilen Schmierfilm.",
           "kind": "system_dependent",
           "answer_facets": ["properties", "media_compatibility", "tradeoffs", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Mechanical seal technology and selection - material code and selection tables (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
@@ -451,7 +451,7 @@
           "text": "Bei doppelten Dichtungen und anspruchsvollen Medien ist das Versorgungssystem Teil der Dichtfunktion: Puffer- oder Sperrmedium, Druckniveau, Umwälzung, Kühlung, Entgasung und Überwachung müssen zur Anordnung passen. Ein ungeeigneter oder ausgefallener Versorgungsplan kann eine korrekt ausgewählte Gleitringdichtung trotzdem zerstören.",
           "kind": "safety_caution",
           "answer_facets": ["design_interfaces", "operating_factors", "failure_modes", "variants"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Mechanical seal technology and selection - auxiliary piping plans (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
@@ -461,7 +461,7 @@
           "text": "Dominante Versagensmechanismen sind Schmierfilmabriss/Trockenlauf, Verdampfen oder Flashing im Dichtspalt, thermische Verformung und Heißrisse, abrasiver Verschleiß durch Feststoffe, chemischer Angriff der Sekundärdichtung, Ablagerung/Kristallisation, Fehlstellung oder Rundlauf sowie Fehler im Sperr- oder Spülsystem. Eine reine Leckagebeobachtung reicht für die Ursachenanalyse nicht.",
           "kind": "safety_caution",
           "answer_facets": ["failure_modes", "mechanism", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Mechanical Seal - operating principle and selection factors (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
             "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
@@ -472,7 +472,7 @@
           "text": "ISO 21049:2004 beziehungsweise API 682 klassifizieren Dichtsysteme für Kreisel- und Rotationspumpen in der Erdöl-, Erdgas- und Chemieindustrie nach Kategorien, Typen, Anordnungen und Orientierungen; ihr Schwerpunkt sind insbesondere gefährliche, brennbare oder toxische Dienste mit erhöhter Zuverlässigkeitsanforderung. Die Norm ist keine pauschale Produktauswahl für jede Pumpe.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "applications", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "ISO 21049:2004 (https://www.iso.org/standard/35625.html)",
             "API Standard 682, Fourth Edition overview (https://www.api.org/~/media/files/publications/whats%20new/682%20e4%20pa.pdf)"
@@ -483,7 +483,7 @@
           "text": "Eine belastbare Gleitringdichtungsfreigabe muss Dichtungstyp, Werkstoffpaarung, Sekundärdichtungen, Arrangement und Hilfssystem gemeinsam gegen den realen Betriebspunkt und Transienten validieren. Hersteller-Produktgrenzen sind gekoppelte Systemgrenzen; einzelne Maximalwerte für Druck, Temperatur oder Gleitgeschwindigkeit dürfen nicht kombiniert werden.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "EagleBurgmann, Optimally designing mechanical seals (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
             "API Standard 682, user responsibility (https://www.api.org/~/media/files/publications/whats%20new/682%20e4%20pa.pdf)"
@@ -496,7 +496,7 @@
     {
       "id": "FK-MEDIUM-ENGINEERING-METHOD",
       "subject_type": "medium",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "deep-research:codex-2026-07-11:medium-engineering-method"
       ],
@@ -542,7 +542,7 @@
           "text": "Eine fachlich belastbare Medienantwort beginnt mit der Stoffidentität: Handelsprodukt beziehungsweise chemische Spezies, Grundfluid, Konzentration, Wasseranteil, pH soweit relevant, Additivpaket, Verunreinigungen und Zustandsform. Oberbegriffe wie Synthetiköl, Kühlmittel oder Säure sind für eine Werkstofffreigabe nicht eindeutig genug.",
           "kind": "definition",
           "answer_facets": ["definition", "variants", "selection_inputs"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, compatibility of seals and operating media/cleaning agents (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
             "Parker O-Ring Handbook ORD 5700, fluid compatibility guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
@@ -553,7 +553,7 @@
           "text": "ISO 1817:2024 bewertet die Wirkung von Flüssigkeiten auf vulkanisierte oder thermoplastische Kautschuke durch den Vergleich von Werkstoffeigenschaften vor und nach der Immersion in Betriebs- oder Referenzflüssigkeiten. Ein solcher Immersionstest ist ein Kompatibilitätsbaustein; er bildet Nut, Vorspannung, Reibung, Druck, Permeation und dynamische Wärme eines realen Dichtsystems nicht vollständig ab.",
           "kind": "regulatory_status",
           "answer_facets": ["standards_validation", "mechanism", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "ISO 1817:2024 (https://www.iso.org/standard/86602.html)"
           ],
@@ -563,7 +563,7 @@
           "text": "Medienverträglichkeit ist bedingungsabhängig: Temperatur, Konzentration, Expositionszeit, Druck und Druckwechsel, Gas- oder Flüssigphase, Strömung, Reinigung und Medienwechsel können eine Bewertung ändern. Bei Säuren und anderen reaktiven Medien kann die Beständigkeit laut Parker insbesondere mit Temperatur und Konzentration stark wechseln.",
           "kind": "system_dependent",
           "answer_facets": ["parameters", "operating_factors", "media_compatibility", "tradeoffs"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook ORD 5700, acids and fluid compatibility (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "ISO 1817:2024 (https://www.iso.org/standard/86602.html)"
@@ -574,7 +574,7 @@
           "text": "Dichtungsrelevante Wechselwirkungen sind nicht auf sichtbare Quellung begrenzt. Zu prüfen sind Massen-/Volumenänderung, Härte- und Festigkeitsänderung, Extraktion von Weichmachern mit Schrumpfung, Hydrolyse oder Oxidation, Permeation, explosive Dekompression bei Gas sowie Ablagerung, Kristallisation und Verlust der Schmierfähigkeit.",
           "kind": "safety_caution",
           "answer_facets": ["media_compatibility", "failure_modes", "properties", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "ISO 1817:2024 (https://www.iso.org/standard/86602.html)",
             "Parker O-Ring Handbook ORD 5700, elastomer properties and failure analysis (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
@@ -585,7 +585,7 @@
           "text": "Ein Medium beeinflusst nicht nur den Werkstoff, sondern das gesamte Dichtprinzip: Viskosität und Schmierfähigkeit steuern den Reib- und Schmierfilm, Dampfdruck und Phasenwechsel das Flashing-Risiko, Feststoffe den Abrasivverschleiß, und Additive können die Beständigkeit gegenüber dem Grundfluid verändern.",
           "kind": "system_dependent",
           "answer_facets": ["mechanism", "properties", "applications", "design_interfaces"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "SKF Industrial Shaft Seals catalogue, lubrication and friction factors (official catalogue landing: https://www.skf.com/go/18729)",
             "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
@@ -597,7 +597,7 @@
           "text": "Eine Medien- oder Medienvergleichsantwort muss deshalb Stoffdaten und Dichtungswirkung getrennt ausgeben, Werkstoffaussagen an konkrete Compounds binden und offene Daten aus Sicherheitsdatenblatt, technischem Datenblatt oder Analyse benennen. Die finale Qualifikation erfolgt mit dem realen Medium beziehungsweise einer repräsentativen Rezeptur unter anwendungsnahen Bedingungen.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker PTFE Seals Design Guide, compatibility and field-test requirement (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
             "ISO 1817:2024 (https://www.iso.org/standard/86602.html)"
@@ -610,7 +610,7 @@
     {
       "id": "FK-NBR-UEBERBLICK",
       "subject_type": "material",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "deep-research:codex-2026-07-11:nbr-overview"
       ],
@@ -642,7 +642,7 @@
           "text": "NBR (Nitrilkautschuk) ist eine Familie ungesättigter Copolymere aus Butadien und Acrylnitril.",
           "kind": "definition",
           "answer_facets": ["definition", "properties"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
@@ -655,7 +655,7 @@
           "text": "Der Acrylnitril-Anteil beeinflusst die Eigenschaften des fertigen NBR-Compounds: Ein höherer Anteil verbessert familientypisch die Öl- und Kraftstoffbeständigkeit, steht aber im Zielkonflikt mit Elastizität und Druckverformungsrest.",
           "kind": "family_tendency",
           "answer_facets": ["properties", "variants", "tradeoffs"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
@@ -668,7 +668,7 @@
           "text": "Typische Stärken von NBR sind die Beständigkeit gegen viele Mineralöle, Kraftstoffe und Fette sowie gute mechanische, Abrieb- und Verschleißeigenschaften; deshalb wird die Werkstofffamilie unter anderem für Dichtungen, O-Ringe und Schläuche eingesetzt.",
           "kind": "family_tendency",
           "answer_facets": ["media_compatibility", "properties", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
@@ -681,7 +681,7 @@
           "text": "Eine wesentliche Familiengrenze ist die geringe Ozon- und Witterungsbeständigkeit von Standard-NBR; für entsprechende Umgebungen muss ein konkret geeigneter Compound oder eine andere Werkstofffamilie geprüft werden.",
           "kind": "safety_caution",
           "answer_facets": ["limits", "failure_modes", "operating_factors"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
@@ -694,7 +694,7 @@
           "text": "Die Werkstofffamilie NBR allein ist keine Eignungsfreigabe: Acrylnitril-Anteil, Rezeptur und konkrete Betriebsbedingungen bestimmen die Eigenschaften des fertigen Compounds, weshalb die anwendungsbezogene Auswahl gegen Datenblatt und Herstellerangaben zu prüfen ist.",
           "kind": "qualification_required",
           "answer_facets": ["selection_inputs", "standards_validation"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
@@ -712,7 +712,7 @@
     },
     {
       "id": "FK-FKM-DAMPF",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-FKM-DAMPF"
       ],
@@ -749,21 +749,21 @@
       "claims": [
         {
           "text": "FKM hydrolysiert und verspröttet in Sattdampf/Heißdampf — die hohe Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FKM-DAMPF"
           ]
         },
         {
           "text": "EPDM (peroxidvernetzt) ist der Standardwerkstoff für Dampf-/SIP-Anwendungen.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FKM-DAMPF"
           ]
         },
         {
           "text": "Bei zusätzlicher Chemikalienlast im Dampf: AFLAS/FEPM erwägen.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FKM-DAMPF"
           ]
@@ -773,7 +773,7 @@
     },
     {
       "id": "FK-PHARMA-SIP-VALIDIERUNG",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": ["owner:eval-SAFETY-02"],
       "version": "fachkarten_seed_v1",
       "matrix_crosscheck": "not_applicable",
@@ -787,13 +787,13 @@
         {
           "text": "Bei Pharma-Produktkontakt und Dampfsterilisation muss das konkrete Dichtungssystem die geforderten Qualifikations- und Zulassungsnachweise erfüllen; dazu können je nach Lastenheft USP Class VI, FDA-Konformität, tierfreie Zusammensetzung und GMP-Validierung gehören. Die Nachweise gelten compound- und chargenspezifisch und sind mit dem Hersteller zu bestätigen.",
           "kind": "qualification_required",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": ["owner:eval-SAFETY-02"]
         },
         {
           "text": "Für den Pharma-Bioreaktor sind spaltarme hygienische Ausführung, Reinigbarkeit sowie die Bewertung von Extractables und Leachables Teil der Systemvalidierung.",
           "kind": "qualification_required",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": ["owner:eval-SAFETY-02"]
         }
       ],
@@ -801,7 +801,7 @@
     },
     {
       "id": "FK-ERSATZDICHTUNG-IDENTIFIKATION",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": ["owner:eval-UNDER-03"],
       "version": "fachkarten_seed_v1",
       "matrix_crosscheck": "not_applicable",
@@ -815,7 +815,7 @@
         {
           "text": "Ist die Originalspezifikation einer Wellendichtung unbekannt, wird das Altteil systematisch identifiziert: Innen- und Außendurchmesser sowie Breite am Altteil beziehungsweise an Welle und Bohrung messen; Dicht- und Staublippe, Feder, Drehrichtung und erkennbare Material- oder Härtekennzeichnungen dokumentieren; vorhandenen Code fotografieren; anschließend Medium, Temperatur und Drehzahl des Einsatzes ergänzen. Daraus lässt sich die Standardbezeichnung eingrenzen, bevor ein Ersatz freigegeben wird.",
           "kind": "qualification_required",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": ["owner:eval-UNDER-03"]
         }
       ],
@@ -823,7 +823,7 @@
     },
     {
       "id": "FK-EPDM-MINERALOEL",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-EPDM-MINERALOEL"
       ],
@@ -854,21 +854,21 @@
       "claims": [
         {
           "text": "EPDM ist unpolar und quillt grundsätzlich stark in Mineralölen, Kohlenwasserstoffen und Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen- oder Lagerfehler.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-EPDM-MINERALOEL"
           ]
         },
         {
           "text": "Für Mineralöl-Hydraulik ist NBR der Standard; FKM bietet höhere Temperatur- und Medienbeständigkeit.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-EPDM-MINERALOEL"
           ]
         },
         {
           "text": "EPDM passt zu glykol-/wasserbasierten Fluiden (HFC/HFD-R) und Bremsflüssigkeit.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-EPDM-MINERALOEL"
           ]
@@ -880,7 +880,7 @@
     },
     {
       "id": "FK-NBR-OZON",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-NBR-OZON"
       ],
@@ -911,7 +911,7 @@
         {
           "text": "NBR ist anfällig für Ozon-, UV- und Witterungsrissbildung und damit für den Dauer-Außeneinsatz problematisch.",
           "answer_facets": ["limits", "failure_modes", "operating_factors"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-NBR-OZON"
           ]
@@ -919,7 +919,7 @@
         {
           "text": "Alternativen je nach Medium: HNBR, EPDM oder CR.",
           "answer_facets": ["variants", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-NBR-OZON"
           ]
@@ -927,7 +927,7 @@
         {
           "text": "Bei Öl-Kontakt im Außeneinsatz bietet HNBR Ölbeständigkeit mit besserer Ozonbeständigkeit.",
           "answer_facets": ["tradeoffs", "applications", "media_compatibility"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-NBR-OZON"
           ]
@@ -937,7 +937,7 @@
     },
     {
       "id": "FK-PTFE-KALTFLUSS",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-PTFE-KALTFLUSS",
         "Parker PTFE Seal Design Guide",
@@ -973,28 +973,28 @@
       "claims": [
         {
           "text": "Ein reiner PTFE-O-Ring dichtet statisch unzuverlässig: Kaltfluss/Kriechen unter Dauerlast, keine elastische Rückstellung.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-PTFE-KALTFLUSS"
           ]
         },
         {
           "text": "Chemische Beständigkeit ist nicht gleich mechanische Eignung.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-PTFE-KALTFLUSS"
           ]
         },
         {
           "text": "Lösungen: federvorgespannte PTFE-Dichtung, FEP/PFA-ummantelter O-Ring (Elastomerkern) oder PTFE-Compound.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-PTFE-KALTFLUSS"
           ]
         },
         {
           "text": "PTFE ist ein teilkristalliner thermoplastischer Dichtungswerkstoff mit sehr hoher chemischer und thermischer Beständigkeit sowie sehr niedriger Reibung; anders als ein Elastomer besitzt es jedoch keine elastomere Rückstellung.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "kind": "definition",
           "sources": [
             "https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/o_ring_gb_en.pdf",
@@ -1006,7 +1006,7 @@
         },
         {
           "text": "Ungefülltes PTFE verformt sich unter anhaltender Last zeitabhängig durch Kriechen beziehungsweise Kaltfluss und weist nur geringe Rückstellfähigkeit und Verschleißfestigkeit auf; diese Grenzen müssen in der Dichtungskonstruktion berücksichtigt werden.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "kind": "safety_caution",
           "sources": [
             "https://discover.parker.com/PTFE-Sealing-Materials",
@@ -1018,7 +1018,7 @@
         },
         {
           "text": "Füllstoffe und modifizierte PTFE-Compounds können insbesondere Kriech-, Verschleiß- und Lasttrageigenschaften verbessern; die Wirkung hängt vom konkreten Compound, Medium, Gegenlaufpartner und Belastungskollektiv ab.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "kind": "system_dependent",
           "sources": [
             "https://discover.parker.com/PTFE-Sealing-Materials",
@@ -1030,7 +1030,7 @@
         },
         {
           "text": "Bei PTFE-Dichtungen wird die fehlende Eigenelastizität je nach Bauform durch eine Feder oder ein elastomeres Vorspannelement kompensiert; dadurch können Verschleiß, Kaltfluss und Maßabweichungen innerhalb des Auslegungsbereichs nachgestellt werden.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "kind": "system_dependent",
           "sources": [
             "https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf",
@@ -1042,7 +1042,7 @@
         },
         {
           "text": "Die Auswahl einer PTFE-Dichtung ist deshalb keine reine Werkstofffrage: Erforderlich sind mindestens Bauform, Medium, Temperatur, Druck, Bewegungsart beziehungsweise Geschwindigkeit, Gegenlauffläche und gewünschte Lebensdauer; die finale Compound- und Bauformfreigabe erfolgt anhand konkreter Herstellerdaten.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "kind": "qualification_required",
           "sources": [
             "https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf"
@@ -1056,7 +1056,7 @@
     },
     {
       "id": "FK-FKM-AMIN-LAUGE-KETON",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"
       ],
@@ -1086,21 +1086,21 @@
       "claims": [
         {
           "text": "FKM wird von Aminen (auch aminhaltigen Kühlmitteln/Inhibitoren), starken Basen/Laugen, Ketonen und Estern angegriffen.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"
           ]
         },
         {
           "text": "Bei Laugen sinkt die FKM-Beständigkeit mit Konzentration und Temperatur (Lauge bei hoher Temperatur versagt).",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"
           ]
         },
         {
           "text": "Alternativen je nach Fall: EPDM oder FFKM.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FKM-AMIN-LAUGE-KETON"
           ]
@@ -1110,7 +1110,7 @@
     },
     {
       "id": "FK-VMQ-DYNAMISCH",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-VMQ-DYNAMISCH"
       ],
@@ -1140,21 +1140,21 @@
       "claims": [
         {
           "text": "VMQ hat schlechte mechanische/abrasive Eigenschaften und geringe Reißfestigkeit und ist daher für dynamische, schnelldrehende Wellendichtungen ungeeignet.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-VMQ-DYNAMISCH"
           ]
         },
         {
           "text": "Der Temperaturbereich allein qualifiziert VMQ nicht; Dynamik und Verschleiß sind limitierend.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-VMQ-DYNAMISCH"
           ]
         },
         {
           "text": "Stattdessen FKM oder eine PTFE-Lippe.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-VMQ-DYNAMISCH"
           ]
@@ -1164,7 +1164,7 @@
     },
     {
       "id": "FK-NBR-DAUERTEMP",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-NBR-DAUERTEMP"
       ],
@@ -1191,7 +1191,7 @@
         {
           "text": "NBR liegt bei etwa 100–120 °C an der Dauertemperaturgrenze; dauerhaft darüber (z. B. 130 °C) drohen Verhärtung, Versprödung und kürzere Lebensdauer.",
           "answer_facets": ["parameters", "limits", "failure_modes", "operating_factors"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-NBR-DAUERTEMP"
           ]
@@ -1199,7 +1199,7 @@
         {
           "text": "Bei höherer Dauertemperatur: HNBR oder FKM.",
           "answer_facets": ["variants", "applications"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-NBR-DAUERTEMP"
           ]
@@ -1207,7 +1207,7 @@
         {
           "text": "Synthetiköle/Additive (Estertyp) können NBR zusätzlich angreifen.",
           "answer_facets": ["media_compatibility", "limits"],
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-NBR-DAUERTEMP"
           ]
@@ -1217,7 +1217,7 @@
     },
     {
       "id": "FK-FOODGRADE-FETT",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "trap-correct:TRAP-FOODGRADE-FETT",
         "owner:M2-review-note"
@@ -1247,28 +1247,28 @@
       "claims": [
         {
           "text": "'food-grade' bedeutet nicht 'für jedes Lebensmittel geeignet': fetthaltige Lebensmittel (z. B. Schokolade/Kakaobutter) lassen EPDM quellen.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FOODGRADE-FETT"
           ]
         },
         {
           "text": "Für fetthaltige Lebensmittel: food-grade FKM, VMQ oder FFKM mit Zulassung (FDA 21 CFR / EG 1935/2004).",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FOODGRADE-FETT"
           ]
         },
         {
           "text": "Temperatur (z. B. Conchieren) und Zulassungsnachweis sind zusätzlich zu prüfen.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "trap-correct:TRAP-FOODGRADE-FETT"
           ]
         },
         {
           "text": "VMQ bietet nur moderate Fettbeständigkeit; FKM und FFKM sind für fetthaltige Medien deutlich stärker.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "provenance": [
             "owner:M2-review-note"
           ]
@@ -1280,7 +1280,7 @@
     },
     {
       "id": "FK-ORING-VERPRESSUNG",
-      "review_state": "reviewed",
+      "review_state": "quarantined",
       "provenance": [
         "eval:CALC-02",
         "owner:nutauslegung"
@@ -1303,7 +1303,7 @@
       "claims": [
         {
           "text": "Die typische statische radiale Verpressung eines O-Rings liegt bei ~15–25 % der Schnurstärke (Richtwert); dynamisch geringer.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook",
             "ISO 3601-2 (Nutauslegung)"
@@ -1315,7 +1315,7 @@
         },
         {
           "text": "Die Nutfüllung so auslegen, dass Platz für Wärmedehnung und Quellung bleibt — Füllgrad typischerweise max. ~75–90 %.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook",
             "ISO 3601-2 (Nutauslegung)"
@@ -1327,7 +1327,7 @@
         },
         {
           "text": "Die geeignete Verpressung hängt von Schnurstärke, Medium (Quellung) und Temperatur ab; es sind Richtwerte/Bereiche — keine Scheingenauigkeit. Gegen Nut-Auslegungsnorm bzw. Herstellertabelle verifizieren.",
-          "review_state": "reviewed",
+          "review_state": "quarantined",
           "sources": [
             "Parker O-Ring Handbook",
             "ISO 3601-2 (Nutauslegung)"

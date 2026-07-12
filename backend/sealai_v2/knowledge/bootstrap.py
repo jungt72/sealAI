@@ -1,4 +1,4 @@
-"""Idempotently import the reviewed repository seed into the Postgres ledger."""
+"""Idempotently import the governed repository seed into the Postgres ledger."""
 
 from __future__ import annotations
 
