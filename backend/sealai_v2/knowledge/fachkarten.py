@@ -11,9 +11,10 @@ loaded as ``quarantined``. Quarantined claims remain visible to review tooling
 but never reach retrieval, prompts, citations, or a derived vector index.
 ``draft`` claims remain provisional and never authoritative or corrective.
 
-Pure data + a typed loader - no LLM, no network. The reviewed seed is the version-controlled release
-artifact; ``knowledge.bootstrap`` imports it into the authoritative Postgres runtime ledger. Qdrant
-is a derived projection and is never a runtime source of truth.
+Pure data + a typed loader - no LLM, no network. The governed seed is a version-controlled review
+artifact; ``knowledge.bootstrap`` imports it into the authoritative Postgres runtime ledger without
+promoting its quarantined or draft content. Qdrant is a derived projection and is never a runtime
+source of truth.
 """
 
 from __future__ import annotations
