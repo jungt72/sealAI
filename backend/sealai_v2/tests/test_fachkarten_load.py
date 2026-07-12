@@ -152,6 +152,31 @@ def test_model_review_marker_is_not_independent_human_review(tmp_path):
     assert claim.quarantined
 
 
+def test_release_bootstrap_is_not_independent_human_review(tmp_path):
+    cards = [
+        {
+            "id": "FK-BOOTSTRAP",
+            "review_state": "reviewed",
+            "provenance": ["release-bootstrap"],
+            "scope": {"material": ["FKM"]},
+            "claims": [
+                {
+                    "text": "Source-backed but only release-imported",
+                    "review_state": "reviewed",
+                    "sources": ["ISO 23936-2"],
+                    "provenance": ["release-bootstrap"],
+                    "reviewed_by": "release-bootstrap",
+                    "reviewed_at": "2026-07-11T10:00:00Z",
+                    "review_expires_at": "2099-07-11T10:00:00Z",
+                }
+            ],
+        }
+    ]
+
+    claim = load_fachkarten(_write(tmp_path, cards)).cards[0].claims[0]
+    assert claim.quarantined
+
+
 def test_draft_claim_needs_no_source(tmp_path):
     ok = [
         {

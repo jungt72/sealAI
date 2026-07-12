@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from sqlalchemy import select
 
@@ -29,13 +31,19 @@ def _ledger(tmp_path):
     return PostgresKnowledgeLedger(sf), sf
 
 
-def _catalog(*, text="PTFE ist chemisch bestaendig.", reviewed=False, with_source=True):
+def _catalog(
+    *,
+    text="PTFE ist chemisch bestaendig.",
+    reviewed=False,
+    with_source=True,
+    source="DIN EN ISO 1",
+):
     status = "reviewed" if reviewed else "draft"
     claim = {
         "text": text,
         "review_state": status,
         "kind": "family_tendency",
-        "sources": ["DIN EN ISO 1"] if reviewed and with_source else [],
+        "sources": [source] if with_source else [],
         "provenance": ["owner:test"] if reviewed else ["paperless-draft:test"],
     }
     if reviewed:
@@ -93,6 +101,145 @@ def test_replace_catalog_is_atomic_versioned_and_idempotent(tmp_path):
         assert len(session.scalars(select(V2KnowledgeOutbox)).all()) == 1
 
 
+def test_quarantined_catalog_reimport_is_idempotent(tmp_path):
+    ledger, _ = _ledger(tmp_path)
+    catalog = _catalog(reviewed=True, with_source=False)
+    first = ledger.replace_catalog(
+        _document(), catalog, now=NOW, actor="release-bootstrap"
+    )
+    second = ledger.replace_catalog(
+        _document(),
+        catalog,
+        now="2026-07-10T11:00:00Z",
+        actor="release-bootstrap",
+    )
+
+    assert first.claims_created == 1
+    assert second.claims_created == 0
+    assert second.claims_updated == 0
+    assert second.claims_retired == 0
+    assert second.outbox_enqueued == 0
+
+
+def test_claim_identity_survives_unrelated_document_revision(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    first = ledger.replace_catalog(
+        _document(), _catalog(), now=NOW, actor="paperless-webhook"
+    )
+    with sf() as session:
+        first_id = session.scalar(select(V2KnowledgeClaim.id))
+
+    second = ledger.replace_catalog(
+        _document(b"source-v2"),
+        _catalog(),
+        now="2026-07-10T11:00:00Z",
+        actor="paperless-webhook",
+    )
+
+    assert first.document_id != second.document_id
+    assert second.claims_created == 0
+    assert second.claims_retired == 0
+    assert second.claims_updated == 1
+    with sf() as session:
+        claims = session.scalars(select(V2KnowledgeClaim)).all()
+        assert len(claims) == 1
+        assert claims[0].id == first_id
+        assert claims[0].document_id == second.document_id
+        assert len(claims[0].authority_fingerprint) == 64
+
+
+def test_duplicate_logical_claim_identity_is_rejected(tmp_path):
+    ledger, _ = _ledger(tmp_path)
+    catalog = _catalog()
+    card = catalog.cards[0]
+    duplicate = FachkartenCatalog(
+        cards=(replace(card, claims=(card.claims[0], card.claims[0])),)
+    )
+
+    with pytest.raises(KnowledgeLedgerError, match="duplicate logical claim identity"):
+        ledger.replace_catalog(_document(), duplicate, now=NOW, actor="webhook")
+
+
+def test_human_review_survives_unchanged_claim_contract_revision(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
+    with sf() as session:
+        claim_id = session.scalar(select(V2KnowledgeClaim.id))
+    ledger.review_claim(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        claim_id=claim_id,
+        to_status="approved",
+        actor="domain-reviewer:alice",
+        now=NOW,
+        evidence=("DIN EN ISO 1",),
+        applicability={"material": ["PTFE"]},
+        uncertainty="conditional",
+        transferability="family_level_orientation",
+        review_expires_at="2099-07-10T10:00:00Z",
+        change_reason="independent domain review",
+    )
+
+    second = ledger.replace_catalog(
+        _document(b"source-v2"),
+        _catalog(),
+        now="2026-07-10T11:00:00Z",
+        actor="release-bootstrap",
+    )
+
+    with sf() as session:
+        row = session.get(V2KnowledgeClaim, claim_id)
+        reviews = session.scalars(
+            select(V2KnowledgeReview).order_by(V2KnowledgeReview.id)
+        ).all()
+        assert row.review_status == "approved"
+        assert row.review_origin == "human_api"
+        assert row.reviewed_by == "domain-reviewer:alice"
+        assert row.document_id == second.document_id
+        assert [(item.from_status, item.to_status) for item in reviews] == [
+            ("draft", "approved")
+        ]
+    assert claim_id in ledger.resolve_claims((claim_id,), tenant_id="customer-a")
+
+
+def test_authority_contract_change_quarantines_prior_human_review(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
+    with sf() as session:
+        claim_id = session.scalar(select(V2KnowledgeClaim.id))
+    ledger.review_claim(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        claim_id=claim_id,
+        to_status="approved",
+        actor="domain-reviewer:alice",
+        now=NOW,
+        evidence=("DIN EN ISO 1",),
+        applicability={"material": ["PTFE"]},
+        uncertainty="conditional",
+        transferability="family_level_orientation",
+        review_expires_at="2099-07-10T10:00:00Z",
+    )
+
+    ledger.replace_catalog(
+        _document(b"source-v2"),
+        _catalog(source="DIN EN ISO 2"),
+        now="2026-07-10T11:00:00Z",
+        actor="release-bootstrap",
+    )
+
+    with sf() as session:
+        row = session.get(V2KnowledgeClaim, claim_id)
+        reviews = session.scalars(
+            select(V2KnowledgeReview).order_by(V2KnowledgeReview.id)
+        ).all()
+        assert row.review_status == "quarantined"
+        assert row.review_origin == "policy_import"
+        assert row.sources_json == ["DIN EN ISO 2"]
+        assert reviews[-1].from_status == "approved"
+        assert reviews[-1].to_status == "quarantined"
+        assert "Authority contract changed" in reviews[-1].note
+    assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}
+
+
 def test_changed_source_creates_revision_and_retires_old_claim(tmp_path):
     ledger, sf = _ledger(tmp_path)
     ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
@@ -123,6 +270,15 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
     )
     with sf() as session:
         claim_id = session.scalar(select(V2KnowledgeClaim.id))
+
+    with pytest.raises(KnowledgeLedgerError, match="authenticated human actor"):
+        ledger.review_claim(
+            tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+            claim_id=claim_id,
+            to_status="rejected",
+            actor="release-bootstrap",
+            now=NOW,
+        )
 
     try:
         ledger.review_claim(

@@ -67,8 +67,19 @@ status corrections remain audited and derived Qdrant data is rebuildable.
 - Claims carry typed evidence, applicability, uncertainty, transferability,
   conflicts, reviewer identity, review time, and expiry. Expired or incomplete
   approvals are excluded again at authoritative Postgres resolution.
+- Logical claim IDs are now independent from whole-document revisions. A
+  separate authority fingerprint covers the imported text, card version, kind,
+  scope, sources, applicability, uncertainty, transferability, and conflicts.
+  Human decisions survive unrelated catalog revisions but are automatically
+  quarantined, with an append-only audit event, when that authority contract
+  changes. Explicit review origin prevents policy/bootstrap activity from being
+  mistaken for human adjudication. The first `20260712_0007` bootstrap rotates
+  the legacy document-bound IDs once and must therefore precede domain review.
 - A separately gated `knowledge_reviewer` API exposes the authoritative review
   queue and records independent human adjudication without activating H1.
+- A source-integrity pass replaced obsolete EagleBurgmann and Parker locations
+  with current official references and the SKF catalogue link with its official
+  stable catalogue landing before the human review queue is generated.
 - Source-less trap entries remain usable as defensive block policies but cannot
   inject or render a technical counterclaim. The legacy unsourced compatibility
   matrix is default-off until its cells enter the same evidence lifecycle.

@@ -115,7 +115,7 @@ def test_seed_review_state_never_launders_model_review_into_authority() -> None:
             assert claim.review_expires_at
             assert not any(
                 marker in claim.reviewed_by.lower()
-                for marker in ("codex", "llm", "model", "agent")
+                for marker in ("codex", "llm", "model", "agent", "release-bootstrap")
             )
 
 

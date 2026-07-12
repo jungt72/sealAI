@@ -278,7 +278,7 @@
           "review_state": "reviewed",
           "sources": [
             "ISO 6194-1:2007 (https://www.iso.org/standard/34678.html)",
-            "SKF Industrial Shaft Seals catalogue (https://www.skf.com/binaries/pub12/Images/0901d1968099986c-Industrial-Shaft-Seals-catalogue_tcm_12-524179.pdf)"
+            "SKF Industrial Shaft Seals catalogue (official catalogue landing: https://www.skf.com/go/18729)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -288,7 +288,7 @@
           "answer_facets": ["mechanism", "operating_factors", "properties", "failure_modes"],
           "review_state": "reviewed",
           "sources": [
-            "SKF Industrial Shaft Seals catalogue, Radial shaft seals - Lubrication and Friction (https://www.skf.com/binaries/pub12/Images/0901d1968099986c-Industrial-Shaft-Seals-catalogue_tcm_12-524179.pdf)"
+            "SKF Industrial Shaft Seals catalogue, Radial shaft seals - Lubrication and Friction (official catalogue landing: https://www.skf.com/go/18729)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -318,7 +318,7 @@
           "answer_facets": ["operating_factors", "selection_inputs", "tradeoffs", "media_compatibility"],
           "review_state": "reviewed",
           "sources": [
-            "SKF Industrial Shaft Seals catalogue (https://www.skf.com/binaries/pub12/Images/0901d1968099986c-Industrial-Shaft-Seals-catalogue_tcm_12-524179.pdf)",
+            "SKF Industrial Shaft Seals catalogue (official catalogue landing: https://www.skf.com/go/18729)",
             "Parker PTFE Seals Design Guide, application range warning (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)"
           ],
           "provenance": ["review:codex-2026-07-11"]
@@ -340,7 +340,7 @@
           "answer_facets": ["failure_modes", "mechanism", "design_interfaces"],
           "review_state": "reviewed",
           "sources": [
-            "SKF Industrial Shaft Seals catalogue, failure analysis and counterface guidance (https://www.skf.com/binaries/pub12/Images/0901d1968099986c-Industrial-Shaft-Seals-catalogue_tcm_12-524179.pdf)",
+            "SKF Industrial Shaft Seals catalogue, failure analysis and counterface guidance (official catalogue landing: https://www.skf.com/go/18729)",
             "Trelleborg Rotary Seals catalogue (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
           ],
           "provenance": ["review:codex-2026-07-11"]
@@ -422,7 +422,7 @@
           "review_state": "reviewed",
           "sources": [
             "EagleBurgmann Mechanical Seals product classification (https://www.eagleburgmann.com/en/products/mechanical-seals/)",
-            "EagleBurgmann, Mechanical seal technology and selection (https://www.eagleburgmann.com/media/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
+            "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -433,7 +433,7 @@
           "review_state": "reviewed",
           "sources": [
             "EagleBurgmann, Optimally designing mechanical seals (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
-            "EagleBurgmann, Mechanical seal technology and selection (https://www.eagleburgmann.com/media/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
+            "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -443,7 +443,7 @@
           "answer_facets": ["properties", "media_compatibility", "tradeoffs", "design_interfaces"],
           "review_state": "reviewed",
           "sources": [
-            "EagleBurgmann, Mechanical seal technology and selection - material code and selection tables (https://www.eagleburgmann.com/media/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
+            "EagleBurgmann, Mechanical seal technology and selection - material code and selection tables (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -453,7 +453,7 @@
           "answer_facets": ["design_interfaces", "operating_factors", "failure_modes", "variants"],
           "review_state": "reviewed",
           "sources": [
-            "EagleBurgmann, Mechanical seal technology and selection - auxiliary piping plans (https://www.eagleburgmann.com/media/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
+            "EagleBurgmann, Mechanical seal technology and selection - auxiliary piping plans (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -464,7 +464,7 @@
           "review_state": "reviewed",
           "sources": [
             "EagleBurgmann, Mechanical Seal - operating principle and selection factors (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
-            "EagleBurgmann, Mechanical seal technology and selection (https://www.eagleburgmann.com/media/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
+            "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)"
           ],
           "provenance": ["review:codex-2026-07-11"]
         },
@@ -587,8 +587,8 @@
           "answer_facets": ["mechanism", "properties", "applications", "design_interfaces"],
           "review_state": "reviewed",
           "sources": [
-            "SKF Industrial Shaft Seals catalogue, lubrication and friction factors (https://www.skf.com/binaries/pub12/Images/0901d1968099986c-Industrial-Shaft-Seals-catalogue_tcm_12-524179.pdf)",
-            "EagleBurgmann, Mechanical seal technology and selection (https://www.eagleburgmann.com/media/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+            "SKF Industrial Shaft Seals catalogue, lubrication and friction factors (official catalogue landing: https://www.skf.com/go/18729)",
+            "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
             "Parker PTFE Seals Design Guide, additives and media compatibility (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)"
           ],
           "provenance": ["review:codex-2026-07-11"]
@@ -1009,7 +1009,7 @@
           "review_state": "reviewed",
           "kind": "safety_caution",
           "sources": [
-            "https://www.parker.com/literature/Packing/Packing%20-%20Literature/Catalog_PTFE-Seals_PDE3354-GB_1103.pdf",
+            "https://discover.parker.com/PTFE-Sealing-Materials",
             "https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part2"
           ],
           "provenance": [
@@ -1021,7 +1021,7 @@
           "review_state": "reviewed",
           "kind": "system_dependent",
           "sources": [
-            "https://www.parker.com/literature/Packing/Packing%20-%20Literature/Catalog_PTFE-Seals_PDE3354-GB_1103.pdf",
+            "https://discover.parker.com/PTFE-Sealing-Materials",
             "https://www.teflon.com/en/products/resins/ptfe-granular/nxt-granular"
           ],
           "provenance": [
