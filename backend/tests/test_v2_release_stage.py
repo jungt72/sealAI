@@ -60,6 +60,8 @@ def test_owner_waiver_is_explicit_auditable_and_keeps_signed_image_gate():
     assert 'EVAL_STATUS="waived_by_owner"' in script
     assert 'EVAL_EVIDENCE_TYPE="owner_waiver"' in script
     assert '"owner_waiver": {' in script
+    assert "waived by \\`${WAIVER_APPROVER}\\`" in script
+    assert "waived by `${WAIVER_APPROVER}`" not in script
     assert "final and owner-waiver releases require BACKEND_V2_IMAGE" in script
     assert script.index("verify-image-attestations.sh") < script.index(
         "owner-waiver gate PASS"
