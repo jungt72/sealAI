@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/workflows/build-and-push.yml"
       - "backend/Dockerfile.v2"
       - "backend/docker-entrypoint-v2.sh"
       - "backend/requirements-v2.txt"
@@ -17,7 +18,9 @@ on:
         type: string
 
 permissions:
+  attestations: write
   contents: read
+  id-token: write
   packages: write
 
 env:
@@ -79,6 +82,34 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             io.sealai.served-tree-hash=${{ steps.source.outputs.tree_hash }}
 
+      - name: Extract and validate pushed SPDX SBOM
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${IMAGE_BACKEND_V2}@${IMAGE_DIGEST}"
+          docker buildx imagetools inspect "$image" \
+            --format '{{ json .SBOM.SPDX }}' > backend-v2.spdx.json
+          jq -e \
+            '.spdxVersion and .documentNamespace and ((.packages // []) | length > 0)' \
+            backend-v2.spdx.json >/dev/null
+
+      - name: Sign build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Sign SPDX SBOM
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: backend-v2.spdx.json
+          push-to-registry: true
+
       - name: Publish artifact coordinates
         run: |
           {
@@ -87,5 +118,5 @@ jobs:
             echo "- tree hash: \`${{ steps.source.outputs.tree_hash }}\`"
             echo "- image tag: \`${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}\`"
             echo "- image digest: \`${{ steps.build.outputs.digest }}\`"
-            echo "- provenance: OCI build provenance and SBOM attached"
+            echo "- supply chain: BuildKit OCI provenance/SBOM plus GitHub-signed provenance and SPDX SBOM"
           } >> "$GITHUB_STEP_SUMMARY"
