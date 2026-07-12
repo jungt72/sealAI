@@ -299,6 +299,12 @@ jq -e \
    and .attributes["pkce.code.challenge.method"] == "S256"' \
   <<<"$v2_state" >/dev/null || die "sealai-v2 client policy read-back failed"
 
+# Revoke pre-existing sessions after the privileged mapping is verified. The
+# owner must complete UPDATE_PASSWORD and CONFIGURE_TOTP before Keycloak issues
+# a new session containing realm-admin.
+printf 'Revoking pre-existing owner sessions...\n'
+kcadm create "users/$target_user_id/logout" -r "$KEYCLOAK_REALM" -b '{}' >/dev/null
+
 printf 'Deleting the temporary recovery identity...\n'
 delete_temporary_admin_identity
 

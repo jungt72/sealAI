@@ -26,7 +26,8 @@ Primary references:
 - The owner is deliberately **not** a permanent master-realm superadmin. That
   would grant unnecessary cross-realm authority.
 - Password replacement and TOTP enrollment are required before Keycloak issues
-  a fresh privileged session.
+  a fresh privileged session. Existing owner sessions are revoked immediately
+  after the privileged mapping is verified.
 - Recovery uses a random temporary admin user while every Keycloak node is
   stopped. The user is deleted in the same reconciliation run.
 - User and admin events are retained for seven days. Admin event
