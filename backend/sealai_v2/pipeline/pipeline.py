@@ -1625,7 +1625,9 @@ class Pipeline:
                         [violation.kind for violation in _final_guard.violations],
                     )
                     answer = Answer(
-                        text=_final_guard_fallback(_effective_contract),
+                        text=_final_guard_fallback(
+                            _effective_contract, question=question
+                        ),
                         model="deterministic-final-output-guard",
                         grounding_facts=l1_grounding,
                     )

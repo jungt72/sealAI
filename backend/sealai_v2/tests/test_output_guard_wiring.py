@@ -147,8 +147,43 @@ def test_general_knowledge_fallback_names_limited_reviewed_scope_not_contradicti
         }
     )
 
-    assert "aktuell freigegebenen Quellen" in text
+    assert "aktuell geprüften Quellen" in text
     assert "nicht widerspruchsfrei" not in text
+
+
+def test_fail_closed_rwdr_case_keeps_kernel_value_and_design_inputs():
+    text = fail_closed_answer(
+        {
+            "status": "GENERAL",
+            "allowed_claims": [
+                {
+                    "id": "FK-RWDR",
+                    "text": "Ein RWDR benötigt einen tragfähigen Schmierfilm.",
+                    "severity": "info",
+                }
+            ],
+            "allowed_values": [
+                {
+                    "calc_id": "umfangsgeschwindigkeit",
+                    "name": "v_m_s",
+                    "value": 3.5343,
+                    "unit": "m/s",
+                    "warnings": [],
+                }
+            ],
+            "required_clauses": [],
+        },
+        question=(
+            "RWDR für 45 mm Welle bei 1500 U/min, Mineralöl, 80 Grad und Staub "
+            "technisch vorprüfen"
+        ),
+    )
+
+    assert text.startswith("Technische Vorprüfung")
+    assert "Umfangsgeschwindigkeit: 3.5343 m/s" in text
+    assert "Wellenhärte, Rauheit und Drallfreiheit" in text
+    assert "Druckdifferenz mit Druckspitzen" in text
+    assert "Wissensfrage" not in text
 
 
 # ── P0-B: response_contract_general_guard_enabled — the guard on NON-Gegencheck turns ──────────────

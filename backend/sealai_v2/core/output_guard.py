@@ -419,7 +419,40 @@ def evaluate_render(
     )
 
 
-def fail_closed_answer(contract: dict) -> str:
+def _case_open_inputs(question: str) -> tuple[str, ...]:
+    """Return discriminating, non-numeric design inputs for a blocked case answer."""
+    low = (question or "").casefold()
+    if any(
+        alias in low
+        for alias in (
+            "rwdr",
+            "radialwellendichtring",
+            "radial-wellendichtring",
+            "simmerring",
+            "wellendichtring",
+        )
+    ):
+        return (
+            "Druckdifferenz mit Druckspitzen und Druckrichtung sowie exakte Mediumbezeichnung einschließlich Additiven.",
+            "Wellenhärte, Rauheit und Drallfreiheit sowie Rundlauf und Exzentrizität am Dichtsitz.",
+            "Einbauraum und Montageweg, geforderte Lebensdauer und Leckage sowie Art und Menge des Schmutzeintrags.",
+        )
+    if "o-ring" in low or "oring" in low:
+        return (
+            "Exakter Compound, Medium einschließlich Additiven sowie Temperatur- und Druckkollektiv.",
+            "Nutgeometrie, Verpressung, Nutfüllung und Extrusionsspalt einschließlich Toleranzen.",
+            "Bewegungsart, Lastwechsel, Oberflächen, Montageweg, Lebensdauer- und Leckageanforderung.",
+        )
+    if any(alias in low for alias in ("gleitringdichtung", "gleitdichtung", "glrd")):
+        return (
+            "Mediumzusammensetzung, Feststoff- und Gasanteil sowie Temperatur-, Druck- und Drehzahlkollektiv.",
+            "Wellen- und Gehäuseschnittstellen, Betriebsweise einschließlich Anfahren, Stillstand und Trockenlaufgefahr.",
+            "Dichtungsanordnung, Werkstoffpaarung, Hilfssystem und zulässige Leckage beziehungsweise Lebensdauer.",
+        )
+    return ()
+
+
+def fail_closed_answer(contract: dict, *, question: str = "") -> str:
     """Build a useful terminal fallback solely from contract-approved content.
 
     This runs only after one failed regeneration. Every technical line is copied from an allowed
@@ -451,9 +484,15 @@ def fail_closed_answer(contract: dict) -> str:
                 claim.get("id", ""),
             )
         )
-    if is_general:
+    open_inputs = _case_open_inputs(question)
+    if is_general and open_inputs:
         sections = [
-            "Zu dieser Wissensfrage kann ich aus den aktuell freigegebenen Quellen "
+            "Technische Vorprüfung auf Basis der geprüften Quellen. Eine Bauform- oder "
+            "Werkstofffreigabe ist mit den vorliegenden Angaben noch nicht belastbar."
+        ]
+    elif is_general:
+        sections = [
+            "Zu dieser Wissensfrage kann ich aus den aktuell geprüften Quellen "
             "Folgendes belastbar festhalten:"
         ]
     else:
@@ -492,6 +531,11 @@ def fail_closed_answer(contract: dict) -> str:
         )
     if values:
         sections.append("**Deterministisch berechnet**\n" + "\n".join(values))
+    if open_inputs:
+        sections.append(
+            "**Für die belastbare Auswahl noch erforderlich**\n"
+            + "\n".join(f"- {item}" for item in open_inputs)
+        )
     required = [
         str(clause).strip()
         for clause in contract.get("required_clauses", ())
