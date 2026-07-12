@@ -155,7 +155,7 @@ def detect_parametric_leaks(
     findings: list[LeakFinding] = []
     # window-2 is bounded by LINES: a token carries into the next sentence of the same line's
     # prose flow, never across a newline (list items are separate semantic units — the sweep's
-    # FP shape: a 'Verpressung' header line must not claim the next line's 'Nutfüllgrad 75–90 %').
+    # FP shape: a 'Verpressung' header line must not claim the next line's 'Nutfüllgrad 60–85 %').
     sentences: list[tuple[str, str]] = []  # (sentence, prev_low within the same line)
     for line in re.split(r"\n+", text):
         prev = ""

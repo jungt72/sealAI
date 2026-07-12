@@ -256,12 +256,12 @@ def test_token_two_sentences_back_without_symbol_does_not_fire():
 
 def test_window2_does_not_cross_newline_into_list_items():
     """FP shape found by the zero-FP sweep (m8-calc CALC-02 draft): a 'Verpressung' list
-    header must not import its token into the NEXT list line — 'Nutfüllgrad … 75–90 %' is
+    header must not import its token into the NEXT list line — 'Nutfüllgrad … 60–85 %' is
     a different quantity and knowledge, not a computation. The window is sentence flow
     WITHIN a line; it never crosses a newline."""
     draft = (
         "- **Verpressung**: hängt von Einbaulage und Härte ab\n"
-        "- **Nutfüllgrad**: in der Regel maximal **~75–90 %** gefüllt, damit noch Reserve bleibt"
+        "- **Nutfüllgrad**: in der Regel **60–85 %** gefüllt, damit noch Reserve bleibt"
     )
     assert detect_parametric_leaks(draft, computed_values=()) == ()
 

@@ -19,7 +19,7 @@
       "kontext": "Konstrukteur, Ventil mit Dampf-Sterilisation.",
       "input": "Ich brauche eine Dichtung, die mit FKM gut läuft — Anwendung ist Heißdampf-Sterilisation bei 140 °C.",
       "must_contain": [
-        "FKM hydrolysiert/verspröttet in Sattdampf — trotz hoher Temperaturbeständigkeit in Öl ungeeignet",
+        "FKM hydrolysiert/versprödet in Sattdampf — trotz hoher Temperaturbeständigkeit in Öl ungeeignet",
         "EPDM (peroxidvernetzt) als Dampf-/SIP-Standard nennen",
         "bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen",
         "klarstellen: Temperaturbeständigkeit allein qualifiziert FKM nicht"
@@ -430,7 +430,7 @@
       "input": "Wie viel Verpressung soll mein statischer O-Ring haben?",
       "must_contain": [
         "typische statische radiale Verpressung ~15–25 % (Richtwert), dynamisch geringer (~10–18 %)",
-        "Nutfüllung so, dass Platz für Wärmedehnung/Quellung bleibt (typ. max ~75–90 % Füllgrad)",
+        "Nutfüllung so, dass Platz für Toleranzen, Wärmedehnung und Quellung bleibt (Parker: 60–85 % typisch, 75 % Optimum, mindestens 10 % freier Nutraum)",
         "abhängig von Schnurstärke, Medium (Quellung), Temperatur",
         "Verweis auf Nut-Auslegungsnorm/Herstellertabelle; Bereiche, keine Scheingenauigkeit"
       ],

@@ -47,8 +47,9 @@ _ORING_VERPRESSUNG = [
         "FK-ORING-VERPRESSUNG",
     ),
     _gf(
-        "Die Nutfüllung so auslegen, dass Platz für Wärmedehnung und Quellung bleibt — Füllgrad "
-        "typischerweise max. ~75–90 %.",
+        "Die Nutfüllung so auslegen, dass Platz für Toleranzketten, Wärmedehnung und Quellung bleibt: "
+        "Parker nennt für die meisten O-Ring-Anwendungen 60 bis 85 Prozent Nutfüllung, mit 75 Prozent "
+        "als Optimum, und fordert mindestens 10 Prozent freien Nutraum.",
         "FK-ORING-VERPRESSUNG",
     ),
     _gf(
@@ -149,8 +150,9 @@ GENERAL_GUARD_EVAL_CASES = (
         "grounding": _ORING_VERPRESSUNG,
         "reference_render": (
             "Die statische radiale Verpressung liegt als Richtwert bei ca. 15–25 % der Schnurstärke, "
-            "dynamisch etwas weniger. Die Nutfüllung sollte höchstens ~75–90 % betragen, damit noch Platz "
-            "für Wärmedehnung und Quellung bleibt. Der genaue Wert hängt von Schnurstärke, Medium und "
+            "dynamisch etwas weniger. Parker nennt für die meisten O-Ring-Anwendungen 60–85 % Nutfüllung, "
+            "75 % als Optimum und mindestens 10 % freien Nutraum für Toleranzen, Wärmedehnung und Quellung. "
+            "Der genaue Wert hängt von Schnurstärke, Medium und "
             "Temperatur ab — bitte gegen Nut-Auslegungsnorm oder Herstellertabelle verifizieren."
         ),
     },

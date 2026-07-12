@@ -1,5 +1,5 @@
 {
-  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710+nbr-overview-20260711+expert-profiles-20260711+ssot-v2-quarantine-20260712",
+  "version": "fachkarten_seed_v1+prov-promote-20260628+intake-20260710+nbr-overview-20260711+expert-profiles-20260711+ssot-v2-quarantine-20260712+source-hygiene-20260712",
   "source": "Historical seed assembled from prior trap, owner, research, and provisional content tracks. Under ratified SSoT v2.0, none of the 79 formerly declared-reviewed claims has a current independent human domain review with evidence, applicability, uncertainty, transferability, reviewer, review time, and future expiry. They are explicitly quarantined: 51 carry source candidates for adjudication and 28 additionally lack external evidence. The remaining 522 claims stay draft and non-authoritative. Provenance is retained as history only and never substitutes for evidence or review.",
   "cards": [
     {
@@ -9,7 +9,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:ptfe-engineering-profile"
       ],
-      "version": "primary-review-20260711",
+      "version": "primary-review-20260712-source-refresh",
       "matrix_crosscheck": "not-applicable-overview",
       "scope": {
         "material": [
@@ -68,8 +68,12 @@
           "answer_facets": ["parameters", "variants", "tradeoffs", "limits"],
           "review_state": "quarantined",
           "sources": [
-            "Trelleborg Turcon Variseal Material Selection Guide, Table 3, Edition July 2025 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
+            "Trelleborg Turcon Variseal Material Selection Guide, Table 3, page 7, Edition June 2026, retrieved 2026-07-12, SHA-256 171d5881149e03a5592b0497b6f4d77356dee96bf8e805fe2d91e570f49e5f93 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
           ],
+          "conflicts": [
+            "Older application-specific Trelleborg publications may state -200 °C for T01; this claim is explicitly bound to the Variseal Material Selection Guide, Table 3, Edition June 2026."
+          ],
+          "change_reason": "source_edition_refresh_20260712",
           "provenance": ["review:codex-2026-07-11"]
         },
         {
@@ -89,9 +93,9 @@
           "answer_facets": ["applications", "variants", "design_interfaces"],
           "review_state": "quarantined",
           "sources": [
-            "Parker PTFE Seals Design Guide, product lines and decision tree (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
-            "Trelleborg Static Seals overview (https://www.trelleborg.com/en/seals/products-and-solutions/static-seals)"
+            "Parker PTFE Seals Design Guide, product lines and decision tree (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)"
           ],
+          "change_reason": "weak_secondary_source_removed_20260712",
           "provenance": ["review:codex-2026-07-11"]
         },
         {
@@ -245,7 +249,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:rwdr-engineering-profile"
       ],
-      "version": "primary-review-20260711",
+      "version": "primary-review-20260712-source-refresh",
       "matrix_crosscheck": "not-applicable-overview",
       "scope": {
         "material": [],
@@ -293,13 +297,14 @@
           "provenance": ["review:codex-2026-07-11"]
         },
         {
-          "text": "Für klassische Stefa-Radial-Öldichtungen nennt der Trelleborg-Leitfaden mit Bezug auf DIN 3760 für die Welle mindestens 45 HRC und Ra 0,2 bis 0,8 Mikrometer; Trelleborg empfiehlt aus eigenen Versuchen Ra 0,2 bis 0,5 Mikrometer. Mit steigender Umfangsgeschwindigkeit und bei abrasiven Partikeln ist eine höhere Härte erforderlich; bei 10 m/s nennt der Leitfaden 60 HRC. Diese Werte sind bauartbezogene Wellenanforderungen, keine universellen Grenzwerte aller Rotationsdichtungen.",
+          "text": "Für klassische Stefa-Radial-Öldichtungen nennt der Trelleborg-Leitfaden mit Bezug auf DIN 3760 für die Welle mindestens 45 HRC und Ra 0,2 bis 0,8 Mikrometer. Trelleborg berichtet ein Laboroptimum von Rt 2 Mikrometer beziehungsweise Ra 0,3 Mikrometer und empfiehlt Ra 0,2 bis 0,5 Mikrometer. Mit steigender Umfangsgeschwindigkeit und bei abrasiven Partikeln ist eine höhere Härte erforderlich; bei 10 m/s nennt der Leitfaden 60 HRC. Diese Werte sind bauartbezogene Wellenanforderungen, keine universellen Grenzwerte aller Rotationsdichtungen.",
           "kind": "example_value",
           "answer_facets": ["parameters", "design_interfaces", "limits", "standards_validation"],
           "review_state": "quarantined",
           "sources": [
-            "Trelleborg Rotary Seals, Stefa Radial Oil Seal - Design Instructions: Shaft, Edition April 2026 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
+            "Trelleborg Rotary Seals, Stefa Radial Oil Seal - Design Instructions: Shaft, page 41, Edition April 2026, retrieved 2026-07-12, SHA-256 9b1d5310574e8da4726c7f0406bd9a10685cd4ce0c71c2b9962520b76ae1fd38 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
           ],
+          "change_reason": "primary_source_page_precision_20260712",
           "provenance": ["review:codex-2026-07-11"]
         },
         {
@@ -368,7 +373,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:glrd-engineering-profile"
       ],
-      "version": "primary-review-20260711",
+      "version": "primary-review-20260712-source-refresh",
       "matrix_crosscheck": "not-applicable-overview",
       "scope": {
         "material": [],
@@ -477,6 +482,10 @@
             "ISO 21049:2004 (https://www.iso.org/standard/35625.html)",
             "API Standard 682, Fourth Edition overview (https://www.api.org/~/media/files/publications/whats%20new/682%20e4%20pa.pdf)"
           ],
+          "conflicts": [
+            "ISO 21049:2004 corresponds to the API 682 third-edition generation; the linked API overview is Fourth Edition, May 2014. The shared scope is evidenced, but the editions are not textually identical."
+          ],
+          "change_reason": "standard_edition_relationship_recorded_20260712",
           "provenance": ["review:codex-2026-07-11"]
         },
         {
@@ -500,7 +509,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:medium-engineering-method"
       ],
-      "version": "primary-review-20260711",
+      "version": "primary-review-20260712-source-refresh",
       "matrix_crosscheck": "not-applicable-method",
       "scope": {
         "material": [],
@@ -557,6 +566,10 @@
           "sources": [
             "ISO 1817:2024 (https://www.iso.org/standard/86602.html)"
           ],
+          "conflicts": [
+            "ISO lists ISO 1817:2024 at stage 90.92 (International Standard to be revised) as of 2026-07-12; use a short human-review expiry and re-check the successor edition before continued authority."
+          ],
+          "change_reason": "source_lifecycle_status_recorded_20260712",
           "provenance": ["review:codex-2026-07-11"]
         },
         {
@@ -614,7 +627,7 @@
       "provenance": [
         "deep-research:codex-2026-07-11:nbr-overview"
       ],
-      "version": "primary-review-20260711-coverage",
+      "version": "primary-review-20260712-source-refresh",
       "matrix_crosscheck": "not-applicable-overview",
       "scope": {
         "material": [
@@ -648,7 +661,7 @@
           ],
           "sources": [
             "ARLANXEO: Nitrile Butadiene Rubber (https://www.arlanxeo.com/en/families/nbr)",
-            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)"
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
           ]
         },
         {
@@ -660,7 +673,7 @@
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
           "sources": [
-            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)",
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)"
           ]
         },
@@ -674,7 +687,7 @@
           ],
           "sources": [
             "ARLANXEO: Nitrile Butadiene Rubber (https://www.arlanxeo.com/en/families/nbr)",
-            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)"
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
           ]
         },
         {
@@ -686,7 +699,7 @@
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
           "sources": [
-            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)",
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)"
           ]
         },
@@ -699,7 +712,7 @@
             "deep-research:codex-2026-07-11:nbr-overview"
           ],
           "sources": [
-            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/Literature/O-Ring%20Division%20Literature/ORD%205700.pdf)",
+            "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)"
           ]
         }
@@ -716,7 +729,7 @@
       "provenance": [
         "trap-correct:TRAP-FKM-DAMPF"
       ],
-      "version": "fachkarten_seed_v0",
+      "version": "fachkarten_seed_v1-orthography-20260712",
       "matrix_crosscheck": "unchecked",
       "scope": {
         "material": [
@@ -748,8 +761,9 @@
       },
       "claims": [
         {
-          "text": "FKM hydrolysiert und verspröttet in Sattdampf/Heißdampf — die hohe Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
+          "text": "FKM hydrolysiert und versprödet in Sattdampf/Heißdampf — die hohe Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
           "review_state": "quarantined",
+          "change_reason": "orthography_correction_20260712",
           "provenance": [
             "trap-correct:TRAP-FKM-DAMPF"
           ]
@@ -1285,7 +1299,7 @@
         "eval:CALC-02",
         "owner:nutauslegung"
       ],
-      "version": "fachkarten_seed_v0",
+      "version": "fachkarten_seed_v1-primary-source-20260712",
       "matrix_crosscheck": "unchecked",
       "scope": {
         "material": [],
@@ -1305,7 +1319,7 @@
           "text": "Die typische statische radiale Verpressung eines O-Rings liegt bei ~15–25 % der Schnurstärke (Richtwert); dynamisch geringer.",
           "review_state": "quarantined",
           "sources": [
-            "Parker O-Ring Handbook",
+            "Parker O-Ring Handbook ORD 5700, Section 3.6 Squeeze, page 3-9 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "ISO 3601-2 (Nutauslegung)"
           ],
           "provenance": [
@@ -1314,12 +1328,12 @@
           ]
         },
         {
-          "text": "Die Nutfüllung so auslegen, dass Platz für Wärmedehnung und Quellung bleibt — Füllgrad typischerweise max. ~75–90 %.",
+          "text": "Die Nutfüllung so auslegen, dass Platz für Toleranzketten, Wärmedehnung und Quellung bleibt: Parker nennt für die meisten O-Ring-Anwendungen 60 bis 85 Prozent Nutfüllung, mit 75 Prozent als Optimum, und fordert mindestens 10 Prozent freien Nutraum.",
           "review_state": "quarantined",
           "sources": [
-            "Parker O-Ring Handbook",
-            "ISO 3601-2 (Nutauslegung)"
+            "Parker O-Ring Handbook ORD 5700, Section 3.7 Gland Fill, page 3-9 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
           ],
+          "change_reason": "primary_source_range_correction_20260712",
           "provenance": [
             "eval:CALC-02",
             "owner:nutauslegung"
@@ -1329,7 +1343,7 @@
           "text": "Die geeignete Verpressung hängt von Schnurstärke, Medium (Quellung) und Temperatur ab; es sind Richtwerte/Bereiche — keine Scheingenauigkeit. Gegen Nut-Auslegungsnorm bzw. Herstellertabelle verifizieren.",
           "review_state": "quarantined",
           "sources": [
-            "Parker O-Ring Handbook",
+            "Parker O-Ring Handbook ORD 5700, Sections 3.6-3.7, page 3-9 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
             "ISO 3601-2 (Nutauslegung)"
           ],
           "provenance": [

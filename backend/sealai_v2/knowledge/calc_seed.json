@@ -62,14 +62,14 @@
       "conditions": {"seal_type": ["o-ring", "oring", "o_ring"]},
       "assumptions": [
         "statische Dichtung: Zielbereich ~15–25 % Verpressung (dynamisch geringer)",
-        "Nutfüllung mit Reserve für Wärmedehnung/Quellung lassen (Füllgrad typ. max ~75–90 %)",
+        "Nutfüllung mit Reserve für Toleranzketten, Wärmedehnung und Quellung lassen (Parker: typisch 60–85 %, Optimum 75 %, mindestens 10 % freier Nutraum)",
         "Richtwerte — keine Scheingenauigkeit; gegen Nut-Auslegungsnorm/Herstellertabelle verifizieren"
       ],
       "typical_band": [15, 25],
-      "source": "O-Ring-Verpressung/Nutfüllung Richtwerte (~15–25 % statisch; Füllgrad ~75–90 %) — z. B. Parker O-Ring Handbook / ISO 3601-2 (Nutauslegung; ersetzt DIN 3771); owner-confirmed via eval CALC-02",
+      "source": "O-Ring-Verpressung/Nutfüllung: Parker O-Ring Handbook ORD 5700, Sections 3.6–3.7, page 3-9 (Nutfüllung 60–85 %, Optimum 75 %, mindestens 10 % freier Nutraum) / ISO 3601-2 (Nutauslegung; ersetzt DIN 3771); owner-confirmed via eval CALC-02",
       "review_state": "reviewed",
       "provenance": ["eval:CALC-02", "owner:nutauslegung"],
-      "version": "calc_seed_v1"
+      "version": "calc_seed_v2-source-refresh-20260712"
     }
   ]
 }

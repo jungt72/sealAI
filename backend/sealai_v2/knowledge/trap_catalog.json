@@ -10,8 +10,8 @@
         "Temperaturbeständigkeit in Öl auf Dampf übertragen",
         "Hydrolyse nicht erwähnt"
       ],
-      "correct": "FKM hydrolysiert/verspröttet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf. EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
-      "correct_general": "FKM hydrolysiert/verspröttet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
+      "correct": "FKM hydrolysiert/versprödet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf. EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
+      "correct_general": "FKM hydrolysiert/versprödet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
       "correct_recommendation": "EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
       "applies_to": ["dampf", "sattdampf", "heißdampf", "sip", "heißwasser"],
       "gates": ["walked_into_trap", "confident_wrong"],

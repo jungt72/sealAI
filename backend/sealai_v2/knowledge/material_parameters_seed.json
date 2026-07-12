@@ -7,7 +7,7 @@
     "hinweis": "Quellengebundene Referenzwerte, keine universellen PTFE-Einsatzgrenzen. Jeder Wert gilt nur für die genannte Werkstoff-/Prüfbasis; die Dichtungsauslegung bleibt von Medium, Druck, Temperatur, Geschwindigkeit, Gegenlauffläche und Bauform abhängig.",
     "sources": [
       "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)",
-      "Trelleborg, Turcon Variseal Material Selection Guide, Edition July 2025 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
+      "Trelleborg, Turcon Variseal Material Selection Guide, Table 3, page 7, Edition June 2026, retrieved 2026-07-12, SHA-256 171d5881149e03a5592b0497b6f4d77356dee96bf8e805fe2d91e570f49e5f93 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
     ],
     "params": [
       {

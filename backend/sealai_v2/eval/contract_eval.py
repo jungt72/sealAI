@@ -157,7 +157,7 @@ CONTRACT_EVAL_CASES = (
         },
         "expect_status": "COVERED_RECOMMENDATION",
         "reference_render": (
-            "Nein — FKM hält Heißdampf nicht aus; es hydrolysiert und verspröttet. EPDM ist hier der "
+            "Nein — FKM hält Heißdampf nicht aus; es hydrolysiert und versprödet. EPDM ist hier der "
             "Dampf-Standard. " + _RC
         ),
     },
