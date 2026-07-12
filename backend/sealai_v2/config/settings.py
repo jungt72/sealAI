@@ -351,6 +351,10 @@ class Settings(BaseSettings):
         None  # e.g. http://qdrant:6333; UNSET → in-process forced (fail-safe)
     )
     qdrant_collection: str = "sealai_v2_knowledge_v1"  # ledger-derived index; legacy direct-write collection stays rollback-only
+    # Memory uses the same embedding provider but a physically separate, tenant-scoped index. Keep
+    # the name configurable so an embedding-model/dimension migration can create a new collection
+    # without mutating the rollback collection in place.
+    memory_qdrant_collection: str = "sealai_v2_memory"
     qdrant_api_key: str | None = None  # value never logged
     # Durable outbox worker controls. The worker is a separate process so queue delivery survives
     # API restarts; these values are operational knobs, not product behavior.

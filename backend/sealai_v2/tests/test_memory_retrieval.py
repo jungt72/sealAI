@@ -157,8 +157,10 @@ class _FakeQdrantClient:
     def __init__(self, point_ids: list[str]) -> None:
         self._point_ids = point_ids
         self.last_query_kwargs: dict | None = None
+        self.last_collection: str | None = None
 
     def query_points(self, collection, **kwargs):
+        self.last_collection = collection
         self.last_query_kwargs = kwargs
         return _FakeQueryResult([_FakePoint(pid) for pid in self._point_ids])
 
@@ -238,6 +240,23 @@ def test_retrieve_memory_never_reads_qdrant_payload():
         now="2026-07-03T01:00:00Z",
     )
     assert qdrant.last_query_kwargs["with_payload"] is False
+
+
+def test_retrieve_memory_targets_configured_versioned_collection():
+    store = InProcessMemoryStore()
+    qdrant = _FakeQdrantClient(point_ids=[])
+
+    retrieve_memory(
+        "q",
+        tenant_id="tenant-a",
+        qdrant_client=qdrant,
+        embedder=_FakeEmbedder(),
+        store=store,
+        now="2026-07-03T01:00:00Z",
+        collection="sealai_v2_memory_local_minilm_v1",
+    )
+
+    assert qdrant.last_collection == "sealai_v2_memory_local_minilm_v1"
 
 
 def test_retrieve_memory_filters_qdrant_query_by_tenant_hard_filter():

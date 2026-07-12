@@ -64,6 +64,7 @@ def retrieve_memory(
     store: MemoryStore,
     now: str,
     k: int = 5,
+    collection: str = MEMORY_COLLECTION,
 ) -> tuple[MemoryItem, ...]:
     """Qdrant top-k with a HARD tenant filter (server-side, never client-supplied — same P0
     discipline as Fachkarten retrieval), then mandatory Postgres revalidation. Returns AUTHORITATIVE
@@ -75,7 +76,7 @@ def retrieve_memory(
         must=[FieldCondition(key="tenant_id", match=MatchAny(any=[tenant_id]))]
     )
     res = qdrant_client.query_points(
-        MEMORY_COLLECTION,
+        collection,
         query=qvec,
         using=_DENSE,
         limit=max(k, k * _CANDIDATE_OVERFETCH_FACTOR),
