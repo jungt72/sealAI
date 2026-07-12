@@ -75,6 +75,17 @@ def test_unreviewed_number_is_rejected() -> None:
         _validate(_answer(statement="NBR ist bis 177 °C einsetzbar."))
 
 
+def test_paraphrase_that_exceeds_reviewed_claim_is_rejected() -> None:
+    with pytest.raises(
+        EngineeringAnswerValidationError, match="claim_exceeds_evidence"
+    ):
+        _validate(
+            _answer(
+                statement="NBR gehört zu den Elastomeren und ist generell geeignet."
+            )
+        )
+
+
 def test_renderer_owns_aligned_comparison_and_parameter_tables() -> None:
     answer = _answer()
     plan = {

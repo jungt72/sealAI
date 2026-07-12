@@ -44,6 +44,49 @@ from sealai_v2.render.technical_answer import render_technical_answer
 logger = logging.getLogger(__name__)
 
 
+def _engineering_conclusion(plan: dict) -> str:
+    subjects = tuple(
+        str(subject) for subject in plan.get("subjects", ()) if str(subject)
+    )
+    profile = str(plan.get("profile") or "engineering_knowledge")
+    if plan.get("comparison") and len(subjects) >= 2:
+        return (
+            f"{subjects[0]} und {subjects[1]} sind entlang identischer Prüf- und Betriebsbedingungen "
+            "zu vergleichen; ein einzelner Kennwert ergibt noch keine belastbare Werkstoffentscheidung."
+        )
+    subject = subjects[0] if subjects else "Der technische Gegenstand"
+    if profile.startswith("material_"):
+        return (
+            f"Bei {subject} sind Werkstofffamilie, konkreter Compound, Prüfwert und "
+            "anwendungsbezogene Einsatzgrenze strikt zu trennen."
+        )
+    if profile.startswith("seal_"):
+        return (
+            f"Die technische Funktion von {subject} ergibt sich aus Dichtprinzip, Bauform, "
+            "Werkstoff, Gegenpartner und Betriebsbedingungen."
+        )
+    if profile.startswith("medium_"):
+        return (
+            f"Die Wirkung von {subject} auf ein Dichtsystem hängt von Zusammensetzung, "
+            "Konzentration, Temperatur, Dauer und konkretem Compound ab."
+        )
+    return "Die technische Einordnung folgt den geprüften Quellen und den benannten Randbedingungen."
+
+
+def _engineering_missing_information(plan: dict) -> list[str]:
+    missing = [
+        f"{entry['subject']}: nicht belegt sind {', '.join(entry.get('missing_facets', ()))}"
+        for entry in plan.get("subject_coverage", ())
+        if entry.get("missing_facets")
+    ]
+    if plan.get("comparison"):
+        missing.append(
+            "Für eine Auswahlentscheidung: konkrete Compounds beziehungsweise Grades, Medium mit "
+            "Additiven, Temperaturprofil, Druck, Bewegungsart, Geschwindigkeit, Bauform und Nachweisbasis."
+        )
+    return missing[:10]
+
+
 def _fact_subjects(fact: GroundingFact, subjects: tuple[str, ...]) -> frozenset[str]:
     """Bind evidence to its primary comparison subject, preferring the stable card identity.
 
@@ -145,19 +188,14 @@ def _fallback_engineering_answer(
             )
         if len(claims) >= 20:
             break
-    missing = [
-        f"{entry['subject']}: nicht belegt sind {', '.join(entry.get('missing_facets', ())) }"
-        for entry in plan.get("subject_coverage", ())
-        if entry.get("missing_facets")
-    ]
     return EngineeringKnowledgeAnswer(
         schema_version=2,
         profile=str(plan.get("profile") or "engineering_knowledge"),
         case_revision=case_revision,
-        conclusion="Quellengebundene technische Einordnung auf Basis der fachlich geprüften Quellen.",
+        conclusion=_engineering_conclusion(plan),
         claims=claims,
         assumptions=[],
-        missing_information=missing[:10],
+        missing_information=_engineering_missing_information(plan),
     )
 
 
@@ -472,7 +510,9 @@ class L1Generator:
                 instruction = (
                     "\n\nCreate exactly one internal EngineeringKnowledgeAnswer object. "
                     "Do not write Markdown and do not create tables. The deterministic renderer owns "
-                    "all tables and parameter values. Each claim must address exactly one declared "
+                    "all tables and parameter values. Copy each claim statement exactly from one "
+                    "cited evidence item; do not paraphrase, merge or extend it. Each claim must "
+                    "address exactly one declared "
                     "subject and one facet supported by every cited evidence ID. Never transfer a "
                     "property, limit or failure mechanism from one comparison subject to another. "
                     "Do not introduce a number, standard, product, filler, approval or limit absent "
@@ -494,6 +534,17 @@ class L1Generator:
                         user=question,
                         model_config=self._model_config,
                         max_repairs=0,
+                    )
+                    engineering = engineering.model_copy(
+                        update={
+                            "conclusion": _engineering_conclusion(
+                                knowledge_answer_plan
+                            ),
+                            "assumptions": [],
+                            "missing_information": _engineering_missing_information(
+                                knowledge_answer_plan
+                            ),
+                        }
                     )
                     validate_engineering_answer(
                         engineering,

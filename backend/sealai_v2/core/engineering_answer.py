@@ -44,6 +44,10 @@ class EngineeringAnswerValidationError(ValueError):
 _NUMBER_RE = re.compile(r"(?<![\w])[-+]?\d+(?:[.,]\d+)?")
 
 
+def _normalized_statement(text: str) -> str:
+    return " ".join((text or "").casefold().split()).rstrip(". ")
+
+
 def numeric_tokens(text: str) -> frozenset[str]:
     """Normalized numeric tokens used by the no-fake-precision check."""
     out: set[str] = set()
@@ -110,6 +114,11 @@ def validate_engineering_answer(
             for evidence_id in claim.evidence_ids
         ):
             errors.append("subject_evidence_mismatch")
+        if _normalized_statement(claim.statement) not in {
+            _normalized_statement(evidence_texts[evidence_id])
+            for evidence_id in claim.evidence_ids
+        }:
+            errors.append("claim_exceeds_evidence")
         generated_numbers.update(numeric_tokens(claim.statement))
 
     for subject, cells in (required_cells or {}).items():
