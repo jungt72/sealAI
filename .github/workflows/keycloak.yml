@@ -1,0 +1,92 @@
+name: Keycloak 26.7
+
+on:
+  pull_request:
+    paths:
+      - "keycloak/**"
+      - "docker-compose.dev.yml"
+      - "docker-compose.deploy.yml"
+      - ".env.example"
+      - ".env.prod.example"
+      - "nginx/default.conf"
+      - "ops/check-env-drift.sh"
+      - "ops/keycloak_*.sh"
+      - ".github/workflows/keycloak.yml"
+  push:
+    branches: [main]
+    paths:
+      - "keycloak/**"
+      - "docker-compose.dev.yml"
+      - "docker-compose.deploy.yml"
+      - ".env.example"
+      - ".env.prod.example"
+      - "nginx/default.conf"
+      - "ops/check-env-drift.sh"
+      - "ops/keycloak_*.sh"
+      - ".github/workflows/keycloak.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository_owner }}/sealai-keycloak
+
+jobs:
+  validate-build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate operational scripts and Compose model
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ops/keycloak_ensure_roles.sh
+          bash -n ops/keycloak_recover_admin.sh
+          bash -n ops/keycloak_upgrade_preflight.sh
+          docker compose -f docker-compose.yml -f docker-compose.deploy.yml config --no-interpolate >/dev/null
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build immutable Keycloak image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: keycloak
+          file: keycloak/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=keycloak-26-7
+          cache-to: type=gha,mode=max,scope=keycloak-26-7
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=26.7.0
+
+      - name: Publish artifact coordinates
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            echo "### Keycloak 26.7.0 artifact"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- image: \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}\`"
+            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- OCI provenance and SBOM: attached"
+          } >> "$GITHUB_STEP_SUMMARY"
