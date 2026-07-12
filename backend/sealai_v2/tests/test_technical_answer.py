@@ -134,6 +134,7 @@ def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
                 ),
             ),
             require_evidence_for_all_claims=True,
+            work_solution_candidate=True,
             case_revision=7,
         )
     )
@@ -141,6 +142,7 @@ def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
     assert "Geprüfter technischer Zusammenhang" in answer.text
     assert answer.finish_reason == "deterministic_evidence_fallback"
     assert len(client.calls) == 1
+    assert "one primary provisional candidate" in client.calls[0]["system"]
 
 
 def test_compact_technical_answer_caps_first_turn_density_deterministically():
