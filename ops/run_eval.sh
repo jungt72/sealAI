@@ -21,9 +21,13 @@ COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-com
   backend-v2
 
 mkdir -p backend/sealai_v2/eval/runs
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
 "${COMPOSE[@]}" run --rm --no-deps \
-  --user "$(id -u):$(id -g)" \
-  --entrypoint python \
+  --user 0:0 \
+  --entrypoint sh \
+  -e "EVAL_HOST_UID=${HOST_UID}" \
+  -e "EVAL_HOST_GID=${HOST_GID}" \
   -e SEALAI_V2_DATABASE_URL= \
   -e SEALAI_V2_QDRANT_URL= \
   -e QDRANT_URL= \
@@ -36,4 +40,10 @@ mkdir -p backend/sealai_v2/eval/runs
   -e SEALAI_EVAL_DIRTY=false \
   -v "${REPO_ROOT}/backend/sealai_v2/eval:/app/sealai_v2/eval:ro" \
   -v "${REPO_ROOT}/backend/sealai_v2/eval/runs:/app/sealai_v2/eval/runs" \
-  backend-v2 -m sealai_v2.eval "$@"
+  backend-v2 -c '
+    set +e
+    python -m sealai_v2.eval "$@"
+    status=$?
+    chown -R "${EVAL_HOST_UID}:${EVAL_HOST_GID}" /app/sealai_v2/eval/runs
+    exit "${status}"
+  ' sh "$@"
