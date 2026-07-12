@@ -553,6 +553,9 @@ class V2KnowledgeClaim(Base):
     claim_order: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    authority_fingerprint: Mapped[str] = mapped_column(
+        String(64), nullable=False, default=""
+    )
     kind: Mapped[str] = mapped_column(String(64), nullable=False)
     review_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     scope_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
@@ -567,6 +570,9 @@ class V2KnowledgeClaim(Base):
     )
     conflicts_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     review_expires_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    review_origin: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unreviewed"
+    )
     change_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
     provenance_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     active: Mapped[bool] = mapped_column(

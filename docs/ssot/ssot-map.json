@@ -23,6 +23,7 @@
         "backend/sealai_v2/knowledge/ledger.py",
         "backend/sealai_v2/db/models.py",
         "backend/sealai_v2/db/migrations/versions/20260711_0004_claim_evidence_contract.py",
+        "backend/sealai_v2/db/migrations/versions/20260712_0007_claim_identity.py",
         "backend/sealai_v2/knowledge/traps.py",
         "backend/sealai_v2/config/settings.py",
         "backend/sealai_v2/api/routes/knowledge_review.py"

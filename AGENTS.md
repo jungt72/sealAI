@@ -146,6 +146,12 @@ workflow engine requires a separate ADR and measured need.
   review time, and future expiry. Draft, expired, or quarantined claims never
   correct/block as reviewed truth. H1 remains fail-closed while the seed lacks
   independent adjudication.
+- **Claim identity and review validity are separate contracts.** A logical
+  claim ID is stable across unrelated document revisions and changes when its
+  normalized claim text changes. The authority fingerprint covers every
+  import-controlled field that bounded the review. Preserve a human decision
+  only while that fingerprint is unchanged; otherwise quarantine it and append
+  an audit transition. Never key a claim to the hash of the whole catalog.
 - **Green-field boundary + import-purity.** No `sealai_v2.* ↔ app.*` imports,
   either direction — enforced by
   `backend/tests/architecture/test_v2_import_boundary.py`. This still applies

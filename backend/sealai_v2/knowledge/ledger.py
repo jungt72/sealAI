@@ -30,6 +30,7 @@ from sealai_v2.knowledge.fachkarten import FachkartenCatalog
 GLOBAL_KNOWLEDGE_TENANT = "sealai"
 _ID_NAMESPACE = uuid.UUID("32288829-9179-5be3-8864-3a5858e78cc6")
 _REVIEW_STATES = frozenset({"draft", "approved", "quarantined", "rejected"})
+_HUMAN_REVIEW_ORIGINS = frozenset({"human_api", "human_seed"})
 _UNCERTAINTY_STATES = frozenset(
     {"bounded", "conditional", "conflicted", "not_sufficiently_supported"}
 )
@@ -111,13 +112,65 @@ def _document_id(document: KnowledgeDocumentInput, content_sha256: str) -> str:
 
 
 def _claim_id(
-    *, tenant_id: str, card_id: str, document_id: str, content_sha256: str
+    *,
+    tenant_id: str,
+    source_type: str,
+    source_id: str,
+    card_id: str,
+    content_sha256: str,
 ) -> str:
+    """Identify a logical claim independently from its document revision.
+
+    The normalized claim text remains part of the identity, so changed wording
+    requires a fresh review. Unrelated catalog revisions and source-link repairs
+    no longer rotate every claim ID or orphan append-only human reviews.
+    """
+
     return str(
         uuid.uuid5(
             _ID_NAMESPACE,
-            f"{tenant_id}|{card_id}|{document_id}|{content_sha256}",
+            f"{tenant_id}|{source_type}|{source_id}|{card_id}|{content_sha256}",
         )
+    )
+
+
+def _canonical_authority_value(value):
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_authority_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple, set)):
+        items = [_canonical_authority_value(item) for item in value]
+        return sorted(
+            items,
+            key=lambda item: json.dumps(
+                item, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ),
+        )
+    return value
+
+
+def _authority_fingerprint(card, claim, *, content_sha256: str) -> str:
+    """Hash import-controlled fields that delimit a human review's validity."""
+
+    contract = _canonical_authority_value(
+        {
+            "schema_version": 1,
+            "card_id": card.id,
+            "card_version": card.version,
+            "content_sha256": content_sha256,
+            "kind": claim.kind,
+            "scope": _claim_scope(card, claim),
+            "sources": list(claim.sources),
+            "applicability": _claim_applicability(card, claim),
+            "declared_uncertainty": claim.uncertainty,
+            "declared_transferability": claim.transferability,
+            "conflicts": list(claim.conflicts),
+        }
+    )
+    return _digest(
+        json.dumps(contract, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     )
 
 
@@ -195,7 +248,8 @@ def _approved_claim_is_current(
     if row.review_status != "approved":
         return False
     if not (
-        row.sources_json
+        row.review_origin in _HUMAN_REVIEW_ORIGINS
+        and row.sources_json
         and row.evidence_json
         and row.applicability_json
         and row.reviewed_at
@@ -210,6 +264,16 @@ def _approved_claim_is_current(
     except KnowledgeLedgerError:
         return False
     return expiry > (at or datetime.now(timezone.utc))
+
+
+def _human_review_is_preservable(row: V2KnowledgeClaim) -> bool:
+    if row.review_origin not in _HUMAN_REVIEW_ORIGINS or not _human_review_actor(
+        row.reviewed_by
+    ):
+        return False
+    if row.review_status == "approved":
+        return _approved_claim_is_current(row)
+    return row.review_status in {"quarantined", "rejected"}
 
 
 def _claim_applicability(card, claim) -> dict:
@@ -293,6 +357,7 @@ def _claim_payload(row: V2KnowledgeClaim, document: V2KnowledgeDocument) -> dict
         }.get(row.review_status, "quarantined"),
         "review_status": row.review_status,
         "claim_text": row.text,
+        "authority_fingerprint": row.authority_fingerprint,
         "claim_kind": row.kind,
         "answer_facets": answer_facets,
         "subject_type": subject_type,
@@ -304,6 +369,7 @@ def _claim_payload(row: V2KnowledgeClaim, document: V2KnowledgeDocument) -> dict
         "conflicts": list(row.conflicts_json or []),
         "reviewed_at": row.reviewed_at,
         "reviewed_by": row.reviewed_by,
+        "review_origin": row.review_origin,
         "review_expires_at": row.review_expires_at,
         "change_reason": row.change_reason,
         "provenance": list(row.provenance_json or []),
@@ -418,10 +484,16 @@ class PostgresKnowledgeLedger:
                     claim_hash = _digest(_normalise_text(claim.text))
                     claim_id = _claim_id(
                         tenant_id=document.tenant_id,
+                        source_type=document.source_type,
+                        source_id=document.source_id,
                         card_id=card.id,
-                        document_id=doc.id,
                         content_sha256=claim_hash,
                     )
+                    if claim_id in incoming:
+                        raise KnowledgeLedgerError(
+                            f"duplicate logical claim identity on card {card.id}: "
+                            f"{claim_hash}"
+                        )
                     provenance = list(
                         dict.fromkeys((*card.provenance, *claim.provenance))
                     )
@@ -430,6 +502,7 @@ class PostgresKnowledgeLedger:
                         claim,
                         order,
                         claim_hash,
+                        _authority_fingerprint(card, claim, content_sha256=claim_hash),
                         provenance,
                     )
 
@@ -450,6 +523,7 @@ class PostgresKnowledgeLedger:
                 claim,
                 order,
                 claim_hash,
+                authority_fingerprint,
                 provenance,
             ) in incoming.items():
                 desired_status = _review_status(claim)
@@ -477,6 +551,7 @@ class PostgresKnowledgeLedger:
                         claim_order=order,
                         text=_normalise_text(claim.text),
                         content_sha256=claim_hash,
+                        authority_fingerprint=authority_fingerprint,
                         kind=claim.kind,
                         review_status=desired_status,
                         scope_json=_claim_scope(card, claim),
@@ -487,6 +562,13 @@ class PostgresKnowledgeLedger:
                         transferability=transferability,
                         conflicts_json=conflicts,
                         review_expires_at=review_expires_at,
+                        review_origin=(
+                            "human_seed"
+                            if desired_status == "approved"
+                            else "policy_import"
+                            if desired_status == "quarantined"
+                            else "unreviewed"
+                        ),
                         change_reason=change_reason,
                         provenance_json=provenance,
                         active=True,
@@ -539,14 +621,18 @@ class PostgresKnowledgeLedger:
                     enqueued += 1
                     continue
 
-                # Automated draft ingestion may never downgrade a human-approved
-                # claim when an identical source revision is processed again.
+                previous_status = row.review_status
+                authority_changed = row.authority_fingerprint != authority_fingerprint
+                prior_human_review = _human_review_is_preservable(row)
                 if (
-                    row.review_status == "approved"
-                    and desired_status == "draft"
-                    and _approved_claim_is_current(row)
+                    authority_changed
+                    and prior_human_review
+                    and desired_status != "approved"
                 ):
-                    desired_status = "approved"
+                    desired_status = "quarantined"
+                preserve_human_review = not authority_changed and prior_human_review
+                if preserve_human_review:
+                    desired_status = row.review_status
                     evidence = list(row.evidence_json or [])
                     applicability = dict(row.applicability_json or applicability)
                     uncertainty = row.uncertainty
@@ -555,13 +641,38 @@ class PostgresKnowledgeLedger:
                     review_expires_at = row.review_expires_at
                     change_reason = row.change_reason or "human_review_preserved"
                     claim_sources = list(row.sources_json or [])
+                    reviewed_at = row.reviewed_at
+                    reviewed_by = row.reviewed_by
+                    review_origin = row.review_origin
                 else:
                     claim_sources = list(claim.sources)
-                previous_status = row.review_status
+                    reviewed_at = (
+                        claim.reviewed_at if desired_status == "approved" else None
+                    )
+                    reviewed_by = (
+                        claim.reviewed_by if desired_status == "approved" else None
+                    )
+                    review_origin = (
+                        "human_seed"
+                        if desired_status == "approved"
+                        else "policy_import"
+                        if desired_status in {"quarantined", "rejected"}
+                        else "unreviewed"
+                    )
+                    if (
+                        not authority_changed
+                        and row.review_status == desired_status
+                        and row.review_origin == "policy_import"
+                    ):
+                        reviewed_at = row.reviewed_at
+                        reviewed_by = row.reviewed_by
                 desired = {
                     "card_version": card.version,
+                    "document_id": doc.id,
                     "claim_order": order,
                     "text": _normalise_text(claim.text),
+                    "content_sha256": claim_hash,
+                    "authority_fingerprint": authority_fingerprint,
                     "kind": claim.kind,
                     "review_status": desired_status,
                     "scope_json": _claim_scope(card, claim),
@@ -572,13 +683,13 @@ class PostgresKnowledgeLedger:
                     "transferability": transferability,
                     "conflicts_json": conflicts,
                     "review_expires_at": review_expires_at,
+                    "review_origin": review_origin,
                     "change_reason": change_reason,
                     "provenance_json": provenance,
-                    "active": True,
+                    "active": desired_status != "rejected",
+                    "reviewed_at": reviewed_at,
+                    "reviewed_by": reviewed_by,
                 }
-                if desired_status == "approved":
-                    desired["reviewed_at"] = claim.reviewed_at
-                    desired["reviewed_by"] = claim.reviewed_by
                 changed = any(
                     getattr(row, key) != value for key, value in desired.items()
                 )
@@ -590,12 +701,19 @@ class PostgresKnowledgeLedger:
                     row.version += 1
                     row.updated_at = now
                     updated += 1
-                if previous_status != desired_status:
+                if previous_status != desired_status or (
+                    authority_changed and prior_human_review
+                ):
                     row.reviewed_at = (
                         claim.reviewed_at if desired_status == "approved" else now
                     )
                     row.reviewed_by = (
                         claim.reviewed_by if desired_status == "approved" else actor
+                    )
+                    row.review_origin = (
+                        "human_seed"
+                        if desired_status == "approved"
+                        else "policy_import"
                     )
                     session.add(
                         V2KnowledgeReview(
@@ -605,7 +723,9 @@ class PostgresKnowledgeLedger:
                             to_status=desired_status,
                             actor=actor,
                             note=(
-                                "Automated evidence-policy reconciliation"
+                                "Authority contract changed; prior human review invalidated"
+                                if authority_changed
+                                else "Automated evidence-policy reconciliation"
                                 if desired_status == "quarantined"
                                 else "Catalog review-state reconciliation"
                             ),
@@ -716,14 +836,12 @@ class PostgresKnowledgeLedger:
     ) -> dict:
         if to_status not in _REVIEW_STATES:
             raise KnowledgeLedgerError(f"invalid review status: {to_status}")
-        if not actor.strip():
-            raise KnowledgeLedgerError("knowledge review requires an actor")
+        if not _human_review_actor(actor):
+            raise KnowledgeLedgerError(
+                "knowledge review requires an authenticated human actor"
+            )
         evidence_records = _normalise_evidence(list(evidence))
         if to_status == "approved":
-            if not _human_review_actor(actor):
-                raise KnowledgeLedgerError(
-                    "approving a claim requires an authenticated human reviewer"
-                )
             if not evidence_records:
                 raise KnowledgeLedgerError("approving a claim requires review evidence")
             if not applicability:
@@ -771,6 +889,7 @@ class PostgresKnowledgeLedger:
             row.updated_at = now
             row.reviewed_at = now
             row.reviewed_by = actor
+            row.review_origin = "human_api"
             row.qdrant_sync_state = "pending"
             if to_status == "approved":
                 citations = [item["citation"] for item in evidence_records]
@@ -835,6 +954,7 @@ class PostgresKnowledgeLedger:
                 row.updated_at = now
                 row.reviewed_at = now
                 row.reviewed_by = actor
+                row.review_origin = "policy_import"
                 row.qdrant_sync_state = "pending"
                 session.add(
                     V2KnowledgeReview(

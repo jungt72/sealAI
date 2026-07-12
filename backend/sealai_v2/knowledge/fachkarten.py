@@ -215,7 +215,10 @@ def _human_reviewer(value: str) -> bool:
     reviewer = value.strip().lower()
     if not reviewer:
         return False
-    return not any(marker in reviewer for marker in ("codex", "llm", "model", "agent"))
+    return not any(
+        marker in reviewer
+        for marker in ("codex", "llm", "model", "agent", "release-bootstrap")
+    )
 
 
 def _review_window_current(reviewed_at: str, review_expires_at: str) -> bool:

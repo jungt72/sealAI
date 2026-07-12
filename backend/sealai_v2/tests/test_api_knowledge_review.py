@@ -116,6 +116,7 @@ def test_review_queue_requires_role_and_independent_attestation(tmp_path) -> Non
     assert approved.status_code == 200
     assert approved.json()["claim"]["review_status"] == "approved"
     assert approved.json()["claim"]["reviewed_by"] == "human-reviewer"
+    assert approved.json()["claim"]["review_origin"] == "human_api"
     assert approved.json()["knowledge_mode_activated"] is False
 
 
