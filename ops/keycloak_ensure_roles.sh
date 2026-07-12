@@ -15,6 +15,7 @@ KEYCLOAK_ADMIN_CLIENT_SECRET="${KEYCLOAK_ADMIN_CLIENT_SECRET:-}"
 KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
 KEYCLOAK_DELETE_ADMIN_CLIENT="${KEYCLOAK_DELETE_ADMIN_CLIENT:-false}"
+KEYCLOAK_DELETE_ADMIN_USER="${KEYCLOAK_DELETE_ADMIN_USER:-false}"
 KCADM_CONFIG="/tmp/sealai-kcadm-$$.config"
 
 PRODUCT_ROLES=(
@@ -75,10 +76,9 @@ ensure_realm_role() {
   local role="$1"
   local description="$2"
   if kcadm get "roles/$role" -r "$KEYCLOAK_REALM" >/dev/null 2>&1; then
-    kcadm update "roles/$role" -r "$KEYCLOAK_REALM" -s "description=$description" >/dev/null
-  else
-    kcadm create roles -r "$KEYCLOAK_REALM" -s "name=$role" -s "description=$description" >/dev/null
+    return 0
   fi
+  kcadm create roles -r "$KEYCLOAK_REALM" -s "name=$role" -s "description=$description" >/dev/null
 }
 
 ensure_group() {
@@ -102,16 +102,28 @@ find_target_user() {
     <<<"$users"
 }
 
-delete_temporary_admin_client() {
-  [[ "$KEYCLOAK_DELETE_ADMIN_CLIENT" == "true" ]] || return 0
-  [[ "$KEYCLOAK_ADMIN_CLIENT_ID" == sealai-recovery-* ]] || \
-    die "refusing to delete an admin client without the sealai-recovery- prefix"
+delete_temporary_admin_identity() {
+  if [[ "$KEYCLOAK_DELETE_ADMIN_CLIENT" == "true" ]]; then
+    [[ "$KEYCLOAK_ADMIN_CLIENT_ID" == sealai-recovery-* ]] || \
+      die "refusing to delete an admin client without the sealai-recovery- prefix"
 
-  local clients client_id
-  clients="$(kcadm get clients -r "$KEYCLOAK_AUTH_REALM" -q "clientId=$KEYCLOAK_ADMIN_CLIENT_ID" --fields id,clientId)"
-  client_id="$(jq -r --arg client "$KEYCLOAK_ADMIN_CLIENT_ID" '.[] | select(.clientId == $client) | .id' <<<"$clients" | head -n1)"
-  [[ -n "$client_id" ]] || die "temporary admin client was not found for deletion"
-  kcadm delete "clients/$client_id" -r "$KEYCLOAK_AUTH_REALM" >/dev/null
+    local clients client_id
+    clients="$(kcadm get clients -r "$KEYCLOAK_AUTH_REALM" -q "clientId=$KEYCLOAK_ADMIN_CLIENT_ID" --fields id,clientId)"
+    client_id="$(jq -r --arg client "$KEYCLOAK_ADMIN_CLIENT_ID" '.[] | select(.clientId == $client) | .id' <<<"$clients" | head -n1)"
+    [[ -n "$client_id" ]] || die "temporary admin client was not found for deletion"
+    kcadm delete "clients/$client_id" -r "$KEYCLOAK_AUTH_REALM" >/dev/null
+  fi
+
+  if [[ "$KEYCLOAK_DELETE_ADMIN_USER" == "true" ]]; then
+    [[ "$KEYCLOAK_ADMIN_USER" == sealai-recovery-* ]] || \
+      die "refusing to delete an admin user without the sealai-recovery- prefix"
+
+    local users user_id
+    users="$(kcadm get users -r "$KEYCLOAK_AUTH_REALM" -q "username=$KEYCLOAK_ADMIN_USER" --fields id,username)"
+    user_id="$(jq -r --arg user "$KEYCLOAK_ADMIN_USER" '.[] | select(.username == $user) | .id' <<<"$users" | head -n1)"
+    [[ -n "$user_id" ]] || die "temporary admin user was not found for deletion"
+    kcadm delete "users/$user_id" -r "$KEYCLOAK_AUTH_REALM" >/dev/null
+  fi
 }
 
 authenticate
@@ -143,6 +155,7 @@ kcadm update "realms/$KEYCLOAK_REALM" \
   >/dev/null
 
 # MFA is required only for privileged users, not silently for every customer.
+printf 'Reconciling privileged required actions...\n'
 kcadm update authentication/required-actions/CONFIGURE_TOTP \
   -r "$KEYCLOAK_REALM" -s 'enabled=true' -s 'defaultAction=false' >/dev/null
 kcadm update authentication/required-actions/UPDATE_PASSWORD \
@@ -157,22 +170,24 @@ declare -A role_descriptions=(
   [knowledge_reviewer]='Review governed sealing knowledge'
   [decision_reviewer]='Review governed engineering decisions'
 )
+printf 'Reconciling product roles and administrator groups...\n'
 for role in "${PRODUCT_ROLES[@]}"; do
   ensure_realm_role "$role" "${role_descriptions[$role]}"
 done
+printf 'Product roles ready; reconciling groups...\n'
 
 PLATFORM_GROUP='platform-admins'
 GOVERNANCE_GROUP='governance-reviewers'
 platform_group_id="$(ensure_group "$PLATFORM_GROUP")"
 governance_group_id="$(ensure_group "$GOVERNANCE_GROUP")"
 
+printf 'Reconciling group product-role mappings...\n'
 kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$PLATFORM_GROUP" \
   --rolename admin --rolename user_basic >/dev/null
-kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$PLATFORM_GROUP" \
-  --cclientid realm-management --rolename realm-admin >/dev/null
 kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$GOVERNANCE_GROUP" \
   --rolename capability_reviewer --rolename knowledge_reviewer --rolename decision_reviewer >/dev/null
 
+printf 'Reconciling the privileged owner...\n'
 target_user="$(find_target_user)"
 target_user_id="$(jq -r '.id' <<<"$target_user")"
 target_username="$(jq -r '.username' <<<"$target_user")"
@@ -185,8 +200,14 @@ kcadm update "users/$target_user_id" -r "$KEYCLOAK_REALM" \
   -s 'requiredActions=["UPDATE_PASSWORD","CONFIGURE_TOTP"]' >/dev/null
 kcadm update "users/$target_user_id/groups/$platform_group_id" -r "$KEYCLOAK_REALM" >/dev/null
 kcadm update "users/$target_user_id/groups/$governance_group_id" -r "$KEYCLOAK_REALM" >/dev/null
+# Realm administration is intentionally owner-specific instead of inherited
+# from a reusable group: adding a future product admin must not silently grant
+# control over Keycloak itself.
+kcadm add-roles -r "$KEYCLOAK_REALM" --uid "$target_user_id" \
+  --cclientid realm-management --rolename realm-admin >/dev/null
 
 # The V1 Auth.js client is confidential and accepts one exact callback only.
+printf 'Reconciling OIDC clients...\n'
 nextauth_id="$(kcadm get clients -r "$KEYCLOAK_REALM" -q clientId=nextauth --fields id,clientId | jq -r '.[] | select(.clientId == "nextauth") | .id' | head -n1)"
 [[ -n "$nextauth_id" ]] || die "nextauth client not found"
 kcadm update "clients/$nextauth_id" -r "$KEYCLOAK_REALM" \
@@ -220,6 +241,7 @@ kcadm update "clients/$v2_id" -r "$KEYCLOAK_REALM" \
   >/dev/null
 
 realm_state="$(kcadm get "realms/$KEYCLOAK_REALM")"
+printf 'Verifying reconciled Keycloak state...\n'
 jq -e \
   '.eventsEnabled == true
    and .eventsExpiration == 604800
@@ -244,9 +266,9 @@ jq -e --arg platform "$PLATFORM_GROUP" --arg governance "$GOVERNANCE_GROUP" \
 
 realm_management_id="$(kcadm get clients -r "$KEYCLOAK_REALM" -q clientId=realm-management --fields id,clientId | jq -r '.[] | select(.clientId == "realm-management") | .id' | head -n1)"
 [[ -n "$realm_management_id" ]] || die "realm-management client not found"
-platform_admin_roles="$(kcadm get "groups/$platform_group_id/role-mappings/clients/$realm_management_id" -r "$KEYCLOAK_REALM")"
+owner_admin_roles="$(kcadm get "users/$target_user_id/role-mappings/clients/$realm_management_id" -r "$KEYCLOAK_REALM")"
 jq -e '([.[].name] | index("realm-admin")) != null' \
-  <<<"$platform_admin_roles" >/dev/null || die "realm-admin group mapping read-back failed"
+  <<<"$owner_admin_roles" >/dev/null || die "realm-admin owner mapping read-back failed"
 
 governance_roles="$(kcadm get "groups/$governance_group_id/role-mappings/realm" -r "$KEYCLOAK_REALM")"
 jq -e \
@@ -277,7 +299,8 @@ jq -e \
    and .attributes["pkce.code.challenge.method"] == "S256"' \
   <<<"$v2_state" >/dev/null || die "sealai-v2 client policy read-back failed"
 
-delete_temporary_admin_client
+printf 'Deleting the temporary recovery identity...\n'
+delete_temporary_admin_identity
 
 printf 'Keycloak reconciliation complete: user=%s realm=%s groups=/%s,/%s\n' \
   "$target_username" "$KEYCLOAK_REALM" "$PLATFORM_GROUP" "$GOVERNANCE_GROUP"
