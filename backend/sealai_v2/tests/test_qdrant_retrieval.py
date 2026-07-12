@@ -253,6 +253,7 @@ def test_claim_points_one_per_claim_with_payload():
         "claim_text",
         "claim_kind",
         "sources",
+        "evidence",
         "provenance",
         "scope",
         "tenant_id",
@@ -268,7 +269,18 @@ def test_claim_points_one_per_claim_with_payload():
         ids.add(pid)
     assert len(ids) == len(pts)  # unique → idempotent upsert keys
     reviewed = [p for _i, _t, p in pts if p["review_state"] == "reviewed"]
-    assert reviewed == []  # Seed claims await independent human adjudication.
+    assert len(reviewed) == 79
+    assert all(p["evidence"] for p in reviewed)
+    assert (
+        sum(
+            any(
+                item["source_type"] == "internal_domain_expert_attestation"
+                for item in payload["evidence"]
+            )
+            for payload in reviewed
+        )
+        == 28
+    )
     drafts = [p for _i, _t, p in pts if p["review_state"] == "draft"]
     assert drafts and all("vorläufig" in p["quelle"] for p in drafts)
 

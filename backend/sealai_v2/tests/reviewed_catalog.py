@@ -1,9 +1,7 @@
-"""Explicit human-review overlay for hermetic retrieval mechanics tests only.
+"""Explicit review overlay for synthetic quarantine fixtures in hermetic tests.
 
-The production seed is intentionally quarantined until a real domain reviewer
-records identity, review time, and expiry. Tests that exercise retrieval depth
-still need authoritative fixtures; this module makes that test-only authority
-visible instead of laundering ``review:codex`` into production truth.
+The production seed now carries the owner's human review. This helper preserves
+it and only promotes any source-backed quarantine fixture introduced by a test.
 """
 
 from __future__ import annotations

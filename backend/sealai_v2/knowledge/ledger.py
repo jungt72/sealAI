@@ -163,6 +163,7 @@ def _authority_fingerprint(card, claim, *, content_sha256: str) -> str:
             "kind": claim.kind,
             "scope": _claim_scope(card, claim),
             "sources": list(claim.sources),
+            "evidence": list(claim.evidence),
             "applicability": _claim_applicability(card, claim),
             "declared_uncertainty": claim.uncertainty,
             "declared_transferability": claim.transferability,
@@ -528,7 +529,7 @@ class PostgresKnowledgeLedger:
             ) in incoming.items():
                 desired_status = _review_status(claim)
                 evidence = _normalise_evidence(
-                    list(claim.sources),
+                    list(claim.evidence or claim.sources),
                     document_id=doc.id,
                     document_version=doc.version,
                 )

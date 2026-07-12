@@ -48,7 +48,7 @@ def test_known_limitations_still_correctly_block():
         assert case["expected_violation_kind"] in kinds, (case["id"], kinds)
 
 
-def test_reviewed_ptfe_card_supports_a_broad_knowledge_answer_with_primary_sources():
+def test_reviewed_ptfe_card_preserves_external_and_internal_evidence_types():
     card = next(
         c
         for c in independently_reviewed_test_catalog().cards
@@ -59,8 +59,22 @@ def test_reviewed_ptfe_card_supports_a_broad_knowledge_answer_with_primary_sourc
     assert len(reviewed) >= 5
     assert any("thermoplast" in claim.text.lower() for claim in reviewed)
     assert any("füllstoff" in claim.text.lower() for claim in reviewed)
-    sourced = [claim for claim in reviewed if claim.sources]
-    assert len(sourced) >= 5
+    evidenced = [claim for claim in reviewed if claim.evidence]
+    assert len(evidenced) >= 5
+    evidence = [item for claim in evidenced for item in claim.evidence]
     assert all(
-        source.startswith("https://") for claim in sourced for source in claim.sources
+        item["source_type"]
+        in {
+            "external_technical_reference",
+            "internal_domain_expert_attestation",
+        }
+        for item in evidence
+    )
+    assert any(
+        item["source_type"] == "internal_domain_expert_attestation" for item in evidence
+    )
+    assert all(
+        "https://" in item["citation"]
+        for item in evidence
+        if item["source_type"] == "external_technical_reference"
     )

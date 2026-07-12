@@ -43,20 +43,20 @@ def test_inactive_knowledge_mode_fails_before_any_model_call() -> None:
     assert client.calls == []
 
 
-def test_enabled_knowledge_mode_still_requires_authoritative_evidence() -> None:
+def test_enabled_knowledge_mode_uses_the_owner_approved_evidence() -> None:
     pipeline, client = _pipeline(enabled=True)
 
-    with pytest.raises(ProductModeUnavailable) as raised:
-        asyncio.run(
-            pipeline.run(
-                "Bitte gib mir Details zu PTFE.",
-                tenant=TenantContext("tenant-a"),
-                session=SessionContext("case-a"),
-            )
+    result = asyncio.run(
+        pipeline.run(
+            "Bitte gib mir Details zu PTFE.",
+            tenant=TenantContext("tenant-a"),
+            session=SessionContext("case-a"),
         )
+    )
 
-    assert raised.value.maturity == "independent_reviewed_evidence_unavailable"
-    assert client.calls == []
+    assert result.grounded is True
+    assert result.grounding_facts
+    assert client.calls
 
 
 def test_chat_api_exposes_structured_mode_unavailable_contract() -> None:

@@ -16,21 +16,25 @@ def _r() -> InProcessRetriever:
     return InProcessRetriever(independently_reviewed_test_catalog())
 
 
-def test_source_less_epdm_mineraloel_claim_is_not_grounding():
+def test_owner_attested_epdm_mineraloel_claim_is_grounding():
     res = asyncio.run(
         _r().retrieve(
             "EPDM-O-Ringe quellen in unserem Hydrauliköl, woran liegt das?",
             tenant_id="t",
         )
     )
-    assert "FK-EPDM-MINERALOEL" not in {f.card_id for f in res.grounding_facts}
+    facts = [f for f in res.grounding_facts if f.card_id == "FK-EPDM-MINERALOEL"]
+    assert facts
+    assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
 
 
-def test_source_less_fkm_dampf_claim_is_not_grounding():
+def test_owner_attested_fkm_dampf_claim_is_grounding():
     res = asyncio.run(
         _r().retrieve("FKM für Heißdampf-Sterilisation bei 140 °C", tenant_id="t")
     )
-    assert "FK-FKM-DAMPF" not in {f.card_id for f in res.grounding_facts}
+    facts = [f for f in res.grounding_facts if f.card_id == "FK-FKM-DAMPF"]
+    assert facts
+    assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
 
 
 def test_broad_ptfe_overview_is_grounded_with_one_explicit_material_scope_hit():
@@ -73,14 +77,16 @@ def test_overview_prefers_a_reviewed_material_card_over_draft_only_ties():
     assert {fact.card_id for fact in res.grounding_facts} == {"FK-REVIEWED"}
 
 
-def test_source_less_foodgrade_claims_are_quarantined_from_grounding():
+def test_owner_attested_foodgrade_claims_are_grounding():
     res = asyncio.run(
         _r().retrieve(
             "lebensmittelechte Dichtung für eine Schokoladen-Anlage, EPDM food-grade?",
             tenant_id="t",
         )
     )
-    assert "FK-FOODGRADE-FETT" not in {f.card_id for f in res.grounding_facts}
+    facts = [f for f in res.grounding_facts if f.card_id == "FK-FOODGRADE-FETT"]
+    assert facts
+    assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
 
 
 def test_offtopic_is_vorlaeufig():

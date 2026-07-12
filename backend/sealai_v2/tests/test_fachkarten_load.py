@@ -15,17 +15,18 @@ def _write(tmp_path, cards):
     return p
 
 
-def test_seed_quarantines_claims_without_independent_human_review():
+def test_seed_carries_the_independent_owner_review_without_promoting_drafts():
     cat = load_fachkarten()
-    assert len(cat.reviewed()) == 0
-    assert cat.by_id("FK-PHARMA-SIP-VALIDIERUNG").review_state == "draft"
-    assert cat.by_id("FK-ERSATZDICHTUNG-IDENTIFIKATION").review_state == "draft"
+    assert len(cat.reviewed()) == 17
+    assert cat.by_id("FK-PHARMA-SIP-VALIDIERUNG").review_state == "reviewed"
+    assert cat.by_id("FK-ERSATZDICHTUNG-IDENTIFIKATION").review_state == "reviewed"
     assert len(cat.cards) == 55
-    assert sum(len(card.reviewed_claims()) for card in cat.cards) == 0
-    assert sum(len(card.quarantined_claims()) for card in cat.cards) == 79
+    assert sum(len(card.reviewed_claims()) for card in cat.cards) == 79
+    assert sum(len(card.draft_claims()) for card in cat.cards) == 522
+    assert sum(len(card.quarantined_claims()) for card in cat.cards) == 0
 
 
-def test_reviewed_seed_requires_primary_source_grounding():
+def test_reviewed_seed_requires_explicit_evidence_grounding():
     cat = load_fachkarten()
     for c in cat.reviewed():
         assert all(claim.sources for claim in c.reviewed_claims()), c.id

@@ -79,6 +79,9 @@ class Claim:
     sources: tuple[
         str, ...
     ] = ()  # primary citations; mandatory for authoritative review
+    evidence: tuple[
+        dict, ...
+    ] = ()  # typed review evidence; citations remain in sources
     provenance: tuple[
         str, ...
     ] = ()  # path (i): "trap-correct:…"/"owner:…"; path (ii): research origin
@@ -189,10 +192,28 @@ def _claim(raw: dict, card_id: str) -> Claim:
     if transferability and transferability not in _TRANSFERABILITY_STATES:
         raise ValueError(f"{card_id}: invalid transferability {transferability!r}")
     sources = tuple(str(s).strip() for s in raw.get("sources", []) if str(s).strip())
+    evidence_raw = raw.get("evidence", []) or []
+    if not isinstance(evidence_raw, list) or not all(
+        isinstance(item, dict) for item in evidence_raw
+    ):
+        raise ValueError(f"{card_id}: claim evidence must be a list of objects")
+    evidence: list[dict] = []
+    for item in evidence_raw:
+        record = dict(item)
+        citation = str(record.get("citation", "")).strip()
+        source_type = str(record.get("source_type", "")).strip()
+        if not citation or not source_type:
+            raise ValueError(
+                f"{card_id}: typed evidence requires citation and source_type"
+            )
+        record["citation"] = citation
+        record["source_type"] = source_type
+        evidence.append(record)
     c = Claim(
         text=str(raw["text"]).strip(),
         review_state=declared_state,
         sources=sources,
+        evidence=tuple(evidence),
         provenance=tuple(str(p) for p in raw.get("provenance", [])),
         kind=kind,
         answer_facets=answer_facets,
