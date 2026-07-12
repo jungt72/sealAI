@@ -1,6 +1,6 @@
 {
-  "version": "calc_seed_v1",
-  "source": "M4a seed: 3 owner-reviewed deterministic calc-defs (Umfangsgeschwindigkeit, PV-Wert, O-Ring-Verpressung/Nutfüllung). Formulas are reviewed CODE bound by id (core/calc/formulas.py); this file is METADATA only (units/validity/conditions/source/provenance). Kontakttemperatur is DEFERRED to the content-track pending an owner-supplied model + assumptions + source (Q3). Sources name the standard references; owner is the oracle that confirms/refines them at the build gate.",
+  "version": "calc_seed_v2-authority-split-20260712",
+  "source": "M4a seed: 3 owner-reviewed deterministic calc-defs (Umfangsgeschwindigkeit, PV-Wert, O-Ring-Verpressung). Formulas are reviewed CODE bound by id (core/calc/formulas.py); this file is METADATA only (units/validity/conditions/source/provenance). Domain guidance such as O-Ring gland fill belongs to the independently human-reviewed knowledge ledger and is not authoritative calc metadata. Kontakttemperatur is DEFERRED to the content-track pending an owner-supplied model + assumptions + source (Q3).",
   "calcs": [
     {
       "id": "umfangsgeschwindigkeit",
@@ -62,14 +62,13 @@
       "conditions": {"seal_type": ["o-ring", "oring", "o_ring"]},
       "assumptions": [
         "statische Dichtung: Zielbereich ~15–25 % Verpressung (dynamisch geringer)",
-        "Nutfüllung mit Reserve für Toleranzketten, Wärmedehnung und Quellung lassen (Parker: typisch 60–85 %, Optimum 75 %, mindestens 10 % freier Nutraum)",
         "Richtwerte — keine Scheingenauigkeit; gegen Nut-Auslegungsnorm/Herstellertabelle verifizieren"
       ],
       "typical_band": [15, 25],
-      "source": "O-Ring-Verpressung/Nutfüllung: Parker O-Ring Handbook ORD 5700, Sections 3.6–3.7, page 3-9 (Nutfüllung 60–85 %, Optimum 75 %, mindestens 10 % freier Nutraum) / ISO 3601-2 (Nutauslegung; ersetzt DIN 3771); owner-confirmed via eval CALC-02",
+      "source": "O-Ring-Verpressungsformel und Richtwerte — Parker O-Ring Handbook ORD 5700, Section 3.6 Squeeze, page 3-9 / ISO 3601-2 (Nutauslegung; ersetzt DIN 3771); owner-confirmed via eval CALC-02",
       "review_state": "reviewed",
       "provenance": ["eval:CALC-02", "owner:nutauslegung"],
-      "version": "calc_seed_v2-source-refresh-20260712"
+      "version": "calc_seed_v2-authority-split-20260712"
     }
   ]
 }
