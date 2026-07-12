@@ -16,6 +16,9 @@ Primary references:
 
 - Runtime containers receive only the Keycloak DB credential. Bootstrap or
   recovery admin credentials are never stored in `.env.prod`.
+- The shared Postgres credential has one source (`POSTGRES_PASSWORD`) and is
+  injected as `KCRAW_DB_PASSWORD`, preserving literal dollar sequences without
+  SmallRye Config expression expansion.
 - `mail@thorsten-jung.de` is the permanent owner. The account receives the
   `sealAI` realm-local `realm-management/realm-admin` role through
   `/platform-admins`, plus the sealingAI product and governance roles.

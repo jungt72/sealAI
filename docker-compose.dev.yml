@@ -6,7 +6,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sealai}
       KC_DB_USERNAME: ${KC_DB_USERNAME:-sealai}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD required — set in .env.dev}
+      KCRAW_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set in .env.dev}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?KC_BOOTSTRAP_ADMIN_USERNAME required — set in .env.dev}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD required — set in .env.dev}
       KC_HTTP_ENABLED: 'true'

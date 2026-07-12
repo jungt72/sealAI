@@ -26,27 +26,28 @@ DUMP_FILE="$PROOF_DIR/${POSTGRES_DB}-${STAMP}.dump"
 
 [[ -f "$ENV_FILE" ]] || { echo "missing $ENV_FILE" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 1; }
-if [[ -z "${KC_DB_PASSWORD:-}" ]]; then
-  KC_DB_PASSWORD="$(python3 - "$ENV_FILE" <<'PY'
+if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
+  POSTGRES_PASSWORD="$(python3 - "$ENV_FILE" <<'PY'
 import sys
 from pathlib import Path
 
+values = {}
 for raw in Path(sys.argv[1]).read_text().splitlines():
     line = raw.strip()
     if not line or line.startswith("#") or "=" not in line:
         continue
     key, value = line.split("=", 1)
-    if key.strip() != "KC_DB_PASSWORD":
-        continue
+    key = key.strip()
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
         value = value[1:-1]
-    print(value, end="")
-    break
+    values[key] = value
+
+print(values.get("POSTGRES_PASSWORD", ""), end="")
 PY
 )"
 fi
-[[ -n "${KC_DB_PASSWORD:-}" ]] || { echo "KC_DB_PASSWORD is required" >&2; exit 1; }
+[[ -n "${POSTGRES_PASSWORD:-}" ]] || { echo "POSTGRES_PASSWORD is required" >&2; exit 1; }
 
 cleanup() {
   docker rm -f "$TEST_CONTAINER" >/dev/null 2>&1 || true
@@ -79,7 +80,7 @@ docker run -d --name "$TEST_CONTAINER" --network "$NETWORK" \
   -e KC_DB=postgres \
   -e "KC_DB_URL=jdbc:postgresql://postgres:5432/$TEST_DB" \
   -e "KC_DB_USERNAME=$POSTGRES_USER" \
-  -e "KC_DB_PASSWORD=$KC_DB_PASSWORD" \
+  -e "KCRAW_DB_PASSWORD=$POSTGRES_PASSWORD" \
   -e KC_HTTP_ENABLED=true \
   -e KC_HOSTNAME_STRICT=false \
   -e KC_HEALTH_ENABLED=true \
