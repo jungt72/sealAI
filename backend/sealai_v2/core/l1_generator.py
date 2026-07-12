@@ -8,6 +8,7 @@ framework-/I/O-free, build-spec §3).
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 
@@ -21,6 +22,12 @@ from sealai_v2.core.contracts import (
     ModelConfig,
     SystemPromptAssembler,
 )
+from sealai_v2.core.engineering_answer import (
+    EngineeringAnswerValidationError,
+    EngineeringClaim,
+    EngineeringKnowledgeAnswer,
+    validate_engineering_answer,
+)
 from sealai_v2.core.technical_answer import (
     TechnicalAnswer,
     TechnicalClaim,
@@ -30,10 +37,166 @@ from sealai_v2.core.technical_answer import (
 )
 from sealai_v2.core.sourcing_guard import strip_sourcing
 from sealai_v2.llm.structured import StructuredOutputError, generate_structured
+from sealai_v2.render.engineering_answer import render_engineering_answer
 from sealai_v2.render.technical_answer import render_technical_answer
 
 
 logger = logging.getLogger(__name__)
+
+
+def _engineering_conclusion(plan: dict) -> str:
+    subjects = tuple(
+        str(subject) for subject in plan.get("subjects", ()) if str(subject)
+    )
+    profile = str(plan.get("profile") or "engineering_knowledge")
+    if plan.get("comparison") and len(subjects) >= 2:
+        return (
+            f"{subjects[0]} und {subjects[1]} sind entlang identischer Prüf- und Betriebsbedingungen "
+            "zu vergleichen; ein einzelner Kennwert ergibt noch keine belastbare Werkstoffentscheidung."
+        )
+    subject = subjects[0] if subjects else "Der technische Gegenstand"
+    if profile.startswith("material_"):
+        return (
+            f"Bei {subject} sind Werkstofffamilie, konkreter Compound, Prüfwert und "
+            "anwendungsbezogene Einsatzgrenze strikt zu trennen."
+        )
+    if profile.startswith("seal_"):
+        return (
+            f"Die technische Funktion von {subject} ergibt sich aus Dichtprinzip, Bauform, "
+            "Werkstoff, Gegenpartner und Betriebsbedingungen."
+        )
+    if profile.startswith("medium_"):
+        return (
+            f"Die Wirkung von {subject} auf ein Dichtsystem hängt von Zusammensetzung, "
+            "Konzentration, Temperatur, Dauer und konkretem Compound ab."
+        )
+    return "Die technische Einordnung folgt den geprüften Quellen und den benannten Randbedingungen."
+
+
+def _engineering_missing_information(plan: dict) -> list[str]:
+    missing = [
+        f"{entry['subject']}: nicht belegt sind {', '.join(entry.get('missing_facets', ()))}"
+        for entry in plan.get("subject_coverage", ())
+        if entry.get("missing_facets")
+    ]
+    if plan.get("comparison"):
+        missing.append(
+            "Für eine Auswahlentscheidung: konkrete Compounds beziehungsweise Grades, Medium mit "
+            "Additiven, Temperaturprofil, Druck, Bewegungsart, Geschwindigkeit, Bauform und Nachweisbasis."
+        )
+    return missing[:10]
+
+
+def _fact_subjects(fact: GroundingFact, subjects: tuple[str, ...]) -> frozenset[str]:
+    """Bind evidence to its primary comparison subject, preferring the stable card identity.
+
+    Broad scope tags may mention alternatives, so they are unsuitable as primary-subject ownership.
+    Reviewed profile card IDs are the current authoritative discriminator.  A single-subject overview
+    may safely bind its retrieved evidence to that one subject; comparison evidence must identify its
+    side explicitly and otherwise remains unusable for a subject cell.
+    """
+    card_tokens = {
+        re.sub(r"[^a-z0-9]+", "", token.casefold())
+        for token in re.split(r"[-_:/.]+", fact.card_id)
+        if token
+    }
+    matched = {
+        subject
+        for subject in subjects
+        if re.sub(r"[^a-z0-9]+", "", subject.casefold()) in card_tokens
+    }
+    if matched:
+        return frozenset(matched)
+    if len(subjects) == 1:
+        return frozenset(subjects)
+    return frozenset()
+
+
+def _fallback_engineering_answer(
+    *,
+    plan: dict,
+    evidence_facts: dict[str, GroundingFact],
+    evidence_subjects: dict[str, frozenset[str]],
+    case_revision: int,
+) -> EngineeringKnowledgeAnswer:
+    """Fail closed to exact reviewed statements, preserving subject and facet identity."""
+    claims: list[EngineeringClaim] = []
+    subjects = tuple(plan.get("subjects", ())) or ("Dichtungstechnik",)
+    evidence_metadata = {
+        evidence_id: (
+            fact,
+            tuple(fact.answer_facets) or ("properties",),
+            evidence_subjects.get(evidence_id)
+            or (frozenset(subjects) if len(subjects) == 1 else frozenset()),
+        )
+        for evidence_id, fact in evidence_facts.items()
+    }
+    used: set[tuple[str, str]] = set()
+
+    # First fill every render cell from one exact reviewed statement. This keeps the fallback useful
+    # and symmetric even when the provider returns invalid JSON or incomplete coverage.
+    for subject in subjects:
+        for section in plan.get("sections", ()):
+            section_facets = tuple(section.get("facets", ()))
+            selected = next(
+                (
+                    (evidence_id, fact, facets)
+                    for evidence_id, (
+                        fact,
+                        facets,
+                        bound_subjects,
+                    ) in evidence_metadata.items()
+                    if subject in bound_subjects
+                    and any(facet in facets for facet in section_facets)
+                ),
+                None,
+            )
+            if selected is None:
+                continue
+            evidence_id, fact, facets = selected
+            facet = next(facet for facet in section_facets if facet in facets)
+            claims.append(
+                EngineeringClaim(
+                    subject=subject,
+                    facet=facet,
+                    statement=fact.text,
+                    evidence_ids=[evidence_id],
+                    criticality=(
+                        "limit" if facet in {"limits", "failure_modes"} else "context"
+                    ),
+                )
+            )
+            used.add((subject, evidence_id))
+
+    # Then retain additional reviewed facts while respecting the bounded chat contract.
+    for evidence_id, (fact, facets, bound_subjects) in evidence_metadata.items():
+        for subject in sorted(bound_subjects):
+            if len(claims) >= 20 or (subject, evidence_id) in used:
+                continue
+            claims.append(
+                EngineeringClaim(
+                    subject=subject,
+                    facet=facets[0],
+                    statement=fact.text,
+                    evidence_ids=[evidence_id],
+                    criticality=(
+                        "limit"
+                        if "limits" in facets or "failure_modes" in facets
+                        else "context"
+                    ),
+                )
+            )
+        if len(claims) >= 20:
+            break
+    return EngineeringKnowledgeAnswer(
+        schema_version=2,
+        profile=str(plan.get("profile") or "engineering_knowledge"),
+        case_revision=case_revision,
+        conclusion=_engineering_conclusion(plan),
+        claims=claims,
+        assumptions=[],
+        missing_information=_engineering_missing_information(plan),
+    )
 
 
 def _knowledge_evidence_context(
@@ -302,6 +465,130 @@ class L1Generator:
                     if fact.card_id:
                         evidence_facts[fact.card_id] = fact
             allowed_ids = frozenset(evidence_facts)
+            if knowledge_answer_plan is not None:
+                from sealai_v2.core.knowledge_answer import facets_for_fact
+                from sealai_v2.knowledge.material_parameters import parameter_text
+
+                subjects = tuple(
+                    str(subject)
+                    for subject in knowledge_answer_plan.get("subjects", ())
+                    if str(subject)
+                )
+                evidence_facets_v2 = {
+                    evidence_id: frozenset(facets_for_fact(fact))
+                    for evidence_id, fact in evidence_facts.items()
+                }
+                evidence_subjects_v2 = {
+                    evidence_id: _fact_subjects(fact, subjects)
+                    for evidence_id, fact in evidence_facts.items()
+                }
+                evidence_texts_v2 = {
+                    evidence_id: fact.text
+                    for evidence_id, fact in evidence_facts.items()
+                }
+                coverage_by_subject = {
+                    str(entry.get("subject")): set(entry.get("covered_facets", ()))
+                    for entry in knowledge_answer_plan.get("subject_coverage", ())
+                }
+                required_cells = {
+                    subject: tuple(
+                        frozenset(
+                            set(section.get("facets", ()))
+                            & coverage_by_subject.get(subject, set())
+                        )
+                        for section in knowledge_answer_plan.get("sections", ())
+                        if set(section.get("facets", ()))
+                        & coverage_by_subject.get(subject, set())
+                    )
+                    for subject in subjects
+                }
+                evidence_map = "; ".join(
+                    f"{evidence_id}=>subject[{','.join(sorted(evidence_subjects_v2[evidence_id])) or 'unbound'}]"
+                    f";facets[{','.join(sorted(evidence_facets_v2[evidence_id])) or 'none'}]"
+                    for evidence_id in sorted(evidence_facts)
+                )
+                instruction = (
+                    "\n\nCreate exactly one internal EngineeringKnowledgeAnswer object. "
+                    "Do not write Markdown and do not create tables. The deterministic renderer owns "
+                    "all tables and parameter values. Copy each claim statement exactly from one "
+                    "cited evidence item; do not paraphrase, merge or extend it. Each claim must "
+                    "address exactly one declared "
+                    "subject and one facet supported by every cited evidence ID. Never transfer a "
+                    "property, limit or failure mechanism from one comparison subject to another. "
+                    "Do not introduce a number, standard, product, filler, approval or limit absent "
+                    "from the supplied reviewed evidence or material-parameter registry. Distinguish "
+                    "family tendencies, compound-specific values, test values and application limits. "
+                    "State mechanisms and consequences where the evidence supports them. Use concise "
+                    "senior-engineer language, preserve uncertainty, and identify the minimum missing "
+                    "inputs that would change a selection. "
+                    f"profile must be {knowledge_answer_plan.get('profile')}; case_revision must be "
+                    f"{case_revision}; allowed subjects: {', '.join(subjects) or 'Dichtungstechnik'}. "
+                    f"Evidence ownership: {evidence_map or '(none)'}."
+                )
+                try:
+                    engineering, result = await generate_structured(
+                        self._client,
+                        output_type=EngineeringKnowledgeAnswer,
+                        schema_name="sealingai_engineering_knowledge_answer_v2",
+                        system=system + instruction,
+                        user=question,
+                        model_config=self._model_config,
+                        max_repairs=0,
+                    )
+                    engineering = engineering.model_copy(
+                        update={
+                            "conclusion": _engineering_conclusion(
+                                knowledge_answer_plan
+                            ),
+                            "assumptions": [],
+                            "missing_information": _engineering_missing_information(
+                                knowledge_answer_plan
+                            ),
+                        }
+                    )
+                    validate_engineering_answer(
+                        engineering,
+                        profile=str(knowledge_answer_plan.get("profile")),
+                        case_revision=case_revision,
+                        allowed_subjects=subjects,
+                        evidence_facets=evidence_facets_v2,
+                        evidence_subjects=evidence_subjects_v2,
+                        evidence_texts=evidence_texts_v2,
+                        required_cells=required_cells,
+                        parameter_text=parameter_text(material_params),
+                    )
+                except (StructuredOutputError, EngineeringAnswerValidationError) as exc:
+                    logger.warning(
+                        "engineering knowledge answer failed validation; using exact-evidence "
+                        "fallback (%s)",
+                        exc,
+                    )
+                    engineering = _fallback_engineering_answer(
+                        plan=knowledge_answer_plan,
+                        evidence_facts=evidence_facts,
+                        evidence_subjects=evidence_subjects_v2,
+                        case_revision=case_revision,
+                    )
+                    result = LlmResult(
+                        text="",
+                        model=self._model_config.model,
+                        finish_reason="deterministic_engineering_fallback",
+                    )
+                return Answer(
+                    text=strip_sourcing(
+                        render_engineering_answer(
+                            engineering,
+                            knowledge_answer_plan=knowledge_answer_plan,
+                            material_params=material_params,
+                        )
+                    ),
+                    model=result.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason=result.finish_reason,
+                    verification_claims=tuple(
+                        claim.statement for claim in engineering.claims
+                    ),
+                )
             required_knowledge_facets: set[str] = set()
             evidence_facets: dict[str, set[str]] = {}
             if knowledge_answer_plan is not None:

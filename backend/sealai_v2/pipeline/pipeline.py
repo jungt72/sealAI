@@ -1424,6 +1424,18 @@ class Pipeline:
 
                 _check_sentence_coverage = contract is not None
                 _kv, _km = _guard_known(question)
+                if material_params:
+                    from sealai_v2.core.engineering_answer import numeric_tokens
+                    from sealai_v2.knowledge.material_parameters import parameter_text
+
+                    _kv = tuple(_kv) + tuple(
+                        numeric_tokens(parameter_text(material_params))
+                    )
+                    _km = tuple(_km) + tuple(
+                        str(block.get("material", ""))
+                        for block in material_params
+                        if str(block.get("material", ""))
+                    )
                 _gr = _guard_eval(
                     answer_text=answer.text,
                     contract=_effective_contract,
@@ -1571,6 +1583,55 @@ class Pipeline:
                     else ()
                 ),
             )
+
+            # The first output-guard pass precedes L3 by design so it can request one corrected
+            # generation.  Every later verifier/override may still mutate the answer, therefore the
+            # exact payload that ships receives a second, non-generative fail-closed check here.
+            # Kernel material values are admitted explicitly; they are structured reviewed data, not
+            # model-invented quantities.
+            if (
+                self.response_contract_enabled
+                and _effective_contract is not None
+                and active_generator is not None
+            ):
+                from sealai_v2.core.engineering_answer import numeric_tokens
+                from sealai_v2.core.output_guard import (
+                    evaluate_render as _final_guard_eval,
+                    fail_closed_answer as _final_guard_fallback,
+                    known_inputs as _final_guard_known,
+                )
+                from sealai_v2.knowledge.material_parameters import parameter_text
+
+                _final_kv, _final_km = _final_guard_known(question)
+                if material_params:
+                    _final_kv = tuple(_final_kv) + tuple(
+                        numeric_tokens(parameter_text(material_params))
+                    )
+                    _final_km = tuple(_final_km) + tuple(
+                        str(block.get("material", ""))
+                        for block in material_params
+                        if str(block.get("material", ""))
+                    )
+                _final_guard = _final_guard_eval(
+                    answer_text=answer.text,
+                    contract=_effective_contract,
+                    known_values=_final_kv,
+                    known_materials=_final_km,
+                    check_sentence_coverage=contract is not None,
+                )
+                if _final_guard.action == "BLOCK":
+                    _log.error(
+                        "GOVERNANCE final_output_guard blocked post-verification answer: %s",
+                        [violation.kind for violation in _final_guard.violations],
+                    )
+                    answer = Answer(
+                        text=_final_guard_fallback(_effective_contract),
+                        model="deterministic-final-output-guard",
+                        grounding_facts=l1_grounding,
+                    )
+                    guard = _final_guard.to_dict()
+                elif guard is None:
+                    guard = _final_guard.to_dict()
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
@@ -2193,8 +2254,9 @@ def build_pipeline(
             else None
         ),
         answer_cache_namespace=(
-            f"{wissensstand}:execution-policy.v1:{settings.standard_provider}/"
-            f"{settings.standard_model}:structured={settings.structured_answer_enabled}"
+            f"{wissensstand}:execution-policy.v1:engineering-answer.v2:parameters.v2:"
+            f"{settings.standard_provider}/{settings.standard_model}:"
+            f"structured={settings.structured_answer_enabled}"
         ),
         knowledge_material_terms=knowledge_material_terms,
         understand_prompt_assembler=UnderstandPromptAssembler(),
