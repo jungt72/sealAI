@@ -793,7 +793,7 @@ def test_retrieve_balances_exact_profiles_for_both_comparison_subjects():
     assert set(scope_condition.match.any) == {"NBR", "PTFE"}
 
 
-def test_retrieve_does_not_scroll_subject_profiles_for_focused_case_question():
+def test_retrieve_does_not_scroll_material_profile_for_focused_case_question():
     client = _FakeClient(points=[])
     retriever = QdrantFachkartenRetriever(
         Settings(qdrant_hybrid_enabled=False),
@@ -808,6 +808,31 @@ def test_retrieve_does_not_scroll_subject_profiles_for_focused_case_question():
     )
 
     assert client.last_scroll_kwargs is None
+
+
+def test_retrieve_scrolls_bounded_seal_profile_for_focused_rwdr_case():
+    client = _FakeClient(points=[])
+    retriever = QdrantFachkartenRetriever(
+        Settings(qdrant_hybrid_enabled=False),
+        client=client,
+        embedder=_FakeDenseEmbedder(),
+    )
+
+    asyncio.run(
+        retriever.retrieve(
+            "RWDR 45 mm bei 1500 U/min, Mineralöl und 80 Grad vorprüfen",
+            tenant_id="customer-a",
+            k=5,
+        )
+    )
+
+    assert client.last_scroll_kwargs is not None
+    scope_condition = next(
+        condition
+        for condition in client.last_scroll_kwargs["scroll_filter"].must
+        if condition.key == "scope.application"
+    )
+    assert set(scope_condition.match.any) == {"RWDR"}
 
 
 def test_retrieve_revalidates_qdrant_payload_against_postgres_ledger():

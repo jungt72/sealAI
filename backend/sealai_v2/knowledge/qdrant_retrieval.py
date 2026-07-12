@@ -188,7 +188,9 @@ def _point_matches_subject(point, subject: str) -> bool:
     )
 
 
-def _select_knowledge_overview(points, k: int, query: str):
+def _select_knowledge_overview(
+    points, k: int, query: str, *, allow_case_subject_profile: bool = False
+):
     """Select a facet-balanced reviewed evidence set for a broad knowledge question.
 
     Vector similarity answers "which passages resemble the text?", not "which facets make a useful
@@ -209,7 +211,11 @@ def _select_knowledge_overview(points, k: int, query: str):
             if value
         )
     )
-    plan = build_knowledge_answer_plan(query, material_terms=material_terms)
+    plan = build_knowledge_answer_plan(
+        query,
+        material_terms=material_terms,
+        allow_case_subject_profile=allow_case_subject_profile,
+    )
     if plan is None:
         return None
     eligible = [
@@ -723,7 +729,9 @@ class QdrantFachkartenRetriever:
             )
         )
         overview_plan = build_knowledge_answer_plan(
-            query, material_terms=material_terms
+            query,
+            material_terms=material_terms,
+            allow_case_subject_profile=True,
         )
         profile_must = None
         if overview_plan is not None and overview_plan.subject_type in {
@@ -790,7 +798,9 @@ class QdrantFachkartenRetriever:
         # branch above produced) BEFORE any reranking — the cross-encoder only rescores its own top-N
         # slice, leaving the untouched tail on the old scale, so comparing a post-rerank top_score
         # against a pre-rerank tail score would silently mix two incompatible scales (same incident).
-        overview_selected = _select_knowledge_overview(points, k, query)
+        overview_selected = _select_knowledge_overview(
+            points, k, query, allow_case_subject_profile=True
+        )
         selected = overview_selected or _select_points_with_reviewed_backfill(
             points, k, query, min_relative_score=min_relative_score
         )

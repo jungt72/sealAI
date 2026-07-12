@@ -52,7 +52,7 @@ def test_comparison_profile_uses_aligned_material_axes() -> None:
 
     assert plan is not None
     assert plan.profile == "material_comparison" and plan.comparison
-    assert plan.subjects == ("PTFE", "NBR") or plan.subjects == ("NBR", "PTFE")
+    assert plan.subjects == ("NBR", "PTFE")
     assert {"parameters", "media_compatibility", "failure_modes"} <= set(
         plan.required_facets
     )
@@ -156,6 +156,26 @@ def test_only_explicit_knowledge_turns_expand_retrieval() -> None:
     )
 
 
+def test_case_profile_is_available_without_expanding_the_retrieval_budget() -> None:
+    question = "RWDR 45 mm bei 1500 U/min, Mineralöl und 80 Grad technisch vorprüfen"
+    assert build_knowledge_answer_plan(question) is None
+    plan = build_knowledge_answer_plan(question, allow_case_subject_profile=True)
+    assert plan is not None and plan.profile == "seal_type_overview"
+    assert plan.subjects == ("RWDR",)
+    assert knowledge_retrieval_limit(question) == 5
+
+
+def test_material_subject_order_follows_the_user_question() -> None:
+    forward = build_knowledge_answer_plan(
+        "Vergleiche NBR mit PTFE", route_name="material_comparison"
+    )
+    reverse = build_knowledge_answer_plan(
+        "Vergleiche PTFE mit NBR", route_name="material_comparison"
+    )
+    assert forward is not None and forward.subjects == ("NBR", "PTFE")
+    assert reverse is not None and reverse.subjects == ("PTFE", "NBR")
+
+
 def test_reviewed_expert_profiles_cover_core_subjects() -> None:
     catalog = independently_reviewed_test_catalog()
     expected = {
@@ -193,3 +213,21 @@ def test_inprocess_retrieval_returns_deep_rwdr_profile() -> None:
     assert len({fact.claim_id for fact in result.grounding_facts}) == len(
         result.grounding_facts
     )
+
+
+def test_case_specific_rwdr_retrieval_is_facet_balanced_and_bounded() -> None:
+    import asyncio
+
+    result = asyncio.run(
+        InProcessRetriever(independently_reviewed_test_catalog()).retrieve(
+            "RWDR 45 mm bei 1500 U/min, Mineralöl und 80 Grad technisch vorprüfen",
+            tenant_id="test",
+            k=5,
+        )
+    )
+    facets = {facet for fact in result.grounding_facts for facet in fact.answer_facets}
+    assert len(result.grounding_facts) >= 5
+    assert {"mechanism", "parameters", "selection_inputs"} <= facets
+    assert "FK-RWDR-ENGINEERING-PROFILE" in {
+        fact.card_id for fact in result.grounding_facts
+    }
