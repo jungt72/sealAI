@@ -2654,3 +2654,32 @@ requires its configured TOTP enrollment. That security requirement was not bypas
 chat UI therefore still needs a one-time TOTP setup for that account before a full browser conversation
 can be repeated; this does not weaken the API, worker, retrieval, auth-redirect, or runtime evidence
 above.
+
+---
+
+## 2026-07-12T16:48:14Z — Production L1 switched to Mistral-only budget mode
+
+**Owner direction and scope.** After the owner confirmed that no further paid OpenAI eval should run,
+the remaining production OpenAI dependency was removed from the answer path by changing only
+`SEALAI_V2_L1_PROVIDER` and `SEALAI_V2_L1_MODEL`. L1/frontier, standard generation, L3 verification,
+understanding, and distillation now all use `mistral/mistral-small-2603`; retrieval and memory embeddings
+remain local on `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`. The eval-only judge
+configuration was not executed.
+
+**Controlled config promotion.** The immutable signed image and served tree were unchanged:
+`sha256:e06dd8ffef5a1eb91083ede0af141413a34d32463ff0f11c3fdd9977de9f7a68` and
+`41b69c6c2f3f3d6d56017b79ceda8dddcf2dc97e`. Compose was rendered and validated before API and worker
+were recreated with the digest-pinned image. The new answer-affecting runtime profile is
+`a340525275dea774fece181e537a82b4819683f5323b2c407c9c9b4c46be7e54`.
+
+**Verification and rollback.** API and worker returned healthy, local and public health checks passed,
+and both public marketing and `/api/v2/health` returned HTTP 200. One minimal Mistral connectivity smoke
+returned exactly `OK` using 31 total tokens. Runtime logs after the restart contained no OpenAI call,
+quota error, exception, or traceback. Rollback is the environment snapshot
+`.runtime/env.prod.pre-mistral-frontier-20260712-164814` (SHA-256
+`6dbd6a64ec38066a693e822f66411748f4a345630c4b1a9d408687d0f583ca78`) followed by a digest-pinned
+recreate of `backend-v2` and `backend-v2-worker`.
+
+**Evidence status.** This is an explicit budget-mode configuration change under the existing owner
+waiver. It is live-tested but not eval-adjudicated and must not be represented as an eval pass. The
+full release eval remains deferred until the owner authorizes the final paid release assessment.
