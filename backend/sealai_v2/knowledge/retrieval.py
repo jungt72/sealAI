@@ -147,6 +147,25 @@ def _specific_single_scope_hit(card: Fachkarte, query: str) -> bool:
     return False
 
 
+def _is_medium_selection_method(card: Fachkarte, query: str) -> bool:
+    query_lower = query.lower()
+    return (
+        card.subject_type == "medium"
+        and bool(card.reviewed_claims())
+        and "medium" in query_lower
+        and any(
+            marker in query_lower
+            for marker in (
+                "werkstoff",
+                "verträglich",
+                "vertraeglich",
+                "beständig",
+                "passt",
+            )
+        )
+    )
+
+
 def _lexical_stem(token: str) -> str:
     for suffix in ("ern", "en", "er", "es", "e", "n", "s"):
         if token.endswith(suffix) and len(token) - len(suffix) >= 5:
@@ -303,8 +322,9 @@ class InProcessRetriever:
                 card, query, material_tokens=material_tokens
             )
             overview = _is_knowledge_overview(card, query)
-            specific_hit = bool(card.reviewed_claims()) and _specific_single_scope_hit(
-                card, query
+            specific_hit = bool(card.reviewed_claims()) and (
+                _specific_single_scope_hit(card, query)
+                or _is_medium_selection_method(card, query)
             )
             candidates.append(
                 (scope_score, lexical_score, overview, specific_hit, card)
@@ -315,8 +335,9 @@ class InProcessRetriever:
         # nothing do we use the strongest reviewed-claim overlap as a bounded fallback.
         has_specific_hit = any(item[3] for item in candidates)
         has_structural_hit = any(
-            scope_score >= _MIN_SCOPE_HITS or overview
-            for scope_score, _lexical, overview, _specific, _card in candidates
+            (scope_score >= _MIN_SCOPE_HITS or overview)
+            and bool(card.reviewed_claims())
+            for scope_score, _lexical, overview, _specific, card in candidates
         )
         max_lexical = max((item[1] for item in candidates), default=0)
         scored: list[tuple[int, Fachkarte]] = []
