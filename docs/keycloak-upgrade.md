@@ -37,8 +37,10 @@ Primary references:
 
 Run this before changing the live container. It creates a fresh custom-format
 dump, restores it into a temporary database, starts the candidate against that
-copy, verifies readiness and migrations, then removes the test database and
-container.
+copy with a local, non-clustered cache, verifies readiness and migrations, then
+removes the test database and container. The local cache is mandatory because
+the restored database can contain JGroups discovery rows from production; a
+preflight process must never attempt to join the live Keycloak cluster.
 
 ```bash
 cd /home/thorsten/sealai

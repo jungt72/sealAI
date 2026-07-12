@@ -81,6 +81,7 @@ docker run -d --name "$TEST_CONTAINER" --network "$NETWORK" \
   -e "KC_DB_URL=jdbc:postgresql://postgres:5432/$TEST_DB" \
   -e "KC_DB_USERNAME=$POSTGRES_USER" \
   -e "KCRAW_DB_PASSWORD=$POSTGRES_PASSWORD" \
+  -e KC_CACHE=local \
   -e KC_HTTP_ENABLED=true \
   -e KC_HOSTNAME_STRICT=false \
   -e KC_HEALTH_ENABLED=true \
