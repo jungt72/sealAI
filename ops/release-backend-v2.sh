@@ -331,7 +331,7 @@ if [[ "${RELEASE_STAGE}" == "final" ]]; then
     RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
   fi
 elif [[ "${RELEASE_STAGE}" == "owner-waiver" ]]; then
-  RELEASE_EVIDENCE="Paid eval approval explicitly waived by `${WAIVER_APPROVER}`: ${WAIVER_REASON}. Supply-chain attestations, immutable identity, backup, migration, rollback and smoke gates remained mandatory; eval_status=waived_by_owner."
+  RELEASE_EVIDENCE="Paid eval approval explicitly waived by \`${WAIVER_APPROVER}\`: ${WAIVER_REASON}. Supply-chain attestations, immutable identity, backup, migration, rollback and smoke gates remained mandatory; eval_status=waived_by_owner."
 else
   RELEASE_EVIDENCE="Live candidate only. Paid eval-REPLAY intentionally deferred (eval_status=pending); this deployment is not final-release evidence."
 fi
