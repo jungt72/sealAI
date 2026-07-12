@@ -70,7 +70,8 @@ Validierung. Das Frontend lehnt unbekannte Streamversionen ab.
 Ein V2-Release erfordert:
 
 - sauberen, exakten Git-Commit und unveraenderliches OCI-Image mit Revision und Tree-Hash
-- SBOM und Build-Provenance
+- ueber GitHub Actions signierte und beim Deploy tokenfrei per Sigstore/Rekor
+  verifizierte SLSA-Provenance und SPDX-2.3-SBOM
 - gruenen Python-/Frontend-/Architekturvertrag
 - adjudizierten Eval-REPLAY fuer exakt denselben Tree-Hash, L1 und Runtime-Profile-Hash
 - geprueftes Backup, Alembic-Migration, Ledger-Bootstrap und vollstaendig geleerte Index-Outbox

@@ -11,8 +11,9 @@
 #
 # Gate chain:
 #   1. TREE_HASH = ops/tree-hash.sh backend/sealai_v2   (served-runtime content)
-#   2. Build/pull the candidate and derive its secret-free runtime-profile hash.
-#   3. final only: ops/v2_deploy_gate.py → an adjudicated run with that exact
+#   2. Pull the immutable candidate, verify its signed SLSA provenance + SPDX
+#      SBOM, then derive its secret-free runtime-profile hash.
+#   3. final only: ops/v2_deploy_gate.py -> an adjudicated run with that exact
 #      tree, L1 and runtime profile; all gated axes are clean.
 #   4. Rollback rung, verified pre-migration backup and Alembic migration,
 #      idempotent knowledge-ledger bootstrap + derived-index drain, then recreate
@@ -72,6 +73,9 @@ if [[ "${RELEASE_STAGE}" == "candidate" ]]; then
     *) die "candidate releases are forbidden for APP_ENV=${DEPLOY_ENV}; production requires --final" ;;
   esac
   echo "!! CANDIDATE: paid eval replay intentionally deferred; this is not final release approval." >&2
+fi
+if [[ "${RELEASE_STAGE}" == "final" && -z "${BACKEND_IMAGE_REF}" ]]; then
+  die "final releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
 fi
 
 # Production is an artifact promotion. Never deploy bytes from an uncommitted
@@ -143,8 +147,12 @@ if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
   IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
   [[ "${IMAGE_TREE_HASH}" == "${TREE_HASH}" ]] || die "image tree hash ${IMAGE_TREE_HASH:-<missing>} does not match served tree ${TREE_HASH}"
   [[ "${IMAGE_REVISION}" == "${GIT_SHA_FULL}" ]] || die "image revision ${IMAGE_REVISION:-<missing>} does not match checkout ${GIT_SHA_FULL}"
+  bash ops/verify-image-attestations.sh \
+    "${BACKEND_IMAGE_REF}" "${GIT_SHA_FULL}" ".github/workflows/build-and-push.yml" \
+    || die "candidate image provenance or SBOM attestation verification failed"
   PREPARED_IMAGE="${BACKEND_IMAGE_REF}"
 else
+  echo "!! non-production local candidate has no signed registry attestations" >&2
   echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
   "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${GIT_SHA_FULL}" "${SERVICE}"
   PREPARED_IMAGE="$(docker image inspect --format '{{.Id}}' "${LOCAL_BACKEND_IMAGE}" 2>/dev/null || true)"

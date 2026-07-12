@@ -9,7 +9,10 @@ on:
       - "backend/docker-entrypoint-v2.sh"
       - "backend/requirements-v2.txt"
       - "backend/sealai_v2/**"
+      - "ops/release-backend-v2.sh"
       - "ops/tree-hash.sh"
+      - "ops/verify-image-attestations.sh"
+      - "ops/verify_attestation_payload.py"
   workflow_dispatch:
     inputs:
       source_sha:
