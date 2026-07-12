@@ -266,6 +266,7 @@ class L1Generator:
         knowledge_answer_plan: dict | None = None,
         require_evidence_for_all_claims: bool = False,
         compact_technical_answer: bool = False,
+        work_solution_candidate: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> Answer:
@@ -355,6 +356,13 @@ class L1Generator:
                     "cannot all be evidenced at once, state that unresolved target conflict "
                     "explicitly instead of presenting a candidate list as a solution."
                 )
+                if work_solution_candidate:
+                    structured_instruction += (
+                        " The evidence supports engineering a seal-type solution candidate: name "
+                        "one primary provisional candidate, explain its sealing mechanism and "
+                        "conditions, and identify the next-best architecture alternative. Do not "
+                        "replace this solution work with a generic manufacturer referral."
+                    )
                 if compact_technical_answer:
                     structured_instruction += (
                         " This is a compact first-turn response: put the decisive risk or result "
@@ -558,6 +566,7 @@ class L1Generator:
         knowledge_answer_plan: dict | None = None,
         require_evidence_for_all_claims: bool = False,
         compact_technical_answer: bool = False,
+        work_solution_candidate: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> AsyncIterator[L1StreamEvent]:
@@ -594,6 +603,7 @@ class L1Generator:
                     knowledge_answer_plan=knowledge_answer_plan,
                     require_evidence_for_all_claims=require_evidence_for_all_claims,
                     compact_technical_answer=compact_technical_answer,
+                    work_solution_candidate=work_solution_candidate,
                     risk_flags=risk_flags,
                     case_revision=case_revision,
                 )

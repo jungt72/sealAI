@@ -1296,6 +1296,14 @@ class Pipeline:
                 and route_decision.route is RouteName.ENGINEERING_CASE
                 and calc.computed
             )
+            work_solution_candidate = bool(
+                require_evidence_for_all_claims
+                and "lösung" in question.lower()
+                and any(
+                    fact.card_id == "FK-GLRD-ENGINEERING-PROFILE"
+                    for fact in l1_grounding
+                )
+            )
 
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
             # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
@@ -1376,6 +1384,7 @@ class Pipeline:
                         knowledge_answer_plan=knowledge_answer_plan,
                         require_evidence_for_all_claims=require_evidence_for_all_claims,
                         compact_technical_answer=compact_technical_answer,
+                        work_solution_candidate=work_solution_candidate,
                         risk_flags=(
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
@@ -1447,6 +1456,7 @@ class Pipeline:
                             knowledge_answer_plan=knowledge_answer_plan,
                             require_evidence_for_all_claims=require_evidence_for_all_claims,
                             compact_technical_answer=compact_technical_answer,
+                            work_solution_candidate=work_solution_candidate,
                             correction_note=_guard_note(_gr),
                             risk_flags=(
                                 list(risk_flags)

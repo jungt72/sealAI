@@ -86,6 +86,17 @@ def test_high_risk_without_evidence_requires_human_and_no_model():
     assert decision.streaming_mode is StreamingMode.ATOMIC
 
 
+def test_ungrounded_technical_case_is_a_deterministic_evidence_gap():
+    decision = decide_execution(
+        ExecutionFeatures(route=_route(RouteName.ENGINEERING_CASE, forced=True))
+    )
+
+    assert decision.execution_class is ExecutionClass.D1
+    assert decision.model_tier is ModelTier.NONE
+    assert decision.reason == "technical_evidence_gap"
+    assert "kein unabhängig geprüfter Beleg" in deterministic_response(decision)
+
+
 def test_simple_knowledge_uses_standard_once_without_llm_verifier():
     decision = decide_execution(
         ExecutionFeatures(

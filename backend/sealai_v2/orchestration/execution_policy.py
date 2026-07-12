@@ -125,6 +125,17 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "knowledge_evidence_gap",
         )
 
+    if technical and evidence_missing and not features.risk_flags:
+        return ExecutionDecision(
+            ExecutionClass.D1,
+            ModelTier.NONE,
+            None,
+            VerificationMode.DETERMINISTIC,
+            StreamingMode.ATOMIC,
+            False,
+            "technical_evidence_gap",
+        )
+
     unresolved = bool(features.case_conflict_count or features.required_missing)
     if technical and features.risk_flags and (unresolved or evidence_missing):
         return ExecutionDecision(
@@ -220,7 +231,7 @@ def deterministic_response(
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
 ) -> str:
-    if decision.reason == "knowledge_evidence_gap":
+    if decision.reason in {"knowledge_evidence_gap", "technical_evidence_gap"}:
         return (
             "Für diese konkrete Wissensfrage liegt im aktuell geprüften Wissensstand "
             "kein unabhängig geprüfter Beleg vor. Ich bestätige oder verwerfe die technische "
