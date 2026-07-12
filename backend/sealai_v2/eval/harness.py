@@ -123,6 +123,7 @@ class Record:
     answer_text: str
     answer_model: str
     error: str | None
+    judge_error: str | None
     judge: JudgeResult
     score: CaseScore
     verifier: VerifierVerdict | None = (
@@ -194,8 +195,18 @@ async def _run_unit(
     # client (``judge_client``), decoupled from the helper client. Default → pipeline.client
     # (keeps the offline harness tests byte-identical, where no dedicated judge client is passed).
     jc = judge_client if judge_client is not None else pipeline.client
+    judge_error = None
     if error is None and answer_text:
-        judge = await judge_answer(jc, judge_cfg, case, answer_text, column)
+        try:
+            judge = await judge_answer(jc, judge_cfg, case, answer_text, column)
+        except Exception as exc:  # noqa: BLE001 — preserve the paid subject answer for judge retry
+            judge_error = f"{type(exc).__name__}: {exc}"
+            judge = JudgeResult(
+                case_id=case.id,
+                column=column,
+                parse_ok=False,
+                raw=f"(judge error: {judge_error})"[:6000],
+            )
     else:
         judge = JudgeResult(
             case_id=case.id, column=column, parse_ok=False, raw=f"(no answer: {error})"
@@ -208,6 +219,7 @@ async def _run_unit(
         answer_text=answer_text,
         answer_model=answer_model,
         error=error,
+        judge_error=judge_error,
         judge=judge,
         score=score_case(case, judge),
         verifier=verifier,
@@ -1171,6 +1183,11 @@ async def run_eval(
             "3 hard gates are HUMAN-FINAL via the worksheet."
         ),
         "errors": [r.error for r in records if r.error]
+        + [
+            f"judge::{r.case.id}/{r.column}::{r.judge_error}"
+            for r in records
+            if r.judge_error
+        ]
         + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])]
         + [f"edge::{e}" for e in (edge or {}).get("errors", [])]
         + [f"injection::{e}" for e in (injection or {}).get("errors", [])]

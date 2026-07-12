@@ -96,6 +96,11 @@ class _RecordingFake:
         )
 
 
+class _FailingJudge:
+    async def generate(self, **_kwargs):
+        raise RuntimeError("judge quota unavailable")
+
+
 _JUDGE_JSON = (
     '{"must_contain":[{"point":"x","status":"met"}],"must_catch":{"named":true},'
     '"must_avoid":[],"axes":{"2":"pass","3":"pass","4":"pass","5":"pass","6":"pass","7":"pass"},'
@@ -143,6 +148,33 @@ def test_judge_uses_own_client_and_is_not_metered():
     assert "JUDGE-MODEL" not in meter.by_model
     assert meter.total_tokens == 150  # only the single subject L1 call
     assert rec.score.axis_status.get(2) == "pass"  # judge JSON was actually consumed
+
+
+def test_judge_failure_preserves_subject_answer_for_targeted_retry():
+    subject = _RecordingFake("eine bereits bezahlte Fachantwort")
+    pipeline = Pipeline(
+        generator=L1Generator(subject, PromptAssembler(), ModelConfig("subject-l1")),
+        client=subject,
+        helper_model=ModelConfig("subject-helper"),
+        understand_enabled=False,
+    )
+
+    rec = asyncio.run(
+        _run_unit(
+            pipeline,
+            ModelConfig("JUDGE-MODEL"),
+            _case(),
+            "flags_on",
+            Flags(),
+            judge_client=_FailingJudge(),
+        )
+    )
+
+    assert rec.error is None
+    assert rec.answer_text == "eine bereits bezahlte Fachantwort"
+    assert rec.judge_error == "RuntimeError: judge quota unavailable"
+    assert rec.judge.parse_ok is False
+    assert rec.score.provisional_status == "judge_error"
 
 
 # --- gate pure functions ------------------------------------------------------------------
