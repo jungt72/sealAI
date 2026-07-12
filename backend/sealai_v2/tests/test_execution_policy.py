@@ -88,11 +88,27 @@ def test_high_risk_without_evidence_requires_human_and_no_model():
 
 def test_simple_knowledge_uses_standard_once_without_llm_verifier():
     decision = decide_execution(
-        ExecutionFeatures(route=_route(RouteName.MATERIAL_KNOWLEDGE))
+        ExecutionFeatures(
+            route=_route(RouteName.MATERIAL_KNOWLEDGE),
+            authoritative_evidence_count=1,
+        )
     )
     assert decision.execution_class is ExecutionClass.S0
     assert decision.model_tier is ModelTier.STANDARD
     assert decision.verification_mode is VerificationMode.DETERMINISTIC
+
+
+def test_ungrounded_knowledge_is_a_deterministic_evidence_gap():
+    decision = decide_execution(
+        ExecutionFeatures(route=_route(RouteName.MATERIAL_KNOWLEDGE))
+    )
+
+    assert decision.execution_class is ExecutionClass.D1
+    assert decision.model_tier is ModelTier.NONE
+    assert decision.reason == "knowledge_evidence_gap"
+    response = deterministic_response(decision)
+    assert "kein unabhängig geprüfter Beleg" in response
+    assert "bestätige oder verwerfe" in response
 
 
 def test_well_sourced_knowledge_does_not_escalate_only_because_of_citation_count():

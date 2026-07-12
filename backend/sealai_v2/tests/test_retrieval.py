@@ -89,6 +89,55 @@ def test_owner_attested_foodgrade_claims_are_grounding():
     assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
 
 
+def test_exact_medium_hit_does_not_pull_unrelated_lexical_cards():
+    res = asyncio.run(
+        _r().retrieve(
+            "Welche möglichst günstige Dichtung für Aceton bei 180 °C?",
+            tenant_id="t",
+        )
+    )
+
+    assert {f.card_id for f in res.grounding_facts} == {"FK-FKM-AMIN-LAUGE-KETON"}
+
+
+def test_rwdr_case_keeps_seal_profile_when_nbr_is_also_named():
+    res = asyncio.run(
+        _r().retrieve(
+            "RWDR 40x62x8 NBR bei 6000 U/min, Temperatur noch unbekannt",
+            tenant_id="t",
+        )
+    )
+
+    assert "FK-RWDR-ENGINEERING-PROFILE" in {
+        fact.card_id for fact in res.grounding_facts
+    }
+
+
+def test_schokolade_ruehrwerk_case_retrieves_food_and_seal_profiles():
+    res = asyncio.run(
+        _r().retrieve(
+            "Rührwerk für Schokolade, Welle läuft unrund, produktberührt, CIP bis 100 °C",
+            tenant_id="t",
+        )
+    )
+
+    card_ids = {fact.card_id for fact in res.grounding_facts}
+    assert {"FK-FOODGRADE-FETT", "FK-GLRD-ENGINEERING-PROFILE"} <= card_ids
+
+
+def test_high_pressure_gas_case_includes_reviewed_medium_method():
+    res = asyncio.run(
+        _r().retrieve(
+            "Welcher O-Ring für ein Erdgasventil bei 200 bar und schnellen Druckwechseln?",
+            tenant_id="t",
+        )
+    )
+
+    assert "FK-MEDIUM-ENGINEERING-METHOD" in {
+        fact.card_id for fact in res.grounding_facts
+    }
+
+
 def test_offtopic_is_vorlaeufig():
     res = asyncio.run(
         _r().retrieve(

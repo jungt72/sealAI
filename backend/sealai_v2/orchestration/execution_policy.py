@@ -76,6 +76,13 @@ _TECHNICAL_ROUTES = frozenset(
         RouteName.UNSUPPORTED_OR_AMBIGUOUS,
     }
 )
+_KNOWLEDGE_ROUTES = frozenset(
+    {
+        RouteName.GENERAL_SEALING_KNOWLEDGE,
+        RouteName.MATERIAL_KNOWLEDGE,
+        RouteName.MATERIAL_COMPARISON,
+    }
+)
 
 
 def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
@@ -105,6 +112,17 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             StreamingMode.ATOMIC,
             False,
             "deterministic_contract_clarification",
+        )
+
+    if route in _KNOWLEDGE_ROUTES and evidence_missing:
+        return ExecutionDecision(
+            ExecutionClass.D1,
+            ModelTier.NONE,
+            None,
+            VerificationMode.DETERMINISTIC,
+            StreamingMode.ATOMIC,
+            False,
+            "knowledge_evidence_gap",
         )
 
     unresolved = bool(features.case_conflict_count or features.required_missing)
@@ -202,6 +220,15 @@ def deterministic_response(
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
 ) -> str:
+    if decision.reason == "knowledge_evidence_gap":
+        return (
+            "Für diese konkrete Wissensfrage liegt im aktuell geprüften Wissensstand "
+            "kein unabhängig geprüfter Beleg vor. Ich bestätige oder verwerfe die technische "
+            "Eignung deshalb nicht. Für eine belastbare Einordnung werden mindestens der exakt "
+            "bezeichnete Werkstoff beziehungsweise Compound, Medium und Konzentration, "
+            "Temperaturprofil, Druck und Druckwechsel, Bewegungsart sowie das zu prüfende "
+            "Herstellerdatenblatt benötigt."
+        )
     if decision.execution_class is ExecutionClass.D1:
         fields = ", ".join(missing_fields) or "entscheidungsrelevante Angaben"
         return (

@@ -956,14 +956,10 @@ class Pipeline:
             grounding_facts = (
                 retrieval.grounding_facts
             )  # reviewed Fachkarten → compute + (Step A) verify
-            if (
-                self.authoritative_knowledge_required
-                and activation_route_decision.route in _KNOWLEDGE_ROUTES
-                and not grounding_facts
-            ):
-                raise ProductModeUnavailable(
-                    "knowledge", "independent_reviewed_evidence_unavailable"
-                )
+            # An active knowledge product must represent an evidence gap as a valid bounded answer,
+            # not as infrastructure failure. The execution policy below selects a zero-model D1
+            # response for an ungrounded knowledge route; the activation gate above remains the only
+            # 503 boundary (pilot disabled).
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
             trap_facts = retrieve_reviewed_trap_facts(self.catalog, knowledge_question)
@@ -1284,6 +1280,12 @@ class Pipeline:
                     ),
                 )
                 knowledge_answer_plan = _kap.to_dict() if _kap is not None else None
+            require_evidence_for_all_claims = bool(
+                route_decision is not None
+                and route_decision.route is not RouteName.SMALLTALK_NAVIGATION
+                and l1_grounding
+                and knowledge_answer_plan is None
+            )
 
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
             # question — injected so L1 RENDERS them as a table (no number invention). Flag-gated ->
@@ -1362,6 +1364,7 @@ class Pipeline:
                         baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
                         material_params=material_params,  # None → byte-identical no-table
                         knowledge_answer_plan=knowledge_answer_plan,
+                        require_evidence_for_all_claims=require_evidence_for_all_claims,
                         risk_flags=(
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
@@ -1431,6 +1434,7 @@ class Pipeline:
                             baseline_hardening=self.baseline_hardening_enabled,
                             material_params=material_params,
                             knowledge_answer_plan=knowledge_answer_plan,
+                            require_evidence_for_all_claims=require_evidence_for_all_claims,
                             correction_note=_guard_note(_gr),
                             risk_flags=(
                                 list(risk_flags)

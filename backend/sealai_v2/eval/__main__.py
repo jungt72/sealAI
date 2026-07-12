@@ -121,7 +121,10 @@ def main() -> None:
     ap.add_argument(
         "--case-ids",
         default=None,
-        help="comma-separated primary case ids; auxiliary suites are skipped",
+        help=(
+            "comma-separated case ids across primary and auxiliary suites; only these cases "
+            "are executed (targeted remediation mode)"
+        ),
     )
     ap.add_argument(
         "--run-dir", default=None, help="output dir (default eval/runs/<label>)"
@@ -201,7 +204,7 @@ def main() -> None:
             timestamp=timestamp,
             columns=columns,
             smoke_limit=args.smoke,
-            include_auxiliary=args.smoke is None and case_ids is None,
+            include_auxiliary=args.smoke is None,
             case_ids=case_ids,
         )
     )
