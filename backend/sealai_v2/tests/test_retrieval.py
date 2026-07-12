@@ -128,7 +128,21 @@ def test_schokolade_ruehrwerk_case_retrieves_food_and_seal_profiles():
 def test_high_pressure_gas_case_includes_reviewed_medium_method():
     res = asyncio.run(
         _r().retrieve(
-            "Welcher O-Ring für ein Erdgasventil bei 200 bar und schnellen Druckwechseln?",
+            "Welche Dichtung für ein Hochdruck-Erdgasventil, 200 bar, mit schnellen Druckwechseln?",
+            tenant_id="t",
+        )
+    )
+
+    assert "FK-MEDIUM-ENGINEERING-METHOD" in {
+        fact.card_id for fact in res.grounding_facts
+    }
+
+
+def test_unknown_process_medium_retrieves_only_the_reviewed_selection_method():
+    res = asyncio.run(
+        _r().retrieve(
+            "Welcher Dichtungswerkstoff passt für ein eher exotisches Prozessmedium, "
+            "zu dem es keine geprüfte Verträglichkeitsangabe gibt?",
             tenant_id="t",
         )
     )

@@ -64,6 +64,20 @@ class _EvidenceRetriever:
         )
 
 
+class _TrapOnlyRetriever:
+    async def retrieve(self, query, *, tenant_id, k=5):
+        return RetrievalResult(
+            grounding_facts=(
+                GroundingFact(
+                    text="policy trap",
+                    quelle="trap",
+                    card_id="trap-1",
+                    kind="trap",
+                ),
+            )
+        )
+
+
 class _RequiredMissingMemory:
     state = CaseStateV2(
         case_id="case-1", revision=3, required_missing=("temperature_c",)
@@ -208,6 +222,22 @@ def test_ungrounded_high_risk_case_never_calls_a_model():
     assert result.turn_state.execution_class == "H1"
     assert result.turn_state.verification_mode == "human"
     assert result.turn_state.needs_human_review is True
+
+
+def test_trap_only_knowledge_is_not_counted_as_authoritative_evidence():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
+    pipeline.retriever = _TrapOnlyRetriever()
+
+    result = asyncio.run(
+        pipeline.run(
+            "Ist FKM gegen Essigsäure beständig?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.answer.model == "deterministic-policy"
+    assert result.turn_state.execution_class == "D1"
 
 
 def test_known_required_field_stops_before_retrieval_and_models():

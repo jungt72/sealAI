@@ -1211,7 +1211,11 @@ class Pipeline:
                     ExecutionFeatures(
                         route=route_decision,
                         risk_flags=tuple(risk_flags),
-                        authoritative_evidence_count=len(l1_grounding),
+                        authoritative_evidence_count=sum(
+                            1
+                            for fact in l1_grounding
+                            if fact.kind != "trap" and bool(fact.sources)
+                        ),
                         provisional_evidence_count=len(retrieval.provisional),
                         document_count=len(source_ids),
                         tool_step_count=len(calc.computed),
@@ -1285,6 +1289,12 @@ class Pipeline:
                 and route_decision.route is not RouteName.SMALLTALK_NAVIGATION
                 and l1_grounding
                 and knowledge_answer_plan is None
+            )
+            compact_technical_answer = bool(
+                require_evidence_for_all_claims
+                and route_decision is not None
+                and route_decision.route is RouteName.ENGINEERING_CASE
+                and calc.computed
             )
 
             # Material-Parameter-Tabelle: grounded kernel parameters for the materials NAMED in the
@@ -1365,6 +1375,7 @@ class Pipeline:
                         material_params=material_params,  # None → byte-identical no-table
                         knowledge_answer_plan=knowledge_answer_plan,
                         require_evidence_for_all_claims=require_evidence_for_all_claims,
+                        compact_technical_answer=compact_technical_answer,
                         risk_flags=(
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
@@ -1435,6 +1446,7 @@ class Pipeline:
                             material_params=material_params,
                             knowledge_answer_plan=knowledge_answer_plan,
                             require_evidence_for_all_claims=require_evidence_for_all_claims,
+                            compact_technical_answer=compact_technical_answer,
                             correction_note=_guard_note(_gr),
                             risk_flags=(
                                 list(risk_flags)

@@ -143,6 +143,43 @@ def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
     assert len(client.calls) == 1
 
 
+def test_compact_technical_answer_caps_first_turn_density_deterministically():
+    payload = json.loads(_payload())
+    payload["assumptions"] = ["a", "b"]
+    payload["missing_information"] = ["m1", "m2", "m3", "m4", "m5"]
+    payload["claims"] = [
+        {
+            "text": f"claim {index}",
+            "evidence_ids": ["EV-1"],
+            "criticality": "decision_relevant" if index == 4 else "supporting",
+        }
+        for index in range(5)
+    ]
+    payload["recommendation"] = {
+        "summary": "Prüfpfad",
+        "status": "conditional",
+        "conditions": ["c1", "c2", "c3", "c4"],
+    }
+    client = FakeLlmClient(json.dumps(payload))
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "RWDR-Fall",
+            flags=Flags(),
+            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert "claim 4" in answer.text
+    assert answer.text.count("geprüft belegt") == 3
+    assert "m4" not in answer.text and "m5" not in answer.text
+    assert "c3" not in answer.text and "c4" not in answer.text
+    assert "**Annahmen**" not in answer.text
+
+
 def test_knowledge_answer_drops_redundant_recommendation_block():
     payload = json.loads(_payload(evidence_ids=["E1"]))
     payload["recommendation"] = {

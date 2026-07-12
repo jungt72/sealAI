@@ -265,6 +265,7 @@ class L1Generator:
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
         require_evidence_for_all_claims: bool = False,
+        compact_technical_answer: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> Answer:
@@ -349,8 +350,18 @@ class L1Generator:
                     "carry at least one allowed evidence_id. User-provided case facts belong in "
                     "assumptions or missing_information, not as unsupported technical claims. "
                     "Do not add values, limits, materials, standards, products or suitability "
-                    "statements that are absent from the supplied evidence or calculations."
+                    "statements that are absent from the supplied evidence or calculations. "
+                    "If the user's compatibility, temperature, cost, lifetime or geometry goals "
+                    "cannot all be evidenced at once, state that unresolved target conflict "
+                    "explicitly instead of presenting a candidate list as a solution."
                 )
+                if compact_technical_answer:
+                    structured_instruction += (
+                        " This is a compact first-turn response: put the decisive risk or result "
+                        "first, use at most three technical claims and three discriminating "
+                        "missing-information items, do not restate the user's inputs as assumptions, "
+                        "and keep recommendation conditions to at most two."
+                    )
 
             async def _call(current_system: str):
                 technical, result = await generate_structured(
@@ -363,6 +374,29 @@ class L1Generator:
                     max_repairs=0,
                 )
                 technical = calibrate_technical_answer(technical)
+                if compact_technical_answer:
+                    priority = {
+                        "decision_relevant": 0,
+                        "supporting": 1,
+                        "context": 2,
+                    }
+                    technical = technical.model_copy(
+                        update={
+                            "assumptions": [],
+                            "missing_information": technical.missing_information[:3],
+                            "claims": sorted(
+                                technical.claims,
+                                key=lambda claim: priority[claim.criticality],
+                            )[:3],
+                            "recommendation": technical.recommendation.model_copy(
+                                update={
+                                    "conditions": technical.recommendation.conditions[
+                                        :2
+                                    ]
+                                }
+                            ),
+                        }
+                    )
                 if knowledge_answer_plan is not None:
                     technical = technical.model_copy(
                         update={
@@ -523,6 +557,7 @@ class L1Generator:
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
         require_evidence_for_all_claims: bool = False,
+        compact_technical_answer: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
     ) -> AsyncIterator[L1StreamEvent]:
@@ -558,6 +593,7 @@ class L1Generator:
                     material_params=material_params,
                     knowledge_answer_plan=knowledge_answer_plan,
                     require_evidence_for_all_claims=require_evidence_for_all_claims,
+                    compact_technical_answer=compact_technical_answer,
                     risk_flags=risk_flags,
                     case_revision=case_revision,
                 )
