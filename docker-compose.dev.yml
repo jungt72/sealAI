@@ -2,7 +2,17 @@ services:
   keycloak:
     image: sealai-keycloak
     build: { context: ./keycloak, dockerfile: Dockerfile }
-    env_file: [ ./.env.dev ]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sealai}
+      KC_DB_USERNAME: ${KC_DB_USERNAME:-sealai}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD required — set in .env.dev}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?KC_BOOTSTRAP_ADMIN_USERNAME required — set in .env.dev}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD required — set in .env.dev}
+      KC_HTTP_ENABLED: 'true'
+      KC_HOSTNAME_STRICT: 'false'
+      KC_HEALTH_ENABLED: 'true'
+      KC_METRICS_ENABLED: 'true'
     ports: ["8080:8080"]
     volumes:
       - ./keycloak/providers:/opt/keycloak/providers

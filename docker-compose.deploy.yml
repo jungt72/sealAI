@@ -49,9 +49,6 @@ services:
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sealai}
       KC_DB_USERNAME: ${KC_DB_USERNAME:-sealai}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD required — set in .env or .env.prod}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?KEYCLOAK_ADMIN required — set in .env or .env.prod}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD
-        required — set in .env or .env.prod}
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: 'true'
       KC_HOSTNAME: ${KC_HOSTNAME:-https://sealingai.com}
@@ -63,9 +60,18 @@ services:
     - '9000'
     image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: ${KEYCLOAK_PULL_POLICY:-always}
-    env_file:
-    - path: ./.env.prod
-      required: false
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - >-
+        /bin/bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000;
+        printf "HEAD /health/ready HTTP/1.0\r\n\r\n" >&3;
+        IFS= read -r status <&3;
+        [[ "$$status" == *" 200 "* ]]'
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     networks:
       default:
         aliases:
@@ -75,7 +81,7 @@ services:
     container_name: nginx
     depends_on:
       keycloak:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     ports:
     - 80:80

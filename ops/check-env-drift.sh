@@ -111,11 +111,17 @@ source_secret=""
 required_keys=(
   POSTGRES_PASSWORD
   REDIS_PASSWORD
-  KEYCLOAK_ADMIN_PASSWORD
   KEYCLOAK_CLIENT_SECRET
   NEXTAUTH_SECRET
   OPENAI_API_KEY
 )
+
+if [[ "$MODE" == "dev" ]]; then
+  required_keys+=(
+    KC_BOOTSTRAP_ADMIN_USERNAME
+    KC_BOOTSTRAP_ADMIN_PASSWORD
+  )
+fi
 
 validate_required_keys "$SOURCE_FILE" "${required_keys[@]}"
 

@@ -1,135 +1,66 @@
-# Keycloak Admin-CLI Playbook (Stand: November 2025)
+# Keycloak Admin CLI Playbook
 
-Schnelle, wiederholbare Einrichtung von Keycloak per `kcadm.sh` (Admin: `admin`/`admin`). Alle Befehle werden von der Projektwurzel ausgeführt; Keycloak muss per `docker compose up -d keycloak postgres` laufen.
+This repository treats Keycloak configuration as an idempotent reconciliation,
+not a collection of copy-pasted admin commands.
 
-## 1) CLI Session öffnen
+## Production
 
-```bash
-kc="docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh"
-$kc config credentials --server http://localhost:8080 --realm master --user admin --password admin
-```
-
-## 2) Realm anlegen/aktualisieren (Security Defaults)
+Do not keep a master-realm username, password, client ID or client secret in
+`.env.prod`. Lost-admin recovery must use the official temporary service
+account path while all Keycloak nodes are stopped:
 
 ```bash
-REALM=sealAI
-
-# anlegen, falls nicht vorhanden
-$kc get realms/$REALM >/dev/null 2>&1 || \
-  $kc create realms -s realm=$REALM -s enabled=true -s displayName="SealAI" -s loginTheme=sealai
-
-# sichere Default-Settings (TLS, MFA-ready, kurze Tokens)
-$kc update realms/$REALM \
-  -s sslRequired=all \
-  -s loginTheme=sealai \
-  -s registrationAllowed=true \
-  -s registrationEmailAsUsername=true \
-  -s loginWithEmailAllowed=true \
-  -s rememberMe=true \
-  -s verifyEmail=true \
-  -s resetPasswordAllowed=true \
-  -s internationalizationEnabled=true \
-  -s supportedLocales='["de","en"]' \
-  -s defaultLocale=de \
-  -s bruteForceProtected=true \
-  -s failureFactor=6 \
-  -s permanentLockout=false \
-  -s maxFailureWaitSeconds=900 \
-  -s waitIncrementSeconds=60 \
-  -s quickLoginCheckMilliSeconds=800 \
-  -s ssoSessionIdleTimeout=1800 \
-  -s ssoSessionMaxLifespan=28800 \
-  -s clientSessionIdleTimeout=900 \
-  -s clientSessionMaxLifespan=10800 \
-  -s accessTokenLifespan=300 \
-  -s accessTokenLifespanForImplicitFlow=0 \
-  -s offlineSessionIdleTimeout=604800 \
-  -s offlineSessionMaxLifespanEnabled=true
+./ops/keycloak_recover_admin.sh --apply
 ```
 
-## 3) MFA / Required Actions aktivieren
+The recovery wrapper calls `ops/keycloak_ensure_roles.sh`, which applies:
+
+- realm security, session, brute-force, password and event policies;
+- product roles and reviewer roles;
+- `/platform-admins` and `/governance-reviewers` group mappings;
+- realm-local `realm-management/realm-admin` for the owner;
+- `UPDATE_PASSWORD` and `CONFIGURE_TOTP` for the privileged owner;
+- exact redirect/origin and PKCE policies for `nextauth` and `sealai-v2`;
+- deletion of the short-lived recovery client.
+
+## Manual authenticated reconciliation
+
+For an already authenticated realm administrator, pass credentials only in the
+current process. Do not add them to an env file or shell history.
+
+Service account:
 
 ```bash
-$kc update authentication/required-actions/CONFIGURE_TOTP -r $REALM -s defaultAction=true -s enabled=true
-$kc update authentication/required-actions/VERIFY_EMAIL -r $REALM -s defaultAction=true -s enabled=true
+read -rsp 'Temporary admin client secret: ' KEYCLOAK_ADMIN_CLIENT_SECRET
+export KEYCLOAK_ADMIN_CLIENT_SECRET
+KEYCLOAK_ADMIN_CLIENT_ID='<temporary-client>' \
+KEYCLOAK_TARGET_EMAIL='mail@thorsten-jung.de' \
+  ./ops/keycloak_ensure_roles.sh
+unset KEYCLOAK_ADMIN_CLIENT_SECRET
 ```
 
-## 4) Client (z. B. NextAuth) mit PKCE & restriktiven Redirects
+Interactive admin user:
 
 ```bash
-CLIENT_ID=nextauth
-CLIENT_SECRET=$(openssl rand -hex 32)
-FRONTEND_URL=http://localhost:3000
-
-# Client anlegen (falls neu)
-$kc get clients -r $REALM -q clientId=$CLIENT_ID | grep '"id"' >/dev/null 2>&1 || \
-  $kc create clients -r $REALM \
-    -s clientId=$CLIENT_ID \
-    -s name="NextAuth Frontend" \
-    -s protocol=openid-connect \
-    -s publicClient=false \
-    -s serviceAccountsEnabled=false \
-    -s standardFlowEnabled=true \
-    -s implicitFlowEnabled=false \
-    -s directAccessGrantsEnabled=false \
-    -s attributes.'pkce.code.challenge.method'=S256 \
-    -s attributes.'oauth2.device.authorization.grant.enabled'=false \
-    -s attributes.'client.secret.creation.time'=$(date +%s) \
-    -s attributes.'access.token.signed.response.alg'="RS256" \
-    -s secret=$CLIENT_SECRET \
-    -s rootUrl=$FRONTEND_URL \
-    -s adminUrl=$FRONTEND_URL \
-    -s redirectUris="[$FRONTEND_URL/*]" \
-    -s webOrigins="[$FRONTEND_URL]"
-
-# Client-Scopes (Profile, Email, Roles) sicherstellen
-$kc update "clients/$( $kc get clients -r $REALM -q clientId=$CLIENT_ID --fields id --format csv | tail -n1 )" -r $REALM \
-  -s defaultClientScopes='["profile","email","roles"]' \
-  -s optionalClientScopes='["address","phone","offline_access"]'
+read -rsp 'Admin password: ' KEYCLOAK_ADMIN_PASSWORD
+export KEYCLOAK_ADMIN_PASSWORD
+KEYCLOAK_ADMIN_USER='<admin-user>' \
+KEYCLOAK_AUTH_REALM='sealAI' \
+  ./ops/keycloak_ensure_roles.sh
+unset KEYCLOAK_ADMIN_PASSWORD
 ```
 
-## 5) Rollen & Test-User
+The script uses a unique `/tmp` kcadm configuration file inside the container
+and deletes it on every exit path.
+
+## Verification
 
 ```bash
-$kc create roles -r $REALM -s name=user_basic 2>/dev/null || true
-$kc create roles -r $REALM -s name=user_pro 2>/dev/null || true
-$kc create roles -r $REALM -s name=manufacturer 2>/dev/null || true
-$kc create roles -r $REALM -s name=admin 2>/dev/null || true
-
-$kc create users -r $REALM -s username=admin -s enabled=true -s email=admin@example.com 2>/dev/null || true
-$kc set-password -r $REALM --username admin --new-password admin
-$kc add-roles -r $REALM --uusername admin --rolename admin --rolename user_basic || true
+docker inspect --format '{{.State.Health.Status}}' keycloak
+docker exec keycloak /opt/keycloak/bin/kc.sh --version
+curl -fsS https://sealingai.com/realms/sealAI/.well-known/openid-configuration >/dev/null
+curl -fsS https://sealingai.com/realms/sealAI/protocol/openid-connect/certs >/dev/null
 ```
 
-Für den produktiven Realm mit persistenter Datenbank ist der repo-konforme
-Kurzweg:
-
-```bash
-./ops/keycloak_ensure_roles.sh
-```
-
-Der Helper liest standardmäßig `.env.prod`, zielt auf den realen Realm
-`sealAI` und legt genau diese Realm-Rollen idempotent an:
-`user_basic`, `user_pro`, `manufacturer`, `admin`.
-
-## 6) SMTP (Transaktions-Mails)
-
-```bash
-$kc update realms/$REALM \
-  -s smtpServer='{"host":"smtp.example.com","port":"587","from":"no-reply@sealingai.com","fromDisplayName":"SealAI Auth","auth":"true","ssl":"false","starttls":"true","user":"smtp-user","password":"smtp-pass"}'
-```
-
-## 7) Backup & Export
-
-```bash
-# einzelner Realm-Export (ohne sensible Keys)
-$kc get realms/$REALM > keycloak-realm-backup/${REALM}-$(date +%F).json
-```
-
-### Kurze Checkliste Best Practices (2025)
-- TLS erzwingen (`sslRequired=all`), Hostname-Strict in `keycloak.conf`.
-- PKCE + eingeschränkte Redirects/WebOrigins; keine impliziten Flows.
-- Brute-Force-Schutz aktiv, moderate Token-Lebensdauern, Remember-Me nur explizit.
-- MFA als Required Action, E-Mail-Verifikation aktiv.
-- Login-Theme auf `sealai`, eigene Inhalte in `/keycloak/themes/sealai`.
-- Regelmäßige Realm-Backups; Secrets nicht mit in Git speichern.
+Run all database backups and version upgrades through
+`docs/keycloak-upgrade.md`.
