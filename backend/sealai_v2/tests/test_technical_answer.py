@@ -81,7 +81,7 @@ def test_structured_answer_is_validated_and_rendered_deterministically():
     )
     assert answer.model == "standard"
     assert answer.text.startswith("PTFE ist ein thermoplastischer Dichtungswerkstoff.")
-    assert "geprüft belegt" in answer.text
+    assert "quellengebunden" in answer.text
     assert "EV-1" not in answer.text
     assert len(client.calls) == 1
 
@@ -98,7 +98,7 @@ def test_unknown_evidence_id_gets_exactly_one_semantic_repair():
             case_revision=7,
         )
     )
-    assert "geprüft belegt" in answer.text
+    assert "quellengebunden" in answer.text
     assert "EV-1" not in answer.text
     assert len(client.calls) == 2
 
@@ -115,8 +115,10 @@ def test_knowledge_answer_falls_back_without_a_second_paid_call():
         )
     )
 
-    assert "fact (geprüft belegt)" in answer.text
-    assert answer.finish_reason == "deterministic_knowledge_fallback"
+    assert "Weitere quellengebundene Einordnung" in answer.text
+    assert "- fact" in answer.text
+    assert "geprüft belegt" not in answer.text
+    assert answer.finish_reason == "deterministic_engineering_fallback"
     assert len(client.calls) == 1
 
 
@@ -176,7 +178,7 @@ def test_compact_technical_answer_caps_first_turn_density_deterministically():
     )
 
     assert "claim 4" in answer.text
-    assert answer.text.count("geprüft belegt") == 3
+    assert answer.text.count("quellengebunden") == 3
     assert "m4" not in answer.text and "m5" not in answer.text
     assert "c3" not in answer.text and "c4" not in answer.text
     assert "**Annahmen**" not in answer.text
@@ -247,11 +249,14 @@ def test_knowledge_answer_supplements_missing_claim_level_facet_coverage():
     )
 
     assert len(client.calls) == 1
-    assert "Use only these evidence_ids: E1, E2" in client.calls[0]["system"]
+    assert (
+        "Evidence ownership: E1=>subject[PTFE];facets[definition]"
+        in client.calls[0]["system"]
+    )
     assert "[Evidenz-ID: E1]" in client.calls[0]["system"]
     assert "claim-definition" not in client.calls[0]["system"]
     assert "EV-1" not in client.calls[0]["system"]
-    assert "geprüft belegt" in answer.text
+    assert "PTFE definition" in answer.text
     assert "PTFE parameter" in answer.text
 
 
@@ -275,7 +280,10 @@ def test_knowledge_answer_hides_canonical_uuid_behind_short_alias():
         )
     )
 
-    assert "Use only these evidence_ids: E1" in client.calls[0]["system"]
+    assert (
+        "Evidence ownership: E1=>subject[PTFE];facets[none]"
+        in client.calls[0]["system"]
+    )
     assert canonical_id not in client.calls[0]["system"]
     assert answer.grounding_facts == (fact,)
 
