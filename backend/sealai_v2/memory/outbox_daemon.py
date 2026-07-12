@@ -63,7 +63,7 @@ def healthcheck(
     finally:
         engine.dispose()
     client = _make_client(settings)
-    client.get_collection("sealai_v2_memory")
+    client.get_collection(settings.memory_qdrant_collection)
     client.get_collection(settings.qdrant_collection)
     return {"status": "ok", "heartbeat_age_s": f"{age:.1f}"}
 
@@ -82,7 +82,9 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
     sparse_embedder = (
         _make_sparse_embedder(settings) if settings.qdrant_hybrid_enabled else None
     )
-    ensure_memory_collection(client, embedder)
+    ensure_memory_collection(
+        client, embedder, collection=settings.memory_qdrant_collection
+    )
     ensure_knowledge_collection(client, settings, embedder)
     _write_heartbeat()
     _LOG.info(
@@ -100,6 +102,7 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
                 qdrant_client=client,
                 embedder=embedder,
                 now=_utc_now(),
+                collection=settings.memory_qdrant_collection,
                 batch_size=settings.outbox_batch_size,
                 max_attempts=settings.outbox_max_attempts,
                 claim_timeout_seconds=settings.outbox_claim_timeout_s,

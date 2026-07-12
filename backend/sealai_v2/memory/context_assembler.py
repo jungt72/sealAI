@@ -149,10 +149,18 @@ class MemoryContextService:
     retrieval error yields an empty bundle rather than raising into the turn (never breaks a turn
     over a memory-lookup failure — memory is context, not a hard dependency)."""
 
-    def __init__(self, *, store, qdrant_client, embedder) -> None:
+    def __init__(
+        self,
+        *,
+        store,
+        qdrant_client,
+        embedder,
+        collection: str = "sealai_v2_memory",
+    ) -> None:
         self._store = store
         self._qdrant_client = qdrant_client
         self._embedder = embedder
+        self._collection = collection
 
     async def assemble(
         self, query: str, *, tenant_id: str, now: str
@@ -172,6 +180,7 @@ class MemoryContextService:
                 store=self._store,
                 now=now,
                 k=MAX_ITEMS,
+                collection=self._collection,
             )
         except Exception as exc:  # noqa: BLE001 — fail safe to empty; never break a turn
             logging.getLogger("sealai_v2.memory").warning(

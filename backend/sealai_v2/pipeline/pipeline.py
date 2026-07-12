@@ -191,7 +191,10 @@ def _build_memory_context_service(settings: Settings):
         qdrant_client = _make_client(settings)
         embedder = _make_embedder(settings)
         return MemoryContextService(
-            store=store, qdrant_client=qdrant_client, embedder=embedder
+            store=store,
+            qdrant_client=qdrant_client,
+            embedder=embedder,
+            collection=settings.memory_qdrant_collection,
         )
     except Exception as exc:  # noqa: BLE001 — fail safe to None; never crash startup
         _log.warning(

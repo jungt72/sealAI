@@ -25,12 +25,17 @@ def test_worker_healthchecks_heartbeat_database_and_qdrant(tmp_path, monkeypatch
         Settings(
             database_url=f"sqlite:///{tmp_path / 'worker.db'}",
             qdrant_url="http://qdrant",
+            memory_qdrant_collection="sealai_v2_memory_local_minilm_v1",
+            qdrant_collection="sealai_v2_knowledge_local_minilm_v1",
         ),
         heartbeat_path=heartbeat,
         now=now,
     )
     assert result == {"status": "ok", "heartbeat_age_s": "2.0"}
-    assert _Qdrant.calls[-2:] == ["sealai_v2_memory", "sealai_v2_knowledge_v1"]
+    assert _Qdrant.calls[-2:] == [
+        "sealai_v2_memory_local_minilm_v1",
+        "sealai_v2_knowledge_local_minilm_v1",
+    ]
 
 
 def test_worker_healthcheck_rejects_stale_heartbeat(tmp_path):
