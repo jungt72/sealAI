@@ -251,6 +251,7 @@ def _is_knowledge_overview(card: Fachkarte, query: str) -> bool:
     plan = build_knowledge_answer_plan(
         query,
         material_terms=tuple(card.scope.get("material", ())),
+        allow_case_subject_profile=True,
     )
     if plan is None:
         return False
@@ -308,6 +309,7 @@ class InProcessRetriever:
                     for term in card.scope.get("material", ())
                 )
             ),
+            allow_case_subject_profile=True,
         )
         material_tokens = frozenset(
             str(term).strip().lower()

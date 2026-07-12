@@ -108,6 +108,71 @@ def test_renderer_owns_aligned_comparison_and_parameter_tables() -> None:
     assert "Typ-, Mindest- und Referenzwerte" in rendered
 
 
+def test_fallback_missing_information_never_exposes_internal_facets() -> None:
+    payload = {
+        "schema_version": 2,
+        "profile": "material_overview",
+        "case_revision": 7,
+        "conclusion": "NBR",
+        "claims": [],
+        "assumptions": [],
+        "missing_information": [],
+    }
+    client = FakeLlmClient(json.dumps(payload))
+    generator = L1Generator(
+        client,
+        PromptAssembler(),
+        ModelConfig("standard"),
+        structured_output_enabled=True,
+    )
+    answer = asyncio.run(
+        generator.generate(
+            "Details zu NBR",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "NBR ist eine Elastomerfamilie.",
+                    "ledger",
+                    card_id="FK-NBR-UEBERBLICK",
+                    claim_id="claim-nbr-definition",
+                    answer_facets=("definition",),
+                    subject_type="material",
+                ),
+            ),
+            knowledge_answer_plan={
+                "profile": "material_overview",
+                "subjects": ["NBR"],
+                "comparison": False,
+                "evidence_status": "sparse",
+                "evidence_fact_count": 1,
+                "evidence_document_count": 1,
+                "available_facets": ["definition"],
+                "missing_facets": ["design_interfaces", "failure_modes"],
+                "subject_coverage": [
+                    {
+                        "subject": "NBR",
+                        "covered_facets": ["definition"],
+                        "missing_facets": ["design_interfaces", "failure_modes"],
+                    }
+                ],
+                "sections": [
+                    {
+                        "heading": "Einordnung",
+                        "instruction": "Werkstoff einordnen.",
+                        "facets": ["definition"],
+                        "covered_facets": ["definition"],
+                        "missing_facets": [],
+                    }
+                ],
+            },
+            case_revision=7,
+        )
+    )
+    assert "design_interfaces" not in answer.text
+    assert "failure_modes" not in answer.text
+    assert "Für eine anwendungsbezogene Auswahl" in answer.text
+
+
 def test_l1_uses_v2_schema_for_knowledge_answer() -> None:
     payload = {
         "schema_version": 2,

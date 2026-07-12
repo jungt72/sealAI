@@ -384,11 +384,17 @@ def _contains_alias(alias: str, tokens: set[str], normalized: str) -> bool:
 def _detected_materials(
     material_terms: tuple[str, ...], tokens: set[str], normalized: str
 ) -> tuple[str, ...]:
-    found: list[str] = []
+    found: list[tuple[int, str]] = []
     consumed: set[str] = set()
     for canonical, aliases in _MATERIAL_ALIASES.items():
-        if any(_contains_alias(alias, tokens, normalized) for alias in aliases):
-            found.append(canonical)
+        positions = [
+            normalized.find(alias.lower())
+            for alias in aliases
+            if _contains_alias(alias, tokens, normalized)
+        ]
+        positions = [position for position in positions if position >= 0]
+        if positions:
+            found.append((min(positions), canonical))
             consumed.update(alias.lower() for alias in aliases)
     for term in material_terms:
         clean = str(term).strip()
@@ -398,9 +404,11 @@ def _detected_materials(
             or not _contains_alias(clean, tokens, normalized)
         ):
             continue
-        if clean not in found:
-            found.append(clean)
-    return tuple(found)
+        if clean not in {canonical for _position, canonical in found}:
+            position = normalized.find(clean.lower())
+            found.append((position if position >= 0 else len(normalized), clean))
+    found.sort(key=lambda item: item[0])
+    return tuple(canonical for _position, canonical in found)
 
 
 def detected_material_subjects(
@@ -503,6 +511,7 @@ def build_knowledge_answer_plan(
     grounding_facts: tuple["GroundingFact", ...] = (),
     route_name: str | None = None,
     subject_order: tuple[str, ...] = (),
+    allow_case_subject_profile: bool = False,
 ) -> KnowledgeAnswerPlan | None:
     """Build the plan only for a real knowledge/comparison turn.
 
@@ -527,22 +536,39 @@ def build_knowledge_answer_plan(
         bool(materials or seals or media or medium_context) and len(tokens) <= 4
     )
     explicit_medium_method = bool(medium_context and _METHOD_KNOWLEDGE_RE.search(text))
-    if route_name not in _PROFILE_ROUTES and not (
-        _KNOWLEDGE_RE.search(text)
+    explicit_profile_trigger = bool(
+        route_name in _PROFILE_ROUTES
+        or _KNOWLEDGE_RE.search(text)
         or _COMPARISON_RE.search(text)
         or short_subject_query
         or explicit_medium_method
-    ):
+    )
+    # Fallarbeit may name both a seal type and a material. The seal profile supplies the system-
+    # level interfaces and failure modes; broad material profiles would instead displace focused
+    # compatibility evidence. Therefore only seal types receive this bounded case augmentation.
+    named_case_seal_profile = (
+        allow_case_subject_profile and bool(seals) and not explicit_profile_trigger
+    )
+    if not (explicit_profile_trigger or named_case_seal_profile):
         return None
 
-    profile, subject_type, subjects, comparison, sections = _profile(
-        text,
-        materials=materials,
-        seals=seals,
-        media=media,
-        medium_context=medium_context,
-        route_name=route_name,
-    )
+    if named_case_seal_profile:
+        profile, subject_type, subjects, comparison, sections = (
+            "seal_type_overview",
+            "seal_type",
+            seals,
+            False,
+            _SEAL_OVERVIEW,
+        )
+    else:
+        profile, subject_type, subjects, comparison, sections = _profile(
+            text,
+            materials=materials,
+            seals=seals,
+            media=media,
+            medium_context=medium_context,
+            route_name=route_name,
+        )
     available = tuple(
         dict.fromkeys(
             facet for fact in grounding_facts for facet in facets_for_fact(fact)

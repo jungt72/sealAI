@@ -74,17 +74,31 @@ def _engineering_conclusion(plan: dict) -> str:
 
 
 def _engineering_missing_information(plan: dict) -> list[str]:
-    missing = [
-        f"{entry['subject']}: nicht belegt sind {', '.join(entry.get('missing_facets', ()))}"
-        for entry in plan.get("subject_coverage", ())
-        if entry.get("missing_facets")
-    ]
     if plan.get("comparison"):
-        missing.append(
+        return [
             "Für eine Auswahlentscheidung: konkrete Compounds beziehungsweise Grades, Medium mit "
             "Additiven, Temperaturprofil, Druck, Bewegungsart, Geschwindigkeit, Bauform und Nachweisbasis."
-        )
-    return missing[:10]
+        ]
+    profile = str(plan.get("profile") or "")
+    if profile.startswith("material_"):
+        return [
+            "Für eine anwendungsbezogene Auswahl: konkreter Compound beziehungsweise Grade, "
+            "Dichtungsbauform, Medium einschließlich Additiven, Temperaturprofil, Druck, "
+            "Bewegungsart, Gegenpartner und geforderter Nachweis."
+        ]
+    if profile.startswith("seal_type_"):
+        return [
+            "Für eine konkrete Auslegung: Baugröße und Einbauraum, Werkstoffpaarung, Medium, "
+            "Temperaturprofil, Druck, Bewegung beziehungsweise Geschwindigkeit, Gegenflächen, "
+            "Lastkollektiv, zulässige Leckage und Qualifikationsnachweis."
+        ]
+    if profile.startswith("medium_"):
+        return [
+            "Für eine Verträglichkeitsbewertung: exakte Produktbezeichnung und Zusammensetzung, "
+            "Konzentration, Additive und Verunreinigungen, Temperatur-Dauer-Profil, Druck, "
+            "Dichtungswerkstoff und anwendungsnaher Prüfplan."
+        ]
+    return []
 
 
 def _fact_subjects(fact: GroundingFact, subjects: tuple[str, ...]) -> frozenset[str]:
@@ -138,18 +152,23 @@ def _fallback_engineering_answer(
     for subject in subjects:
         for section in plan.get("sections", ()):
             section_facets = tuple(section.get("facets", ()))
+            candidates = [
+                (evidence_id, fact, facets)
+                for evidence_id, (
+                    fact,
+                    facets,
+                    bound_subjects,
+                ) in evidence_metadata.items()
+                if subject in bound_subjects
+                and any(facet in facets for facet in section_facets)
+            ]
             selected = next(
                 (
-                    (evidence_id, fact, facets)
-                    for evidence_id, (
-                        fact,
-                        facets,
-                        bound_subjects,
-                    ) in evidence_metadata.items()
-                    if subject in bound_subjects
-                    and any(facet in facets for facet in section_facets)
+                    candidate
+                    for candidate in candidates
+                    if (subject, candidate[0]) not in used
                 ),
-                None,
+                candidates[0] if candidates else None,
             )
             if selected is None:
                 continue
@@ -248,18 +267,61 @@ def _deterministic_knowledge_answer(
 
 
 def _deterministic_evidence_answer(
-    *, evidence_facts: dict[str, GroundingFact], case_revision: int
+    *,
+    question: str,
+    evidence_facts: dict[str, GroundingFact],
+    case_revision: int,
+    calc: CalcResult | None = None,
 ) -> TechnicalAnswer:
-    """Technical fallback that can only restate reviewed evidence and makes no recommendation."""
+    """Senior-shaped fallback that only restates evidence and deterministic kernel output."""
+    normalized = (question or "").casefold()
+    if any(
+        alias in normalized
+        for alias in (
+            "rwdr",
+            "radialwellendichtring",
+            "radial-wellendichtring",
+            "simmerring",
+            "wellendichtring",
+        )
+    ):
+        missing = [
+            "Druckdifferenz einschließlich Druckspitzen und Druckrichtung.",
+            "Exakte Ölbezeichnung, Additivpaket sowie minimale, maximale und an der Dichtkante erwartete Temperatur.",
+            "Wellenhärte, Rauheit und Drallfreiheit sowie Rundlauf und Exzentrizität am Dichtsitz.",
+            "Einbauraum, Gehäusebohrung, Montageweg und verfügbare Schutz- beziehungsweise Staublippenbauform.",
+            "Geforderte Lebensdauer, zulässige Leckage und Art, Größe sowie Menge des Schmutzeintrags.",
+        ]
+        conclusion = (
+            "Die vorliegenden Daten erlauben eine technische Vorprüfung, aber noch keine belastbare "
+            "Bauform- oder Werkstofffreigabe. Druck, Schmierfilm, Gegenlauffläche, Schmutzschutz und "
+            "die gekoppelte Druck-Geschwindigkeits-Temperatur-Belastung sind gemeinsam zu prüfen."
+        )
+    else:
+        missing = [
+            "Konkrete Bauform und Werkstoffausführung sowie alle relevanten Gegenpartner.",
+            "Medium einschließlich Additiven und Verunreinigungen, Temperatur-Dauer-Profil und Druckkollektiv.",
+            "Bewegungsart, Geschwindigkeit, Lastwechsel, Einbauschnittstellen und geforderte Lebensdauer.",
+            "Zulässige Leckage, Sicherheits- und Zulassungsanforderungen sowie anwendungsbezogener Nachweisplan.",
+        ]
+        conclusion = (
+            "Belastbar festhalten lässt sich auf Basis der geprüften Fachquellen:"
+        )
+
+    computed = tuple(calc.computed) if calc is not None else ()
+    if computed:
+        values = "; ".join(
+            f"{item.name} = {item.value:g} {item.unit} ({item.formula})"
+            for item in computed
+        )
+        conclusion += f" Deterministisch berechnet: {values}."
     return TechnicalAnswer(
         schema_version=1,
         intent="evidence_bound_technical_answer",
         case_revision=case_revision,
-        conclusion="Belastbar festhalten lässt sich auf Basis der geprüften Fachquellen:",
+        conclusion=conclusion,
         assumptions=[],
-        missing_information=[
-            "Die konkrete Auswahl und Freigabe erfordert die vollständigen Betriebsbedingungen."
-        ],
+        missing_information=missing,
         claims=[
             TechnicalClaim(
                 text=fact.text,
@@ -790,8 +852,10 @@ class L1Generator:
                         exc,
                     )
                     technical = _deterministic_evidence_answer(
+                        question=question,
                         evidence_facts=evidence_facts,
                         case_revision=case_revision,
+                        calc=calc,
                     )
                     result = LlmResult(
                         text="",

@@ -5,7 +5,13 @@ import json
 
 import pytest
 
-from sealai_v2.core.contracts import Flags, GroundingFact, ModelConfig
+from sealai_v2.core.contracts import (
+    CalcResult,
+    ComputedValue,
+    Flags,
+    GroundingFact,
+    ModelConfig,
+)
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.technical_answer import (
     TechnicalAnswer,
@@ -145,6 +151,44 @@ def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
     assert answer.finish_reason == "deterministic_evidence_fallback"
     assert len(client.calls) == 1
     assert "one primary provisional candidate" in client.calls[0]["system"]
+
+
+def test_rwdr_fallback_surfaces_kernel_value_and_discriminating_inputs():
+    client = FakeLlmClient(_payload(evidence_ids=[]))
+    calc = CalcResult(
+        computed=(
+            ComputedValue(
+                calc_id="umfangsgeschwindigkeit",
+                name="v_m_s",
+                value=3.534,
+                unit="m/s",
+                stage=1,
+                derivation_depth=1,
+                formula="pi*d*n/60",
+            ),
+        )
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "RWDR 45 mm bei 1500 U/min technisch vorprüfen",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Ein RWDR benötigt einen tragfähigen Schmierfilm.",
+                    "ledger",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                ),
+            ),
+            calc=calc,
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+    assert "v_m_s = 3.534 m/s" in answer.text
+    assert "Wellenhärte, Rauheit und Drallfreiheit" in answer.text
+    assert "Druckdifferenz einschließlich Druckspitzen" in answer.text
+    assert answer.finish_reason == "deterministic_evidence_fallback"
+    assert len(client.calls) == 1
 
 
 def test_compact_technical_answer_caps_first_turn_density_deterministically():
