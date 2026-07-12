@@ -59,7 +59,7 @@ jobs:
           echo "ref=$pinned" >> "$GITHUB_OUTPUT"
 
       - name: Deploy through the sanctioned V2 release gate
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         env:
           EXPECTED_SHA: ${{ steps.source.outputs.sha }}
           BACKEND_V2_IMAGE: ${{ steps.image.outputs.ref }}
