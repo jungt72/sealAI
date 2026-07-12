@@ -22,6 +22,7 @@ def test_release_wrapper_documents_explicit_stages():
     assert result.returncode == 0
     assert "--candidate" in result.stdout
     assert "--final" in result.stdout
+    assert "--owner-waiver" in result.stdout
     assert "default" in result.stdout.lower()
 
 
@@ -47,6 +48,22 @@ def test_candidate_is_forbidden_for_production_configuration():
     assert 'DEPLOY_ENV="${DEPLOY_ENV:-production}"' in script
     assert "development|test|staging" in script
     assert "candidate releases are forbidden" in script
+
+
+def test_owner_waiver_is_explicit_auditable_and_keeps_signed_image_gate():
+    script = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'RELEASE_STAGE="owner-waiver"' in script
+    assert "I_ACCEPT_UNEVALUATED_PRODUCTION_DEPLOY" in script
+    assert "SEALAI_OWNER_WAIVER_APPROVER" in script
+    assert "SEALAI_OWNER_WAIVER_REASON" in script
+    assert 'EVAL_STATUS="waived_by_owner"' in script
+    assert 'EVAL_EVIDENCE_TYPE="owner_waiver"' in script
+    assert '"owner_waiver": {' in script
+    assert "final and owner-waiver releases require BACKEND_V2_IMAGE" in script
+    assert script.index("verify-image-attestations.sh") < script.index(
+        "owner-waiver gate PASS"
+    )
 
 
 def test_running_rollback_artifact_is_preserved_before_local_build():

@@ -29,6 +29,6 @@ TREE="$(bash ops/tree-hash.sh)"
 if $PY ops/v2_deploy_gate.py backend/sealai_v2/eval/runs "$TREE" >/tmp/gate_bind.txt 2>&1; then
   echo "  OK: adjudizierter REPLAY für $TREE vorhanden."
 elif [ "$BIND_EVAL" = 1 ]; then cat /tmp/gate_bind.txt; fail "Kein adjudizierter REPLAY ($TREE) [--bind-eval]"
-else printf '  \033[1;33mWARN\033[0m: kein adjudizierter REPLAY für %s. Final-Deploy blockt; Candidate-Deploy bleibt möglich.\n' "$TREE"; fi
+else printf '  \033[1;33mWARN\033[0m: kein adjudizierter REPLAY für %s. Final-Deploy blockt; Nonprod-Candidate oder expliziter Owner-Waiver bleiben möglich.\n' "$TREE"; fi
 
 echo; echo "GATE: grün"; exit 0
