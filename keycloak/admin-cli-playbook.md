@@ -6,8 +6,8 @@ not a collection of copy-pasted admin commands.
 ## Production
 
 Do not keep a master-realm username, password, client ID or client secret in
-`.env.prod`. Lost-admin recovery must use the official temporary service
-account path while all Keycloak nodes are stopped:
+`.env.prod`. Lost-admin recovery uses an official temporary admin user while
+all Keycloak nodes are stopped:
 
 ```bash
 ./ops/keycloak_recover_admin.sh --apply
@@ -21,7 +21,7 @@ The recovery wrapper calls `ops/keycloak_ensure_roles.sh`, which applies:
 - realm-local `realm-management/realm-admin` for the owner;
 - `UPDATE_PASSWORD` and `CONFIGURE_TOTP` for the privileged owner;
 - exact redirect/origin and PKCE policies for `nextauth` and `sealai-v2`;
-- deletion of the short-lived recovery client.
+- deletion of the short-lived recovery user.
 
 ## Manual authenticated reconciliation
 

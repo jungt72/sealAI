@@ -26,8 +26,8 @@ Primary references:
   would grant unnecessary cross-realm authority.
 - Password replacement and TOTP enrollment are required before Keycloak issues
   a fresh privileged session.
-- Recovery uses a random temporary service admin while every Keycloak node is
-  stopped. The client is deleted in the same reconciliation run.
+- Recovery uses a random temporary admin user while every Keycloak node is
+  stopped. The user is deleted in the same reconciliation run.
 - User and admin events are retained for seven days. Admin event
   representations stay disabled to avoid persisting secrets in audit payloads.
 
@@ -77,8 +77,8 @@ cd /home/thorsten/sealai
 ```
 
 The script performs a fresh full backup, stops Keycloak, uses the official
-`bootstrap-admin service` command, reconciles the realm, assigns the owner, and
-deletes the temporary recovery client. It never prints the generated secret.
+`bootstrap-admin user` command, reconciles the realm, assigns the owner, and
+deletes the temporary recovery user. It never prints the generated credential.
 
 At the next login, the owner must replace the password and enroll TOTP. The
 realm admin console is:
@@ -88,7 +88,7 @@ https://sealingai.com/admin/sealAI/console/
 ```
 
 After successful enrollment, verify that no temporary warning appears and no
-client whose ID starts with `sealai-recovery-` remains in the master realm.
+user whose name starts with `sealai-recovery-` remains in the master realm.
 
 ## Rollback
 
