@@ -52,6 +52,46 @@ def test_reviewed_nbr_profile_uses_user_facing_german_orthography():
         assert german_spelling in text
 
 
+def test_source_refresh_binds_high_risk_claims_to_exact_primary_evidence():
+    cat = load_fachkarten()
+
+    ptfe = cat.by_id("FK-PTFE-ENGINEERING-PROFILE")
+    temperature = next(claim for claim in ptfe.claims if "Turcon T01" in claim.text)
+    assert "Edition June 2026" in temperature.sources[0]
+    assert "Table 3, page 7" in temperature.sources[0]
+    assert (
+        "171d5881149e03a5592b0497b6f4d77356dee96bf8e805fe2d91e570f49e5f93"
+        in temperature.sources[0]
+    )
+
+    rwdr = cat.by_id("FK-RWDR-ENGINEERING-PROFILE")
+    shaft = next(claim for claim in rwdr.claims if "mindestens 45 HRC" in claim.text)
+    assert "Laboroptimum von Rt 2 Mikrometer" in shaft.text
+    assert "Ra 0,2 bis 0,5 Mikrometer" in shaft.text
+    assert "page 41, Edition April 2026" in shaft.sources[0]
+    assert (
+        "9b1d5310574e8da4726c7f0406bd9a10685cd4ce0c71c2b9962520b76ae1fd38"
+        in shaft.sources[0]
+    )
+
+
+def test_oring_gland_fill_uses_parker_section_3_7_contract():
+    card = load_fachkarten().by_id("FK-ORING-VERPRESSUNG")
+    claim = next(item for item in card.claims if "Nutfüllung" in item.text)
+    assert "60 bis 85 Prozent" in claim.text
+    assert "75 Prozent als Optimum" in claim.text
+    assert "mindestens 10 Prozent freien Nutraum" in claim.text
+    assert "Section 3.7 Gland Fill, page 3-9" in claim.sources[0]
+    assert "75–90" not in claim.text
+
+
+def test_active_fkm_steam_claim_uses_correct_orthography():
+    card = load_fachkarten().by_id("FK-FKM-DAMPF")
+    text = " ".join(claim.text for claim in card.claims)
+    assert "versprödet" in text
+    assert "verspröttet" not in text
+
+
 def test_foodgrade_carries_owner_vmq_nuance():
     fg = load_fachkarten().by_id("FK-FOODGRADE-FETT")
     nuance = [cl for cl in fg.claims if "moderate" in cl.text.lower()]

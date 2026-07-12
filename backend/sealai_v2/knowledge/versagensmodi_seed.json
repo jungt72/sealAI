@@ -4,7 +4,7 @@
   "modes": [
     {
       "id": "VM-RWDR-LIPPE-VERHAERTET",
-      "symptom": "Dichtlippe verhärtet/verspröttet, Rissbildung an der Lippe, zunehmende Leckage nach Betriebszeit",
+      "symptom": "Dichtlippe verhärtet/versprödet, Rissbildung an der Lippe, zunehmende Leckage nach Betriebszeit",
       "ursache": "Dauer-Betriebstemperatur über der Belastungsgrenze des Werkstoffs (z. B. Standard-NBR dauerhaft oberhalb seines üblichen Bereichs); thermische Alterung/Verhärtung der Lippe.",
       "fix": "höher temperaturbeständigen Werkstoff wählen (Richtung FKM statt NBR); die reale Temperatur im Dichtspalt prüfen, nicht nur die Mediumtemperatur. Finale Werkstoff-/Compound-Freigabe beim Hersteller.",
       "betrifft_archetypen": [
@@ -15,7 +15,7 @@
       "scope": {
         "symptom": [
           "verhärtet",
-          "verspröttet",
+          "versprödet",
           "versproedet",
           "spröde",
           "sproede",

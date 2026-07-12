@@ -41,7 +41,10 @@ def test_retrieval_propagates_claim_primary_sources_to_grounding_fact():
             "O-Ring Verpressung statische Nut Auslegung", tenant_id="t"
         )
     )
-    assert any("Parker O-Ring Handbook" in f.sources for f in r.grounding_facts)
+    assert any(
+        any("Parker O-Ring Handbook" in source for source in fact.sources)
+        for fact in r.grounding_facts
+    )
 
 
 def test_sources_field_is_L1_neutral_byte_identical_prompt():
