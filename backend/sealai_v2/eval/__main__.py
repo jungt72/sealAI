@@ -136,6 +136,14 @@ def main() -> None:
         "re-render report.md; does not run the eval",
     )
     ap.add_argument(
+        "--rejudge-failed",
+        action="store_true",
+        help=(
+            "retry only failed/missing judge cells from results.json; reuses stored subject "
+            "answers and never calls L1/helper/verifier"
+        ),
+    )
+    ap.add_argument(
         "--model",
         action="append",
         metavar="ROLE=MODEL",
@@ -179,6 +187,20 @@ def main() -> None:
 
     overrides = _parse_role_overrides(args.model, args.provider)
     settings = Settings(**overrides)
+    case_ids = (
+        frozenset(item.strip() for item in args.case_ids.split(",") if item.strip())
+        if args.case_ids
+        else None
+    )
+    if args.rejudge_failed:
+        from sealai_v2.eval.rejudge import rejudge_failed
+
+        out = asyncio.run(rejudge_failed(run_dir, settings, case_ids=case_ids))
+        print(f"\n=== targeted judge retry: {out['run_label']} ===")
+        print(f"rejudged: {', '.join(out['rejudged_cells'])}")
+        print(f"remaining errors: {out['remaining_errors'] or 'none'}")
+        print(f"Artifacts: {run_dir}")
+        return
     columns = {k: COLUMNS[k] for k in args.columns.split(",") if k in COLUMNS}
     if not columns:
         raise SystemExit(
@@ -186,12 +208,6 @@ def main() -> None:
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    case_ids = (
-        frozenset(item.strip() for item in args.case_ids.split(",") if item.strip())
-        if args.case_ids
-        else None
-    )
-
     tree_hash, dirty = _tree_binding()
     out = asyncio.run(
         run_eval(

@@ -55,6 +55,7 @@ def _record_to_dict(rec) -> dict:
         "parametric_leaks": [dataclasses.asdict(leak) for leak in rec.parametric_leaks],
         "elapsed_ms": rec.elapsed_ms,
         "error": rec.error,
+        "judge_error": rec.judge_error,
         "judge": dataclasses.asdict(rec.judge),
         "score": dataclasses.asdict(rec.score),
         "verifier": _verdict_to_dict(rec.verifier),
