@@ -76,10 +76,9 @@ ensure_realm_role() {
   local role="$1"
   local description="$2"
   if kcadm get "roles/$role" -r "$KEYCLOAK_REALM" >/dev/null 2>&1; then
-    kcadm update "roles/$role" -r "$KEYCLOAK_REALM" -s "description=$description" >/dev/null
-  else
-    kcadm create roles -r "$KEYCLOAK_REALM" -s "name=$role" -s "description=$description" >/dev/null
+    return 0
   fi
+  kcadm create roles -r "$KEYCLOAK_REALM" -s "name=$role" -s "description=$description" >/dev/null
 }
 
 ensure_group() {
