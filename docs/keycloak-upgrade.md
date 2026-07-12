@@ -20,8 +20,9 @@ Primary references:
   injected as `KCRAW_DB_PASSWORD`, preserving literal dollar sequences without
   SmallRye Config expression expansion.
 - `mail@thorsten-jung.de` is the permanent owner. The account receives the
-  `sealAI` realm-local `realm-management/realm-admin` role through
-  `/platform-admins`, plus the sealingAI product and governance roles.
+  `sealAI` realm-local `realm-management/realm-admin` role directly, plus the
+  sealingAI product and governance roles through groups. Realm administration
+  is owner-specific so future product admins do not inherit Keycloak control.
 - The owner is deliberately **not** a permanent master-realm superadmin. That
   would grant unnecessary cross-realm authority.
 - Password replacement and TOTP enrollment are required before Keycloak issues

@@ -175,19 +175,20 @@ printf 'Reconciling product roles and administrator groups...\n'
 for role in "${PRODUCT_ROLES[@]}"; do
   ensure_realm_role "$role" "${role_descriptions[$role]}"
 done
+printf 'Product roles ready; reconciling groups...\n'
 
 PLATFORM_GROUP='platform-admins'
 GOVERNANCE_GROUP='governance-reviewers'
 platform_group_id="$(ensure_group "$PLATFORM_GROUP")"
 governance_group_id="$(ensure_group "$GOVERNANCE_GROUP")"
 
+printf 'Reconciling group product-role mappings...\n'
 kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$PLATFORM_GROUP" \
   --rolename admin --rolename user_basic >/dev/null
-kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$PLATFORM_GROUP" \
-  --cclientid realm-management --rolename realm-admin >/dev/null
 kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$GOVERNANCE_GROUP" \
   --rolename capability_reviewer --rolename knowledge_reviewer --rolename decision_reviewer >/dev/null
 
+printf 'Reconciling the privileged owner...\n'
 target_user="$(find_target_user)"
 target_user_id="$(jq -r '.id' <<<"$target_user")"
 target_username="$(jq -r '.username' <<<"$target_user")"
@@ -200,6 +201,11 @@ kcadm update "users/$target_user_id" -r "$KEYCLOAK_REALM" \
   -s 'requiredActions=["UPDATE_PASSWORD","CONFIGURE_TOTP"]' >/dev/null
 kcadm update "users/$target_user_id/groups/$platform_group_id" -r "$KEYCLOAK_REALM" >/dev/null
 kcadm update "users/$target_user_id/groups/$governance_group_id" -r "$KEYCLOAK_REALM" >/dev/null
+# Realm administration is intentionally owner-specific instead of inherited
+# from a reusable group: adding a future product admin must not silently grant
+# control over Keycloak itself.
+kcadm add-roles -r "$KEYCLOAK_REALM" --uid "$target_user_id" \
+  --cclientid realm-management --rolename realm-admin >/dev/null
 
 # The V1 Auth.js client is confidential and accepts one exact callback only.
 printf 'Reconciling OIDC clients...\n'
@@ -261,9 +267,9 @@ jq -e --arg platform "$PLATFORM_GROUP" --arg governance "$GOVERNANCE_GROUP" \
 
 realm_management_id="$(kcadm get clients -r "$KEYCLOAK_REALM" -q clientId=realm-management --fields id,clientId | jq -r '.[] | select(.clientId == "realm-management") | .id' | head -n1)"
 [[ -n "$realm_management_id" ]] || die "realm-management client not found"
-platform_admin_roles="$(kcadm get "groups/$platform_group_id/role-mappings/clients/$realm_management_id" -r "$KEYCLOAK_REALM")"
+owner_admin_roles="$(kcadm get "users/$target_user_id/role-mappings/clients/$realm_management_id" -r "$KEYCLOAK_REALM")"
 jq -e '([.[].name] | index("realm-admin")) != null' \
-  <<<"$platform_admin_roles" >/dev/null || die "realm-admin group mapping read-back failed"
+  <<<"$owner_admin_roles" >/dev/null || die "realm-admin owner mapping read-back failed"
 
 governance_roles="$(kcadm get "groups/$governance_group_id/role-mappings/realm" -r "$KEYCLOAK_REALM")"
 jq -e \

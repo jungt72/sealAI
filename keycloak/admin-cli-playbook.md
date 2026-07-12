@@ -17,8 +17,8 @@ The recovery wrapper calls `ops/keycloak_ensure_roles.sh`, which applies:
 
 - realm security, session, brute-force, password and event policies;
 - product roles and reviewer roles;
-- `/platform-admins` and `/governance-reviewers` group mappings;
-- realm-local `realm-management/realm-admin` for the owner;
+- `/platform-admins` and `/governance-reviewers` product-role group mappings;
+- owner-specific realm-local `realm-management/realm-admin`;
 - `UPDATE_PASSWORD` and `CONFIGURE_TOTP` for the privileged owner;
 - exact redirect/origin and PKCE policies for `nextauth` and `sealai-v2`;
 - deletion of the short-lived recovery user.
