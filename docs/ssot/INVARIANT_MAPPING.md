@@ -6,7 +6,7 @@ This map records implementation evidence, not aspiration. `partial` and
 | Principle | Implementation evidence | Verification | Status |
 | --- | --- | --- | --- |
 | P1 Kernel decides, LLM formulates | `backend/sealai_v2/core/calc/`, `core/l1_generator.py` | `backend/tests/architecture/test_i5_narration_no_numbers.py` | implemented |
-| P2 No technical claim without status | typed claim lifecycle; claims without independent current human review quarantined; source-less traps block-only; unsourced matrix inactive | knowledge, L3, matrix, and migration tests | implemented gate; H1 content review open |
+| P2 No technical claim without status | typed claim lifecycle; claims without independent current human review quarantined; 79 owner-approved claims bound to exact authority fingerprints; source-less traps block-only; unsourced matrix inactive | knowledge, L3, matrix, migration, and owner-review artifact tests | implemented; H1 behavior gate M15 open |
 | P3 Unknown is a domain state | `core/case_state.py`, coverage contracts | case-state and coverage tests | partial |
 | P4 Family orients, compound is assessed, component is externally released | Fachkarten kinds and framing | doctrine and response tests | partial |
 | P5 State unknowns first | response contract and renderer | response-contract tests | partial |
@@ -21,7 +21,7 @@ This map records implementation evidence, not aspiration. `partial` and
 | Gate | Current evidence | Status | Closure condition |
 | --- | --- | --- | --- |
 | G1 Tenant | server-derived identity and query scoping | implemented | keep cross-tenant suite green |
-| G2 Evidence | typed evidence/applicability/reviewer/expiry, stable logical claim IDs, authority fingerprint with automatic review invalidation, explicit human review origin, gated review queue, quarantine/Qdrant deletion, expiry check at resolution, block-only unsourced traps, default-off unsourced matrix | implemented | deploy migration `20260712_0007`, then independently adjudicate the 51 source-backed seed candidates before H1 activation |
+| G2 Evidence | typed evidence/applicability/reviewer/expiry, stable logical claim IDs, authority fingerprint with automatic review invalidation, explicit human review origin, owner decision record for 79 claims, quarantine/Qdrant deletion, expiry check at resolution, block-only unsourced traps, default-off unsourced matrix | implemented | keep the 51 external and 28 internal-attestation evidence classes distinct; revalidate before their respective expiries |
 | G3 Kernel | deterministic calculation registry | implemented | no LLM numeric escape |
 | G4 Approval | explicit orientation/release boundary | implemented | no sealingAI final release language |
 | G5 Neutrality | verified capability pool has no commercial projection; independent reviewer role, COI attestation, and self-recusal | partial | pilot broader affiliation disclosure/recusal operations and real reviewed profiles |

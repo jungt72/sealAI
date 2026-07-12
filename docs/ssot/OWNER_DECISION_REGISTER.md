@@ -55,3 +55,17 @@ from commercial membership.
 Decision: outcomes mature from passive signal to validated field experience.
 
 Consequence: no outcome claim exceeds the proven maturity level.
+
+## ODR-09: Initial governed knowledge corpus
+
+Decision: on 2026-07-12 the sealingAI owner approved all 79 claims in the
+SSoT-v2 review queue. The reviewer identity is the Keycloak subject
+`7748ba15-bef4-43b4-b95a-cf80fcc476d8`; the exact decision contract is
+`docs/ssot/reviews/2026-07-12-owner-claim-approval.json`.
+
+Consequence: 51 claims may rely on their recorded external technical
+references. Twenty-eight claims are approved only as internal domain-expert
+attestations, must not be presented as externally researched, carry the
+conservative uncertainty/transferability states in the decision record, and
+require revalidation by 2026-10-12. Any authority-fingerprint change
+invalidates the corresponding approval. H1 activation still requires M15.

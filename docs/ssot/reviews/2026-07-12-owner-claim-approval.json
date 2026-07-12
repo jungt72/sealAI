@@ -1,0 +1,4022 @@
+{
+  "schema_version": "sealingai.owner-knowledge-review.v1",
+  "ssot_version": "2.0",
+  "decision": "approve_all_queued_claims",
+  "independent_review_attested": true,
+  "decision_reference": "Codex owner instruction 2026-07-12: ich gebe alle claims frei... bitte bringe jetzt alles live",
+  "reviewer": {
+    "identity_provider": "keycloak",
+    "realm": "sealAI",
+    "subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+    "username": "jungt",
+    "email": "mail@thorsten-jung.de"
+  },
+  "reviewed_at": "2026-07-12T10:29:44Z",
+  "source_queue": {
+    "source_commit": "91a02b58138acef81dbcfcb1ed93765d43fe9129",
+    "served_tree_hash": "f80a94f71f6e9b7374e1567f702790ed92f18c0b",
+    "seed_sha256_before_review": "bd7d93c6e29ec1d61238092483d6b64f62d2327073fba73f09ece8d0059bc753"
+  },
+  "seed_sha256_after_review": "381121e9e081e4fca19a6666978cd56bc7efb64700500aa356a6af018db912f6",
+  "counts": {
+    "approved": 79,
+    "external_technical_sources": 51,
+    "internal_domain_expert_attestation": 28,
+    "technical_text_changes": 0
+  },
+  "authority_notice": "Approval is bound to each authority_fingerprint. Any change to text, card version, scope, sources, applicability, uncertainty, transferability, or conflicts invalidates preservation of this review.",
+  "internal_evidence_notice": "Internal domain-expert attestations are deliberately not represented as external research. Their shorter expiry and conservative epistemic metadata remain part of the serving contract.",
+  "claims": [
+    {
+      "claim_id": "4a700ed7-5da2-53fa-8aa5-d9772471777f",
+      "authority_fingerprint": "4d71ae1fc3065b7b600c6ff8a36324a990027ffa5dd3071b1db9c01adfa5d20b",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 0,
+      "text_sha256": "8996e0ecec5ac542ffe644eb746046e37c719dae9eaff3bd2004a0fc8fe7ab97",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, chapters 1-3 (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Trelleborg Turcon Variseal, General and Material Selection Guide (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "4cffc081-a0e0-5507-a6aa-0250c04fa831",
+      "authority_fingerprint": "7725615348394881ab26eef2ccd77e26ed466707af8dd04ab48803ec2decd75f",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 1,
+      "text_sha256": "89cf0ce939aed5dff443a72b07d572c8b193298ada668a036c825cab915da7e8",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "source_specific",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "dc727ada-a232-59e2-8962-9d339d967793",
+      "authority_fingerprint": "222527b32f9d91384833b827fc16d0624f054aefc3500af06b4cc831c016399d",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 2,
+      "text_sha256": "f095ad0852ddb43c705a493c7cbc1b332f7ad161f996879f356ad53414ade8e4",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Trelleborg Turcon Variseal Material Selection Guide, Table 3, page 7, Edition June 2026, retrieved 2026-07-12, SHA-256 171d5881149e03a5592b0497b6f4d77356dee96bf8e805fe2d91e570f49e5f93 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "source_specific",
+      "conflicts": [
+        "Older application-specific Trelleborg publications may state -200 °C for T01; this claim is explicitly bound to the Variseal Material Selection Guide, Table 3, Edition June 2026."
+      ],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "source_edition_refresh_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "71cd0a1f-e5fd-5225-868e-46eb27e5095e",
+      "authority_fingerprint": "a10d71e324f61042cfe00dd7a63ac8d17166b2f0cd9146f119a716473de222b5",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 3,
+      "text_sha256": "397a529f8b49fe868b1db1c0621ec895f9393993eaa968744542a1d7e739cf5f",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, The effect of fillers and material selection (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "588d9bdb-6ead-57e6-b410-8032d78989c9",
+      "authority_fingerprint": "fa6ffd1457f2f3154cae5e7ae1e1648885f2fa71aa2985ed52ce1b437e33568a",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 4,
+      "text_sha256": "43adcfc4320707f7d877501087b080155eea89a383051c3b4c9cc428fc16240f",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, product lines and decision tree (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "weak_secondary_source_removed_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "f2e6bffc-626f-56d2-9f9f-15d43900dbde",
+      "authority_fingerprint": "04e85dfe01d6f5db941cb2ec63ab591e5a624060b297829870ad6ab75c178042",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 5,
+      "text_sha256": "c70b5610361683b934df8db6cc2a0b5b986a578071c33f408689cb2a6e09218c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, characteristics of PTFE and spring-energized seals (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "d17cf879-2818-5b17-9211-3e55918361d9",
+      "authority_fingerprint": "39cb6c4cc9644ba9a357b668078fcb389f96a0c5cb219a99f1f0360d0b2b9d26",
+      "card_id": "FK-PTFE-ENGINEERING-PROFILE",
+      "claim_order": 6,
+      "text_sha256": "5a8729cf2d03ca56324e3d604378afbe240ef14f944d7f672064f725e42b6dcd",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, user responsibility and application range (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "Polytetrafluorethylen",
+          "Polytetrafluoroethylene",
+          "ungefuelltes PTFE",
+          "gefuelltes PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "Kriechen",
+          "Kaltfluss",
+          "Rueckstellung",
+          "Reibung",
+          "Verschleiss",
+          "Fuellstoffe",
+          "Kennwerte",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "Dichtungen",
+          "federvorgespannte Dichtung",
+          "Gleitring",
+          "Stützring",
+          "Stuetzring",
+          "Rotationsdichtung",
+          "Flachdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "85a3812e-6848-59df-9fce-6915449d7074",
+      "authority_fingerprint": "4271a2c365241da7b82775144d46e4d1ab1b9cabfad2c52fb33e1c7dd43a4ac7",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 0,
+      "text_sha256": "e07c23690c11a96d753c6fab4f260357557c15a0e32f177e1147708f87b7bc32",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, O-Ring applications and gland design (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "ee41f241-6cdc-510c-a066-f06c34556376",
+      "authority_fingerprint": "e1b692e9cd81c05122b6f9dd64dc3d824b4c4a6e31c7d63a7f2d4a3cf4480feb",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 1,
+      "text_sha256": "51fbd422b1f511c0dd4abf84158732180ef43b0243f807b0769dd2ce305f3ca7",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ISO 3601-1:2012 (https://www.iso.org/standard/58043.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 3601-2:2025 (https://www.iso.org/standard/85921.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO seal standards catalogue (https://www.iso.org/ics/23.100.60.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "source_specific",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "f9f3cb12-f527-5b3e-be10-4cb30036e97c",
+      "authority_fingerprint": "33c5e5f0ed75b08a53d2f1732ea6cf4d525d18cbd45598306fc2f25a911ac9e5",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 2,
+      "text_sha256": "bcbd56f0e0b39c4ba4ab7d92483b4532ed45e02a7fb1739d805cac783045b683",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, Sections IV-V and design charts (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker O-Ring Selector (https://discover.parker.com/ORingSelector_en)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "54a08efb-3715-53c6-bc92-5f6aea065b93",
+      "authority_fingerprint": "18d85cd8644be837b688d4235cd0877643bc8a615ba290365341c1c2c7109a82",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 3,
+      "text_sha256": "02c9bb4570223166f064386bd211b9b6ccd907bd5920221962f6bb7a179ad3b8",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, Sections 5.9 Squeeze and 5.10 Stretch (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "39476304-88b8-50d0-9251-11140dc9d8e0",
+      "authority_fingerprint": "f0a5cdd629dff67d7655fe99fb34955a3bdaeafda114ae3a6d3422c4eb225351",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 4,
+      "text_sha256": "cf5efa15ff393c498cd3fa457b4636494f004d681f0a53bce45d33a75de8c918",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, extrusion and back-up ring guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 3601-4:2008 overview (https://www.iso.org/ics/23.100.60.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "3611edd8-849b-575d-81ad-55a8300f3707",
+      "authority_fingerprint": "ff59d782df0482aa798a5f56e2bc24f55eda2f61d3e0c97f58caa6f8b039fb99",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 5,
+      "text_sha256": "1c1a3d0133c60a6b78d29885b4250f5c3becc25980947ca3e558ce338954bcca",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, elastomer properties, fluid compatibility and failure analysis (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 1817:2024 (https://www.iso.org/standard/86602.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "3088e7b9-193e-5bf0-a443-29cb7b693c52",
+      "authority_fingerprint": "d9a8fc85a8f17ead54568e9e337181adaed6452c0825f8bd4b2045b98f1fd5a7",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 6,
+      "text_sha256": "a30885ac00dc319c095f2b94886bd3bff6f7258327dfb645df77181e9f61af47",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, Section VIII Failure Analysis (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "0b4a89e7-da50-5b3d-83fe-97fcb9a42ea0",
+      "authority_fingerprint": "b49cf2ea1b309d3ce4d86c35b4b351dab1ae41228e53ed680f230e8de729c3e2",
+      "card_id": "FK-ORING-ENGINEERING-PROFILE",
+      "claim_order": 7,
+      "text_sha256": "eb6311d9532e895d66c792606ed0cbcb6e85343f4b5fb3b7ecfc1c74c0e83c71",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker O-Ring Selector (https://discover.parker.com/ORingSelector_en)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Dehnung",
+          "Nutfuellung",
+          "Extrusion",
+          "Druckverformungsrest",
+          "Oberflaeche",
+          "Toleranzen"
+        ],
+        "application": [
+          "O-Ring",
+          "ORing",
+          "statische Dichtung",
+          "dynamische Dichtung",
+          "Hydraulik",
+          "Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "54ff77ed-f94b-5776-92a9-645e1ba18f1a",
+      "authority_fingerprint": "f6bbd8f7a901982b94829c9b1b41dedf6f1088a480788b285c7fcc1a13b77af9",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 0,
+      "text_sha256": "4a9367cc7a52b312a4a09c9fc7bbe97ebb03df36b1a0ea3f62f06bae6fcfd4ad",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ISO 6194-1:2007 (https://www.iso.org/standard/34678.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "SKF Industrial Shaft Seals catalogue (official catalogue landing: https://www.skf.com/go/18729)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "be729b84-d7e1-529f-905b-77b2b6278dc7",
+      "authority_fingerprint": "2510057391eec107522b39a629b16369c300b59095fdb486aacfd8b8d3eafa28",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 1,
+      "text_sha256": "0d3233940e61dde2d87f81581f6303a5fd3d59792f125b93fdd528e631e93ebc",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "SKF Industrial Shaft Seals catalogue, Radial shaft seals - Lubrication and Friction (official catalogue landing: https://www.skf.com/go/18729)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "419347c8-f6ff-5fb6-bd9b-be7ad507017f",
+      "authority_fingerprint": "68a26ce93d1cb2ceca5a2e652005521176c6c0a2a92cdda30dbf43728cf52d5c",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 2,
+      "text_sha256": "eb2312abbe8a04b3fba59f7150e04dddbe898e4099bc4e2a837270fab34ecffe",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Trelleborg Rotary Seals, Stefa Radial Oil Seal - Design Instructions: Shaft, page 41, Edition April 2026, retrieved 2026-07-12, SHA-256 9b1d5310574e8da4726c7f0406bd9a10685cd4ce0c71c2b9962520b76ae1fd38 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "source_specific",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "primary_source_page_precision_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "71d139bd-78ff-57d2-a3b0-14e22241beb1",
+      "authority_fingerprint": "5024db016df85e37e3cc286e7feda6a2fec7069af8d4e13a43ad705538b26679",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 3,
+      "text_sha256": "625d67415c751f6ac2b8965624b21a4e2a42ba23e7b14663c58b4163656a9f4d",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Trelleborg Rotary Seals, shaft machining, runout and eccentricity guidance (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "8f909e89-610b-5159-bad0-b4f8243aeb82",
+      "authority_fingerprint": "067ca1895981035b47f598ac6b6cfdf4cac09dd744c1f5ab8cbf858db8818988",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 4,
+      "text_sha256": "43a918028f1bbad50c449f9858e7da3b9934157c3287ba055c9c5d88394db3c0",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "SKF Industrial Shaft Seals catalogue (official catalogue landing: https://www.skf.com/go/18729)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker PTFE Seals Design Guide, application range warning (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "31fd05b8-4048-56dc-98af-f7639533d397",
+      "authority_fingerprint": "091be2e8e2a109e0f369f62985e31fd8c4d867ed6f092c86af2b157a0c7751b1",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 5,
+      "text_sha256": "d733e0a014d0e7cd2132470d07ebb73c01ee753e6d3ff490cee1cfe9e9fcf286",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Trelleborg Rotary Seals catalogue (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 16589-4:2011 (https://www.iso.org/standard/53937.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "1f4768bd-72d8-5749-914b-7afb829ec61d",
+      "authority_fingerprint": "ce3d6f22ea3da5b4e0a7dec2f0a631a3b4ce1d2bd1f999e87216bbf5076e0e1c",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 6,
+      "text_sha256": "db98d32938590f21a5be58555f13c5e73a4af8485510b09400b98352cb630a1d",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "SKF Industrial Shaft Seals catalogue, failure analysis and counterface guidance (official catalogue landing: https://www.skf.com/go/18729)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Trelleborg Rotary Seals catalogue (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "7ca79ce7-b747-505c-b5a2-8356cc405722",
+      "authority_fingerprint": "037cab89db288380205ed8cc171f484a6cd4ac07e8c0bcd2a88215b83b8a9104",
+      "card_id": "FK-RWDR-ENGINEERING-PROFILE",
+      "claim_order": 7,
+      "text_sha256": "38b21aa85c2d0e0969fad2741af95d76d1ad9af3bac190b35867d347c623f9dd",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ISO 6194-1:2007 (https://www.iso.org/standard/34678.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 6194-3:2009 (https://www.iso.org/standard/43009.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 6194-4:2009 (https://www.iso.org/standard/43010.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 16589-4:2011 (https://www.iso.org/standard/53937.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Dichtlippe",
+          "Gegenlaufflaeche",
+          "Schmierung",
+          "Umfangsgeschwindigkeit",
+          "Rundlauf",
+          "Exzentrizitaet",
+          "Oberflaechenrauheit",
+          "Wellenhaerte"
+        ],
+        "application": [
+          "RWDR",
+          "Radialwellendichtring",
+          "Radial-Wellendichtring",
+          "Radialwellendichtung",
+          "Wellendichtring",
+          "Simmerring",
+          "Rotationsdichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "source_specific",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "32266cfd-b3a3-51e3-a044-896dfe1252c4",
+      "authority_fingerprint": "0ac8b43ff6247a74e2b45535dad685173826e50cc92eb99df639f8e7ca39229d",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 0,
+      "text_sha256": "f64cca9f986c72092dc547c81e01918a64d1dddc3238e952f44ce0d73f9513ed",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Mechanical Seal - definition and elements (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "65f04d20-65de-5bfd-a765-f91c90d6fc8d",
+      "authority_fingerprint": "7c1ea2ae0e42dd70a4d2fdf7c8b6dff135f0124072c501ae104b2e0b6a18cc91",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 1,
+      "text_sha256": "9322b0aa99ac0a35dea82590fdbf4ca9c94ab2df7a70986c6b7b0d58eb1be3bf",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Mechanical Seal - elements of a mechanical seal (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "d7b48561-1045-5ee0-b018-76aa932580e0",
+      "authority_fingerprint": "feb9898ded11906d5b41fa53f5adda2298513d3e8b7d07bba8ed4b8262979479",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 2,
+      "text_sha256": "78860708457ac25a31cf3ec13dd036ba228a4059099a1974914bf6efe1faa216",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann Mechanical Seals product classification (https://www.eagleburgmann.com/en/products/mechanical-seals/)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "29c7257b-89f5-53d6-81eb-595ec44c7812",
+      "authority_fingerprint": "adb1a1305319d1631cb8712e03b237703e1f562bddf671b32818159c40f6a74d",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 3,
+      "text_sha256": "6e3d64d292bba0a0f0c79416280efe7c5df557f9ecf344b48c2a99772475c97d",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Optimally designing mechanical seals (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "c10333ae-47ae-5f8a-bcad-9780c3bb048b",
+      "authority_fingerprint": "3662f1a31cb369e66e906e4eac918a492f3e0635500fbce31aaa74015e10ea64",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 4,
+      "text_sha256": "0ead6ff467e05a2834feb8e81721cc38b065690ada69ad167f24fb2a9ebcd989",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Mechanical seal technology and selection - material code and selection tables (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "172669b9-463d-57b1-a56c-bb4a7594b355",
+      "authority_fingerprint": "3738cf9c2e884063b981050b887141f7418e4d7324c916b369be9cbeb22593e2",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 5,
+      "text_sha256": "8e793f17c41fc454d0f579724a54eb0ce19ebbdfc6bdd0da1754b0a603467276",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Mechanical seal technology and selection - auxiliary piping plans (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "a83bab40-8a31-507e-9304-6186a6c02a3d",
+      "authority_fingerprint": "0a08a1ab687457166f4e055f2d269dab71d044d00a4d711d61e334378ecfa641",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 6,
+      "text_sha256": "4e819143f3240cadb111b6da87c5daa967ba040004a6c09b069aabb2c3bd2c99",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Mechanical Seal - operating principle and selection factors (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "ab6a4950-d6b0-54f5-b8a7-9826836a2fc4",
+      "authority_fingerprint": "379f0712734467769802c1c83237c1e61dda48b91a949dd858dae852c5a3fd7a",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 7,
+      "text_sha256": "b1eaaab2babea0c160af99511ff35607d9a8827fab473b4374e368d497d1dd6d",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ISO 21049:2004 (https://www.iso.org/standard/35625.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "API Standard 682, Fourth Edition overview (https://www.api.org/~/media/files/publications/whats%20new/682%20e4%20pa.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "source_specific",
+      "conflicts": [
+        "ISO 21049:2004 corresponds to the API 682 third-edition generation; the linked API overview is Fourth Edition, May 2014. The shared scope is evidenced, but the editions are not textually identical."
+      ],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "standard_edition_relationship_recorded_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "31543c94-0f5f-55cd-a6fa-44a3760b2a3e",
+      "authority_fingerprint": "f2c88c9e6fcadd491db9fafbd73f832fa0cdcd8622554ab5f332f23dd271259f",
+      "card_id": "FK-GLRD-ENGINEERING-PROFILE",
+      "claim_order": 8,
+      "text_sha256": "ebd3843087deae9de347a043a804c0d12e1500f5a7fc94285036d73b8a3fe6c3",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "EagleBurgmann, Optimally designing mechanical seals (https://www.eagleburgmann.com/en/products/mechanical-seal/)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "API Standard 682, user responsibility (https://www.api.org/~/media/files/publications/whats%20new/682%20e4%20pa.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Gleitflaechen",
+          "Schmierfilm",
+          "Leckage",
+          "Druckentlastung",
+          "Sperrfluessigkeit",
+          "Versorgungsplan",
+          "Werkstoffpaarung"
+        ],
+        "application": [
+          "Gleitringdichtung",
+          "Gleitdichtung",
+          "GLRD",
+          "mechanical seal",
+          "mechanische Dichtung",
+          "Pumpe",
+          "Kreiselpumpe",
+          "Rotationsmaschine",
+          "Ruehrwerk"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "729ad30f-b0f4-5204-9fae-9fa85ebe1a73",
+      "authority_fingerprint": "524b5d9907122d8c44796a88d5ed575acb3337c050178161d2d5e500a583f729",
+      "card_id": "FK-MEDIUM-ENGINEERING-METHOD",
+      "claim_order": 0,
+      "text_sha256": "57b98bbc11102bf7fa4ed97590973fa60a17dab73f2b12477f5a07eb94230023",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, compatibility of seals and operating media/cleaning agents (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, fluid compatibility guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Medium",
+          "Dichtungsmedium",
+          "Betriebsmedium",
+          "Fluid",
+          "Flüssigkeit",
+          "Fluessigkeit",
+          "Betriebsstoff",
+          "Öl",
+          "Oel",
+          "Hydrauliköl",
+          "Hydraulikoel",
+          "Chemikalie",
+          "Lösungsmittel",
+          "Loesemittel"
+        ],
+        "property": [
+          "Medienbestaendigkeit",
+          "Quellung",
+          "Schrumpfung",
+          "Haerteaenderung",
+          "Viskositaet",
+          "Dampfdruck",
+          "Additive",
+          "Konzentration"
+        ],
+        "application": [
+          "Medienvergleich",
+          "Werkstoffauswahl",
+          "Dichtungsauslegung",
+          "Kompatibilitaetspruefung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "6383fa61-fffe-5821-98cb-986b83795250",
+      "authority_fingerprint": "0eb894fa59c261fc75f92f6c94e63563da3cf03885e0585bf71821b7a9b43b91",
+      "card_id": "FK-MEDIUM-ENGINEERING-METHOD",
+      "claim_order": 1,
+      "text_sha256": "97a6dcbcb59fe0db52819224cacf2698c2b915845f1ed237af30a8d297915ad8",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ISO 1817:2024 (https://www.iso.org/standard/86602.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Medium",
+          "Dichtungsmedium",
+          "Betriebsmedium",
+          "Fluid",
+          "Flüssigkeit",
+          "Fluessigkeit",
+          "Betriebsstoff",
+          "Öl",
+          "Oel",
+          "Hydrauliköl",
+          "Hydraulikoel",
+          "Chemikalie",
+          "Lösungsmittel",
+          "Loesemittel"
+        ],
+        "property": [
+          "Medienbestaendigkeit",
+          "Quellung",
+          "Schrumpfung",
+          "Haerteaenderung",
+          "Viskositaet",
+          "Dampfdruck",
+          "Additive",
+          "Konzentration"
+        ],
+        "application": [
+          "Medienvergleich",
+          "Werkstoffauswahl",
+          "Dichtungsauslegung",
+          "Kompatibilitaetspruefung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "source_specific",
+      "conflicts": [
+        "ISO lists ISO 1817:2024 at stage 90.92 (International Standard to be revised) as of 2026-07-12; use a short human-review expiry and re-check the successor edition before continued authority."
+      ],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "source_lifecycle_status_recorded_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "90508eb3-03c3-5e75-83e1-cf8eaebbd4d7",
+      "authority_fingerprint": "48896faa49fcae653e508ae3dda3e36560466afeb33d722acbf2cd62e7041428",
+      "card_id": "FK-MEDIUM-ENGINEERING-METHOD",
+      "claim_order": 2,
+      "text_sha256": "86652274b23ad62f2ca14ae4e1cf83f9ec649d89a4b371de1d62521fdd28d9cc",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, acids and fluid compatibility (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 1817:2024 (https://www.iso.org/standard/86602.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Medium",
+          "Dichtungsmedium",
+          "Betriebsmedium",
+          "Fluid",
+          "Flüssigkeit",
+          "Fluessigkeit",
+          "Betriebsstoff",
+          "Öl",
+          "Oel",
+          "Hydrauliköl",
+          "Hydraulikoel",
+          "Chemikalie",
+          "Lösungsmittel",
+          "Loesemittel"
+        ],
+        "property": [
+          "Medienbestaendigkeit",
+          "Quellung",
+          "Schrumpfung",
+          "Haerteaenderung",
+          "Viskositaet",
+          "Dampfdruck",
+          "Additive",
+          "Konzentration"
+        ],
+        "application": [
+          "Medienvergleich",
+          "Werkstoffauswahl",
+          "Dichtungsauslegung",
+          "Kompatibilitaetspruefung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "b4e7ef1d-7114-5e87-8991-69dd0d44eb6d",
+      "authority_fingerprint": "8817d247522359bce1f9543f18d53372ac66856356609e36133de411977c264e",
+      "card_id": "FK-MEDIUM-ENGINEERING-METHOD",
+      "claim_order": 3,
+      "text_sha256": "fb3e3d4194557f11cb0aba0c24b79a364d183152ad5372d310803147e3b68606",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ISO 1817:2024 (https://www.iso.org/standard/86602.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, elastomer properties and failure analysis (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Medium",
+          "Dichtungsmedium",
+          "Betriebsmedium",
+          "Fluid",
+          "Flüssigkeit",
+          "Fluessigkeit",
+          "Betriebsstoff",
+          "Öl",
+          "Oel",
+          "Hydrauliköl",
+          "Hydraulikoel",
+          "Chemikalie",
+          "Lösungsmittel",
+          "Loesemittel"
+        ],
+        "property": [
+          "Medienbestaendigkeit",
+          "Quellung",
+          "Schrumpfung",
+          "Haerteaenderung",
+          "Viskositaet",
+          "Dampfdruck",
+          "Additive",
+          "Konzentration"
+        ],
+        "application": [
+          "Medienvergleich",
+          "Werkstoffauswahl",
+          "Dichtungsauslegung",
+          "Kompatibilitaetspruefung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "f172146a-2e25-5ea1-812d-f2b94dbe6207",
+      "authority_fingerprint": "0b22e666b98db96e56f2dcb02b4d300ab033c3afa01e343a3e853efbbc7cc5fc",
+      "card_id": "FK-MEDIUM-ENGINEERING-METHOD",
+      "claim_order": 4,
+      "text_sha256": "d330be275d2b2a05d0dffb30070b2cf732e1244323245faa76599ed8fcc510a5",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "SKF Industrial Shaft Seals catalogue, lubrication and friction factors (official catalogue landing: https://www.skf.com/go/18729)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "EagleBurgmann, Mechanical seal technology and selection (https://media.eagleburgmann.com/literature-competences-products-solutions/division-mechanical-seals/competences/brochure-mechanical-seal-technology-and-selection/download)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker PTFE Seals Design Guide, additives and media compatibility (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Medium",
+          "Dichtungsmedium",
+          "Betriebsmedium",
+          "Fluid",
+          "Flüssigkeit",
+          "Fluessigkeit",
+          "Betriebsstoff",
+          "Öl",
+          "Oel",
+          "Hydrauliköl",
+          "Hydraulikoel",
+          "Chemikalie",
+          "Lösungsmittel",
+          "Loesemittel"
+        ],
+        "property": [
+          "Medienbestaendigkeit",
+          "Quellung",
+          "Schrumpfung",
+          "Haerteaenderung",
+          "Viskositaet",
+          "Dampfdruck",
+          "Additive",
+          "Konzentration"
+        ],
+        "application": [
+          "Medienvergleich",
+          "Werkstoffauswahl",
+          "Dichtungsauslegung",
+          "Kompatibilitaetspruefung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "11d48d7d-92d8-5556-bc75-86e18dd4c2bc",
+      "authority_fingerprint": "aa8ca2bf3209ecb243abfa90ccdd51d42b94364f8116c1c2c0d58cbc23455237",
+      "card_id": "FK-MEDIUM-ENGINEERING-METHOD",
+      "claim_order": 5,
+      "text_sha256": "023979703122f21d44b79d40e6dfe8141c9fd14deb27b0cfb8a0a7a0bcee6388",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker PTFE Seals Design Guide, compatibility and field-test requirement (https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 1817:2024 (https://www.iso.org/standard/86602.html)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Medium",
+          "Dichtungsmedium",
+          "Betriebsmedium",
+          "Fluid",
+          "Flüssigkeit",
+          "Fluessigkeit",
+          "Betriebsstoff",
+          "Öl",
+          "Oel",
+          "Hydrauliköl",
+          "Hydraulikoel",
+          "Chemikalie",
+          "Lösungsmittel",
+          "Loesemittel"
+        ],
+        "property": [
+          "Medienbestaendigkeit",
+          "Quellung",
+          "Schrumpfung",
+          "Haerteaenderung",
+          "Viskositaet",
+          "Dampfdruck",
+          "Additive",
+          "Konzentration"
+        ],
+        "application": [
+          "Medienvergleich",
+          "Werkstoffauswahl",
+          "Dichtungsauslegung",
+          "Kompatibilitaetspruefung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "03f4b643-8081-531f-99ed-ff04faacd3cd",
+      "authority_fingerprint": "02eaa0ca1eed21b0e8d91cffa5563a35dabe73bb075b9fc3d1aa0e53d3aa77bc",
+      "card_id": "FK-NBR-UEBERBLICK",
+      "claim_order": 0,
+      "text_sha256": "c2d8c6ea0424d999d54783d59a5f02d3372e2ed836d174b2da2fd525fd11efab",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ARLANXEO: Nitrile Butadiene Rubber (https://www.arlanxeo.com/en/families/nbr)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "Nitrilkautschuk",
+          "Acrylnitril-Butadien-Kautschuk",
+          "Acrylonitrile-butadiene rubber"
+        ],
+        "medium": [],
+        "property": [
+          "Öl- und Kraftstoffbeständigkeit",
+          "Abrieb- und Verschleißbeständigkeit",
+          "Ozon- und Witterungsbeständigkeit",
+          "ACN-Gehalt"
+        ],
+        "application": [
+          "Dichtungen",
+          "O-Ringe",
+          "Schläuche",
+          "Hydraulik und Pneumatik"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "187a6356-e8c9-58ca-b983-c5d17d5217d2",
+      "authority_fingerprint": "c847e711e6553f91fb91559a0647ec48a4c4ae66311e5276bcbbe17c78b6686a",
+      "card_id": "FK-NBR-UEBERBLICK",
+      "claim_order": 1,
+      "text_sha256": "2ffe6abc4b56e82707d70b83381e2cd4ce11d03684f9498bba7b669d90fa2d3c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "Nitrilkautschuk",
+          "Acrylnitril-Butadien-Kautschuk",
+          "Acrylonitrile-butadiene rubber"
+        ],
+        "medium": [],
+        "property": [
+          "Öl- und Kraftstoffbeständigkeit",
+          "Abrieb- und Verschleißbeständigkeit",
+          "Ozon- und Witterungsbeständigkeit",
+          "ACN-Gehalt"
+        ],
+        "application": [
+          "Dichtungen",
+          "O-Ringe",
+          "Schläuche",
+          "Hydraulik und Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "b77c2665-092d-5f6b-ae6d-ad1b1449ca25",
+      "authority_fingerprint": "e5446ca4952b87a65b40eac0434c18a16e2b3c168df1d4643dede28fdaa01db2",
+      "card_id": "FK-NBR-UEBERBLICK",
+      "claim_order": 2,
+      "text_sha256": "e82e234959d2d833611f0fd45e9e506b0379ad0fd15afce3731bab1349bee5fe",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "ARLANXEO: Nitrile Butadiene Rubber (https://www.arlanxeo.com/en/families/nbr)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "Nitrilkautschuk",
+          "Acrylnitril-Butadien-Kautschuk",
+          "Acrylonitrile-butadiene rubber"
+        ],
+        "medium": [],
+        "property": [
+          "Öl- und Kraftstoffbeständigkeit",
+          "Abrieb- und Verschleißbeständigkeit",
+          "Ozon- und Witterungsbeständigkeit",
+          "ACN-Gehalt"
+        ],
+        "application": [
+          "Dichtungen",
+          "O-Ringe",
+          "Schläuche",
+          "Hydraulik und Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "5048dd85-97ed-5edf-9247-2dd589ad1213",
+      "authority_fingerprint": "072370ac92e3bfda4bc16a0dfd424469ab2c5545679dd61a7bd0976e311f3ea7",
+      "card_id": "FK-NBR-UEBERBLICK",
+      "claim_order": 3,
+      "text_sha256": "c5982a7b9079da48533416292909e4ffe58f4dd999de7e34f5f6dad6f01a57f0",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "Nitrilkautschuk",
+          "Acrylnitril-Butadien-Kautschuk",
+          "Acrylonitrile-butadiene rubber"
+        ],
+        "medium": [],
+        "property": [
+          "Öl- und Kraftstoffbeständigkeit",
+          "Abrieb- und Verschleißbeständigkeit",
+          "Ozon- und Witterungsbeständigkeit",
+          "ACN-Gehalt"
+        ],
+        "application": [
+          "Dichtungen",
+          "O-Ringe",
+          "Schläuche",
+          "Hydraulik und Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "ab2e45b2-0326-5466-aabd-1155782763f0",
+      "authority_fingerprint": "8743ca2f73e6e6e4f22eb4530b8c3bf867542bde532cee50540292c659a269a2",
+      "card_id": "FK-NBR-UEBERBLICK",
+      "claim_order": 4,
+      "text_sha256": "e3fbe6b6adc8265c808ef4a285114b2b73d9db0aca020dc596b7a12ffb997e3c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "Parker N0552-90 NBR product overview (https://ph.parker.com/us/17563/en/nitrile-90-durometer-o-ring-general-purpose-n0552-90)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "Nitrilkautschuk",
+          "Acrylnitril-Butadien-Kautschuk",
+          "Acrylonitrile-butadiene rubber"
+        ],
+        "medium": [],
+        "property": [
+          "Öl- und Kraftstoffbeständigkeit",
+          "Abrieb- und Verschleißbeständigkeit",
+          "Ozon- und Witterungsbeständigkeit",
+          "ACN-Gehalt"
+        ],
+        "application": [
+          "Dichtungen",
+          "O-Ringe",
+          "Schläuche",
+          "Hydraulik und Pneumatik"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "3e311d7f-7b02-50b9-8891-9913f86b7c53",
+      "authority_fingerprint": "09bf881e544dc7ced0a73b2a3a86ba2ea42baa7c2fd248cd272b1434dfb662a0",
+      "card_id": "FK-FKM-DAMPF",
+      "claim_order": 0,
+      "text_sha256": "441be8950ade8509cf7821e6dda346f4d79af0964e0d4a880d6d400371d09867",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 3e311d7f-7b02-50b9-8891-9913f86b7c53 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#3e311d7f-7b02-50b9-8891-9913f86b7c53)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "FKM",
+          "FPM",
+          "EPDM",
+          "AFLAS",
+          "FEPM"
+        ],
+        "medium": [
+          "Dampf",
+          "Wasserdampf",
+          "Heißdampf",
+          "Sattdampf",
+          "SIP",
+          "Heißwasser",
+          "Sterilisation"
+        ],
+        "property": [
+          "Hydrolysebeständigkeit",
+          "Temperaturbeständigkeit"
+        ],
+        "application": [
+          "Materialempfehlung",
+          "empfiehl",
+          "Anwendung",
+          "Wasserdampf-Anwendung"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "orthography_correction_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "b610a0b5-dd01-55f2-8e21-92b31250e505",
+      "authority_fingerprint": "63af46be14a6acc86ddb8fece4f5ca63d4279e10e5af0fca4ad6a4cc002819e6",
+      "card_id": "FK-FKM-DAMPF",
+      "claim_order": 1,
+      "text_sha256": "57ce2944bae6473fc46bc6d3e2341ab88edfd53d117d79295dafcce0b5240e92",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim b610a0b5-dd01-55f2-8e21-92b31250e505 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#b610a0b5-dd01-55f2-8e21-92b31250e505)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "FKM",
+          "FPM",
+          "EPDM",
+          "AFLAS",
+          "FEPM"
+        ],
+        "medium": [
+          "Dampf",
+          "Wasserdampf",
+          "Heißdampf",
+          "Sattdampf",
+          "SIP",
+          "Heißwasser",
+          "Sterilisation"
+        ],
+        "property": [
+          "Hydrolysebeständigkeit",
+          "Temperaturbeständigkeit"
+        ],
+        "application": [
+          "Materialempfehlung",
+          "empfiehl",
+          "Anwendung",
+          "Wasserdampf-Anwendung"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "497c0225-2a96-5a5f-9c82-9caa27c05b72",
+      "authority_fingerprint": "10080a61ec58efbf8c2987ffabe08b003a1daa88d7997ee086b2ab547aa7a10a",
+      "card_id": "FK-FKM-DAMPF",
+      "claim_order": 2,
+      "text_sha256": "61801d1f757118a01f83b032fb548ed905bc848d7de6646bd34568a735f0a276",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 497c0225-2a96-5a5f-9c82-9caa27c05b72 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#497c0225-2a96-5a5f-9c82-9caa27c05b72)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "FKM",
+          "FPM",
+          "EPDM",
+          "AFLAS",
+          "FEPM"
+        ],
+        "medium": [
+          "Dampf",
+          "Wasserdampf",
+          "Heißdampf",
+          "Sattdampf",
+          "SIP",
+          "Heißwasser",
+          "Sterilisation"
+        ],
+        "property": [
+          "Hydrolysebeständigkeit",
+          "Temperaturbeständigkeit"
+        ],
+        "application": [
+          "Materialempfehlung",
+          "empfiehl",
+          "Anwendung",
+          "Wasserdampf-Anwendung"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "9f3438e5-e3ff-54b9-8b2d-f0272d4d7469",
+      "authority_fingerprint": "07fd1304a00e81f503d22db548902c117438a076c9e7e510a496f83a9471b086",
+      "card_id": "FK-PHARMA-SIP-VALIDIERUNG",
+      "claim_order": 0,
+      "text_sha256": "604578a81c666daa1318089749e1ad2d53496f4632352548ca0c0113f57240f7",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 9f3438e5-e3ff-54b9-8b2d-f0272d4d7469 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#9f3438e5-e3ff-54b9-8b2d-f0272d4d7469)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Dampf",
+          "SIP",
+          "Sterilisation"
+        ],
+        "property": [
+          "Zulassung",
+          "Validierung",
+          "GMP",
+          "Extractables",
+          "Leachables"
+        ],
+        "application": [
+          "Pharma",
+          "Bioreaktor",
+          "Produktkontakt"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "db7440d2-f43c-5725-844f-dd976f239218",
+      "authority_fingerprint": "ac1e5b8453786d2fc31a13c22248a041d7f3d202c9010112275950ab05a5ed40",
+      "card_id": "FK-PHARMA-SIP-VALIDIERUNG",
+      "claim_order": 1,
+      "text_sha256": "30292299ccd1d5625bbe1dc5779e1bf483592a8ade4de22e31dc291f384004b9",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim db7440d2-f43c-5725-844f-dd976f239218 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#db7440d2-f43c-5725-844f-dd976f239218)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [
+          "Dampf",
+          "SIP",
+          "Sterilisation"
+        ],
+        "property": [
+          "Zulassung",
+          "Validierung",
+          "GMP",
+          "Extractables",
+          "Leachables"
+        ],
+        "application": [
+          "Pharma",
+          "Bioreaktor",
+          "Produktkontakt"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "2f4c505d-6e32-56da-a5e1-6d17b0a727c1",
+      "authority_fingerprint": "2f043b46a83a0265114834825082d11504176ba3b02040853342069a8aba35e8",
+      "card_id": "FK-ERSATZDICHTUNG-IDENTIFIKATION",
+      "claim_order": 0,
+      "text_sha256": "75acd781931fedbd59495c42c5d1298edad1de6bafa933bf632d0c11c183120c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 2f4c505d-6e32-56da-a5e1-6d17b0a727c1 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#2f4c505d-6e32-56da-a5e1-6d17b0a727c1)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Identifikation",
+          "Abmessung",
+          "Bauform"
+        ],
+        "application": [
+          "Ersatz",
+          "Originalspezifikation",
+          "Altteil",
+          "Wellendichtung",
+          "kaputt"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "572943ab-a324-5e1c-a883-0793683a3b63",
+      "authority_fingerprint": "d9d3166f73890fda2facf9cb13a79d3333c005121e4c8f64af416d1263f9a8e0",
+      "card_id": "FK-EPDM-MINERALOEL",
+      "claim_order": 0,
+      "text_sha256": "77981f4cd30cae7d28d3dbf936ed46400acf3683de9026c401b2c782e7315469",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 572943ab-a324-5e1c-a883-0793683a3b63 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#572943ab-a324-5e1c-a883-0793683a3b63)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "NBR",
+          "FKM"
+        ],
+        "medium": [
+          "Mineralöl",
+          "Hydrauliköl",
+          "Kohlenwasserstoffe",
+          "Fette",
+          "Öl",
+          "HFC",
+          "HFD-R",
+          "Bremsflüssigkeit"
+        ],
+        "property": [
+          "Polarität",
+          "Quellung"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "f4bffbe5-fa32-5e1d-a31a-478ab1dab5b0",
+      "authority_fingerprint": "7179b7e3fbfae6f9f7ec5d354841ab2687fe81cb253cc219349be74f9b326f25",
+      "card_id": "FK-EPDM-MINERALOEL",
+      "claim_order": 1,
+      "text_sha256": "1c52b639b7e8fb83a830fefb0efb5a0236c22a23cc709f38240bba2f1cfb83c7",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim f4bffbe5-fa32-5e1d-a31a-478ab1dab5b0 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#f4bffbe5-fa32-5e1d-a31a-478ab1dab5b0)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "NBR",
+          "FKM"
+        ],
+        "medium": [
+          "Mineralöl",
+          "Hydrauliköl",
+          "Kohlenwasserstoffe",
+          "Fette",
+          "Öl",
+          "HFC",
+          "HFD-R",
+          "Bremsflüssigkeit"
+        ],
+        "property": [
+          "Polarität",
+          "Quellung"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "615b0ca0-b547-5e08-acf3-7f0f49a06238",
+      "authority_fingerprint": "5882b66025ad48299ca04939fff302693e91aa05980ad96143b08c974efdb751",
+      "card_id": "FK-EPDM-MINERALOEL",
+      "claim_order": 2,
+      "text_sha256": "33fc30fe192dd152b61c0ff3b9ebfdd2ddf1d81232048b7778181dd580507728",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 615b0ca0-b547-5e08-acf3-7f0f49a06238 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#615b0ca0-b547-5e08-acf3-7f0f49a06238)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "NBR",
+          "FKM"
+        ],
+        "medium": [
+          "Mineralöl",
+          "Hydrauliköl",
+          "Kohlenwasserstoffe",
+          "Fette",
+          "Öl",
+          "HFC",
+          "HFD-R",
+          "Bremsflüssigkeit"
+        ],
+        "property": [
+          "Polarität",
+          "Quellung"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "7abcb91b-360c-5a66-9026-3e814ef6459d",
+      "authority_fingerprint": "fa51d0579539303bbc00f454bc852b7e9eed33b467881d65e73631d644cecf04",
+      "card_id": "FK-NBR-OZON",
+      "claim_order": 0,
+      "text_sha256": "e0e61bca2181cb45eaf722e469f58ab8adea808455f704cd98d707ab74159e53",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 7abcb91b-360c-5a66-9026-3e814ef6459d (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#7abcb91b-360c-5a66-9026-3e814ef6459d)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "HNBR",
+          "EPDM",
+          "CR"
+        ],
+        "medium": [
+          "Ozon",
+          "UV",
+          "Witterung"
+        ],
+        "property": [
+          "Witterungsbeständigkeit",
+          "Ozonbeständigkeit"
+        ],
+        "application": [
+          "Außeneinsatz",
+          "im Freien"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "d31484a0-1b8e-5fb7-9df0-2ae1abc2eca7",
+      "authority_fingerprint": "c4378cf69a2b93f7368b9b496653946d4522b599d4263ef2a83522acb8141406",
+      "card_id": "FK-NBR-OZON",
+      "claim_order": 1,
+      "text_sha256": "be42e5e95285a4ac471b4a40a03d098dfd8e5d7e527d2ba28bc73fb4b63ecd46",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim d31484a0-1b8e-5fb7-9df0-2ae1abc2eca7 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#d31484a0-1b8e-5fb7-9df0-2ae1abc2eca7)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "HNBR",
+          "EPDM",
+          "CR"
+        ],
+        "medium": [
+          "Ozon",
+          "UV",
+          "Witterung"
+        ],
+        "property": [
+          "Witterungsbeständigkeit",
+          "Ozonbeständigkeit"
+        ],
+        "application": [
+          "Außeneinsatz",
+          "im Freien"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "c9dc1d53-185c-50d0-a50c-9d3b4205b5f2",
+      "authority_fingerprint": "cd9ddd628aed87a3bb7f6aae7018959d911ad66245058a3251e30eba7bd324f7",
+      "card_id": "FK-NBR-OZON",
+      "claim_order": 2,
+      "text_sha256": "866f1c3cc8aabe517c90f8d332ac8f259842c19d3e028a223a45571af2799384",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim c9dc1d53-185c-50d0-a50c-9d3b4205b5f2 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#c9dc1d53-185c-50d0-a50c-9d3b4205b5f2)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "HNBR",
+          "EPDM",
+          "CR"
+        ],
+        "medium": [
+          "Ozon",
+          "UV",
+          "Witterung"
+        ],
+        "property": [
+          "Witterungsbeständigkeit",
+          "Ozonbeständigkeit"
+        ],
+        "application": [
+          "Außeneinsatz",
+          "im Freien"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "b101e1be-5abc-59a4-bdc4-4d0f5e9309a2",
+      "authority_fingerprint": "db60d29b325fcbf6f2666b47ebcaacb6afbeeac947b90bd2e5e9019955eae1c7",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 0,
+      "text_sha256": "e2815b942ed2adac796a47161d83bc5bce2cdb33e01eb83f824598c7adf66b6c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim b101e1be-5abc-59a4-bdc4-4d0f5e9309a2 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#b101e1be-5abc-59a4-bdc4-4d0f5e9309a2)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "89e34403-dac5-5b5c-aa36-2a7248179f9a",
+      "authority_fingerprint": "24250d7ddd4665b02127faadaa882fbe8f2a66f27c7f44811248c3bcbad46d46",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 1,
+      "text_sha256": "76eae168f40edc9552745af8735ec9d3ee5709edd1f0eeb5ccc7e3d74da77cea",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 89e34403-dac5-5b5c-aa36-2a7248179f9a (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#89e34403-dac5-5b5c-aa36-2a7248179f9a)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "e4bb9cc3-5fd9-5f34-95b5-d945843d01a2",
+      "authority_fingerprint": "7173239515a094b0af97757b0fc2466d4db9336dbb4d0e6643ec69ba0be95ab4",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 2,
+      "text_sha256": "c105ca857e1933447191c7a802c2c7a0b4e4da5d23533e856e5bd90d21b12e50",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim e4bb9cc3-5fd9-5f34-95b5-d945843d01a2 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#e4bb9cc3-5fd9-5f34-95b5-d945843d01a2)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "30676ca8-9415-5aa6-be30-ac12566fc856",
+      "authority_fingerprint": "e5c3fa994f848301840588cfd271ead97a7cb50ef7b9ef13edfe224faf426701",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 3,
+      "text_sha256": "1d1f9c91ba13a7adbcd605fb3a6b8ee20898123e598b8ec8f6632a23100f4fca",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/o_ring_gb_en.pdf",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "https://www.teflon.com/en/products/product-selection-guide",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "bounded",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "0b883eb7-a93b-5d65-adb8-8bd267d4b0ca",
+      "authority_fingerprint": "b6b67b787396100eb6aaacb2abbc01919cd2d3ea636021d83beac3782d773332",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 4,
+      "text_sha256": "6411aeae8fcc7be53f204c5261d7ef167ac1f2605042027bf6d6e25a1b11a339",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "https://discover.parker.com/PTFE-Sealing-Materials",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part2",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "47a82429-75ac-5f31-964f-7caae37f0fd1",
+      "authority_fingerprint": "72a7b563fadf34ff98d38099cfb917a9003413a33a9d43f1ea17166c6a17596f",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 5,
+      "text_sha256": "cb7822d968c9d51d39b33d64852c7669cb99ff0b663c277e165461a4093bbd8b",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "https://discover.parker.com/PTFE-Sealing-Materials",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "https://www.teflon.com/en/products/resins/ptfe-granular/nxt-granular",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "23256fba-60e9-55e1-ac6e-9533b4b80d7a",
+      "authority_fingerprint": "d7d4e9b82214dc172b8858651f77a6915d1abb5e7ba7da77932011a962055659",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 6,
+      "text_sha256": "4aa0c2fa832cad4fdd70a279f5b65902882c26389896c8309600ea5d81f10d07",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "https://www.trelleborg.com/en/seals/your-industry/automotive/products",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "6d2eacef-dec2-5dba-ba23-4cb766a51b2c",
+      "authority_fingerprint": "a9ed2fc899af7f5e7fe82d27dfb518bd08b00b215ee6f9d2ecba0e0fc4fe5d41",
+      "card_id": "FK-PTFE-KALTFLUSS",
+      "claim_order": 7,
+      "text_sha256": "da18329cfd22be165273f55a1b99ad9d3c4e1e006961c7cdb3ce808cdce6bfb6",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "https://www.parker.com/content/dam/parker/na/united-states/industries/off-road/pdfs-offroad/PTFE%20Seal%20Design%20Guide.pdf",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [
+          "PTFE",
+          "FEP",
+          "PFA"
+        ],
+        "medium": [],
+        "property": [
+          "Kaltfluss",
+          "Kriechen",
+          "Rückstellung",
+          "chemische Beständigkeit",
+          "Reibung",
+          "Verschleiß",
+          "Füllstoffe",
+          "Werkstoffauswahl"
+        ],
+        "application": [
+          "statische Dichtung",
+          "O-Ring",
+          "dynamische Dichtung",
+          "federvorgespannte Dichtung"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "application_dependent",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "4cd12f3d-6a1f-5bbb-a24a-4b60f6783e12",
+      "authority_fingerprint": "6952aece8136bbfc20df353166cb9b4b2312160e32b37dd70a9a17c56aef3b0c",
+      "card_id": "FK-FKM-AMIN-LAUGE-KETON",
+      "claim_order": 0,
+      "text_sha256": "d30dd7d8d2767f61ff11abf120ab07938c04ad807bf5a6590a3a510b68c68e75",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 4cd12f3d-6a1f-5bbb-a24a-4b60f6783e12 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#4cd12f3d-6a1f-5bbb-a24a-4b60f6783e12)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "FKM",
+          "EPDM",
+          "FFKM"
+        ],
+        "medium": [
+          "Amine",
+          "Lauge",
+          "Natronlauge",
+          "Base",
+          "Ketone",
+          "Aceton",
+          "Ester",
+          "Kühlmittel"
+        ],
+        "property": [
+          "Medienbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "fbb026cb-1e79-5147-99c7-984cf54fa3dc",
+      "authority_fingerprint": "49baeecb46952be37f602ce69bd405f1f372402c06166bddb94ee93578aeff80",
+      "card_id": "FK-FKM-AMIN-LAUGE-KETON",
+      "claim_order": 1,
+      "text_sha256": "7551e1e26733941ea30092719b247d97d831a610baf63f06635abd58009a608c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim fbb026cb-1e79-5147-99c7-984cf54fa3dc (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#fbb026cb-1e79-5147-99c7-984cf54fa3dc)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "FKM",
+          "EPDM",
+          "FFKM"
+        ],
+        "medium": [
+          "Amine",
+          "Lauge",
+          "Natronlauge",
+          "Base",
+          "Ketone",
+          "Aceton",
+          "Ester",
+          "Kühlmittel"
+        ],
+        "property": [
+          "Medienbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "0365699c-b685-55ae-9826-bf18b88ebaec",
+      "authority_fingerprint": "4c449b2e6191fca2c863710d0166d5eb26ed68dd845cc2d7832116a650ba623e",
+      "card_id": "FK-FKM-AMIN-LAUGE-KETON",
+      "claim_order": 2,
+      "text_sha256": "745af0a7619226e3c9e32443b87a27a65022c038ac56b24ca752db7a6fbd4a4c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 0365699c-b685-55ae-9826-bf18b88ebaec (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#0365699c-b685-55ae-9826-bf18b88ebaec)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "FKM",
+          "EPDM",
+          "FFKM"
+        ],
+        "medium": [
+          "Amine",
+          "Lauge",
+          "Natronlauge",
+          "Base",
+          "Ketone",
+          "Aceton",
+          "Ester",
+          "Kühlmittel"
+        ],
+        "property": [
+          "Medienbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "d5245bd0-107e-5f0b-a8a8-fb66ca7fc8ee",
+      "authority_fingerprint": "99dbc9d59f88e6328c90430ab3fe376341d4a046b6a096545adc6bf8f5b7ea35",
+      "card_id": "FK-VMQ-DYNAMISCH",
+      "claim_order": 0,
+      "text_sha256": "24481a1b063e616d9558e026f00caa34fbbc2b913b95074884167bbfb78b6143",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim d5245bd0-107e-5f0b-a8a8-fb66ca7fc8ee (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#d5245bd0-107e-5f0b-a8a8-fb66ca7fc8ee)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "VMQ",
+          "Silikon",
+          "FKM",
+          "PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "mechanische Eigenschaften",
+          "Abrasion",
+          "Reißfestigkeit",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "dynamisch",
+          "Wellendichtung",
+          "schnelldrehend",
+          "abrasiv"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "5b592330-e38b-5fa7-9733-8b998c4bd600",
+      "authority_fingerprint": "70a7cfa72c8ccc0b0bb1da88f340d220ec6422bc3a9cb780e117b17d3428161b",
+      "card_id": "FK-VMQ-DYNAMISCH",
+      "claim_order": 1,
+      "text_sha256": "3983d8e85283eeddff0d4da06165d6c053f943dffa2ad9ed969f45e330143de0",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 5b592330-e38b-5fa7-9733-8b998c4bd600 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#5b592330-e38b-5fa7-9733-8b998c4bd600)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "VMQ",
+          "Silikon",
+          "FKM",
+          "PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "mechanische Eigenschaften",
+          "Abrasion",
+          "Reißfestigkeit",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "dynamisch",
+          "Wellendichtung",
+          "schnelldrehend",
+          "abrasiv"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "78ac3cd2-cbc4-5171-ae07-eeda3073abb9",
+      "authority_fingerprint": "050c2ca42ad1f18319ea3aead583d281c4877da51da343d391bd340d5ef5c1f2",
+      "card_id": "FK-VMQ-DYNAMISCH",
+      "claim_order": 2,
+      "text_sha256": "ad7e9241c35d6584fbec68d151a03826c4d8c095452272fcc11ddae7240a6838",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 78ac3cd2-cbc4-5171-ae07-eeda3073abb9 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#78ac3cd2-cbc4-5171-ae07-eeda3073abb9)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "VMQ",
+          "Silikon",
+          "FKM",
+          "PTFE"
+        ],
+        "medium": [],
+        "property": [
+          "mechanische Eigenschaften",
+          "Abrasion",
+          "Reißfestigkeit",
+          "Temperaturbereich"
+        ],
+        "application": [
+          "dynamisch",
+          "Wellendichtung",
+          "schnelldrehend",
+          "abrasiv"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "902791ce-d2f2-580a-ae97-e480853d9e10",
+      "authority_fingerprint": "41eb66a6cdf265c7596dca424dc5574647bed7247c0e31cf950f3fbe9c1d8b5a",
+      "card_id": "FK-NBR-DAUERTEMP",
+      "claim_order": 0,
+      "text_sha256": "c61c8d8f8604fedda2161a1933a2e265e890e1a745189172f859886e6c270b28",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 902791ce-d2f2-580a-ae97-e480853d9e10 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#902791ce-d2f2-580a-ae97-e480853d9e10)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "HNBR",
+          "FKM"
+        ],
+        "medium": [
+          "Synthetiköl",
+          "Getriebeöl"
+        ],
+        "property": [
+          "Dauertemperatur"
+        ],
+        "application": [
+          "Getriebe"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "a81398ab-0479-5ffd-92c8-5cb1a30c3ae6",
+      "authority_fingerprint": "c3fce151004b5a9a065a84a58e8f496097afe5ab2c17dbd96f503b5810c9f20c",
+      "card_id": "FK-NBR-DAUERTEMP",
+      "claim_order": 1,
+      "text_sha256": "77b1e580c0b4760d833151bddfa5a2c30fa4a2a112e1a82065231e1ccf5bcb5c",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim a81398ab-0479-5ffd-92c8-5cb1a30c3ae6 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#a81398ab-0479-5ffd-92c8-5cb1a30c3ae6)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "HNBR",
+          "FKM"
+        ],
+        "medium": [
+          "Synthetiköl",
+          "Getriebeöl"
+        ],
+        "property": [
+          "Dauertemperatur"
+        ],
+        "application": [
+          "Getriebe"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "dc6e11a0-4a53-540f-a1b3-f22b9ac34d55",
+      "authority_fingerprint": "32b1360f2c573a3974b40dcc905f88e886c4dad0a73542492f7e6322f14360b1",
+      "card_id": "FK-NBR-DAUERTEMP",
+      "claim_order": 2,
+      "text_sha256": "cb116e50a074dc15259cabd7743da838d4ea7156dc8a63f66b52d685128b0be3",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim dc6e11a0-4a53-540f-a1b3-f22b9ac34d55 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#dc6e11a0-4a53-540f-a1b3-f22b9ac34d55)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "NBR",
+          "HNBR",
+          "FKM"
+        ],
+        "medium": [
+          "Synthetiköl",
+          "Getriebeöl"
+        ],
+        "property": [
+          "Dauertemperatur"
+        ],
+        "application": [
+          "Getriebe"
+        ]
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "b9b0bb3e-4865-5237-b627-424c0b3aefc1",
+      "authority_fingerprint": "564d1b74d36200422eea3b790c01d4d2d5175550d7341c7255712a2fc6c1833f",
+      "card_id": "FK-FOODGRADE-FETT",
+      "claim_order": 0,
+      "text_sha256": "e60f48eb7d746315e735b84fb54face9f1564bd62c54312059235060819d59bf",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim b9b0bb3e-4865-5237-b627-424c0b3aefc1 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#b9b0bb3e-4865-5237-b627-424c0b3aefc1)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "FKM",
+          "VMQ",
+          "FFKM"
+        ],
+        "medium": [
+          "Schokolade",
+          "Kakaobutter",
+          "Fette",
+          "Lebensmittel"
+        ],
+        "property": [
+          "food-grade",
+          "Zulassung",
+          "Fettbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "840256e2-f061-5b03-b724-bce28615eb62",
+      "authority_fingerprint": "a837586fb39cd2ee1fce42a48d3964ba80a91de9370780d289cfd921baaa1073",
+      "card_id": "FK-FOODGRADE-FETT",
+      "claim_order": 1,
+      "text_sha256": "749a0479b800bdbd3f59ddef0fcef457a9540864750f062d4c8b9e90dad7a70a",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 840256e2-f061-5b03-b724-bce28615eb62 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#840256e2-f061-5b03-b724-bce28615eb62)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "FKM",
+          "VMQ",
+          "FFKM"
+        ],
+        "medium": [
+          "Schokolade",
+          "Kakaobutter",
+          "Fette",
+          "Lebensmittel"
+        ],
+        "property": [
+          "food-grade",
+          "Zulassung",
+          "Fettbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "3ed892f8-566b-55d0-902e-7a2bd56b28a5",
+      "authority_fingerprint": "bbc13de34ce9dbddb343eed54ed0a84fb6ee010fadf04622085b8eda2824259d",
+      "card_id": "FK-FOODGRADE-FETT",
+      "claim_order": 2,
+      "text_sha256": "8616279cbc4e412dcaa325cea8e0f65db34270aa1e57ec16209351d6dbc17e4b",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 3ed892f8-566b-55d0-902e-7a2bd56b28a5 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#3ed892f8-566b-55d0-902e-7a2bd56b28a5)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "FKM",
+          "VMQ",
+          "FFKM"
+        ],
+        "medium": [
+          "Schokolade",
+          "Kakaobutter",
+          "Fette",
+          "Lebensmittel"
+        ],
+        "property": [
+          "food-grade",
+          "Zulassung",
+          "Fettbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "3534adec-032f-5c81-b916-2f4c757eb238",
+      "authority_fingerprint": "4a5aa1e69df8bac560dcce12e0fc09626c7532d15b2bf0a94efc9ab1fa1fc18c",
+      "card_id": "FK-FOODGRADE-FETT",
+      "claim_order": 3,
+      "text_sha256": "9c3ca006cf880d79838a51998c41648f440d0dd411bcbf6dde8bdbf69277c3e8",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "internal_domain_expert_attestation",
+      "external_evidence": false,
+      "evidence": [
+        {
+          "citation": "sealingAI owner domain-expert attestation; no external technical evidence asserted; claim 3534adec-032f-5c81-b916-2f4c757eb238 (repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json#3534adec-032f-5c81-b916-2f4c757eb238)",
+          "source_type": "internal_domain_expert_attestation",
+          "external_evidence": false,
+          "reviewer_subject": "7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+          "decision_record": "repo://docs/ssot/reviews/2026-07-12-owner-claim-approval.json"
+        }
+      ],
+      "applicability": {
+        "material": [
+          "EPDM",
+          "FKM",
+          "VMQ",
+          "FFKM"
+        ],
+        "medium": [
+          "Schokolade",
+          "Kakaobutter",
+          "Fette",
+          "Lebensmittel"
+        ],
+        "property": [
+          "food-grade",
+          "Zulassung",
+          "Fettbeständigkeit"
+        ],
+        "application": []
+      },
+      "uncertainty": "not_sufficiently_supported",
+      "transferability": "not_assessed",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2026-10-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "452ceff8-082e-5d32-b4c2-4b2da3af6a3e",
+      "authority_fingerprint": "c994bbc82dba4780aba076ee4ad50d26b0d787be05a7903fce11030341293f0d",
+      "card_id": "FK-ORING-VERPRESSUNG",
+      "claim_order": 0,
+      "text_sha256": "3b5420049fe4da49c5b450fdc59cc432ddd31a4d55ee5c168259a6223d6dd398",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, Section 3.6 Squeeze, page 3-9 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 3601-2 (Nutauslegung)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Nutfüllung",
+          "Füllgrad",
+          "Nutauslegung"
+        ],
+        "application": [
+          "O-Ring"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "9718d7b0-3b15-56c7-9cb3-507a8ef007c2",
+      "authority_fingerprint": "7616d198bd50a3fd8e79ee5b79885f5f1a129d31b08166225abb04406424cd2f",
+      "card_id": "FK-ORING-VERPRESSUNG",
+      "claim_order": 1,
+      "text_sha256": "21baba6fee4c91dad3d5da71597a3534e63b6eb240ea74cfa784f4dc21366ffc",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, Section 3.7 Gland Fill, page 3-9 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Nutfüllung",
+          "Füllgrad",
+          "Nutauslegung"
+        ],
+        "application": [
+          "O-Ring"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "primary_source_range_correction_20260712; owner_domain_approval_ssot_v2_20260712"
+    },
+    {
+      "claim_id": "cb18da63-7d16-5c79-814e-0d7712552113",
+      "authority_fingerprint": "93aa5010d99330f09fb64caf84ce6a6596c5dca540a0995faed6667b797c047e",
+      "card_id": "FK-ORING-VERPRESSUNG",
+      "claim_order": 2,
+      "text_sha256": "77659f4657549b34bc819e49151996361761fc62608a6d529002f281d4c15dbf",
+      "technical_text_changed": false,
+      "review_status": "approved",
+      "evidence_class": "external_technical_sources",
+      "external_evidence": true,
+      "evidence": [
+        {
+          "citation": "Parker O-Ring Handbook ORD 5700, Sections 3.6-3.7, page 3-9 (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        },
+        {
+          "citation": "ISO 3601-2 (Nutauslegung)",
+          "source_type": "external_technical_reference",
+          "external_evidence": true
+        }
+      ],
+      "applicability": {
+        "material": [],
+        "medium": [],
+        "property": [
+          "Verpressung",
+          "Nutfüllung",
+          "Füllgrad",
+          "Nutauslegung"
+        ],
+        "application": [
+          "O-Ring"
+        ]
+      },
+      "uncertainty": "conditional",
+      "transferability": "family_level_orientation",
+      "conflicts": [],
+      "reviewed_at": "2026-07-12T10:29:44Z",
+      "review_expires_at": "2027-01-12T10:29:44Z",
+      "change_reason": "owner_domain_approval_ssot_v2_20260712"
+    }
+  ]
+}

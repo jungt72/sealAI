@@ -57,19 +57,24 @@ status corrections remain audited and derived Qdrant data is rebuildable.
 - G7 was closed in the foundation change: the production workflow is manual and
   final-only, and the release wrapper rejects candidates unless `APP_ENV` is
   explicitly `development`, `test`, or `staging`.
-- Every seed claim lacking an explicit independent human reviewer, review time,
-  and future review expiry is now quarantined, excluded from retrieval, and
-  deleted from the derived index. This currently places all 79 formerly
-  declared-reviewed claims in quarantine: 51 are source-backed candidates for
-  domain adjudication, while 28 additionally lack external evidence. The 522
-  draft claims remain non-authoritative review material. No test or release
-  bootstrap identity substitutes for a domain reviewer.
+- The foundation first quarantined every seed claim lacking an explicit
+  independent human reviewer, review time, and future review expiry. On
+  2026-07-12 the sealingAI owner approved the exact 79-claim review queue under
+  Keycloak subject `7748ba15-bef4-43b4-b95a-cf80fcc476d8`. The decision and all
+  final authority fingerprints are recorded in
+  `docs/ssot/reviews/2026-07-12-owner-claim-approval.json`. Fifty-one claims
+  retain external technical references. The other 28 are explicitly typed as
+  internal domain-expert attestations without external evidence, carry
+  `not_sufficiently_supported`/`not_assessed`, and expire after 90 days. The 522
+  draft claims remain non-authoritative review material. No test, model, or
+  release-bootstrap identity substitutes for the human reviewer.
 - Claims carry typed evidence, applicability, uncertainty, transferability,
   conflicts, reviewer identity, review time, and expiry. Expired or incomplete
   approvals are excluded again at authoritative Postgres resolution.
 - Logical claim IDs are now independent from whole-document revisions. A
   separate authority fingerprint covers the imported text, card version, kind,
-  scope, sources, applicability, uncertainty, transferability, and conflicts.
+  scope, sources, typed evidence, applicability, uncertainty, transferability,
+  and conflicts.
   Human decisions survive unrelated catalog revisions but are automatically
   quarantined, with an append-only audit event, when that authority contract
   changes. Explicit review origin prevents policy/bootstrap activity from being
@@ -94,5 +99,6 @@ status corrections remain audited and derived Qdrant data is rebuildable.
   decision records, responsibilities, and append-only human technical reviews.
   Reviews use the SSoT states Approved, Rejected, and Conditional, reject
   self-review, and keep component and manufacturer release authority external.
-- H1 remains `in_build` and fail-closed. Independent domain adjudication of the
-  seed plus the exact final M15 replay are external activation prerequisites.
+- H1 remains `in_build` and fail-closed until the exact final M15 replay is run,
+  human-adjudicated, and bound to the immutable runtime candidate. The seed
+  domain-adjudication prerequisite is closed by the 2026-07-12 owner record.
