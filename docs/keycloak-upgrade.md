@@ -55,9 +55,17 @@ Keycloak tables by hand.
 ## Production upgrade
 
 1. Confirm the preflight proof and current full Postgres backup.
-2. Update only `KEYCLOAK_IMAGE` in `.env.prod` to the immutable
+2. Verify the signed image before changing production:
+
+```bash
+./ops/verify-image-attestations.sh \
+  ghcr.io/jungt72/sealai-keycloak:<commit>@sha256:<digest> \
+  <commit> .github/workflows/keycloak.yml
+```
+
+3. Update only `KEYCLOAK_IMAGE` in `.env.prod` to the immutable
    `tag@sha256:digest` reference.
-3. Pull and recreate Keycloak without recreating Postgres:
+4. Pull and recreate Keycloak without recreating Postgres:
 
 ```bash
 COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml"

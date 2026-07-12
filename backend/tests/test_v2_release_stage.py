@@ -34,6 +34,11 @@ def test_final_is_fail_closed_and_candidate_is_auditable():
     assert 'EVAL_STATUS="pending"' in script
     assert '"release_stage": release_stage' in script
     assert '"eval_status": eval_status' in script
+    assert "local unsigned builds are forbidden" in script
+    assert "verify-image-attestations.sh" in script
+    assert script.index("verify-image-attestations.sh") < script.index(
+        "creating verified pre-migration backup"
+    )
 
 
 def test_candidate_is_forbidden_for_production_configuration():
