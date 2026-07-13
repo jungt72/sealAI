@@ -18,7 +18,8 @@ calls `ops/keycloak_ensure_roles.sh`. The accepted profiles are:
 
 - `test`: no forced OTP for the privileged test owner, no email verification,
   and no password-reset link while SMTP is absent;
-- `production`: role-aware OTP for `admin`, verified email and password reset;
+- `production`: enforced OTP enrollment for the privileged owner, verified email
+  and password reset;
   reconciliation fails closed until Keycloak SMTP is configured.
 
 Both profiles apply:
@@ -29,7 +30,9 @@ Both profiles apply:
 - owner-specific realm-local `realm-management/realm-admin`;
 - E-mail-as-username registration, optional name fields and German default locale;
 - `user_basic` as a default role for self-service accounts;
-- a role-aware Conditional OTP Form with a non-privileged `skip` fallback;
+- Keycloak's standard ordered browser flow: password authentication first,
+  credential-conditioned OTP second; the OTP subflow is disabled entirely in
+  `test` and enabled conditionally in `production`;
 - revocation of every pre-existing owner session before recovery access is removed;
 - exact redirect/origin and PKCE policies for `nextauth` and `sealai-v2`;
 - deletion of the short-lived recovery user.

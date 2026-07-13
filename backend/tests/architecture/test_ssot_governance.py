@@ -160,6 +160,19 @@ def test_keycloak_provisioning_covers_governed_reviewer_roles() -> None:
         assert f'"{role}"' in provisioning
 
 
+def test_keycloak_mfa_runs_only_after_user_identification() -> None:
+    provisioning = (REPO / "ops" / "keycloak_ensure_roles.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "provider=auth-conditional-otp-form" not in provisioning
+    assert '.providerId == "auth-username-password-form"' in provisioning
+    assert '.providerId == "conditional-user-configured"' in provisioning
+    assert "otp_requirement=DISABLED" in provisioning
+    assert "otp_requirement=CONDITIONAL" in provisioning
+    assert "OTP still executes before user identification" in provisioning
+
+
 def test_owner_decisions_and_companion_contracts_are_present() -> None:
     decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
     for number in range(1, 9):

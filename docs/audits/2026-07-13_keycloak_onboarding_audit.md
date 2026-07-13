@@ -12,10 +12,11 @@ visible browser onboarding experience.
 > test exception because the enrolled authenticator is unavailable. The live
 > realm is currently reconciled with `KEYCLOAK_SECURITY_PROFILE=test`: the
 > owner's OTP credential and pending OTP action are removed, ordinary login is
-> unblocked, and the conditional OTP execution defaults to `skip`. This is not a
-> production release posture. The versioned `production` profile restores
-> role-conditioned OTP for `admin`, requires email verification and password
-> recovery, and fails reconciliation when realm SMTP is absent.
+> unblocked, and the nested conditional OTP subflow is disabled. This is not a
+> production release posture. The versioned `production` profile restores the
+> standard password-then-OTP flow and requires fresh OTP enrollment for the
+> privileged owner, requires email verification and password recovery, and
+> fails reconciliation when realm SMTP is absent.
 >
 > KCA-01 is remediated in code by deriving a stable private workspace from the
 > verified issuer and subject when no explicit tenant claim exists, and by
@@ -142,11 +143,14 @@ phishing-resistant passkey/WebAuthn credential; retain TOTP and recovery codes
 as controlled fallback methods. Password/OTP reset for privileged accounts must
 not silently downgrade the required assurance level.
 
-**Remediation:** Implemented as two explicit desired-state profiles. The
-production flow forces OTP for the `admin` role and skips it for ordinary users;
-the temporary test flow skips OTP for all users. Reconciliation revokes owner
-sessions after a profile change. Passkeys and recovery codes remain a
-production hardening item.
+**Remediation:** Implemented as two explicit desired-state profiles. Both use
+Keycloak's supported browser-flow order, so an OTP authenticator never runs
+before username/password has established the user. The production profile
+enables the credential-conditioned OTP subflow and requires the privileged
+owner to enroll whenever no OTP credential exists. The temporary test profile
+disables that subflow for every user and removes the owner's inaccessible OTP
+credential. Reconciliation revokes owner sessions after a profile change.
+Passkeys and recovery codes remain a production hardening item.
 
 ### KCA-03 — Account recovery is enabled but cannot send mail
 
@@ -248,8 +252,9 @@ mappers. Exports remain rollback artifacts, not the primary configuration API.
 
 **Remediation:** Implemented. The idempotent reconciler asserts the selected
 security profile, realm policy, registration shape, roles, clients,
-role-conditioned OTP flow, and redacted live readback. Bootstrap exports were
-aligned but remain recovery artifacts rather than the production authority.
+ordered password/OTP flow, privileged enrollment state, and redacted live
+readback. Bootstrap exports were aligned but remain recovery artifacts rather
+than the production authority.
 
 ### KCA-08 — Privileged recovery lacks a second usable factor
 
