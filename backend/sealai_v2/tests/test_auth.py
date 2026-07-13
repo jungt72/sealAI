@@ -194,11 +194,14 @@ def test_jwks_key_without_kid_never_matches():
         v.validate(_tok(priv, kid="k1"))
 
 
-def test_missing_tenant_claim_fails_closed():
+def test_missing_tenant_claim_gets_stable_private_workspace():
     priv = _keypair()
     v = _validator(_jwks(priv.public_key()))
-    with pytest.raises(AuthError):
-        v.validate(_tok(priv, claims={"tenant_id": None}))
+    first = v.validate(_tok(priv, claims={"tenant_id": None}))
+    second = v.validate(_tok(priv, claims={"tenant_id": None, "sid": "another"}))
+    assert first.tenant_id.startswith("personal-")
+    assert first.tenant_id == second.tenant_id
+    assert first.tenant_id != "tenant-A"
 
 
 def test_fake_validator_maps_tokens_and_rejects_unknown():

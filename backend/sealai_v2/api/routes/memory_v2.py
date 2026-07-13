@@ -125,7 +125,7 @@ def summary(
     identity: VerifiedIdentity = Depends(current_identity),
     store: MemoryStore = Depends(get_memory_store),
 ) -> dict:
-    return store.summary(tenant_id=identity.tenant_id)
+    return store.summary(tenant_id=identity.tenant_id, owner_subject=identity.subject)
 
 
 @router.get("/items")
@@ -143,6 +143,7 @@ def list_items(
         status=status,
         project_id=project_id,
         case_id=case_id,
+        owner_subject=identity.subject,
     )
     return {"items": [_item_dict(it) for it in items]}
 
@@ -153,7 +154,11 @@ def get_item(
     identity: VerifiedIdentity = Depends(current_identity),
     store: MemoryStore = Depends(get_memory_store),
 ) -> dict:
-    item = store.get_item(tenant_id=identity.tenant_id, item_id=item_id)
+    item = store.get_item(
+        tenant_id=identity.tenant_id,
+        item_id=item_id,
+        owner_subject=identity.subject,
+    )
     if item is None:
         # Same 404 whether the id doesn't exist or belongs to another tenant (P0 — see
         # test_status_action_never_leaks_existence_across_tenants for the established precedent).
@@ -219,6 +224,7 @@ def create_candidate(
             )
             for s in body.sources
         ),
+        owner_subject=identity.subject,
         created_at=now,
         updated_at=now,
     )
@@ -249,6 +255,7 @@ def _transition(
             now=now,
             note=body.note,
             purge_after=purge_after,
+            owner_subject=identity.subject,
         )
     except MemoryItemNotFound:
         raise HTTPException(status_code=404, detail="memory item not found") from None

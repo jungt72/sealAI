@@ -29,7 +29,11 @@ from sealai_v2.api.deps import (
 from sealai_v2.api.serializers import chat_response
 from sealai_v2.api.sse import STREAM_SCHEMA_VERSION, stream_frames
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
+from sealai_v2.core.contracts import (
+    ConversationAccessDenied,
+    SessionContext,
+    VerifiedIdentity,
+)
 from sealai_v2.pipeline.pipeline import (
     Pipeline,
     ProductModeUnavailable,
@@ -82,7 +86,10 @@ async def _run_pipeline(
     return await pipeline.run(
         req.message,
         tenant=TenantContext(identity.tenant_id),
-        session=SessionContext(session_id=req.case_id or identity.session_id),
+        session=SessionContext(
+            session_id=req.case_id or identity.session_id,
+            owner_subject=identity.subject,
+        ),
         flags=flags_from_settings(settings),
         progress=progress,
         token_sink=token_sink,
@@ -102,6 +109,8 @@ async def chat(
         raise HTTPException(
             status_code=503, detail=_mode_unavailable_detail(exc)
         ) from exc
+    except ConversationAccessDenied as exc:
+        raise HTTPException(status_code=404, detail="conversation not found") from exc
     return chat_response(result)
 
 
@@ -136,6 +145,16 @@ async def chat_stream(
             queue.put_nowait(("result", chat_response(result)))
         except ProductModeUnavailable as exc:
             queue.put_nowait(("error", _mode_unavailable_detail(exc)))
+        except ConversationAccessDenied:
+            queue.put_nowait(
+                (
+                    "error",
+                    {
+                        "code": "conversation_not_found",
+                        "message": "Die Unterhaltung wurde nicht gefunden.",
+                    },
+                )
+            )
         except Exception:  # noqa: BLE001 — surfaced as ONE fixed-message error frame
             _log.exception("chat/stream pipeline failed")
             queue.put_nowait(("error", {"message": _STREAM_ERROR_MESSAGE}))

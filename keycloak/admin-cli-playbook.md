@@ -13,16 +13,35 @@ all Keycloak nodes are stopped:
 ./ops/keycloak_recover_admin.sh --apply
 ```
 
-The recovery wrapper calls `ops/keycloak_ensure_roles.sh`, which applies:
+The recovery wrapper reads `KEYCLOAK_SECURITY_PROFILE` from `.env.prod` and
+calls `ops/keycloak_ensure_roles.sh`. The accepted profiles are:
+
+- `test`: no forced OTP for the privileged test owner, no email verification,
+  and no password-reset link while SMTP is absent;
+- `production`: role-aware OTP for `admin`, verified email and password reset;
+  reconciliation fails closed until Keycloak SMTP is configured.
+
+Both profiles apply:
 
 - realm security, session, brute-force, password and event policies;
 - product roles and reviewer roles;
 - `/platform-admins` and `/governance-reviewers` product-role group mappings;
 - owner-specific realm-local `realm-management/realm-admin`;
-- `UPDATE_PASSWORD` and `CONFIGURE_TOTP` for the privileged owner;
+- E-mail-as-username registration, optional name fields and German default locale;
+- `user_basic` as a default role for self-service accounts;
+- a role-aware Conditional OTP Form with a non-privileged `skip` fallback;
 - revocation of every pre-existing owner session before recovery access is removed;
 - exact redirect/origin and PKCE policies for `nextauth` and `sealai-v2`;
 - deletion of the short-lived recovery user.
+
+The temporary test exception must be explicit in production's environment:
+
+```dotenv
+KEYCLOAK_SECURITY_PROFILE=test
+```
+
+Before launch, configure SMTP, change the value to `production`, run the
+recovery wrapper, and complete the newly required OTP enrollment.
 
 ## Manual authenticated reconciliation
 

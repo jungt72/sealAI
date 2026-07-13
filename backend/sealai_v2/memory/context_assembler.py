@@ -163,7 +163,7 @@ class MemoryContextService:
         self._collection = collection
 
     async def assemble(
-        self, query: str, *, tenant_id: str, now: str
+        self, query: str, *, tenant_id: str, now: str, owner_subject: str = ""
     ) -> MemoryContextBundle:
         import asyncio
         import logging
@@ -179,6 +179,7 @@ class MemoryContextService:
                 embedder=self._embedder,
                 store=self._store,
                 now=now,
+                owner_subject=owner_subject,
                 k=MAX_ITEMS,
                 collection=self._collection,
             )

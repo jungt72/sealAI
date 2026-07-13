@@ -16,6 +16,7 @@ def _seed(pipeline, tenant, session, feld, wert):
         question="q",
         answer="a",
         facts=(RememberedFact(feld, wert),),
+        owner_subject="user-A" if tenant == "tenant-A" else "user-B",
     )
 
 
@@ -117,6 +118,34 @@ def test_list_conversations_never_leaks_across_tenants():
     r = client.get("/api/v2/conversations", headers=auth("tok-A"))
     case_ids = {c["case_id"] for c in r.json()["cases"]}
     assert case_ids == {"sess-A"}
+
+
+def test_same_tenant_user_cannot_list_read_or_mutate_another_users_conversation():
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-A", "private-A", "medium", "Öl")
+
+    listed = client.get("/api/v2/conversations", headers=auth("tok-A2"))
+    assert listed.status_code == 200
+    assert listed.json()["cases"] == []
+
+    read = client.get(
+        "/api/v2/conversations/current/memory",
+        params={"case_id": "private-A"},
+        headers=auth("tok-A2"),
+    )
+    assert read.status_code == 404
+
+    edit = client.put(
+        "/api/v2/conversations/current/facts/medium",
+        params={"case_id": "private-A"},
+        json={"wert": "HACKED"},
+        headers=auth("tok-A2"),
+    )
+    assert edit.status_code == 404
+    assert (
+        pipeline.memory.case_state(tenant_id="tenant-A", session_id="private-A")[0].wert
+        == "Öl"
+    )
 
 
 def test_case_id_query_param_overrides_the_tokens_session_for_view_memory():

@@ -12,6 +12,7 @@ from sealai_v2.security.auth import FakeAuthValidator
 IDENTITIES = {
     "owner-a": VerifiedIdentity("tenant-a", "session-a", "owner-a"),
     "owner-b": VerifiedIdentity("tenant-b", "session-b", "owner-b"),
+    "owner-c": VerifiedIdentity("tenant-a", "session-c", "owner-c"),
     "reviewer-a": VerifiedIdentity(
         "tenant-a",
         "session-r",
@@ -81,6 +82,16 @@ def test_case_api_preserves_tenant_boundary_and_release_boundary() -> None:
 
     denied = client.get(f"/api/v2/cases/{case_id}", headers=_auth("owner-b"))
     assert denied.status_code == 404
+    same_tenant_denied = client.get(
+        f"/api/v2/cases/{case_id}", headers=_auth("owner-c")
+    )
+    assert same_tenant_denied.status_code == 404
+    same_tenant_mutation_denied = client.post(
+        f"/api/v2/cases/{case_id}/snapshots",
+        headers=_auth("owner-c"),
+        json={"state": {"seal_type": "O-Ring"}},
+    )
+    assert same_tenant_mutation_denied.status_code == 404
     bundle = client.get(f"/api/v2/cases/{case_id}", headers=_auth("owner-a"))
     assert bundle.status_code == 200
     assert "keine Bauteil" in bundle.json()["release_boundary"]

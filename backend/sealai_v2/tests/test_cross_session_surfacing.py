@@ -78,6 +78,29 @@ def test_cross_tenant_durable_isolation_p0(db_url):
         x.remember_durable(tenant_id="  ", facts=(RememberedFact("x", "y"),))
 
 
+def test_same_tenant_durable_facts_are_isolated_by_verified_subject(db_url):
+    x = _x(db_url)
+    x.remember_durable(
+        tenant_id="A",
+        owner_subject="user-A",
+        facts=(RememberedFact("anwendung", "RWDR Getriebe"),),
+    )
+    assert (
+        x.relevant_facts(
+            tenant_id="A",
+            owner_subject="user-B",
+            query="Getriebe-Anwendung?",
+        )
+        == ()
+    )
+    visible = x.relevant_facts(
+        tenant_id="A",
+        owner_subject="user-A",
+        query="Getriebe-Anwendung?",
+    )
+    assert any(f.feld == "anwendung" and "Getriebe" in f.wert for f in visible)
+
+
 def test_durable_facts_survive_restart(db_url):
     _x(db_url).remember_durable(
         tenant_id="A", facts=(RememberedFact("anwendung", "RWDR Getriebe"),)

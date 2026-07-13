@@ -260,6 +260,14 @@ class AuthError(RuntimeError):
     reason string is for logs, NOT for the client (no oracle for an attacker)."""
 
 
+class ConversationAccessDenied(PermissionError):
+    """Raised when a verified subject attempts to access another subject's session.
+
+    API routes deliberately map this to the same not-found response as an unknown session so the
+    ownership check cannot be used as an existence oracle.
+    """
+
+
 @dataclass(frozen=True)
 class VerifiedIdentity:
     """The ONLY source of request identity (M6c P0). Derived from a cryptographically VERIFIED token
@@ -569,6 +577,7 @@ class SessionContext:
     repository key — both mandatory (P0). Memory is per-session: absent session ⇒ memory is inert."""
 
     session_id: str
+    owner_subject: str = ""
 
 
 @dataclass(frozen=True)
@@ -726,7 +735,13 @@ class ConversationMemory(Protocol):
     adapter pattern). Tenant scope is a MANDATORY repository-layer parameter (P0 — server-side only).
     The concrete store also carries the user-control + history surface (view/edit/delete/clear/list)."""
 
-    def recall(self, *, tenant_id: str, session_id: str) -> MemoryView: ...
+    def assert_session_access(
+        self, *, tenant_id: str, session_id: str, owner_subject: str
+    ) -> None: ...
+
+    def recall(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> MemoryView: ...
 
     def record_turn(
         self,
@@ -738,6 +753,7 @@ class ConversationMemory(Protocol):
         facts: tuple["RememberedFact", ...] = (),
         now: str | None = None,
         expected_case_revision: int | None = None,
+        owner_subject: str = "",
     ) -> None: ...
 
     def merge_facts(
@@ -747,6 +763,7 @@ class ConversationMemory(Protocol):
         session_id: str,
         facts: tuple["RememberedFact", ...],
         expected_case_revision: int | None = None,
+        owner_subject: str = "",
     ) -> int: ...
 
 
@@ -758,11 +775,15 @@ class CrossSessionMemory(Protocol):
     scope mandatory (P0)."""
 
     def relevant_facts(
-        self, *, tenant_id: str, query: str, k: int = 5
+        self, *, tenant_id: str, query: str, k: int = 5, owner_subject: str = ""
     ) -> tuple["RememberedFact", ...]: ...
 
     def remember_durable(
-        self, *, tenant_id: str, facts: tuple["RememberedFact", ...]
+        self,
+        *,
+        tenant_id: str,
+        facts: tuple["RememberedFact", ...],
+        owner_subject: str = "",
     ) -> None: ...
 
 
