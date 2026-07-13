@@ -144,7 +144,8 @@ body#keycloak-bg {
   margin-bottom: 0;
 }
 
-.pf-v5-c-form__group:has(.pf-v5-c-check),
+/* In Keycloak's combined login form the remember-me checkbox lives inside the
+   password group. Hide only the checkbox, never its credential container. */
 .pf-v5-c-check {
   display: none;
 }
