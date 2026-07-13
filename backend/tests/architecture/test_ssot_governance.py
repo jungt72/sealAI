@@ -174,6 +174,15 @@ def test_keycloak_mfa_runs_only_after_user_identification() -> None:
     assert "OTP still executes before user identification" in provisioning
 
 
+def test_keycloak_theme_does_not_hide_password_group_with_remember_me() -> None:
+    theme_css = (
+        REPO / "keycloak/themes/sealai-b2b/login/resources/css/sealai-b2b-v30.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".pf-v5-c-form__group:has(.pf-v5-c-check)" not in theme_css
+    assert ".pf-v5-c-check {" in theme_css
+
+
 def test_owner_decisions_and_companion_contracts_are_present() -> None:
     decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
     for number in range(1, 9):
