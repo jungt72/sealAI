@@ -71,11 +71,20 @@ kcadm_create_json() {
   docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_JSON" >/dev/null
 }
 
+flow_executions() {
+  local flow_alias="$1"
+  local encoded_flow_alias
+  encoded_flow_alias="$(jq -rn --arg value "$flow_alias" '$value | @uri')"
+  kcadm get "authentication/flows/$encoded_flow_alias/executions" -r "$KEYCLOAK_REALM"
+}
+
 set_execution_requirement() {
   local flow_alias="$1"
   local execution_id="$2"
   local requirement="$3"
-  kcadm update "authentication/flows/$flow_alias/executions" -r "$KEYCLOAK_REALM" -n \
+  local encoded_flow_alias
+  encoded_flow_alias="$(jq -rn --arg value "$flow_alias" '$value | @uri')"
+  kcadm update "authentication/flows/$encoded_flow_alias/executions" -r "$KEYCLOAK_REALM" -n \
     -s "id=$execution_id" -s "requirement=$requirement" >/dev/null
 }
 
@@ -85,7 +94,7 @@ reconcile_browser_mfa_flow() {
   local otp_flow_execution otp_flow_execution_id otp_flow_alias otp_requirement
   local otp_executions condition_execution_id otp_execution_id
   browser_flow="$(kcadm get "realms/$KEYCLOAK_REALM" | jq -r '.browserFlow')"
-  browser_executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+  browser_executions="$(flow_executions "$browser_flow")"
 
   # A Conditional OTP Form cannot run at the browser-flow root because no user
   # exists in the authentication context yet. Disable any legacy root execution
@@ -110,7 +119,7 @@ reconcile_browser_mfa_flow() {
   forms_flow_alias="$(jq -r '.displayName' <<<"$forms_execution")"
   set_execution_requirement "$browser_flow" "$forms_execution_id" ALTERNATIVE
 
-  forms_executions="$(kcadm get "authentication/flows/$forms_flow_alias/executions" -r "$KEYCLOAK_REALM")"
+  forms_executions="$(flow_executions "$forms_flow_alias")"
   password_execution_id="$(jq -er \
     '[.[] | select(.level == 0 and .providerId == "auth-username-password-form")]
      | if length == 1 then .[0].id else error("expected one username/password execution") end' \
@@ -134,7 +143,7 @@ reconcile_browser_mfa_flow() {
   fi
   set_execution_requirement "$forms_flow_alias" "$otp_flow_execution_id" "$otp_requirement"
 
-  otp_executions="$(kcadm get "authentication/flows/$otp_flow_alias/executions" -r "$KEYCLOAK_REALM")"
+  otp_executions="$(flow_executions "$otp_flow_alias")"
   condition_execution_id="$(jq -er \
     '[.[] | select(.level == 0 and .providerId == "conditional-user-configured")]
      | if length == 1 then .[0].id else error("expected one user-configured condition") end' \
@@ -440,7 +449,7 @@ else
 fi
 
 browser_flow="$(jq -r '.browserFlow' <<<"$realm_state")"
-browser_executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+browser_executions="$(flow_executions "$browser_flow")"
 jq -e \
   '[.[] | select(
       .level == 0
@@ -458,7 +467,7 @@ forms_execution="$(jq -er \
    | if length == 1 then .[0] else error("browser forms subflow is not uniquely ALTERNATIVE") end' \
   <<<"$browser_executions")"
 forms_flow_alias="$(jq -r '.displayName' <<<"$forms_execution")"
-forms_executions="$(kcadm get "authentication/flows/$forms_flow_alias/executions" -r "$KEYCLOAK_REALM")"
+forms_executions="$(flow_executions "$forms_flow_alias")"
 jq -e \
   '[.[] | select(
       .level == 0
