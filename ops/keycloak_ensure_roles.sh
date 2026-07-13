@@ -79,48 +79,72 @@ set_execution_requirement() {
     -s "id=$execution_id" -s "requirement=$requirement" >/dev/null
 }
 
-reconcile_privileged_mfa_flow() {
-  local browser_flow executions legacy_flow_id execution_id config_id config_payload
+reconcile_browser_mfa_flow() {
+  local browser_flow browser_executions direct_otp_id forms_execution
+  local forms_execution_id forms_flow_alias forms_executions password_execution_id
+  local otp_flow_execution otp_flow_execution_id otp_flow_alias otp_requirement
+  local otp_executions condition_execution_id otp_execution_id
   browser_flow="$(kcadm get "realms/$KEYCLOAK_REALM" | jq -r '.browserFlow')"
-  executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+  browser_executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
 
-  # Replace the credential-configured-only subflow with one role-aware
-  # Conditional OTP Form. This authenticator also schedules enrollment when a
-  # forced user has no OTP credential.
-  while IFS= read -r legacy_flow_id; do
-    [[ -n "$legacy_flow_id" ]] || continue
-    set_execution_requirement "$browser_flow" "$legacy_flow_id" DISABLED
+  # A Conditional OTP Form cannot run at the browser-flow root because no user
+  # exists in the authentication context yet. Disable any legacy root execution
+  # created by an older reconciler, then restore Keycloak's standard order:
+  # username/password first, credential-conditioned OTP second.
+  while IFS= read -r direct_otp_id; do
+    [[ -n "$direct_otp_id" ]] || continue
+    set_execution_requirement "$browser_flow" "$direct_otp_id" DISABLED
   done < <(jq -r \
-    '.[] | select(.authenticationFlow == true and (.displayName | test("Conditional (OTP|2FA)"; "i"))) | .id' \
-    <<<"$executions")
+    '.[] | select(.level == 0 and .providerId == "auth-conditional-otp-form") | .id' \
+    <<<"$browser_executions")
 
-  execution_id="$(jq -r \
-    '[.[] | select(.providerId == "auth-conditional-otp-form")]
-     | if length > 1 then error("multiple role-aware OTP executions") else .[0].id // empty end' \
-    <<<"$executions")"
-  if [[ -z "$execution_id" ]]; then
-    kcadm create "authentication/flows/$browser_flow/executions/execution" \
-      -r "$KEYCLOAK_REALM" -s 'provider=auth-conditional-otp-form' >/dev/null
-    executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
-    execution_id="$(jq -er \
-      '[.[] | select(.providerId == "auth-conditional-otp-form")] | if length == 1 then .[0].id else error("role-aware OTP execution was not created") end' \
-      <<<"$executions")"
-  fi
-  set_execution_requirement "$browser_flow" "$execution_id" REQUIRED
+  forms_execution="$(jq -er \
+    '[.[] | select(
+        .level == 0
+        and .authenticationFlow == true
+        and (.displayName | test("(^| )forms$"; "i"))
+      )]
+     | if length == 1 then .[0] else error("expected one browser forms subflow") end' \
+    <<<"$browser_executions")"
+  forms_execution_id="$(jq -r '.id' <<<"$forms_execution")"
+  forms_flow_alias="$(jq -r '.displayName' <<<"$forms_execution")"
+  set_execution_requirement "$browser_flow" "$forms_execution_id" ALTERNATIVE
 
-  executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
-  config_id="$(jq -r --arg id "$execution_id" \
-    '.[] | select(.id == $id) | .authenticationConfig // empty' <<<"$executions")"
+  forms_executions="$(kcadm get "authentication/flows/$forms_flow_alias/executions" -r "$KEYCLOAK_REALM")"
+  password_execution_id="$(jq -er \
+    '[.[] | select(.level == 0 and .providerId == "auth-username-password-form")]
+     | if length == 1 then .[0].id else error("expected one username/password execution") end' \
+    <<<"$forms_executions")"
+  set_execution_requirement "$forms_flow_alias" "$password_execution_id" REQUIRED
+
+  otp_flow_execution="$(jq -er \
+    '[.[] | select(
+        .level == 0
+        and .authenticationFlow == true
+        and (.displayName | test("Conditional (OTP|2FA)"; "i"))
+      )]
+     | if length == 1 then .[0] else error("expected one conditional OTP subflow") end' \
+    <<<"$forms_executions")"
+  otp_flow_execution_id="$(jq -r '.id' <<<"$otp_flow_execution")"
+  otp_flow_alias="$(jq -r '.displayName' <<<"$otp_flow_execution")"
   if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" ]]; then
-    config_payload='{"alias":"sealai-privileged-mfa","config":{"forceOtpRole":"admin","defaultOtpOutcome":"skip"}}'
+    otp_requirement=CONDITIONAL
   else
-    config_payload='{"alias":"sealai-privileged-mfa","config":{"defaultOtpOutcome":"skip"}}'
+    otp_requirement=DISABLED
   fi
-  if [[ -n "$config_id" ]]; then
-    kcadm_update_json "authentication/config/$config_id" "$config_payload"
-  else
-    kcadm_create_json "authentication/executions/$execution_id/config" "$config_payload"
-  fi
+  set_execution_requirement "$forms_flow_alias" "$otp_flow_execution_id" "$otp_requirement"
+
+  otp_executions="$(kcadm get "authentication/flows/$otp_flow_alias/executions" -r "$KEYCLOAK_REALM")"
+  condition_execution_id="$(jq -er \
+    '[.[] | select(.level == 0 and .providerId == "conditional-user-configured")]
+     | if length == 1 then .[0].id else error("expected one user-configured condition") end' \
+    <<<"$otp_executions")"
+  otp_execution_id="$(jq -er \
+    '[.[] | select(.level == 0 and .providerId == "auth-otp-form")]
+     | if length == 1 then .[0].id else error("expected one OTP form") end' \
+    <<<"$otp_executions")"
+  set_execution_requirement "$otp_flow_alias" "$condition_execution_id" REQUIRED
+  set_execution_requirement "$otp_flow_alias" "$otp_execution_id" REQUIRED
 }
 
 authenticate() {
@@ -341,8 +365,8 @@ kcadm update "users/$target_user_id/groups/$governance_group_id" -r "$KEYCLOAK_R
 kcadm add-roles -r "$KEYCLOAK_REALM" --uid "$target_user_id" \
   --cclientid realm-management --rolename realm-admin >/dev/null
 
-printf 'Reconciling role-aware browser MFA...\n'
-reconcile_privileged_mfa_flow
+printf 'Reconciling ordered browser authentication and MFA...\n'
+reconcile_browser_mfa_flow
 
 # The V1 Auth.js client is confidential and accepts one exact callback only.
 printf 'Reconciling OIDC clients...\n'
@@ -417,20 +441,45 @@ fi
 
 browser_flow="$(jq -r '.browserFlow' <<<"$realm_state")"
 browser_executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
-privileged_mfa_execution="$(jq -er \
-  '[.[] | select(.providerId == "auth-conditional-otp-form" and .requirement == "REQUIRED")]
-   | if length == 1 then .[0] else error("role-aware MFA execution is not unique and required") end' \
+jq -e \
+  '[.[] | select(
+      .level == 0
+      and .providerId == "auth-conditional-otp-form"
+      and .requirement != "DISABLED"
+    )] | length == 0' \
+  <<<"$browser_executions" >/dev/null || die "OTP still executes before user identification"
+forms_execution="$(jq -er \
+  '[.[] | select(
+      .level == 0
+      and .authenticationFlow == true
+      and (.displayName | test("(^| )forms$"; "i"))
+      and .requirement == "ALTERNATIVE"
+    )]
+   | if length == 1 then .[0] else error("browser forms subflow is not uniquely ALTERNATIVE") end' \
   <<<"$browser_executions")"
-privileged_mfa_config_id="$(jq -r '.authenticationConfig' <<<"$privileged_mfa_execution")"
-privileged_mfa_config="$(kcadm get "authentication/config/$privileged_mfa_config_id" -r "$KEYCLOAK_REALM")"
-jq -e '.config.defaultOtpOutcome == "skip"' \
-  <<<"$privileged_mfa_config" >/dev/null || die "non-privileged OTP fallback is not skip"
+forms_flow_alias="$(jq -r '.displayName' <<<"$forms_execution")"
+forms_executions="$(kcadm get "authentication/flows/$forms_flow_alias/executions" -r "$KEYCLOAK_REALM")"
+jq -e \
+  '[.[] | select(
+      .level == 0
+      and .providerId == "auth-username-password-form"
+      and .requirement == "REQUIRED"
+    )] | length == 1' \
+  <<<"$forms_executions" >/dev/null || die "username/password does not precede MFA"
+conditional_otp_flow="$(jq -er \
+  '[.[] | select(
+      .level == 0
+      and .authenticationFlow == true
+      and (.displayName | test("Conditional (OTP|2FA)"; "i"))
+    )]
+   | if length == 1 then .[0] else error("conditional OTP subflow is not unique") end' \
+  <<<"$forms_executions")"
 if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" ]]; then
-  jq -e '.config.forceOtpRole == "admin"' \
-    <<<"$privileged_mfa_config" >/dev/null || die "production privileged role is not MFA-enforced"
+  jq -e '.requirement == "CONDITIONAL"' \
+    <<<"$conditional_otp_flow" >/dev/null || die "production OTP subflow is not conditional"
 else
-  jq -e '(.config.forceOtpRole // "") == ""' \
-    <<<"$privileged_mfa_config" >/dev/null || die "test profile still force-enables privileged OTP"
+  jq -e '.requirement == "DISABLED"' \
+    <<<"$conditional_otp_flow" >/dev/null || die "test profile still enables the OTP subflow"
 fi
 
 user_groups="$(kcadm get "users/$target_user_id/groups" -r "$KEYCLOAK_REALM")"
