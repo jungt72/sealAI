@@ -165,12 +165,12 @@ def test_keycloak_mfa_runs_only_after_user_identification() -> None:
         encoding="utf-8"
     )
 
-    assert 'provider=auth-conditional-otp-form' not in provisioning
+    assert "provider=auth-conditional-otp-form" not in provisioning
     assert '.providerId == "auth-username-password-form"' in provisioning
     assert '.providerId == "conditional-user-configured"' in provisioning
-    assert 'otp_requirement=DISABLED' in provisioning
-    assert 'otp_requirement=CONDITIONAL' in provisioning
-    assert 'OTP still executes before user identification' in provisioning
+    assert "otp_requirement=DISABLED" in provisioning
+    assert "otp_requirement=CONDITIONAL" in provisioning
+    assert "OTP still executes before user identification" in provisioning
 
 
 def test_owner_decisions_and_companion_contracts_are_present() -> None:
