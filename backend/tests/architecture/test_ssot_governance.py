@@ -175,10 +175,14 @@ def test_keycloak_mfa_runs_only_after_user_identification() -> None:
 
 
 def test_keycloak_theme_does_not_hide_password_group_with_remember_me() -> None:
+    theme_properties = (
+        REPO / "keycloak/themes/sealai-b2b/login/theme.properties"
+    ).read_text(encoding="utf-8")
     theme_css = (
-        REPO / "keycloak/themes/sealai-b2b/login/resources/css/sealai-b2b-v30.css"
+        REPO / "keycloak/themes/sealai-b2b/login/resources/css/sealai-b2b-v31.css"
     ).read_text(encoding="utf-8")
 
+    assert "css/sealai-b2b-v31.css" in theme_properties
     assert ".pf-v5-c-form__group:has(.pf-v5-c-check)" not in theme_css
     assert ".pf-v5-c-check {" in theme_css
 
