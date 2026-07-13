@@ -23,7 +23,7 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260713_0008"
+    assert current == head == "20260713_0009"
     validate_schema(engine)
 
 

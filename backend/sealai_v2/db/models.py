@@ -112,6 +112,63 @@ class V2Derived(Base):
     slice_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
 
 
+class V2InterviewState(Base):
+    """State coupled to one canonical session/topic, never a second case state."""
+
+    __tablename__ = "v2_interview_state"
+
+    tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    topic_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    pack_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    question_catalog_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    case_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    pending_questions_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    need_status_overrides_json: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    conflicts_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    fact_snapshots_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    calculator_version_refs_json: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2InterviewShadowDecision(Base):
+    """Privacy-minimized, append-only shadow decision telemetry."""
+
+    __tablename__ = "v2_interview_shadow_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    case_reference: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    state_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    pack_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    legacy_question_present: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    legacy_question_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    controller_directive: Mapped[str] = mapped_column(String(64), nullable=False)
+    controller_question_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    rule_refs_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    divergence_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_duration_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    completeness_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
 class V2DurableFact(Base):
     __tablename__ = "v2_durable_facts"
 

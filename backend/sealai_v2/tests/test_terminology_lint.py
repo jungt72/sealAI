@@ -42,6 +42,8 @@ _ALLOWLIST_FILES = {
     "core/contracts.py",  # negated doctrine comment: "keine Empfehlung ist auf den Wissensstand..."
     "core/decision_records.py",  # internal SSoT case-review status, not suitability approval
     "core/gegencheck.py",  # describes what it does NOT do: "never an affirmative passt/geeignet"
+    "core/interview/contracts.py",  # internal expert verification state; never suitability approval
+    "core/interview/policy.py",  # reads that internal verification state; no user-facing wording
     "core/legal_doctrine.py",  # defines the terms themselves (this module's own source list)
     "core/output_guard.py",  # IS the existing forbidden-phrase enforcement list this lint mirrors
     "core/response_contract_policy.py",  # same doctrine — banned-phrase list + negated comments

@@ -203,7 +203,7 @@ def _display_flags(result: PipelineResult) -> dict:
 def chat_response(result: PipelineResult) -> dict:
     turn_state = result.turn_state
     case_state = result.case_state
-    return {
+    response = {
         "answer": result.answer.text,
         "model": result.answer.model,
         "run": (
@@ -283,3 +283,8 @@ def chat_response(result: PipelineResult) -> dict:
         # showing on smalltalk/off-topic turns. Render-only — never gates L1/L3/kernel/RAG.
         **_display_flags(result),
     }
+    # Default-off and additive: when the active interview flag is not enabled the PipelineResult
+    # field is None and the legacy JSON remains byte-for-byte key-compatible (no null key added).
+    if result.next_question is not None:
+        response["next_question"] = result.next_question.to_dict()
+    return response

@@ -145,7 +145,9 @@ class CaseStateV2:
 
 
 def _source_kind(provenance: str) -> str:
-    if provenance in {"user-edited", "user-form", "user-confirmed"}:
+    if provenance == "user-form":
+        return "user_form"
+    if provenance in {"user-edited", "user-confirmed"}:
         return "user"
     if provenance.startswith("document"):
         return "document"
@@ -159,7 +161,7 @@ def _status(fact: RememberedFact) -> CaseFieldStatus:
         return CaseFieldStatus(fact.status)
     except ValueError:
         source = _source_kind(fact.provenance)
-        if source == "user":
+        if source in {"user", "user_form"}:
             return CaseFieldStatus.CONFIRMED
         if source == "document":
             return CaseFieldStatus.DOCUMENT_EXTRACTED
@@ -169,6 +171,8 @@ def _status(fact: RememberedFact) -> CaseFieldStatus:
 
 
 def _legacy_provenance(field: CaseField) -> str:
+    if field.source.kind == "user_form":
+        return "user-form"
     if field.source.kind == "user":
         return "user-confirmed"
     if field.source.kind == "document":
