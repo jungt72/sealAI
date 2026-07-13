@@ -138,6 +138,7 @@ def test_chat_response_additively_carries_computed():
         feld="wellendurchmesser",
         wert="40 mm",
         provenance="user-form",
+        owner_subject="user-A",
     )
     pipeline.memory.edit_fact(
         tenant_id="tenant-A",
@@ -145,6 +146,7 @@ def test_chat_response_additively_carries_computed():
         feld="drehzahl",
         wert="8000 U/min",
         provenance="user-form",
+        owner_subject="user-A",
     )
     client, _ = make_client(pipeline)
     body = client.post(

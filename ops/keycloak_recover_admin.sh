@@ -15,6 +15,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT_DIR/.env.prod}"
 COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sealai}"
 TARGET_EMAIL="${KEYCLOAK_TARGET_EMAIL:-mail@thorsten-jung.de}"
+SECURITY_PROFILE="${KEYCLOAK_SECURITY_PROFILE:-}"
 RECOVERY_USER=''
 RECOVERY_PASSWORD=''
 KEYCLOAK_WAS_STOPPED=false
@@ -23,6 +24,14 @@ RECOVERY_CREATED=false
 [[ -f "$ENV_FILE" ]] || { echo "missing $ENV_FILE" >&2; exit 1; }
 command -v openssl >/dev/null 2>&1 || { echo "openssl is required" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
+if [[ -z "$SECURITY_PROFILE" ]]; then
+  SECURITY_PROFILE="$(awk -F= '$1 == "KEYCLOAK_SECURITY_PROFILE" {print $2}' "$ENV_FILE" | tail -n1)"
+fi
+SECURITY_PROFILE="${SECURITY_PROFILE:-production}"
+case "$SECURITY_PROFILE" in
+  test|production) ;;
+  *) echo "KEYCLOAK_SECURITY_PROFILE must be 'test' or 'production'" >&2; exit 1 ;;
+esac
 RECOVERY_USER="sealai-recovery-$(date -u +%Y%m%d%H%M%S)-$(openssl rand -hex 4)"
 RECOVERY_PASSWORD="$(openssl rand -base64 48 | tr -d '\n')"
 
@@ -109,6 +118,7 @@ KEYCLOAK_ADMIN_USER="$RECOVERY_USER" \
 KEYCLOAK_ADMIN_PASSWORD="$RECOVERY_PASSWORD" \
 KEYCLOAK_DELETE_ADMIN_USER=true \
 KEYCLOAK_TARGET_EMAIL="$TARGET_EMAIL" \
+KEYCLOAK_SECURITY_PROFILE="$SECURITY_PROFILE" \
   "$ROOT_DIR/ops/keycloak_ensure_roles.sh"
 
 KEYCLOAK_WAS_STOPPED=false

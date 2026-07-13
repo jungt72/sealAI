@@ -45,6 +45,12 @@ class V2Session(Base):
 
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    # Verified Keycloak subject that owns this private conversation. Nullable only for legacy rows
+    # and hermetic tests created before subject ownership existed; authenticated API access to an
+    # unowned row fails closed instead of implicitly claiming it.
+    owner_subject: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
     turns: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     case_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # "Fälle"-Sidebar (Patch A): additive, nullable — existing rows stay valid with all three
@@ -110,6 +116,10 @@ class V2DurableFact(Base):
     __tablename__ = "v2_durable_facts"
 
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    owner_subject: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    original_feld: Mapped[str | None] = mapped_column(String(255), nullable=True)
     feld: Mapped[str] = mapped_column(String(255), primary_key=True)
     wert: Mapped[str] = mapped_column(Text, nullable=False)
     provenance: Mapped[str] = mapped_column(
@@ -363,6 +373,9 @@ class V2MemoryItem(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    owner_subject: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     scope_id: Mapped[str] = mapped_column(String(255), nullable=False)
     workspace_id: Mapped[str | None] = mapped_column(

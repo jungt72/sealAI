@@ -262,9 +262,17 @@ def recall(
     mandatory at the store layer (P0)."""
     if memory is None or session is None:
         return MemoryView()
-    view = memory.recall(tenant_id=tenant_id, session_id=session.session_id)
+    view = memory.recall(
+        tenant_id=tenant_id,
+        session_id=session.session_id,
+        owner_subject=session.owner_subject,
+    )
     if cross_session is not None:
-        durable = cross_session.relevant_facts(tenant_id=tenant_id, query=question)
+        durable = cross_session.relevant_facts(
+            tenant_id=tenant_id,
+            query=question,
+            owner_subject=session.owner_subject,
+        )
         if durable:
             view = MemoryView(
                 window=view.window,
@@ -315,9 +323,14 @@ async def remember(
         # as the API routes' `datetime.now(timezone.utc).isoformat()` calls), so record_turn gets an
         # honest, real timestamp to stamp V2Session's title/created_at/updated_at with.
         now=datetime.now(timezone.utc).isoformat(),
+        owner_subject=session.owner_subject,
     )
     if cross_session is not None and facts:
-        cross_session.remember_durable(tenant_id=tenant_id, facts=facts)
+        cross_session.remember_durable(
+            tenant_id=tenant_id,
+            facts=facts,
+            owner_subject=session.owner_subject,
+        )
 
 
 def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:

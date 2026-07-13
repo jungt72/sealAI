@@ -757,6 +757,7 @@ class Pipeline:
                 question,
                 tenant_id=scope.tenant_id,
                 now=datetime.now(timezone.utc).isoformat(),
+                owner_subject=session.owner_subject if session is not None else "",
             )
         # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
         # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
@@ -1665,15 +1666,20 @@ class Pipeline:
                     facts=immediate_facts,
                     now=datetime.now(timezone.utc).isoformat(),
                     expected_case_revision=case_state_v2.revision,
+                    owner_subject=session.owner_subject,
                 )
                 if immediate_facts:
                     committed_revision += 1
                     if self.cross_session is not None:
                         self.cross_session.remember_durable(
-                            tenant_id=scope.tenant_id, facts=immediate_facts
+                            tenant_id=scope.tenant_id,
+                            facts=immediate_facts,
+                            owner_subject=session.owner_subject,
                         )
                 committed_view = self.memory.recall(
-                    tenant_id=scope.tenant_id, session_id=session.session_id
+                    tenant_id=scope.tenant_id,
+                    session_id=session.session_id,
+                    owner_subject=session.owner_subject,
                 )
                 result_case_state = committed_view.case_state_v2 or case_state_v2
                 if self.distiller is not None:
@@ -1689,7 +1695,9 @@ class Pipeline:
                 else:
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
-                        tenant_id=scope.tenant_id, session_id=session.session_id
+                        tenant_id=scope.tenant_id,
+                        session_id=session.session_id,
+                        owner_subject=session.owner_subject,
                     )
         except BaseException:
             if understand_task is not None:
@@ -1865,7 +1873,9 @@ class Pipeline:
             return None
         return {"medium_hint": hint}
 
-    def compute_for(self, *, tenant_id: str, session_id: str) -> DerivedComputation:
+    def compute_for(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> DerivedComputation:
         """M8: recompute the kernel from the session's CURRENT settled inputs, PERSIST the derived
         slice (wholesale replace — a stale value can never survive), and return the full result
         (derived + not_computed + notes) for the read surface (/compute, the panel). No engine or no
@@ -1873,21 +1883,30 @@ class Pipeline:
         if self.engine is None or self.memory is None:
             return DerivedComputation(derived=(), calc=CalcResult())
         inputs = self.memory.recall(
-            tenant_id=tenant_id, session_id=session_id
+            tenant_id=tenant_id,
+            session_id=session_id,
+            owner_subject=owner_subject,
         ).case_state
         comp = recompute_derived(inputs, self.engine)
         self.memory.set_derived(
-            tenant_id=tenant_id, session_id=session_id, derived=comp.derived
+            tenant_id=tenant_id,
+            session_id=session_id,
+            derived=comp.derived,
+            owner_subject=owner_subject,
         )
         return comp
 
     def recompute_derived_for(
-        self, *, tenant_id: str, session_id: str
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> tuple[DerivedFact, ...]:
         """The mutation-channel projection of ``compute_for``: recompute + persist, return just the
         derived facts. Called on every input-mutation channel (background remember after distill;
         edit/forget routes)."""
-        return self.compute_for(tenant_id=tenant_id, session_id=session_id).derived
+        return self.compute_for(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            owner_subject=owner_subject,
+        ).derived
 
     async def flush_memory(self, *, tenant_id: str, session_id: str) -> None:
         """P2 ordering guard: await this session's in-flight background remember so the
@@ -1979,16 +1998,21 @@ class Pipeline:
                     session_id=session.session_id,
                     facts=facts,
                     expected_case_revision=expected_case_revision,
+                    owner_subject=session.owner_subject,
                 )
                 if self.cross_session is not None and facts:
                     self.cross_session.remember_durable(
-                        tenant_id=tenant_id, facts=facts
+                        tenant_id=tenant_id,
+                        facts=facts,
+                        owner_subject=session.owner_subject,
                     )
             # M8: settle the derived slice from the just-distilled inputs (chat channel). Inside the
             # try so a recompute fault is caught by the same fail-safe (a lost derived slice is never
             # a failed request; the next read/mutation recomputes anyway).
             self.recompute_derived_for(
-                tenant_id=tenant_id, session_id=session.session_id
+                tenant_id=tenant_id,
+                session_id=session.session_id,
+                owner_subject=session.owner_subject,
             )
         except Exception as exc:  # noqa: BLE001 — a background task must never die unhandled
             _log.warning(

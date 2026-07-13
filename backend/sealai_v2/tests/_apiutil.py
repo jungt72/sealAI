@@ -24,6 +24,7 @@ from sealai_v2.tests._fakes import FakeLlmClient
 
 IDS = {
     "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
+    "tok-A2": VerifiedIdentity("tenant-A", "sess-A2", "user-A2"),
     "tok-B": VerifiedIdentity("tenant-B", "sess-B", "user-B"),
 }
 

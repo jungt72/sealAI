@@ -15,6 +15,7 @@ from sealai_v2.security.auth import FakeAuthValidator
 
 IDS = {
     "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
+    "tok-A2": VerifiedIdentity("tenant-A", "sess-A2", "user-A2"),
     "tok-B": VerifiedIdentity("tenant-B", "sess-B", "user-B"),
     "tok-admin": VerifiedIdentity("tenant-A", "sess-A", "owner", roles=("admin",)),
 }
@@ -90,6 +91,26 @@ def test_list_items_never_leaks_across_tenants():
     r = client.get("/api/v2/memory/items", headers=_auth("tok-B"))
     assert r.status_code == 200
     assert r.json()["items"] == []  # tenant B sees NONE of tenant A's items
+
+
+def test_memory_items_are_private_between_users_in_the_same_tenant():
+    client, _store = _client()
+    created = client.post(
+        "/api/v2/memory/candidates", json=_VALID_CANDIDATE, headers=_auth("tok-A")
+    ).json()
+
+    listed = client.get("/api/v2/memory/items", headers=_auth("tok-A2"))
+    assert listed.status_code == 200
+    assert listed.json()["items"] == []
+
+    read = client.get(f"/api/v2/memory/items/{created['id']}", headers=_auth("tok-A2"))
+    assert read.status_code == 404
+
+    transition = client.post(
+        f"/api/v2/memory/items/{created['id']}/confirm",
+        headers=_auth("tok-A2"),
+    )
+    assert transition.status_code == 404
 
 
 def test_summary_never_leaks_across_tenants():

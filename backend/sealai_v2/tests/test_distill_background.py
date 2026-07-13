@@ -73,7 +73,7 @@ def test_run_returns_before_distill_completes_and_flush_lands_the_facts():
             p.run(
                 "Warum quillt EPDM in Hydrauliköl?",
                 tenant=TenantContext("t1"),
-                session=SessionContext("s1"),
+                session=SessionContext("s1", owner_subject="u1"),
             ),
             timeout=5.0,
         )
@@ -134,7 +134,7 @@ def test_background_distill_cannot_overwrite_a_newer_user_revision():
         result = await p.run(
             "EPDM in Hydrauliköl?",
             tenant=TenantContext("t1"),
-            session=SessionContext("s1"),
+            session=SessionContext("s1", owner_subject="u1"),
         )
         assert result.turn_state.case_revision_current == 1
         p.memory.edit_fact(
@@ -161,7 +161,7 @@ def test_memory_view_route_flushes_so_chips_are_current_after_chat():
         await p.run(
             "EPDM in Hydrauliköl?",
             tenant=TenantContext("t1"),
-            session=SessionContext("s1"),
+            session=SessionContext("s1", owner_subject="u1"),
         )
         return await view_memory(identity=ident, pipeline=p)
 
@@ -198,7 +198,7 @@ def test_list_conversations_route_flushes_so_a_brand_new_case_appears_immediatel
         await p.run(
             "EPDM in Hydrauliköl?",
             tenant=TenantContext("t1"),
-            session=SessionContext("s1"),
+            session=SessionContext("s1", owner_subject="u1"),
         )
         # the answer is back, but the background remember (which creates the case row) is
         # STILL pending here — exactly the window the live bug fell into.
@@ -219,7 +219,7 @@ def test_forget_all_flushes_first_so_a_pending_distill_cannot_resurrect_facts():
         await p.run(
             "EPDM in Hydrauliköl?",
             tenant=TenantContext("t1"),
-            session=SessionContext("s1"),
+            session=SessionContext("s1", owner_subject="u1"),
         )
         # user clicks "alles vergessen" while the distill is still pending:
         await forget_all(identity=ident, pipeline=p)

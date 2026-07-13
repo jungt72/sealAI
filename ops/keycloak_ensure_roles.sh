@@ -16,7 +16,9 @@ KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
 KEYCLOAK_DELETE_ADMIN_CLIENT="${KEYCLOAK_DELETE_ADMIN_CLIENT:-false}"
 KEYCLOAK_DELETE_ADMIN_USER="${KEYCLOAK_DELETE_ADMIN_USER:-false}"
+KEYCLOAK_SECURITY_PROFILE="${KEYCLOAK_SECURITY_PROFILE:-production}"
 KCADM_CONFIG="/tmp/sealai-kcadm-$$.config"
+KCADM_JSON="/tmp/sealai-kcadm-$$.json"
 
 PRODUCT_ROLES=(
   user_basic
@@ -34,7 +36,7 @@ die() {
 }
 
 cleanup() {
-  docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true
+  docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_CONFIG" "$KCADM_JSON" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -42,8 +44,83 @@ command -v docker >/dev/null 2>&1 || die "docker is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
 docker inspect "$KEYCLOAK_CONTAINER" >/dev/null 2>&1 || die "container '$KEYCLOAK_CONTAINER' is not running"
 
+case "$KEYCLOAK_SECURITY_PROFILE" in
+  test|production) ;;
+  *) die "KEYCLOAK_SECURITY_PROFILE must be 'test' or 'production'" ;;
+esac
+
 kcadm() {
   docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh "$@" --config "$KCADM_CONFIG"
+}
+
+kcadm_update_json() {
+  local resource="$1"
+  local payload="$2"
+  printf '%s' "$payload" | docker exec -i "$KEYCLOAK_CONTAINER" /bin/bash -ec \
+    'cat > "$1"' -- "$KCADM_JSON"
+  kcadm update "$resource" -r "$KEYCLOAK_REALM" -f "$KCADM_JSON" >/dev/null
+  docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_JSON" >/dev/null
+}
+
+kcadm_create_json() {
+  local resource="$1"
+  local payload="$2"
+  printf '%s' "$payload" | docker exec -i "$KEYCLOAK_CONTAINER" /bin/bash -ec \
+    'cat > "$1"' -- "$KCADM_JSON"
+  kcadm create "$resource" -r "$KEYCLOAK_REALM" -f "$KCADM_JSON" >/dev/null
+  docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_JSON" >/dev/null
+}
+
+set_execution_requirement() {
+  local flow_alias="$1"
+  local execution_id="$2"
+  local requirement="$3"
+  kcadm update "authentication/flows/$flow_alias/executions" -r "$KEYCLOAK_REALM" -n \
+    -s "id=$execution_id" -s "requirement=$requirement" >/dev/null
+}
+
+reconcile_privileged_mfa_flow() {
+  local browser_flow executions legacy_flow_id execution_id config_id config_payload
+  browser_flow="$(kcadm get "realms/$KEYCLOAK_REALM" | jq -r '.browserFlow')"
+  executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+
+  # Replace the credential-configured-only subflow with one role-aware
+  # Conditional OTP Form. This authenticator also schedules enrollment when a
+  # forced user has no OTP credential.
+  while IFS= read -r legacy_flow_id; do
+    [[ -n "$legacy_flow_id" ]] || continue
+    set_execution_requirement "$browser_flow" "$legacy_flow_id" DISABLED
+  done < <(jq -r \
+    '.[] | select(.authenticationFlow == true and (.displayName | test("Conditional (OTP|2FA)"; "i"))) | .id' \
+    <<<"$executions")
+
+  execution_id="$(jq -r \
+    '[.[] | select(.providerId == "auth-conditional-otp-form")]
+     | if length > 1 then error("multiple role-aware OTP executions") else .[0].id // empty end' \
+    <<<"$executions")"
+  if [[ -z "$execution_id" ]]; then
+    kcadm create "authentication/flows/$browser_flow/executions/execution" \
+      -r "$KEYCLOAK_REALM" -s 'provider=auth-conditional-otp-form' >/dev/null
+    executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+    execution_id="$(jq -er \
+      '[.[] | select(.providerId == "auth-conditional-otp-form")] | if length == 1 then .[0].id else error("role-aware OTP execution was not created") end' \
+      <<<"$executions")"
+  fi
+  set_execution_requirement "$browser_flow" "$execution_id" REQUIRED
+
+  executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+  config_id="$(jq -r --arg id "$execution_id" \
+    '.[] | select(.id == $id) | .authenticationConfig // empty' <<<"$executions")"
+  if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" ]]; then
+    config_payload='{"alias":"sealai-privileged-mfa","config":{"forceOtpRole":"admin","defaultOtpOutcome":"skip"}}'
+  else
+    config_payload='{"alias":"sealai-privileged-mfa","config":{"defaultOtpOutcome":"skip"}}'
+  fi
+  if [[ -n "$config_id" ]]; then
+    kcadm_update_json "authentication/config/$config_id" "$config_payload"
+  else
+    kcadm_create_json "authentication/executions/$execution_id/config" "$config_payload"
+  fi
 }
 
 authenticate() {
@@ -128,9 +205,34 @@ delete_temporary_admin_identity() {
 
 authenticate
 
-printf 'Reconciling realm security policy for %s...\n' "$KEYCLOAK_REALM"
+realm_before="$(kcadm get "realms/$KEYCLOAK_REALM")"
+smtp_configured="$(jq -r '((.smtpServer.host // "") | length) > 0' <<<"$realm_before")"
+if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" && "$smtp_configured" != "true" ]]; then
+  die "production profile requires configured SMTP before email verification and recovery can be enabled"
+fi
+
+if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" ]]; then
+  verify_email=true
+  reset_password=true
+else
+  verify_email=false
+  reset_password=false
+fi
+
+printf 'Reconciling realm security policy for %s (profile=%s)...\n' \
+  "$KEYCLOAK_REALM" "$KEYCLOAK_SECURITY_PROFILE"
 kcadm update "realms/$KEYCLOAK_REALM" \
   -s 'sslRequired=EXTERNAL' \
+  -s 'registrationAllowed=true' \
+  -s 'registrationEmailAsUsername=true' \
+  -s 'loginWithEmailAllowed=true' \
+  -s 'duplicateEmailsAllowed=false' \
+  -s "verifyEmail=$verify_email" \
+  -s "resetPasswordAllowed=$reset_password" \
+  -s 'rememberMe=true' \
+  -s 'internationalizationEnabled=true' \
+  -s 'defaultLocale=de' \
+  -s 'supportedLocales=["de","en"]' \
   -s 'accessTokenLifespan=300' \
   -s 'ssoSessionIdleTimeout=3600' \
   -s 'ssoSessionMaxLifespan=43200' \
@@ -151,11 +253,18 @@ kcadm update "realms/$KEYCLOAK_REALM" \
   -s 'waitIncrementSeconds=60' \
   -s 'quickLoginCheckMilliSeconds=1000' \
   -s 'minimumQuickLoginWaitSeconds=60' \
-  -s 'passwordPolicy=length(14) and maxLength(128) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5)' \
+  -s 'passwordPolicy=length(15) and maxLength(128) and notUsername(undefined) and notEmail(undefined) and passwordHistory(5)' \
   >/dev/null
 
-# MFA is required only for privileged users, not silently for every customer.
-printf 'Reconciling privileged required actions...\n'
+printf 'Reconciling progressive registration profile...\n'
+user_profile="$(kcadm get users/profile -r "$KEYCLOAK_REALM")"
+user_profile="$(jq \
+  '(.attributes[] | select(.name == "firstName" or .name == "lastName")) |= del(.required)' \
+  <<<"$user_profile")"
+kcadm_update_json users/profile "$user_profile"
+
+# TOTP stays available but is never a default action for public accounts.
+printf 'Reconciling required actions...\n'
 kcadm update authentication/required-actions/CONFIGURE_TOTP \
   -r "$KEYCLOAK_REALM" -s 'enabled=true' -s 'defaultAction=false' >/dev/null
 kcadm update authentication/required-actions/UPDATE_PASSWORD \
@@ -174,6 +283,10 @@ printf 'Reconciling product roles and administrator groups...\n'
 for role in "${PRODUCT_ROLES[@]}"; do
   ensure_realm_role "$role" "${role_descriptions[$role]}"
 done
+default_role_name="$(jq -r '.defaultRole.name // empty' <<<"$realm_before")"
+[[ -n "$default_role_name" ]] || die "realm default role could not be resolved"
+kcadm add-roles -r "$KEYCLOAK_REALM" --rname "$default_role_name" \
+  --rolename user_basic >/dev/null
 printf 'Product roles ready; reconciling groups...\n'
 
 PLATFORM_GROUP='platform-admins'
@@ -194,10 +307,32 @@ target_username="$(jq -r '.username' <<<"$target_user")"
 target_enabled="$(jq -r '.enabled' <<<"$target_user")"
 [[ "$target_enabled" == "true" ]] || die "target user is disabled"
 
-# Required actions are assigned before privileged groups, so no fresh admin
-# token is issued until the owner has replaced the password and enrolled TOTP.
-kcadm update "users/$target_user_id" -r "$KEYCLOAK_REALM" \
-  -s 'requiredActions=["UPDATE_PASSWORD","CONFIGURE_TOTP"]' >/dev/null
+# Preserve unrelated required actions. Test mode removes the inaccessible OTP
+# credential; production requires a fresh enrollment whenever none exists.
+user_state="$(kcadm get "users/$target_user_id" -r "$KEYCLOAK_REALM")"
+owner_credentials="$(kcadm get "users/$target_user_id/credentials" -r "$KEYCLOAK_REALM")"
+if [[ "$KEYCLOAK_SECURITY_PROFILE" == "test" ]]; then
+  required_actions="$(jq -c '[.requiredActions[]? | select(. != "CONFIGURE_TOTP")]' <<<"$user_state")"
+  kcadm update "users/$target_user_id" -r "$KEYCLOAK_REALM" \
+    -s "requiredActions=$required_actions" >/dev/null
+  while IFS= read -r credential_id; do
+    [[ -n "$credential_id" ]] || continue
+    kcadm delete "users/$target_user_id/credentials/$credential_id" \
+      -r "$KEYCLOAK_REALM" >/dev/null
+  done < <(jq -r '.[] | select(.type == "otp") | .id' <<<"$owner_credentials")
+else
+  otp_count="$(jq '[.[] | select(.type == "otp")] | length' <<<"$owner_credentials")"
+  if [[ "$otp_count" -eq 0 ]]; then
+    required_actions="$(jq -c \
+      '[.requiredActions[]?] | if index("CONFIGURE_TOTP") then . else . + ["CONFIGURE_TOTP"] end' \
+      <<<"$user_state")"
+  else
+    required_actions="$(jq -c \
+      '[.requiredActions[]? | select(. != "CONFIGURE_TOTP")]' <<<"$user_state")"
+  fi
+  kcadm update "users/$target_user_id" -r "$KEYCLOAK_REALM" \
+    -s "requiredActions=$required_actions" >/dev/null
+fi
 kcadm update "users/$target_user_id/groups/$platform_group_id" -r "$KEYCLOAK_REALM" >/dev/null
 kcadm update "users/$target_user_id/groups/$governance_group_id" -r "$KEYCLOAK_REALM" >/dev/null
 # Realm administration is intentionally owner-specific instead of inherited
@@ -205,6 +340,9 @@ kcadm update "users/$target_user_id/groups/$governance_group_id" -r "$KEYCLOAK_R
 # control over Keycloak itself.
 kcadm add-roles -r "$KEYCLOAK_REALM" --uid "$target_user_id" \
   --cclientid realm-management --rolename realm-admin >/dev/null
+
+printf 'Reconciling role-aware browser MFA...\n'
+reconcile_privileged_mfa_flow
 
 # The V1 Auth.js client is confidential and accepts one exact callback only.
 printf 'Reconciling OIDC clients...\n'
@@ -242,22 +380,58 @@ kcadm update "clients/$v2_id" -r "$KEYCLOAK_REALM" \
 
 realm_state="$(kcadm get "realms/$KEYCLOAK_REALM")"
 printf 'Verifying reconciled Keycloak state...\n'
-jq -e \
+jq -e --argjson verify_email "$verify_email" --argjson reset_password "$reset_password" \
   '.eventsEnabled == true
    and .eventsExpiration == 604800
    and .adminEventsEnabled == true
    and .adminEventsDetailsEnabled == false
    and .bruteForceProtected == true
+   and .registrationAllowed == true
+   and .registrationEmailAsUsername == true
+   and .verifyEmail == $verify_email
+   and .resetPasswordAllowed == $reset_password
+   and .internationalizationEnabled == true
+   and .defaultLocale == "de"
    and .ssoSessionIdleTimeout == 3600
    and .ssoSessionMaxLifespan == 43200
-   and (.passwordPolicy | contains("length(14)"))' \
+   and (.passwordPolicy | contains("length(15)"))' \
   <<<"$realm_state" >/dev/null || die "realm security policy read-back failed"
 
 user_state="$(kcadm get "users/$target_user_id" -r "$KEYCLOAK_REALM")"
-jq -e \
-  '(.requiredActions | index("UPDATE_PASSWORD")) != null
-   and (.requiredActions | index("CONFIGURE_TOTP")) != null' \
-  <<<"$user_state" >/dev/null || die "privileged required-action read-back failed"
+owner_credentials="$(kcadm get "users/$target_user_id/credentials" -r "$KEYCLOAK_REALM")"
+if [[ "$KEYCLOAK_SECURITY_PROFILE" == "test" ]]; then
+  jq -e '(.requiredActions | index("CONFIGURE_TOTP")) == null' \
+    <<<"$user_state" >/dev/null || die "test profile still requires TOTP"
+  jq -e '[.[] | select(.type == "otp")] | length == 0' \
+    <<<"$owner_credentials" >/dev/null || die "test profile still has an OTP credential"
+else
+  if jq -e '[.[] | select(.type == "otp")] | length == 0' \
+    <<<"$owner_credentials" >/dev/null; then
+    jq -e '(.requiredActions | index("CONFIGURE_TOTP")) != null' \
+      <<<"$user_state" >/dev/null || die "production profile does not require privileged TOTP enrollment"
+  else
+    jq -e '(.requiredActions | index("CONFIGURE_TOTP")) == null' \
+      <<<"$user_state" >/dev/null || die "production profile keeps redundant TOTP enrollment action"
+  fi
+fi
+
+browser_flow="$(jq -r '.browserFlow' <<<"$realm_state")"
+browser_executions="$(kcadm get "authentication/flows/$browser_flow/executions" -r "$KEYCLOAK_REALM")"
+privileged_mfa_execution="$(jq -er \
+  '[.[] | select(.providerId == "auth-conditional-otp-form" and .requirement == "REQUIRED")]
+   | if length == 1 then .[0] else error("role-aware MFA execution is not unique and required") end' \
+  <<<"$browser_executions")"
+privileged_mfa_config_id="$(jq -r '.authenticationConfig' <<<"$privileged_mfa_execution")"
+privileged_mfa_config="$(kcadm get "authentication/config/$privileged_mfa_config_id" -r "$KEYCLOAK_REALM")"
+jq -e '.config.defaultOtpOutcome == "skip"' \
+  <<<"$privileged_mfa_config" >/dev/null || die "non-privileged OTP fallback is not skip"
+if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" ]]; then
+  jq -e '.config.forceOtpRole == "admin"' \
+    <<<"$privileged_mfa_config" >/dev/null || die "production privileged role is not MFA-enforced"
+else
+  jq -e '(.config.forceOtpRole // "") == ""' \
+    <<<"$privileged_mfa_config" >/dev/null || die "test profile still force-enables privileged OTP"
+fi
 
 user_groups="$(kcadm get "users/$target_user_id/groups" -r "$KEYCLOAK_REALM")"
 jq -e --arg platform "$PLATFORM_GROUP" --arg governance "$GOVERNANCE_GROUP" \
@@ -299,9 +473,7 @@ jq -e \
    and .attributes["pkce.code.challenge.method"] == "S256"' \
   <<<"$v2_state" >/dev/null || die "sealai-v2 client policy read-back failed"
 
-# Revoke pre-existing sessions after the privileged mapping is verified. The
-# owner must complete UPDATE_PASSWORD and CONFIGURE_TOTP before Keycloak issues
-# a new session containing realm-admin.
+# Revoke pre-existing sessions after policy and privileged mappings are verified.
 printf 'Revoking pre-existing owner sessions...\n'
 kcadm create "users/$target_user_id/logout" -r "$KEYCLOAK_REALM" -b '{}' >/dev/null
 
