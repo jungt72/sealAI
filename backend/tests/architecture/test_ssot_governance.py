@@ -170,6 +170,7 @@ def test_keycloak_mfa_runs_only_after_user_identification() -> None:
     assert '.providerId == "conditional-user-configured"' in provisioning
     assert "otp_requirement=DISABLED" in provisioning
     assert "otp_requirement=CONDITIONAL" in provisioning
+    assert "'$value | @uri'" in provisioning
     assert "OTP still executes before user identification" in provisioning
 
 
