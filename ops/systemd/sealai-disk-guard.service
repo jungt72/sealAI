@@ -1,0 +1,27 @@
+[Unit]
+Description=sealingAI non-destructive Docker disk guard
+Documentation=file:///usr/local/share/doc/sealai/docker-disk-guard.md
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+StateDirectory=sealai-disk-guard
+StateDirectoryMode=0700
+ExecStart=/usr/local/libexec/sealai/docker-disk-guard.sh --config /etc/sealai/disk-guard.json check
+SuccessExitStatus=10 20
+TimeoutStartSec=30s
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sealai-disk-guard /run/lock
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=yes
+LockPersonality=yes

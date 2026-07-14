@@ -59,9 +59,22 @@ read-back + example-token: public, PKCE S256, standard flow only, both redirect 
 
 **CC:** staging stack under `ops/staging/` — `nginx-staging` on `0.0.0.0:8443:443` (real cert;
 generated copy of `default.conf` with the include applied; snippets copy with the documented
-staging-only CSP delta for the cross-port token POST; the EXACT prod `dist` artifact) +
+staging-only CSP delta for the cross-port token POST; the isolated
+`frontend-v2/.build/dashboard-candidate` artifact) +
 `backend-v2-staging` (alias `sealai-backend-v2` on the staging network ONLY — prod nginx can
 never resolve it). Optional hardening: firewall :8443 to the owner IP for the window.
+
+The staging compose build/up has exactly one entrypoint:
+
+```bash
+./ops/staging/gen-staging-conf.sh
+./ops/staging/up-staging-v2.sh
+```
+
+The wrapper checks the production release gate for operation `build`, then acquires the installed
+global storage lease before Docker starts. The active production freeze therefore denies staging
+builds on the production VPS too; use a separately controlled staging host or wait for the gated
+freeze-lift workflow. A raw compose build/up is not an alternative.
 
 **E2e checklist (all green, dated):** browser login → callback → URL normalizes; chat with
 citations + vorläufig/candidate badges; memory view→edit→forget-one→forget-all; briefing with
@@ -85,10 +98,6 @@ smoke. They no longer block the owner-only flip.)*
 
 ## Phase 3 — the prod flip (OWNER, low-traffic window)
 
-```bash
-COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml"
-```
-
 **Step 0 — preconditions (all must hold):**
 - Pre-flip gate checklist below fully green.
 - Worktree clean, on the flip ref; record `FLIP_REF=$(git rev-parse HEAD)` and the live anchors
@@ -101,27 +110,36 @@ COMPOSE="docker compose --env-file .env.prod -f docker-compose.yml -f docker-com
   'v2-client|snippets|backend-v2'` → **0** (the flip ref has these mounts; V1_ANCHOR must NOT).
   At flip time the prod worktree state moves from that V1 ref to the flip ref — rollbacks
   check out FROM `$V1_ANCHOR`.
-- `frontend-v2/dist` built AT the flip ref (`cd frontend-v2 && npm run verify`);
-  `test -s frontend-v2/dist/index.html`; record `sha256sum frontend-v2/dist/assets/*` (dist is
-  gitignored — a missing dir would bind-mount as an empty root-owned dir = blank SPA).
+- The immutable dashboard artifact must be built outside the live bind mount,
+  content-addressed, and bound to the exact GATE-10 manifest. This P1 contract
+  is not implemented yet; a local `npm run verify` is evidence for candidate
+  bytes only and cannot make them production-eligible.
 - `docker exec nginx nginx -T | grep -cE '^\s*include snippets/v2_dashboard'` → 0, and the loaded
   config matches the worktree file.
 
-**Step 1 — nginx recreate with the inert mounts** *(can run days early; ~2–5 s refused
-connections for ALL vhosts on the box — schedule accordingly).*
-```bash
-$COMPOSE up -d --no-deps nginx
-```
-Verify: `docker exec nginx nginx -t`; `docker inspect nginx --format '{{json .Mounts}}' | grep -c 'v2-client\|snippets'` → 2; `./ops/smoke-live-pilot-readiness.sh` green.
-Rollback: `git checkout "$V1_ANCHOR" -- docker-compose.deploy.yml && $COMPOSE up -d --no-deps nginx`
-(restores the no-V2-mounts compose from the V1-serving ref — verified in step 0; afterwards
-`git checkout "$FLIP_REF" -- docker-compose.deploy.yml` returns the worktree to the flip state;
-or simply leave — the mounts are inert).
+**Step 1 — nginx recreate with the inert mounts (BLOCKED).**
 
-**Step 2 — backend-v2 up (unrouted).**
+There is currently no sanctioned production entrypoint for this recreate. A
+raw Compose command would bypass both the release gate and the global storage
+lease, so it is forbidden even if the mounts appear inert. P1 must provide an
+exact-artifact, GATE-10-bound entrypoint with an attested rollback manifest and
+lease acquisition before this step can be scheduled. The active freeze denies
+this step; do not recreate Nginx manually.
+
+**Step 2 — Gate-10-bound backend-v2 artifact promotion (BLOCKED).**
+
+The old raw compose build/up path is retired. Production promotion is permitted only through the
+Gate-10 workflow and the sanctioned release entrypoint:
+
 ```bash
-$COMPOSE --profile v2 up -d --build backend-v2
+BACKEND_V2_IMAGE='ghcr.io/jungt72/sealai-backend-v2@sha256:<approved-digest>' \
+  ./ops/release-backend-v2.sh --final
 ```
+
+While the production freeze is active—and until the P1 release-integrity work binds the exact
+selected artifact digest—this step stays deliberately blocked. Do not replace the denied
+entrypoint with a direct Docker or compose command.
+
 Verify: `curl -fsS --max-time 10 http://127.0.0.1:8001/health`; then
 `curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/api/v2/chat -H 'Content-Type: application/json' -d '{"message":"x"}'` → **401** (503 = auth env missing → STOP, fix env).
 **TIMEOUT case (neither 200 nor 503 — curl exits 28/7):** network/bridge/publish issue, NOT an
@@ -129,8 +147,9 @@ app issue — this host's firewall is known to drop host→container traffic on 
 bridges (2026-06-10 staging finding). backend-v2 must be on the EXISTING `sealai_default`
 network (verify: `docker inspect backend-v2 --format '{{range $n,$c := .NetworkSettings.Networks}}{{$n}} {{end}}'`
 → `sealai_default`; the compose config pins it). **STOP + diagnose — do NOT proceed to step 4**;
-nothing is routed yet, rollback here is just `docker stop backend-v2`.
-Rollback: `docker stop backend-v2`.
+nothing is routed yet. Any rollback must be performed by the same sanctioned,
+GATE-10-bound release transaction using its attested rollback artifact; a
+direct container stop is not an authorized substitute.
 
 **Step 3 — Keycloak client probe (read-only).**
 ```bash
@@ -154,8 +173,8 @@ BASE_URL=https://sealingai.com ./ops/smoke-v2.sh            # + TOKEN=<browser b
 ```
 One real browser login e2e. Watch 30–60 min: `docker logs -f backend-v2`,
 `docker logs nginx --since 10m | grep -E 'api/v2|dashboard'`.
-Rollback: step-4 revert; backend-only misbehavior → `docker stop backend-v2` (SPA fails closed,
-V1 untouched).
+Rollback: step-4 revert; backend artifact rollback remains part of the same
+sanctioned GATE-10 release transaction (SPA fails closed, V1 untouched).
 
 **Step 6 — drift-proofing + governance log.**
 - Commit the one-line include on the clean tree; PR `feat/v2` → `demo/rwdr-limited-external`;
@@ -270,11 +289,9 @@ the rollback target — do NOT stop/tear down V1 during or right after the flip.
   — gate-locked runtime ref `6322eb9c` (re-validated 2026-06-11; runtime byte-identical to the
   REPLAY-validated `3c598542`; later docs-only commits may ride on top without re-validation).
 - **backend-v2 image:** ⟨docker inspect backend-v2 --format '{{.Image}}'⟩
-- **frontend-v2 dist sha256 manifest:** ⟨sha256sum frontend-v2/dist/index.html frontend-v2/dist/assets/*⟩
-  — gate-locked (2026-06-11, unchanged since 2026-06-10, backend-only milestone):
-  `ec3d3a850cdb92a9592ef20622e8a44bcbb1e4083b9bfe86ae799dc47fc08ebc  index.html`,
-  `c532057c209b08df85305857d489917c6cadce742dd284cf2614c9fe631ec769  assets/index-D9NA13qp.js`,
-  `4040237cc1fe9c720d36152e77eb4442ada2927713aad395b5d85930b2eb8886  assets/index--S9mhwd9.css`
+- **immutable dashboard artifact:** ⟨content-addressed artifact ID and complete SHA-256 manifest
+  from the exact GATE-10 approval⟩. Candidate bytes under `.build/dashboard-candidate` are not
+  production evidence until P1 packages, attests, and independently reproduces them.
 - **Rollback anchors (from the daemon at flip time):**
   - routing: `ops/v2-flip.sh --revert` (dry-run-proven on staging 2026-06-10)
   - V1 backend: ⟨docker inspect backend --format '{{.Config.Image}}'⟩ (status/health: ⟨…⟩)

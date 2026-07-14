@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 BIND_EVAL=0
 [ "${1:-}" = "--bind-eval" ] && BIND_EVAL=1
 [ -d backend/sealai_v2 ] || { echo "GATE-FAIL: nicht im Repo-Root"; exit 1; }
@@ -25,7 +27,7 @@ step "4/5  V2-Offline-Suite (sealai_v2)"
 $PY -m pytest backend/sealai_v2 --noconftest -q || fail "V2-Offline-Suite rot"
 
 step "5/5  Eval<->Tree-Bindung"
-TREE="$(bash ops/tree-hash.sh)"
+TREE="$(/bin/bash -p ops/tree-hash.sh)"
 if $PY ops/v2_deploy_gate.py backend/sealai_v2/eval/runs "$TREE" >/tmp/gate_bind.txt 2>&1; then
   echo "  OK: adjudizierter REPLAY für $TREE vorhanden."
 elif [ "$BIND_EVAL" = 1 ]; then cat /tmp/gate_bind.txt; fail "Kein adjudizierter REPLAY ($TREE) [--bind-eval]"

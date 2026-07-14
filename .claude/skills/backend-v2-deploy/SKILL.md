@@ -19,7 +19,7 @@ by hand for a prod change.
 
 ```bash
 # Backend-v2 to prod — health-gated, smoke-tested, tags an automatic rollback anchor
-bash ops/release-backend-v2.sh
+./ops/release-backend-v2.sh --final
 ```
 
 - Do **not** deploy by editing containers directly.

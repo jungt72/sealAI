@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "state_id": "production-release-freeze-2026-07-14",
+  "freeze": {
+    "active": true,
+    "activated_at": "2026-07-14T00:00:00Z",
+    "required_gate": "GATE-10",
+    "reason_codes": [
+      "production-audit-remediation-incomplete",
+      "release-evidence-incomplete"
+    ]
+  },
+  "unfreeze_requirements": {
+    "approval_file": "ops/production-release-gate10-approval.json",
+    "manifest_file": "ops/production-release-manifest.json",
+    "approval_scope": "production-release-freeze-lift",
+    "required_readiness_claims": [
+      "P0_SECRETS_CONTAINED",
+      "P0_STORAGE_STABLE",
+      "P0_REDIS_STABLE",
+      "RELEASE_GATE_FAIL_CLOSED"
+    ],
+    "required_manifest_hashes": [
+      "served_tree_sha256",
+      "backend_image_digest",
+      "frontend_image_digest",
+      "dashboard_artifact_sha256",
+      "database_migration_sha256",
+      "rollback_plan_sha256",
+      "evidence_manifest_sha256"
+    ]
+  }
+}

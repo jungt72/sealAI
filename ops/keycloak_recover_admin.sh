@@ -1,6 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 umask 077
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 # One-shot production recovery. It creates a temporary Keycloak admin user
 # while all Keycloak nodes are stopped, reconciles the permanent realm admin,
@@ -82,7 +84,7 @@ restore_keycloak_on_failure() {
 trap restore_keycloak_on_failure EXIT
 
 echo ">> Taking a fresh full Postgres backup before admin recovery"
-ENV_FILE="$ENV_FILE" "$ROOT_DIR/ops/backup_postgres.sh"
+ENV_FILE="$ENV_FILE" /bin/bash -p "$ROOT_DIR/ops/backup_postgres.sh"
 
 echo ">> Stopping every Keycloak node"
 "${COMPOSE[@]}" stop keycloak
@@ -119,7 +121,7 @@ KEYCLOAK_ADMIN_PASSWORD="$RECOVERY_PASSWORD" \
 KEYCLOAK_DELETE_ADMIN_USER=true \
 KEYCLOAK_TARGET_EMAIL="$TARGET_EMAIL" \
 KEYCLOAK_SECURITY_PROFILE="$SECURITY_PROFILE" \
-  "$ROOT_DIR/ops/keycloak_ensure_roles.sh"
+  /bin/bash -p "$ROOT_DIR/ops/keycloak_ensure_roles.sh"
 
 KEYCLOAK_WAS_STOPPED=false
 RECOVERY_CREATED=false
