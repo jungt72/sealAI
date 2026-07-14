@@ -242,28 +242,32 @@ authenticate
 
 realm_before="$(kcadm get "realms/$KEYCLOAK_REALM")"
 smtp_configured="$(jq -r '((.smtpServer.host // "") | length) > 0' <<<"$realm_before")"
-if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" && "$smtp_configured" != "true" ]]; then
-  die "production profile requires configured SMTP before email verification and recovery can be enabled"
-fi
 
 if [[ "$KEYCLOAK_SECURITY_PROFILE" == "production" ]]; then
   verify_email=true
-  reset_password=true
+  # Missing SMTP must never force an insecure onboarding fallback. Registration remains closed,
+  # paid-provider routes independently require email_verified=true, and recovery stays disabled
+  # until an owner supplies and validates the external mail transport under GATE-06.
+  reset_enabled="$smtp_configured"
+  if [[ "$smtp_configured" != "true" ]]; then
+    printf '%s\n' \
+      'BLOCKED_EXTERNAL: SMTP absent; self-registration and password recovery remain disabled.' >&2
+  fi
 else
   verify_email=false
-  reset_password=false
+  reset_enabled=false
 fi
 
 printf 'Reconciling realm security policy for %s (profile=%s)...\n' \
   "$KEYCLOAK_REALM" "$KEYCLOAK_SECURITY_PROFILE"
 kcadm update "realms/$KEYCLOAK_REALM" \
   -s 'sslRequired=EXTERNAL' \
-  -s 'registrationAllowed=true' \
+  -s 'registrationAllowed=false' \
   -s 'registrationEmailAsUsername=true' \
   -s 'loginWithEmailAllowed=true' \
   -s 'duplicateEmailsAllowed=false' \
   -s "verifyEmail=$verify_email" \
-  -s "resetPasswordAllowed=$reset_password" \
+  -s "resetPasswordAllowed=$reset_enabled" \
   -s 'rememberMe=true' \
   -s 'internationalizationEnabled=true' \
   -s 'defaultLocale=de' \
@@ -396,8 +400,8 @@ kcadm update "clients/$nextauth_id" -r "$KEYCLOAK_REALM" \
   -s 'attributes."oauth2.device.authorization.grant.enabled"=false' \
   >/dev/null
 
-# The V2 browser client remains public, Authorization Code + PKCE only. Stale
-# staging :8443 origins are intentionally removed after the production cutover.
+# The V2 browser client remains public, Authorization Code + PKCE only. The callback and
+# post-logout redirect are exact; stale wildcard/:8443 entries are intentionally removed.
 v2_id="$(kcadm get clients -r "$KEYCLOAK_REALM" -q clientId=sealai-v2 --fields id,clientId | jq -r '.[] | select(.clientId == "sealai-v2") | .id' | head -n1)"
 [[ -n "$v2_id" ]] || die "sealai-v2 client not found"
 kcadm update "clients/$v2_id" -r "$KEYCLOAK_REALM" \
@@ -407,24 +411,25 @@ kcadm update "clients/$v2_id" -r "$KEYCLOAK_REALM" \
   -s 'implicitFlowEnabled=false' \
   -s 'directAccessGrantsEnabled=false' \
   -s 'serviceAccountsEnabled=false' \
-  -s 'redirectUris=["https://sealingai.com/dashboard/*"]' \
+  -s 'redirectUris=["https://sealingai.com/dashboard/callback"]' \
   -s 'webOrigins=["https://sealingai.com"]' \
+  -s 'attributes."post.logout.redirect.uris"=https://sealingai.com/dashboard/' \
   -s 'attributes."pkce.code.challenge.method"=S256' \
   -s 'attributes."oauth2.device.authorization.grant.enabled"=false' \
   >/dev/null
 
 realm_state="$(kcadm get "realms/$KEYCLOAK_REALM")"
 printf 'Verifying reconciled Keycloak state...\n'
-jq -e --argjson verify_email "$verify_email" --argjson reset_password "$reset_password" \
+jq -e --argjson verify_email "$verify_email" --argjson reset_enabled "$reset_enabled" \
   '.eventsEnabled == true
    and .eventsExpiration == 604800
    and .adminEventsEnabled == true
    and .adminEventsDetailsEnabled == false
    and .bruteForceProtected == true
-   and .registrationAllowed == true
+   and .registrationAllowed == false
    and .registrationEmailAsUsername == true
    and .verifyEmail == $verify_email
-   and .resetPasswordAllowed == $reset_password
+   and .resetPasswordAllowed == $reset_enabled
    and .internationalizationEnabled == true
    and .defaultLocale == "de"
    and .ssoSessionIdleTimeout == 3600
@@ -528,8 +533,9 @@ jq -e \
    and .standardFlowEnabled == true
    and .implicitFlowEnabled == false
    and .directAccessGrantsEnabled == false
-   and .redirectUris == ["https://sealingai.com/dashboard/*"]
+   and .redirectUris == ["https://sealingai.com/dashboard/callback"]
    and .webOrigins == ["https://sealingai.com"]
+   and .attributes["post.logout.redirect.uris"] == "https://sealingai.com/dashboard/"
    and .attributes["pkce.code.challenge.method"] == "S256"' \
   <<<"$v2_state" >/dev/null || die "sealai-v2 client policy read-back failed"
 

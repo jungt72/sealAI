@@ -503,6 +503,31 @@ def test_make_embedder_openai_fails_closed_without_key(monkeypatch):
         _make_embedder(_S())
 
 
+def test_outbox_embedder_explicitly_disables_sdk_internal_retries(monkeypatch):
+    attempts: list[tuple[str, tuple[str, ...]]] = []
+    constructor_args: dict = {}
+
+    class _FailingEmbeddings:
+        def create(self, *, model, input):
+            attempts.append((model, tuple(input)))
+            raise ConnectionError("single provider attempt")
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            constructor_args.update(kwargs)
+            self.embeddings = _FailingEmbeddings()
+
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-used")
+    embedder = _make_embedder(_S(), max_retries=0)
+
+    with pytest.raises(ConnectionError, match="single provider attempt"):
+        embedder.embed(("bounded input",))
+
+    assert constructor_args["max_retries"] == 0
+    assert attempts == [("text-embedding-3-small", ("bounded input",))]
+
+
 # --- Hybrid retrieval (dense + sparse BM25, RRF-fused) + optional rerank — default OFF, see the
 # settings docstrings for why (Qdrant collection schema migration, not a silent backfill). ---
 

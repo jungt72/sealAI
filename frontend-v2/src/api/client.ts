@@ -144,37 +144,39 @@ export class ApiClient {
     }
     throw new ApiError(502, "stream ended without result");
   }
-  /** Appends `?case_id=` when given ("Fälle"-Sidebar) — omitted, the path is unchanged, so a
-   * caller that never passes caseId gets byte-identical URLs to before this feature. */
-  private withCase(path: string, caseId?: string): string {
-    return caseId ? `${path}?case_id=${encodeURIComponent(caseId)}` : path;
+  /** Case selection is an authenticated header, never a query parameter (access-log/referrer safe). */
+  private caseHeaders(caseId?: string): HeadersInit | undefined {
+    return caseId ? { "X-SealAI-Case-Id": caseId } : undefined;
   }
   memory(caseId?: string): Promise<ConversationMemory> {
-    return this.req(this.withCase("/conversations/current/memory", caseId));
+    return this.req("/conversations/current/memory", { headers: this.caseHeaders(caseId) });
   }
   /** Reconciles persisted case facts with the active adaptive-interview controller. Shadow-only and
    * disabled deployments return `next_question: null`; the client never infers controller state. */
   refreshInterview(caseId?: string): Promise<InterviewRefreshResponse> {
-    return this.req(this.withCase("/conversations/current/interview/refresh", caseId), {
+    return this.req("/conversations/current/interview/refresh", {
       method: "POST",
+      headers: this.caseHeaders(caseId),
     });
   }
   /** M8 kernel channel: the deterministic compute for the current session (the Berechnungen panel's
    * source). Backend-only numbers — the client never computes. */
   compute(caseId?: string): Promise<ComputeResponse> {
-    return this.req(this.withCase("/compute", caseId));
+    return this.req("/compute", { headers: this.caseHeaders(caseId) });
   }
   editFact(feld: string, wert: string, origin?: string, caseId?: string): Promise<unknown> {
-    return this.req(this.withCase(`/conversations/current/facts/${encodeURIComponent(feld)}`, caseId), {
+    return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, {
       method: "PUT",
+      headers: this.caseHeaders(caseId),
       body: JSON.stringify(origin ? { wert, origin } : { wert }),
     });
   }
   /** Phase 2b — the parameter-form batch settle: all fields in one POST → one settle + recompute,
    * returns the deterministic confirmation (post-bind echo + kern result + Rückfragen). */
   submitParams(items: ParamItem[], caseId?: string): Promise<ConfirmationResponse> {
-    return this.req(this.withCase("/conversations/current/facts", caseId), {
+    return this.req("/conversations/current/facts", {
       method: "POST",
+      headers: this.caseHeaders(caseId),
       body: JSON.stringify({ items }),
     });
   }
@@ -189,12 +191,16 @@ export class ApiClient {
     });
   }
   forgetFact(feld: string, caseId?: string): Promise<unknown> {
-    return this.req(this.withCase(`/conversations/current/facts/${encodeURIComponent(feld)}`, caseId), {
+    return this.req(`/conversations/current/facts/${encodeURIComponent(feld)}`, {
       method: "DELETE",
+      headers: this.caseHeaders(caseId),
     });
   }
   forgetAll(caseId?: string): Promise<unknown> {
-    return this.req(this.withCase("/conversations/current", caseId), { method: "DELETE" });
+    return this.req("/conversations/current", {
+      method: "DELETE",
+      headers: this.caseHeaders(caseId),
+    });
   }
   /** "Fälle"-Sidebar: the tenant's case list, sorted server-side by most-recently-updated. */
   listCases(): Promise<{ cases: CaseSummary[] }> {

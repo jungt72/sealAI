@@ -1,0 +1,65 @@
+contract_id: SEALAI-PROVIDER-BUDGET-V1
+status: BLOCKED_EXTERNAL
+activation_implemented: false
+as_of: "2026-07-14"
+purpose: >-
+  Release-bound proof that the non-refundable reservation charged before a product request is at
+  least the maximum monetary provider liability of that request. This file contains no approval
+  and no price assumption; the application therefore keeps paid-provider requests disabled.
+required_external_inputs:
+  - provider-issued price schedule, currency, region, taxes, and effective interval
+  - exact enabled provider/model identifiers and their input, cached-input, output, and tool prices
+  - maximum input tokens after every prompt, retrieval, memory, and case-context expansion
+  - maximum output/reasoning tokens for every provider call
+  - maximum number of calls for every route, including verifier/helper/embedding/tool calls
+  - retry and fallback graph, including cross-provider fallback and partial-failure behavior
+  - provider-account native spend ceiling and alert/notification owner
+  - embedding price for one bounded outbox call, including the 50-item and byte-limit shape below
+required_code_invariants:
+  - every provider call is reachable only after one shared Postgres admission
+  - every call, retry, fallback, input, output, and reasoning dimension is mechanically bounded
+  - reservation_micros is greater than or equal to the calculated worst-case request liability
+  - daily and monthly reservations are atomic and non-refundable
+  - provider_requests_enabled remains false if the database, migration, or policy is unavailable
+  - >-
+    paid Memory/Knowledge outbox embeddings and their direct CLIs share the Postgres admission
+    authority with product requests; there is no in-memory fallback
+  - >-
+    one embedding admission encloses exactly one SDK attempt with at most 50 non-empty inputs,
+    24000 UTF-8 bytes per input, and 1200000 UTF-8 bytes for the complete batch
+  - >-
+    SDK retries are zero in the outbox path; worker max_attempts is at most 5 and every later
+    attempt consumes a fresh non-refundable admission
+  - >-
+    Memory upserts are embedded in one batch; Knowledge upserts remain one batch; collection
+    warmups are lazy, separately admitted, and occur only after a claimed upsert has passed the
+    pure local input preflight
+  - >-
+    hybrid Knowledge sparse embedding and result-cardinality validation complete before paid dense
+    warmup/call; a local sparse failure consumes no provider admission
+  - >-
+    empty queues, delete-only passes, and the explicitly local fastembed path perform no provider
+    admission and no paid embedding call; Qdrant delete work remains available while the provider
+    kill switch is closed
+  - >-
+    durable outbox error fields contain only bounded control, validation, or exception-type codes;
+    arbitrary provider/Qdrant messages, URLs, payloads, auth metadata, and tracebacks are forbidden
+approval_evidence_required:
+  - immutable calculation artifact with independent reviewer identity and timestamp
+  - sha256 digest of that exact artifact
+  - hermetic boundary tests and an explicitly budgeted provider smoke approved under its own gate
+  - GATE-07 migration evidence, GATE-08 exact-artifact evidence, and GATE-06 approval
+current_safe_state:
+  setting: SEALAI_V2_PROVIDER_REQUESTS_ENABLED
+  value: false
+  enforcement: >-
+    Settings rejects true even when a digest is supplied while
+    PROVIDER_BUDGET_ACTIVATION_IMPLEMENTED is false.
+forbidden_shortcuts:
+  - treating the example reservation or budget values as calibrated production amounts
+  - approving a digest without the matching immutable calculation artifact
+  - refunding failed or cancelled requests into a hard monetary ceiling
+  - using telemetry estimates or provider soft alerts as the primary admission authority
+  - enabling an outbox batch above 50, an outbox retry count above 5, or SDK-internal retries
+  - treating a collection warmup as free or performing it before a real upsert is claimed
+  - constructing the paid embedder or consuming a warmup admission before validating the real batch

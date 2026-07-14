@@ -54,6 +54,9 @@ services:
       SEALAI_V2_AUTH_JWKS_URL: http://sealai-keycloak:8080/realms/sealAI/protocol/openid-connect/certs
       SEALAI_V2_AUTH_ISSUER: https://sealingai.com/realms/sealAI
       SEALAI_V2_AUTH_AUDIENCE: sealai-v2
+      # No paid-provider use is authorized in the ordinary staging stack. A separately approved
+      # provider smoke must supply its own isolated budget contract and credentials.
+      SEALAI_V2_PROVIDER_REQUESTS_ENABLED: "false"
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — pass via docker compose --env-file}
     # NO host port publish: this host's firewall drops host→container traffic on newly created
     # bridges (verified 2026-06-10: 172.18.x sealai_default reachable, fresh staging bridge not),

@@ -285,6 +285,9 @@ class VerifiedIdentity:
     # Verified manufacturer-partner id (Keycloak hersteller_id claim). Additive + default-empty; scopes
     # the manufacturer SELF-SERVICE surface to their OWN partner record. Never the tenant boundary.
     hersteller_id: str = ""
+    # Explicitly verified IdP claim. Missing/non-boolean claims are false in the production
+    # validator; provider-backed endpoints require True before they can incur cost.
+    email_verified: bool = False
 
 
 class AuthValidator(Protocol):

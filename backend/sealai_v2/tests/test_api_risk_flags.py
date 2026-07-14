@@ -97,6 +97,9 @@ def test_anfrage_response_briefing_carries_risk_flags():
         )
     )
     app.dependency_overrides.clear()
+    app.dependency_overrides[deps.require_provider_admission] = (
+        deps.require_legal_acceptance
+    )
     app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(_IDS)
     app.dependency_overrides[deps.get_pipeline] = lambda: pipeline
     app.dependency_overrides[deps.get_lead_store] = lambda: InProcessLeadStore()

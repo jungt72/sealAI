@@ -35,6 +35,7 @@ an application-layer concern, same as every other table here).
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
     JSON,
     Boolean,
     Float,
@@ -750,3 +751,49 @@ class V2LegalAcceptance(Base):
         String(64), nullable=False, default=""
     )
     accepted_user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class V2ProviderQuotaWindow(Base):
+    """Shared, atomic request/quota/budget counters; scope refs are one-way hashes, never PII."""
+
+    __tablename__ = "v2_provider_quota_windows"
+
+    scope_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    scope_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    window_start: Mapped[str] = mapped_column(String(32), primary_key=True)
+    admitted_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    denied_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    reserved_cost_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2ProviderAdmission(Base):
+    """Privacy-minimized admission/audit row with an expiring concurrency lease."""
+
+    __tablename__ = "v2_provider_admissions"
+    __table_args__ = (
+        Index(
+            "ix_v2_provider_admission_subject_active",
+            "subject_ref",
+            "released_at",
+            "expires_at",
+        ),
+        Index(
+            "ix_v2_provider_admission_tenant_active",
+            "tenant_ref",
+            "released_at",
+            "expires_at",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    started_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    expires_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    released_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    reserved_cost_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)

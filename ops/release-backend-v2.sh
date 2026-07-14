@@ -230,7 +230,7 @@ echo ">> reconciling governed knowledge states into Postgres system-of-record"
   -m sealai_v2.knowledge.bootstrap
 echo ">> synchronizing the ledger-derived knowledge index before traffic switch"
 "${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
-  -m sealai_v2.knowledge.outbox_worker drain-all --batch-size 100
+  -m sealai_v2.knowledge.outbox_worker drain-all --batch-size 50
 
 "${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}" "${WORKER_SERVICE}"
 IMAGE_SHA="$(docker inspect "${SERVICE}" --format '{{.Image}}')"

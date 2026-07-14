@@ -145,14 +145,17 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
     ]);
   });
 
-  it("compute() targets GET /api/v2/compute and appends case_id when given", async () => {
+  it("compute() targets a stable URL and carries case_id only in a header", async () => {
     const payload = { computed: [], not_computed: [], notes: [] };
     const fetchFn = mockFetch(200, payload);
     const client = new ApiClient(() => "tok", () => undefined);
     const res = await client.compute();
     expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/compute");
     await client.compute("case-42");
-    expect(String(fetchFn.mock.calls[1][0])).toBe("/api/v2/compute?case_id=case-42");
+    expect(String(fetchFn.mock.calls[1][0])).toBe("/api/v2/compute");
+    expect(new Headers((fetchFn.mock.calls[1][1] as RequestInit).headers).get("X-SealAI-Case-Id")).toBe(
+      "case-42",
+    );
     expect(res).toEqual(payload);
   });
 
@@ -216,43 +219,40 @@ describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
     expect(JSON.parse(fallbackInit.body as string)).toEqual({ message: "hi", case_id: "case-42" });
   });
 
-  it("memory: omitted caseId targets the bare path; a given one appends ?case_id=", async () => {
+  it("memory: omitted caseId has no selector; a given one uses a header", async () => {
     const fetchFn = mockFetch(200, { case_state: [], history: [] });
     const client = new ApiClient(() => "tok", () => undefined);
     await client.memory();
     expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/conversations/current/memory");
     await client.memory("case-42");
-    expect(String(fetchFn.mock.calls[1][0])).toBe(
-      "/api/v2/conversations/current/memory?case_id=case-42",
+    expect(String(fetchFn.mock.calls[1][0])).toBe("/api/v2/conversations/current/memory");
+    expect(new Headers((fetchFn.mock.calls[1][1] as RequestInit).headers).get("X-SealAI-Case-Id")).toBe(
+      "case-42",
     );
   });
 
-  it("editFact/forgetFact/forgetAll/submitParams/refreshInterview append ?case_id= only when given", async () => {
+  it("editFact/forgetFact/forgetAll/submitParams/refreshInterview never put case IDs in URLs", async () => {
     const fetchFn = mockFetch(200, {});
     const client = new ApiClient(() => "tok", () => undefined);
     await client.editFact("medium", "Wasser");
     expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/conversations/current/facts/medium");
     await client.editFact("medium", "Wasser", undefined, "case-42");
-    expect(String(fetchFn.mock.calls[1][0])).toBe(
-      "/api/v2/conversations/current/facts/medium?case_id=case-42",
-    );
+    expect(String(fetchFn.mock.calls[1][0])).toBe("/api/v2/conversations/current/facts/medium");
     await client.forgetFact("medium", "case-42");
-    expect(String(fetchFn.mock.calls[2][0])).toBe(
-      "/api/v2/conversations/current/facts/medium?case_id=case-42",
-    );
+    expect(String(fetchFn.mock.calls[2][0])).toBe("/api/v2/conversations/current/facts/medium");
     await client.forgetAll("case-42");
-    expect(String(fetchFn.mock.calls[3][0])).toBe(
-      "/api/v2/conversations/current?case_id=case-42",
-    );
+    expect(String(fetchFn.mock.calls[3][0])).toBe("/api/v2/conversations/current");
     await client.submitParams([], "case-42");
-    expect(String(fetchFn.mock.calls[4][0])).toBe(
-      "/api/v2/conversations/current/facts?case_id=case-42",
-    );
+    expect(String(fetchFn.mock.calls[4][0])).toBe("/api/v2/conversations/current/facts");
     await client.refreshInterview("case-42");
-    expect(String(fetchFn.mock.calls[5][0])).toBe(
-      "/api/v2/conversations/current/interview/refresh?case_id=case-42",
-    );
+    expect(String(fetchFn.mock.calls[5][0])).toBe("/api/v2/conversations/current/interview/refresh");
     expect((fetchFn.mock.calls[5][1] as RequestInit).method).toBe("POST");
+    for (const index of [1, 2, 3, 4, 5]) {
+      expect(
+        new Headers((fetchFn.mock.calls[index][1] as RequestInit).headers).get("X-SealAI-Case-Id"),
+      ).toBe("case-42");
+      expect(String(fetchFn.mock.calls[index][0])).not.toContain("case-42");
+    }
   });
 
   it("listCases targets GET /api/v2/conversations and returns the case list", async () => {

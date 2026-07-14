@@ -10,7 +10,7 @@ from sealai_v2.api.deps import (
     flags_from_settings,
     get_pipeline,
     get_settings,
-    require_legal_acceptance,
+    require_provider_admission,
 )
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
@@ -23,13 +23,13 @@ _renderer = ArtifactRenderer()
 
 
 class BriefingRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=8000)
 
 
 @router.post("/briefing")
 async def briefing(
     req: BriefingRequest,
-    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    identity: VerifiedIdentity = Depends(require_provider_admission, scope="request"),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> dict:

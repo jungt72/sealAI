@@ -14,6 +14,7 @@ from sealai_v2.db.models import (
     V2InterviewState,
     V2ManufacturerCapabilityProfile,
     V2ManufacturerCapabilityReview,
+    V2ProviderQuotaWindow,
 )
 
 
@@ -25,7 +26,7 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260714_0010"
+    assert current == head == "20260714_0011"
     indexes = {
         item["name"]
         for item in inspect(engine).get_indexes("v2_interview_shadow_decisions")
@@ -138,6 +139,39 @@ def test_alembic_baseline_rejects_partial_legacy_schema(tmp_path) -> None:
 
     engine = make_engine(f"sqlite:///{path}")
     with pytest.raises(RuntimeError, match="partial V2 schema"):
+        up(engine)
+
+
+def test_provider_cost_migration_rejects_partial_precreated_schema(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'partial-provider-cost.db'}")
+    _upgrade_engine(engine, "20260714_0010")
+    V2ProviderQuotaWindow.__table__.create(engine)
+
+    with pytest.raises(RuntimeError, match="partial provider cost-control schema"):
+        up(engine)
+
+
+def test_provider_cost_migration_rejects_complete_columns_without_constraints(
+    tmp_path,
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'drifted-provider-cost.db'}")
+    _upgrade_engine(engine, "20260714_0010")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE v2_provider_quota_windows ("
+            "scope_kind TEXT NOT NULL, scope_ref TEXT NOT NULL, window_kind TEXT NOT NULL, "
+            "window_start TEXT NOT NULL, admitted_count BIGINT NOT NULL, "
+            "denied_count BIGINT NOT NULL, reserved_cost_micros BIGINT NOT NULL, "
+            "updated_at TEXT NOT NULL)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE v2_provider_admissions ("
+            "request_id TEXT NOT NULL, tenant_ref TEXT NOT NULL, subject_ref TEXT NOT NULL, "
+            "started_at TEXT NOT NULL, expires_at TEXT NOT NULL, released_at TEXT, "
+            "outcome TEXT NOT NULL, reserved_cost_micros BIGINT NOT NULL)"
+        )
+
+    with pytest.raises(RuntimeError, match="primary-key drift"):
         up(engine)
 
 

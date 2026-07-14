@@ -75,6 +75,9 @@ def _client(*partners, handoff_enabled=True, capability_status="verified"):
     app.dependency_overrides.clear()
     app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(IDS)
     app.dependency_overrides[deps.get_pipeline] = lambda: pipeline
+    app.dependency_overrides[deps.require_provider_admission] = (
+        deps.require_legal_acceptance
+    )
     app.dependency_overrides[deps.get_lead_store] = lambda: store
     app.dependency_overrides[deps.get_partner_registry] = lambda: commercial_registry
     app.dependency_overrides[deps.get_capability_store] = lambda: capability_store

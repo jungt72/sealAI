@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from sealai_v2.api.confirmation import build_param_confirmation
@@ -31,7 +31,10 @@ router = APIRouter(prefix="/api/v2/conversations", tags=["conversations"])
 
 # Same width as V2Session.session_id (db/models.py) — an over-long case_id now fails closed with a
 # clean 422 instead of a generic 500 surfaced from the DB column's own length constraint.
-CaseIdParam = Annotated[str | None, Query(max_length=255)]
+CaseIdParam = Annotated[
+    str | None,
+    Header(alias="X-SealAI-Case-Id", max_length=255, pattern=r"^[A-Za-z0-9._~-]+$"),
+]
 
 
 def _memory(pipeline: Pipeline):

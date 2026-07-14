@@ -17,6 +17,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # serving cache unreachable until an atomic ledger epoch is checked on every
 # get/put and covered by lifecycle integration tests.
 EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED = False
+# Monetary provider ceilings are implemented, but production activation remains mechanically
+# unavailable until the externally maintained provider prices plus maximum call/retry/token graph
+# have been reviewed into a worst-case reservation contract. This prevents an arbitrary digest or
+# underestimated reservation from being used as a paper-only bypass of the hard budget.
+PROVIDER_BUDGET_ACTIVATION_IMPLEMENTED = False
 
 
 class Settings(BaseSettings):
@@ -55,6 +60,41 @@ class Settings(BaseSettings):
     auth_issuer: str | None = None
     auth_audience: str | None = None
     auth_tenant_claim: str = "tenant_id"
+    # AUTH-002: bounded signing-key freshness. Cache-Control may shorten these values but can never
+    # extend beyond auth_jwks_max_ttl_s (the key-revocation SLA attributable to this service).
+    auth_jwks_ttl_s: float = 300.0
+    auth_jwks_max_ttl_s: float = 600.0
+    auth_jwks_unknown_kid_refresh_interval_s: float = 5.0
+    auth_jwks_negative_kid_ttl_s: float = 30.0
+    auth_jwks_max_negative_kids: int = 256
+    # Stateless access-token/session revocation cannot be instantaneous without a Keycloak
+    # introspection/event integration. Independently cap token age so a realm/client drift cannot
+    # silently widen the local revocation exposure beyond five minutes.
+    auth_max_token_age_s: int = 300
+    auth_clock_skew_s: int = 30
+
+    # AUTH-001: provider-backed product actions are default-DENY until GATE-06 explicitly enables
+    # this kill switch with a migrated shared Postgres quota store. Limits are server authority;
+    # browser values and provider-side soft limits are never trusted as the primary control.
+    provider_requests_enabled: bool = False
+    provider_subject_requests_per_minute: int = 6
+    provider_tenant_requests_per_minute: int = 30
+    provider_subject_requests_per_day: int = 100
+    provider_tenant_requests_per_day: int = 1000
+    provider_tenant_requests_per_month: int = 20000
+    provider_subject_max_concurrent: int = 2
+    provider_tenant_max_concurrent: int = 10
+    provider_request_lease_s: int = 300
+    # Conservative, non-refundable upper-bound reservation for one product request. Budgets are
+    # integer micro-currency units to avoid floating-point bypasses.
+    provider_request_reservation_micros: int = 250_000
+    provider_daily_budget_micros: int = 10_000_000
+    provider_monthly_budget_micros: int = 100_000_000
+    # Enabling paid-provider work requires a reviewed, release-bound calculation proving that the
+    # reservation above covers the maximum cost of one bounded request (all calls/retries/models).
+    # The hash is evidence identity, not a secret; an empty value keeps the kill switch closed.
+    provider_budget_contract_sha256: str | None = None
+    api_max_request_body_bytes: int = 131_072
 
     # --- model tiers: Small 4 standard, current broadly available OpenAI frontier for complex cases ---
     standard_model: str = "mistral-small-2603"
@@ -243,6 +283,80 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_product_mode_dependencies(self) -> "Settings":
+        if not (
+            0 < self.auth_jwks_ttl_s <= self.auth_jwks_max_ttl_s <= 900
+            and 0
+            < self.auth_jwks_unknown_kid_refresh_interval_s
+            <= self.auth_jwks_max_ttl_s
+            and 0 < self.auth_jwks_negative_kid_ttl_s <= self.auth_jwks_max_ttl_s
+            and 1 <= self.auth_jwks_max_negative_kids <= 4096
+        ):
+            raise ValueError("JWKS cache bounds are invalid")
+        if not 60 <= self.auth_max_token_age_s <= 900:
+            raise ValueError(
+                "access-token maximum age must be between 60 and 900 seconds"
+            )
+        if not 0 <= self.auth_clock_skew_s <= 60:
+            raise ValueError("auth clock skew must be between 0 and 60 seconds")
+        positive_cost_limits = (
+            self.provider_subject_requests_per_minute,
+            self.provider_tenant_requests_per_minute,
+            self.provider_subject_requests_per_day,
+            self.provider_tenant_requests_per_day,
+            self.provider_tenant_requests_per_month,
+            self.provider_subject_max_concurrent,
+            self.provider_tenant_max_concurrent,
+            self.provider_request_lease_s,
+            self.provider_request_reservation_micros,
+            self.provider_daily_budget_micros,
+            self.provider_monthly_budget_micros,
+            self.api_max_request_body_bytes,
+        )
+        if any(value <= 0 for value in positive_cost_limits):
+            raise ValueError("provider cost-control limits must be positive")
+        if (
+            self.provider_subject_requests_per_minute
+            > self.provider_tenant_requests_per_minute
+        ):
+            raise ValueError("subject minute limit cannot exceed tenant minute limit")
+        if (
+            self.provider_subject_requests_per_day
+            > self.provider_tenant_requests_per_day
+        ):
+            raise ValueError("subject daily quota cannot exceed tenant daily quota")
+        if (
+            self.provider_tenant_requests_per_day
+            > self.provider_tenant_requests_per_month
+        ):
+            raise ValueError("tenant daily quota cannot exceed tenant monthly quota")
+        if self.provider_subject_max_concurrent > self.provider_tenant_max_concurrent:
+            raise ValueError("subject concurrency cannot exceed tenant concurrency")
+        if self.provider_request_lease_s > 900:
+            raise ValueError("provider request lease cannot exceed 15 minutes")
+        if self.provider_request_reservation_micros > min(
+            self.provider_daily_budget_micros, self.provider_monthly_budget_micros
+        ):
+            raise ValueError("provider request reservation exceeds a hard budget")
+        if self.provider_daily_budget_micros > self.provider_monthly_budget_micros:
+            raise ValueError("daily provider budget cannot exceed monthly budget")
+        if not 1024 <= self.api_max_request_body_bytes <= 1_048_576:
+            raise ValueError("API request-body bound must be between 1 KiB and 1 MiB")
+        if self.provider_requests_enabled:
+            if not self.database_url:
+                raise ValueError(
+                    "provider requests require the shared Postgres quota store"
+                )
+            if self.provider_budget_contract_sha256 is None or not re.fullmatch(
+                r"sha256:[0-9a-f]{64}", self.provider_budget_contract_sha256
+            ):
+                raise ValueError(
+                    "provider requests require a reviewed provider budget contract digest"
+                )
+            if not PROVIDER_BUDGET_ACTIVATION_IMPLEMENTED:
+                raise ValueError(
+                    "provider request activation is unavailable until the worst-case cost "
+                    "contract is externally validated"
+                )
         if self.exact_answer_cache_enabled:
             if not self.execution_policy_enabled:
                 raise ValueError("exact answer cache requires execution_policy_enabled")

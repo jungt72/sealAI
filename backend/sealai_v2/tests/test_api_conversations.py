@@ -10,6 +10,10 @@ from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewService
 from sealai_v2.tests._apiutil import auth, make_client, make_pipeline
 
 
+def case_auth(token: str, case_id: str) -> dict[str, str]:
+    return {**auth(token), "X-SealAI-Case-Id": case_id}
+
+
 def _seed(pipeline, tenant, session, feld, wert):
     from sealai_v2.core.contracts import RememberedFact
 
@@ -66,8 +70,7 @@ def test_interview_refresh_enforces_same_user_case_ownership():
 
     response = client.post(
         "/api/v2/conversations/current/interview/refresh",
-        params={"case_id": "private-A"},
-        headers=auth("tok-A2"),
+        headers=case_auth("tok-A2", "private-A"),
     )
 
     assert response.status_code == 404
@@ -183,16 +186,14 @@ def test_same_tenant_user_cannot_list_read_or_mutate_another_users_conversation(
 
     read = client.get(
         "/api/v2/conversations/current/memory",
-        params={"case_id": "private-A"},
-        headers=auth("tok-A2"),
+        headers=case_auth("tok-A2", "private-A"),
     )
     assert read.status_code == 404
 
     edit = client.put(
         "/api/v2/conversations/current/facts/medium",
-        params={"case_id": "private-A"},
         json={"wert": "HACKED"},
-        headers=auth("tok-A2"),
+        headers=case_auth("tok-A2", "private-A"),
     )
     assert edit.status_code == 404
     assert (
@@ -201,9 +202,8 @@ def test_same_tenant_user_cannot_list_read_or_mutate_another_users_conversation(
     )
 
 
-def test_case_id_query_param_overrides_the_tokens_session_for_view_memory():
-    # "Fälle"-Sidebar (Patch A): a tenant can view a DIFFERENT one of its own cases by passing
-    # ?case_id=..., not just the token-derived "current" one.
+def test_case_id_header_overrides_the_tokens_session_for_view_memory():
+    # The selector never enters a request target/access log.
     client, pipeline = make_client()
     _seed(pipeline, "tenant-A", "sess-A", "medium", "Öl")
     _seed(pipeline, "tenant-A", "case-2", "medium", "Wasser")
@@ -213,8 +213,7 @@ def test_case_id_query_param_overrides_the_tokens_session_for_view_memory():
     assert any(f["wert"] == "Öl" for f in default["case_state"])
     other = client.get(
         "/api/v2/conversations/current/memory",
-        params={"case_id": "case-2"},
-        headers=auth("tok-A"),
+        headers=case_auth("tok-A", "case-2"),
     ).json()
     assert any(f["wert"] == "Wasser" for f in other["case_state"])
     assert not any(f["wert"] == "Öl" for f in other["case_state"])
@@ -228,21 +227,19 @@ def test_case_id_naming_a_foreign_tenants_session_returns_empty_not_leaked():
     _seed(pipeline, "tenant-B", "sess-B", "medium", "Wasser")
     r = client.get(
         "/api/v2/conversations/current/memory",
-        params={"case_id": "sess-B"},
-        headers=auth("tok-A"),
+        headers=case_auth("tok-A", "sess-B"),
     ).json()
     assert r["case_state"] == []
     assert r["history"] == []
 
 
-def test_case_id_query_param_overrides_for_edit_and_forget_too():
+def test_case_id_header_overrides_for_edit_and_forget_too():
     client, pipeline = make_client()
     _seed(pipeline, "tenant-A", "case-2", "medium", "Öl")
     client.put(
         "/api/v2/conversations/current/facts/medium",
         json={"wert": "Wasser"},
-        params={"case_id": "case-2"},
-        headers=auth("tok-A"),
+        headers=case_auth("tok-A", "case-2"),
     )
     assert (
         pipeline.memory.case_state(tenant_id="tenant-A", session_id="case-2")[0].wert
@@ -252,8 +249,7 @@ def test_case_id_query_param_overrides_for_edit_and_forget_too():
     assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="sess-A") == ()
     client.delete(
         "/api/v2/conversations/current/facts/medium",
-        params={"case_id": "case-2"},
-        headers=auth("tok-A"),
+        headers=case_auth("tok-A", "case-2"),
     )
     assert pipeline.memory.case_state(tenant_id="tenant-A", session_id="case-2") == ()
 
@@ -280,14 +276,12 @@ def test_cross_tenant_MUTATION_isolation_via_token():
 
 
 def test_case_id_over_255_chars_is_a_clean_422_not_a_db_500():
-    # 2026-07-04 audit finding: same gap as ChatRequest.case_id, but for the query-param form used
-    # by every route in this file — an over-long value hit the DB's own String(255) column and
+    # An over-long header value must not hit the DB's own String(255) column and
     # surfaced as a generic 500 instead of a validation error.
     client, _ = make_client()
     r = client.get(
         "/api/v2/conversations/current/memory",
-        params={"case_id": "a" * 256},
-        headers=auth("tok-A"),
+        headers=case_auth("tok-A", "a" * 256),
     )
     assert r.status_code == 422
 
@@ -296,7 +290,6 @@ def test_case_id_at_exactly_255_chars_is_accepted():
     client, _ = make_client()
     r = client.get(
         "/api/v2/conversations/current/memory",
-        params={"case_id": "a" * 255},
-        headers=auth("tok-A"),
+        headers=case_auth("tok-A", "a" * 255),
     )
     assert r.status_code == 200

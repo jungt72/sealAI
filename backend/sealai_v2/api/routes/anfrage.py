@@ -25,7 +25,7 @@ from sealai_v2.api.deps import (
     get_partner_registry,
     get_pipeline,
     get_settings,
-    require_legal_acceptance,
+    require_provider_admission,
 )
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
@@ -39,14 +39,14 @@ _renderer = ArtifactRenderer()
 
 
 class AnfrageRequest(BaseModel):
-    partner_id: str = Field(min_length=1)
-    message: str = Field(min_length=1)
+    partner_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
+    message: str = Field(min_length=1, max_length=8000)
 
 
 @router.post("/anfrage")
 async def anfrage(
     req: AnfrageRequest,
-    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    identity: VerifiedIdentity = Depends(require_provider_admission, scope="request"),
     pipeline: Pipeline = Depends(get_pipeline),
     leads: LeadStore = Depends(get_lead_store),
     capabilities=Depends(get_capability_store),

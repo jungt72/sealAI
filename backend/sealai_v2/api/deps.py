@@ -7,15 +7,22 @@ NEVER reads a tenant/session header or param. Auth not configured → 503 (fail-
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import AuthError, AuthValidator, Flags, VerifiedIdentity
 from sealai_v2.llm.factory import build_client_factory
 from sealai_v2.pipeline.pipeline import Pipeline, build_pipeline
 from sealai_v2.security.auth import KeycloakJwtValidator
+from sealai_v2.security.control_metrics import record_auth_denial, record_quota_denial
+from sealai_v2.security.cost_control import CostControlPolicy, PostgresCostControlStore
+
+_COST_LOG = logging.getLogger("sealai_v2.provider_admission")
 
 
 @lru_cache(maxsize=1)
@@ -44,6 +51,13 @@ def get_validator() -> AuthValidator:
         issuer=s.auth_issuer,
         audience=s.auth_audience,
         tenant_claim=s.auth_tenant_claim,
+        jwks_ttl_s=s.auth_jwks_ttl_s,
+        jwks_max_ttl_s=s.auth_jwks_max_ttl_s,
+        unknown_kid_refresh_interval_s=s.auth_jwks_unknown_kid_refresh_interval_s,
+        negative_kid_ttl_s=s.auth_jwks_negative_kid_ttl_s,
+        max_negative_kids=s.auth_jwks_max_negative_kids,
+        max_token_age_s=s.auth_max_token_age_s,
+        clock_skew_s=s.auth_clock_skew_s,
     )
 
 
@@ -61,10 +75,12 @@ def current_identity(
 ) -> VerifiedIdentity:
     """P0: identity from the VERIFIED token only — never a client header/param."""
     if not authorization or not authorization.startswith("Bearer "):
+        record_auth_denial("missing_bearer")
         raise HTTPException(status_code=401, detail="missing bearer token")
     try:
         return validator.validate(authorization[len("Bearer ") :])
     except AuthError:
+        record_auth_denial("invalid_token")
         raise HTTPException(status_code=401, detail="invalid token") from None
 
 
@@ -269,6 +285,87 @@ def require_legal_acceptance(
             detail="legal_acceptance_required",
         )
     return identity
+
+
+@lru_cache(maxsize=1)
+def get_cost_control_store():
+    """Shared production authority. Absence/migration failure denies provider-backed requests."""
+    settings = get_settings()
+    if not settings.database_url:
+        return None
+    try:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+
+        return PostgresCostControlStore(
+            make_sessionmaker(make_engine(settings.database_url))
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="provider cost control unavailable"
+        ) from None
+
+
+async def require_provider_admission(
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    settings: Settings = Depends(get_settings),
+    store=Depends(get_cost_control_store),
+):
+    """Verified-email + rate/quota/concurrency/budget gate with a crash-safe lease."""
+    if not settings.provider_requests_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "provider_kill_switch",
+                "message": "provider requests disabled",
+            },
+        )
+    if not identity.email_verified:
+        record_auth_denial("email_unverified")
+        raise HTTPException(status_code=403, detail="verified email required")
+    if store is None:
+        raise HTTPException(status_code=503, detail="provider cost control unavailable")
+    try:
+        decision = await run_in_threadpool(
+            store.admit, identity, CostControlPolicy.from_settings(settings)
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="provider cost control unavailable"
+        ) from None
+    if not decision.allowed:
+        record_quota_denial(decision.reason)
+        headers = (
+            {"Retry-After": str(decision.retry_after_s)}
+            if decision.retry_after_s is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=decision.status_code,
+            detail={"code": decision.reason, "message": "provider request denied"},
+            headers=headers,
+        )
+
+    assert decision.admission is not None
+    outcome = "error"
+    try:
+        yield identity
+        outcome = "success"
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        try:
+            await run_in_threadpool(
+                store.release, decision.admission.request_id, outcome=outcome
+            )
+        except (
+            Exception
+        ) as exc:  # lease expiry is the crash-safe fallback; never leak DB detail
+            _COST_LOG.error(
+                "provider_admission event=release_failed request_id=%s error_type=%s",
+                decision.admission.request_id,
+                type(exc).__name__,
+            )
 
 
 def require_decision_reviewer(

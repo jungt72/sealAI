@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from sealai_v2.api.deps import get_pipeline, require_legal_acceptance
 from sealai_v2.api.serializers import compute_response
@@ -22,7 +22,10 @@ from sealai_v2.core.contracts import ConversationAccessDenied, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/v2", tags=["compute"])
-CaseIdParam = Annotated[str | None, Query(max_length=255)]
+CaseIdParam = Annotated[
+    str | None,
+    Header(alias="X-SealAI-Case-Id", max_length=255, pattern=r"^[A-Za-z0-9._~-]+$"),
+]
 
 
 @router.get("/compute")

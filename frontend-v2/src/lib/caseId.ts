@@ -1,52 +1,70 @@
-// "Fälle"-Sidebar: the active case is persisted in the URL's ?case= query param — no router
-// dependency (this codebase deliberately has none, and only ONE param needs persisting). Mirrors
-// lib/navSidebar.ts's small-focused-module style, but reads/writes the URL instead of localStorage
-// (case_id must survive a hard reload AND be shareable/bookmarkable, which localStorage alone can't
-// give — see the ChatGPT-style sidebar request this implements).
+// Active case routing deliberately avoids query strings. The case identifier lives in the
+// browser history entry (for Back/Forward) with a tab-scoped sessionStorage fallback (for reload).
+// It is still an untrusted selector: the backend re-authorizes it against tenant + subject.
 
-const CASE_PARAM = "case";
-const PENDING_CASE_KEY = "v2_pending_case_id";
+const LEGACY_CASE_PARAM = "case";
+const HISTORY_CASE_KEY = "sealaiCaseId";
+const CURRENT_CASE_KEY = "sealai.v2.current_case.v1";
+const PENDING_CASE_KEY = "sealai.v2.pending_auth_case.v1";
+const CASE_ID_RE = /^[A-Za-z0-9._~-]{1,255}$/;
 
-/** The case_id from the current URL, or null if absent/blank. */
+function validCaseId(value: unknown): value is string {
+  return typeof value === "string" && CASE_ID_RE.test(value);
+}
+
+function historyCaseId(): string | null {
+  const state = window.history.state as Record<string, unknown> | null;
+  return validCaseId(state?.[HISTORY_CASE_KEY]) ? state[HISTORY_CASE_KEY] : null;
+}
+
+/** Return the current case without leaving it in a URL. A legacy ``?case=`` is imported once and
+ * synchronously scrubbed, so old bookmarks remain usable without perpetuating log/referrer leaks. */
 export function getCaseIdFromUrl(): string | null {
-  const v = new URLSearchParams(window.location.search).get(CASE_PARAM);
-  return v && v.trim() ? v : null;
-}
+  const fromState = historyCaseId();
+  if (fromState) return fromState;
 
-/** Write case_id into the URL. `replace` (default true) never adds a browser-history entry — used
- * for the initial auto-generated id on load. Pass `replace: false` for an explicit user action
- * (switching cases, "Neue Frage") so the back button steps between cases, matching how ChatGPT's
- * own case switching behaves. */
-export function setCaseIdInUrl(caseId: string, opts: { replace?: boolean } = {}): void {
-  const { replace = true } = opts;
   const url = new URL(window.location.href);
-  url.searchParams.set(CASE_PARAM, caseId);
-  const target = url.pathname + url.search;
-  if (replace) window.history.replaceState({}, "", target);
-  else window.history.pushState({}, "", target);
+  const legacy = url.searchParams.get(LEGACY_CASE_PARAM);
+  if (legacy !== null) {
+    url.searchParams.delete(LEGACY_CASE_PARAM);
+    const state = { ...(window.history.state ?? {}) } as Record<string, unknown>;
+    if (validCaseId(legacy)) state[HISTORY_CASE_KEY] = legacy;
+    window.history.replaceState(state, "", url.pathname + url.search + url.hash);
+    if (validCaseId(legacy)) {
+      sessionStorage.setItem(CURRENT_CASE_KEY, legacy);
+      return legacy;
+    }
+  }
+
+  const stored = sessionStorage.getItem(CURRENT_CASE_KEY);
+  return validCaseId(stored) ? stored : null;
 }
 
-/** A fresh, client-generated case id. Lazy by design — no backend call here; the actual
- * v2_sessions row is created server-side on the first real message (record_turn), matching the
- * existing behavior. Generating the id client-side is what lets the URL be reload-safe from the
- * very first visit, even before any message is sent. */
+/** Persist a case in history state, never in the address bar or a request target. */
+export function setCaseIdInUrl(caseId: string, opts: { replace?: boolean } = {}): void {
+  if (!validCaseId(caseId)) throw new Error("invalid case id");
+  const { replace = true } = opts;
+  const state = {
+    ...(window.history.state ?? {}),
+    [HISTORY_CASE_KEY]: caseId,
+  } as Record<string, unknown>;
+  sessionStorage.setItem(CURRENT_CASE_KEY, caseId);
+  const target = window.location.pathname + window.location.search + window.location.hash;
+  if (replace) window.history.replaceState(state, "", target);
+  else window.history.pushState(state, "", target);
+}
+
 export function newCaseId(): string {
   return crypto.randomUUID();
 }
 
-/** Stash the active caseId in sessionStorage right before a full-page OIDC redirect (2026-07-04
- * audit finding). The URL's own ?case= param can't survive that round trip — Keycloak's
- * redirect_uri is a fixed, allowlisted value and the OAuth `state` param here is only ever a
- * random CSRF nonce, so neither carries app data through. sessionStorage does survive it (it's
- * the same tab, just a different document) — mirrors the existing v2_pkce_verifier pattern. */
 export function stashCaseIdForAuthRedirect(caseId: string): void {
+  if (!validCaseId(caseId)) throw new Error("invalid case id");
   sessionStorage.setItem(PENDING_CASE_KEY, caseId);
 }
 
-/** Read back and clear a caseId stashed before an OIDC redirect. Null if none is pending — the
- * normal case for any navigation that isn't returning from Keycloak. */
 export function takeStashedCaseId(): string | null {
-  const v = sessionStorage.getItem(PENDING_CASE_KEY);
+  const value = sessionStorage.getItem(PENDING_CASE_KEY);
   sessionStorage.removeItem(PENDING_CASE_KEY);
-  return v && v.trim() ? v : null;
+  return validCaseId(value) ? value : null;
 }
