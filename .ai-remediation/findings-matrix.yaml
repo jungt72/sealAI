@@ -137,23 +137,28 @@ findings:
     root_cause: The gate binds source settings rather than effective runtime, dataset and authority epochs, and one promoted image digest.
     dependencies: [P0 secrets, P0 storage, P0 Redis, immutable build contract]
     remediation_type: [code, configuration, infrastructure, operational, governance]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-001
       - Pull request 288 activates a limited adaptive path and adds a migration but leaves the final release-gate implementation unchanged.
     changes:
-      - Build once, evaluate the exact digest with production-equivalent isolated Postgres and Qdrant, and fail closed on every final invariant.
-      - Remove targeted, provisional, or waiver evidence from final production eligibility.
-      - P0 locally hard-disables the Gate-10 lift and all artifact-mutating operations until P1 implements and tests the complete exact-artifact contract.
+      - Bound control commit, source commit, served-tree hash, database-migration digest, exact backend image digest, effective runtime, and external RC evidence into one root-trusted promotion transaction.
+      - Made provisional, targeted, stub-provider, mutable-image, stale-evidence, and waiver paths mechanically ineligible for final promotion.
+      - Kept the checked-in release freeze and Gate-10 lift disabled; repository implementation alone cannot publish or deploy an artifact.
     tests:
-      - Tamper tests for retriever type, dataset epoch, authority epoch, digest, SBOM, deep-audit status, and previous golden cases.
+      - Exact-artifact, effective-runtime, migration-digest, RC-isolation, receipt-expiry, source/control drift, and rollback-manifest tamper tests.
+      - Root-boundary invocation tests prove ordinary workflow inputs cannot bypass the installed gate or storage lease.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Revert gate code only to another fail-closed tested version; never restore the permissive final gate.
     evidence_after:
       - docs/ops/production-release-freeze.md
-      - Local gate and every sanctioned invocation path fail closed; the root-installed remote boundary intentionally has no promotion implementation.
-    residual_risk: Untested runtime or dependency behavior can be promoted until the exact-digest gate is deployed and proven.
+      - docs/ops/PRODUCTION_PROMOTION_CONTROL.md
+      - ops/production_release_control.py
+      - ops/v2_rc_evidence.py
+      - backend/tests/test_production_release_control.py
+      - backend/tests/test_v2_rc_evidence.py
+    residual_risk: Production still uses the audited release path. Installation, external exact-digest RC evidence, GATE-08, GATE-10, and a controlled smoke are required before the new transaction can be trusted operationally.
 
   - finding_id: REL-002
     title: Dashboard bytes and cold-recovery configuration are not reproducible
@@ -165,22 +170,25 @@ findings:
     root_cause: Host-built ignored assets and mutable bind mounts are not tied to a commit, artifact digest, or recovery manifest.
     dependencies: [REL-001, immutable artifact storage, restore rehearsal]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-002
       - Pull request 288 changes dashboard source while the production publication path remains an unattested host bind mount.
     changes:
-      - Package and attest immutable dashboard bytes and persist verified backend and frontend digests in the recovery manifest.
-      - P0 prevents ordinary Vite builds from writing to the live bind mount and creates only an isolated dashboard candidate; immutable promotion remains P1 work.
+      - Added deterministic dashboard packaging with a content-addressed release ID, source commit, tree hash, file manifest, and release attestation.
+      - Promotion uses an atomic current-release link and a manifest-bound previous release; build commands cannot write into the live dashboard tree.
+      - Bound the exact dashboard release and Nginx exposure hashes into the root-trusted release transaction and rollback manifest.
     tests:
-      - Fresh-host digest reproduction and atomic artifact rollback tests.
+      - Fresh-host reproduction, manifest/file tamper, symlink/path escape, no-clobber, atomic promotion, exact Nginx binding, and previous-release rollback tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Atomically re-promote the prior attested dashboard artifact and backend digest.
     evidence_after:
-      - frontend-v2/tests/vite-output-guard.test.ts
-      - Candidate build and live-output rejection passed in the 306-test frontend verification.
-    residual_risk: Live UI drift and non-reproducible recovery persist until immutable artifacts replace the host bind mount.
+      - frontend-v2/scripts/dashboard_release.py
+      - frontend-v2/scripts/prepare-dashboard-release.sh
+      - docs/ops/IMMUTABLE_DASHBOARD_RELEASES.md
+      - backend/tests/test_dashboard_immutable_release.py
+    residual_risk: The production dashboard remains the audited mutable host build until an exact attested release is installed and promoted under GATE-08/GATE-10; repository preparation is not deployment evidence.
 
   - finding_id: NET-001
     title: Production, staging, and unrelated workloads share a flat Docker network
@@ -436,19 +444,26 @@ findings:
     root_cause: Candidate validation is coupled to production identities and networks before final eligibility is established.
     dependencies: [REL-001, NET-001, scoped test credentials]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-003
       - The newly activated adaptive code and migration would still enter the existing production-secret candidate path on the next release.
     changes:
-      - Evaluate candidates in an isolated network against snapshot data and fake or tightly scoped provider identities before promotion.
+      - Added a dedicated RC Compose graph with isolated snapshot volumes, internal networks, scoped non-production identities, no published ports, and no production env-file inheritance.
+      - Bound snapshot hashes, runtime observations, provider mode, image digest, source tree, migration digest, dataset epoch, and authority epoch into final RC evidence.
+      - Kept stub-provider runs mechanically non-eligible and required the eligible external-provider run to stay behind its separate budget approval.
     tests:
-      - Pre-promotion denial tests for production secrets, data services, and provider egress.
+      - Production secret/env/network inheritance, mutable snapshot, unexpected egress, published-port, stub-eligibility, stale evidence, and effective-runtime denial tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Remove the isolated candidate without touching production; revert promotion wiring independently.
-    evidence_after: []
-    residual_risk: Candidate code can access or mutate production before failing its gate until isolation is enforced.
+    evidence_after:
+      - ops/staging/docker-compose.staging.yml
+      - ops/staging/rc-contract.sh
+      - docs/ops/RC_EVALUATION_ISOLATION.md
+      - backend/tests/test_rc_eval_isolation.py
+      - backend/tests/test_eval_rc_runtime_binding.py
+    residual_risk: The isolated RC path is not installed or exercised with approved external evidence. The existing production candidate path remains unsafe until GATE-08/GATE-10 cutover and post-install verification.
 
   - finding_id: LOG-001
     title: RAG ingest logs document metadata and raw exceptions
