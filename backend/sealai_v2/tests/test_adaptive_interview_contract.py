@@ -31,7 +31,7 @@ def _payload() -> NextQuestionPayload:
         topic_id="rwdr.default",
         state_revision=7,
         pack_id="rwdr.v1",
-        pack_version="1.0.0",
+        pack_version="1.0.1",
         policy_version="adaptive-interview.lexicographic.1.0.0",
         question_id="rwdr.q.medium_primary",
         primary_need_id="rwdr.medium.primary",

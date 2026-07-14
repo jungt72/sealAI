@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
-  "review_set_id": "rwdr-shadow-controlled-v1",
+  "review_set_id": "rwdr-shadow-controlled-v2",
   "created_at": "2026-07-14",
   "pack_id": "rwdr.v1",
-  "pack_version": "1.0.0",
+  "pack_version": "1.0.1",
   "policy_version": "adaptive-interview.lexicographic.1.0.0",
   "profiles": [
     {
@@ -12,8 +12,8 @@
       "fields": {
         "dichtungstyp": "rwdr",
         "anwendungsziel": "Neuauslegung",
-        "medium": "Hydraulikoel HLP 46",
-        "betriebstemperatur": "80 Grad C",
+        "medium": "Hydrauliköl HLP 46",
+        "betriebstemperatur": "80 °C",
         "druck": "0,2 bar Differenzdruck",
         "wellendurchmesser": "50 mm",
         "drehzahl": "1500 U/min"
@@ -25,8 +25,8 @@
       "fields": {
         "dichtungstyp": "Radialwellendichtring",
         "anwendungsziel": "Austausch einer bestehenden Dichtung",
-        "medium": "Getriebeoel CLP 220",
-        "betriebstemperatur": "95 Grad C",
+        "medium": "Getriebeöl CLP 220",
+        "betriebstemperatur": "95 °C",
         "druck": "weitgehend drucklos",
         "wellendurchmesser": "80 mm",
         "drehzahl": "900 U/min"
@@ -39,7 +39,7 @@
         "dichtungstyp": "RWDR",
         "anwendungsziel": "Analyse eines Leckageschadens",
         "medium": "Wasser-Glykol HFC",
-        "betriebstemperatur": "60 Grad C",
+        "betriebstemperatur": "60 °C",
         "druck": "1,0 bar Differenzdruck",
         "wellendurchmesser": "45 mm",
         "drehzahl": "3000 U/min"
@@ -51,8 +51,8 @@
       "fields": {
         "dichtungstyp": "Simmerring",
         "anwendungsziel": "Retrofit in vorhandenem Einbauraum",
-        "medium": "synthetisches Esteroel ISO VG 46",
-        "betriebstemperatur": "110 Grad C",
+        "medium": "synthetisches Esteröl ISO VG 46",
+        "betriebstemperatur": "110 °C",
         "druck": "0,5 bar Differenzdruck",
         "wellendurchmesser": "35 mm",
         "drehzahl": "1800 U/min"
@@ -65,7 +65,7 @@
         "dichtungstyp": "Wellendichtung",
         "anwendungsziel": "Lebensdaueroptimierung",
         "medium": "Schmierfett NLGI 2",
-        "betriebstemperatur": "70 Grad C",
+        "betriebstemperatur": "70 °C",
         "druck": "druckloser Betrieb",
         "wellendurchmesser": "120 mm",
         "drehzahl": "450 U/min"

@@ -10,12 +10,14 @@ from sealai_v2.eval.interview_shadow_review import (
     ADJUDICATION_FILENAME,
     ATTESTATION_FILENAME,
     BLINDING_KEY_FILENAME,
+    INSTRUCTIONS_FILENAME,
     MANIFEST_FILENAME,
     WORKSHEET_FILENAME,
     ReviewWorkflowError,
     adjudicate_review_set,
     export_review_set,
 )
+from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 
 
 def _read_json(path: Path) -> dict:
@@ -104,8 +106,31 @@ def test_export_produces_30_real_balanced_blinded_divergences(tmp_path: Path) ->
     )
     assert "question_a_source" not in fieldnames
     assert "controller_need_id" not in fieldnames
+    assert "scenario_group" not in fieldnames
+    assert all("Szenario:" not in row["case_context_de"] for row in rows)
+    assert all("Nicht dokumentiert:" not in row["case_context_de"] for row in rows)
     assert attestation["reviewer"] == ""
     assert attestation["reviewed_blinded"] is None
+    instructions = (tmp_path / INSTRUCTIONS_FILENAME).read_text(encoding="utf-8")
+    assert "Boolean values such as `true` and `false` are invalid" in instructions
+
+
+def test_application_goal_question_and_schema_cover_review_taxonomy() -> None:
+    pack = load_rwdr_v1_pack()
+    question = pack.question("rwdr.q.application_goal")
+
+    assert pack.version == "1.0.1"
+    assert pack.question_catalog_version == "rwdr.questions.1.0.1"
+    assert question is not None
+    assert "Retrofit" in question.canonical_text_de
+    assert "Optimierung" in question.canonical_text_de
+    assert set(question.answer_schema["enum"]) == {
+        "new_design",
+        "replacement",
+        "retrofit",
+        "optimization",
+        "failure_analysis",
+    }
 
 
 def test_export_rejects_overwriting_review_evidence(tmp_path: Path) -> None:
@@ -159,6 +184,18 @@ def test_adjudication_rejects_missing_human_verdict(tmp_path: Path) -> None:
         adjudicate_review_set(tmp_path)
 
 
+def test_adjudication_rejects_boolean_side_ratings(tmp_path: Path) -> None:
+    export_review_set(tmp_path)
+    _complete_worksheet(tmp_path)
+    _complete_attestation(tmp_path)
+    fieldnames, rows = _read_rows(tmp_path / WORKSHEET_FILENAME)
+    rows[0]["relevant_to_case"] = "true"
+    _write_rows(tmp_path / WORKSHEET_FILENAME, fieldnames, rows)
+
+    with pytest.raises(ReviewWorkflowError, match="invalid relevant_to_case"):
+        adjudicate_review_set(tmp_path)
+
+
 def test_adjudication_rejects_changed_row_order(tmp_path: Path) -> None:
     export_review_set(tmp_path)
     _complete_worksheet(tmp_path)
@@ -185,7 +222,10 @@ def test_adjudication_rejects_changed_blinding_key(tmp_path: Path) -> None:
     _complete_attestation(tmp_path)
     key_path = tmp_path / BLINDING_KEY_FILENAME
     key = _read_json(key_path)
-    key["entries"][0]["question_a_source"] = "legacy"
+    current = key["entries"][0]["question_a_source"]
+    key["entries"][0]["question_a_source"] = (
+        "controller" if current == "legacy" else "legacy"
+    )
     key_path.write_text(json.dumps(key, indent=2) + "\n", encoding="utf-8")
 
     with pytest.raises(ReviewWorkflowError, match="blinding key changed"):
@@ -199,4 +239,5 @@ def test_export_manifest_files_are_all_present(tmp_path: Path) -> None:
         BLINDING_KEY_FILENAME,
         ATTESTATION_FILENAME,
         MANIFEST_FILENAME,
+        INSTRUCTIONS_FILENAME,
     }

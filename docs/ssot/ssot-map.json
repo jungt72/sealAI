@@ -102,7 +102,7 @@
     "adaptive_interview_rwdr": {
       "status": "implemented_default_off",
       "pack_id": "rwdr.v1",
-      "pack_version": "1.0.0",
+      "pack_version": "1.0.1",
       "policy_version": "adaptive-interview.lexicographic.1.0.0",
       "evidence": [
         "docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md",
@@ -110,7 +110,8 @@
         "backend/sealai_v2/core/interview/",
         "backend/sealai_v2/knowledge/domain_packs/rwdr.v1.json",
         "backend/sealai_v2/eval/interview_shadow_review.py",
-        "backend/sealai_v2/eval/seed_cases/rwdr_shadow_review_v1.json",
+        "backend/sealai_v2/eval/seed_cases/rwdr_shadow_review_v2.json",
+        "docs/ssot/review-invalidations/RWDR_SHADOW_CONTROLLED_V1_INVALIDATION.md",
         "backend/sealai_v2/tests/test_adaptive_interview_policy.py",
         "backend/sealai_v2/tests/test_interview_shadow_review.py"
       ]
