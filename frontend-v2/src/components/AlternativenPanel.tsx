@@ -26,7 +26,7 @@ export function AlternativenPanel({
   onDownloadPdf,
 }: {
   data: Alternativen;
-  /** Fire the Anfrage for one partner (the host injects the session message + talks to /api/v2). */
+  /** Fire the Anfrage for one partner using the server-authorized active case revision. */
   onAnfrage?: (partnerId: string) => Promise<AnfrageResponse>;
   /** Download the Anfrage briefing as a PDF WITHOUT sending it (the host fetches it + builds the PDF). */
   onDownloadPdf?: () => void | Promise<void>;

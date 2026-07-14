@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "recorded_at": "2026-07-14T19:40:45Z",
+  "recorded_at": "2026-07-14T23:27:00Z",
   "release_freeze": {
     "status": "ACTIVE",
     "deployment_status": "IMPLEMENTED_NOT_DEPLOYED",
@@ -19,9 +19,9 @@
   },
   "repository": {
     "authoritative_path": "/Users/thorstenjung/Documents/New project/sealai-reconcile",
-    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p0-redis",
-    "remediation_branch": "remediation/p0-redis-stability",
-    "implementation_parent_commit": "1eaccff9f29844d14065bce2fdf922d5e9994b04",
+    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p1-data",
+    "remediation_branch": "remediation/p1-data-authority",
+    "implementation_parent_commit": "cfb0502122f29898e53af5cdb2cc219e7606d18d",
     "integrated_p0a_commit": "9d822aca296d3dc79349a538aa8e4ecb3f0a9b97",
     "origin_main_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
     "production_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
@@ -50,9 +50,9 @@
     "confirmed": 22,
     "partially_confirmed": 1,
     "remediation_verified_in_production": 0,
-    "implemented_not_deployed": 4,
-    "implementation_in_progress": 5,
-    "implementation_confirmed_unstarted": 14,
+    "implemented_not_deployed": 10,
+    "implementation_in_progress": 6,
+    "implementation_confirmed_unstarted": 7,
     "closed": 0
   },
   "packages": {
@@ -86,9 +86,24 @@
         "verified Redis recovery evidence"
       ],
       "required_gates": ["GATE-04", "GATE-08"]
+    },
+    "p1-data-authority": {
+      "local_status": "IN_PROGRESS_WITH_IMPLEMENTED_SUBSCOPES",
+      "production_status": "UNCHANGED",
+      "tests_status": "PASSED_WITH_TWO_EXPECTED_SKIPS",
+      "postgres_role_test_status": "NOT_AUTHORIZED_NO_EXPLICIT_TEST_DSN",
+      "external_dependencies": [
+        "aggregate production ownership profile",
+        "immutable restore proof",
+        "dual-reviewed legacy ownership mapping",
+        "transaction-scoped database role and GUC adapter",
+        "authoritative identity affiliation graph",
+        "production role-assignment census"
+      ],
+      "required_gates": ["GATE-06", "GATE-07", "GATE-08"]
     }
   },
-  "next_local_package": "p1-release-integrity",
+  "next_local_package": "integration-reconciliation",
   "next_production_gate": null,
   "production_mutations_authorized": false,
   "production_mutations_performed_by_remediation": false

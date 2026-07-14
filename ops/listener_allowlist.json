@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "default_action": "deny",
+  "wildcard": {
+    "tcp": [22, 80, 443],
+    "udp": []
+  },
+  "loopback": {
+    "tcp": [3001, 9090],
+    "udp": []
+  },
+  "exact": [
+    {"protocol": "tcp", "address": "127.0.0.53", "port": 53},
+    {"protocol": "udp", "address": "127.0.0.53", "port": 53}
+  ]
+}

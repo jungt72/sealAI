@@ -142,9 +142,12 @@ export interface AnfrageResponse {
   lead_id: number;
   partner: { hersteller: string; firmenname: string };
   briefing: { title: string; body: string; provenance: string[] };
+  case_id: string;
+  case_revision: number;
+  read_only: true;
   hinweis: string;
 }
-// Owner/admin surface (/api/v2/admin/*, role-gated). The FULL editable partner record — incl.
+// Platform-owner surface (/api/v2/admin/*, role-gated). The FULL editable partner record — incl.
 // lead_email (the routing target the owner manages); never exposed on the user-facing pool.
 export interface AdminPartner {
   hersteller: string;
@@ -317,6 +320,8 @@ export interface Turn {
   text: string;
 }
 export interface ConversationMemory {
+  case_id?: string;
+  case_revision?: number;
   case_state: RememberedFact[];
   history: Turn[];
 }
@@ -333,6 +338,10 @@ export interface Briefing {
   title: string;
   body: string;
   provenance: string[];
+  case_id?: string;
+  case_revision?: number;
+  message_index?: number;
+  read_only?: boolean;
   risk_flags?: string[]; // Legal-by-Design Phase D/E: drives the same badge in-app and in the PDF export
 }
 

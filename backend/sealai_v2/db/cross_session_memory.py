@@ -55,6 +55,7 @@ class PostgresCrossSessionMemory:
                         V2DurableFact.tenant_id == tenant_id,
                         V2DurableFact.owner_subject
                         == (owner_subject if owner_subject else None),
+                        V2DurableFact.ownership_state == "owned",
                     )
                 )
                 .scalars()
@@ -100,6 +101,7 @@ class PostgresCrossSessionMemory:
                         V2DurableFact(
                             tenant_id=tenant_id,
                             owner_subject=owner_subject or None,
+                            ownership_state="owned",
                             original_feld=f.feld,
                             feld=storage_key,
                             wert=f.wert,
@@ -107,6 +109,12 @@ class PostgresCrossSessionMemory:
                             as_of_turn=f.as_of_turn,
                         )
                     )
+                elif row.ownership_state != "owned" or row.owner_subject != (
+                    owner_subject or None
+                ):
+                    # Never turn a legacy/quarantined row into an owned row merely because a
+                    # later request happens to collide with its storage key.
+                    raise PermissionError("durable memory ownership is unresolved")
                 else:  # last value wins (curation is conservative, not append-everything)
                     row.wert = f.wert
                     row.provenance = f.provenance

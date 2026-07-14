@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 import pytest
 from sqlalchemy import inspect, select
@@ -12,8 +13,10 @@ from sealai_v2.db.models import (
     V2HerstellerPartner,
     V2InterviewShadowDecision,
     V2InterviewState,
+    V2KnowledgeAuthorityEpoch,
     V2ManufacturerCapabilityProfile,
     V2ManufacturerCapabilityReview,
+    V2ProviderQuotaWindow,
 )
 
 
@@ -25,13 +28,42 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260714_0010"
+    assert current == head == "20260715_0013"
     indexes = {
         item["name"]
         for item in inspect(engine).get_indexes("v2_interview_shadow_decisions")
     }
     assert "ix_v2_interview_shadow_scope_created" in indexes
+    assert {
+        "owner_subject",
+        "case_id",
+        "case_revision",
+        "ownership_state",
+    } <= {item["name"] for item in inspect(engine).get_columns("v2_leads")}
+    assert "v2_ownership_quarantine" in tables
+    assert "v2_knowledge_authority_epochs" in tables
+    sf = make_sessionmaker(engine)
+    with sf() as session:
+        epoch = session.get(V2KnowledgeAuthorityEpoch, "knowledge")
+        assert epoch is not None
+        assert epoch.sequence == 0
     validate_schema(engine)
+
+
+def test_shadow_constraint_migration_is_gate07_safe_contract() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "db/migrations/versions/20260715_0013_shadow_data_constraints.py"
+    ).read_text(encoding="utf-8")
+    upgrade_source = source.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+
+    assert 'dialect.name != "postgresql"' in upgrade_source
+    assert "NOT VALID" in upgrade_source
+    assert "VALIDATE CONSTRAINT" not in upgrade_source
+    assert "ROW LEVEL SECURITY" not in upgrade_source
+    assert "FORCE ROW LEVEL SECURITY" not in upgrade_source
 
 
 def test_rwdr_pack_cutover_clears_only_1_0_0_ephemeral_state(tmp_path) -> None:
@@ -138,6 +170,39 @@ def test_alembic_baseline_rejects_partial_legacy_schema(tmp_path) -> None:
 
     engine = make_engine(f"sqlite:///{path}")
     with pytest.raises(RuntimeError, match="partial V2 schema"):
+        up(engine)
+
+
+def test_provider_cost_migration_rejects_partial_precreated_schema(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'partial-provider-cost.db'}")
+    _upgrade_engine(engine, "20260714_0010")
+    V2ProviderQuotaWindow.__table__.create(engine)
+
+    with pytest.raises(RuntimeError, match="partial provider cost-control schema"):
+        up(engine)
+
+
+def test_provider_cost_migration_rejects_complete_columns_without_constraints(
+    tmp_path,
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'drifted-provider-cost.db'}")
+    _upgrade_engine(engine, "20260714_0010")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE v2_provider_quota_windows ("
+            "scope_kind TEXT NOT NULL, scope_ref TEXT NOT NULL, window_kind TEXT NOT NULL, "
+            "window_start TEXT NOT NULL, admitted_count BIGINT NOT NULL, "
+            "denied_count BIGINT NOT NULL, reserved_cost_micros BIGINT NOT NULL, "
+            "updated_at TEXT NOT NULL)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE v2_provider_admissions ("
+            "request_id TEXT NOT NULL, tenant_ref TEXT NOT NULL, subject_ref TEXT NOT NULL, "
+            "started_at TEXT NOT NULL, expires_at TEXT NOT NULL, released_at TEXT, "
+            "outcome TEXT NOT NULL, reserved_cost_micros BIGINT NOT NULL)"
+        )
+
+    with pytest.raises(RuntimeError, match="primary-key drift"):
         up(engine)
 
 

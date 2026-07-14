@@ -261,7 +261,9 @@ Frontend cockpit:
 ## 10. RAG / Paperless / Qdrant / Evidence Model
 
 Paperless ingest:
-- Paperless is running separately and connected to `sealai_default` network (`paperless/docker-compose.yml:19-39`).
+- Paperless is a separate Compose project on its own `paperless_internal`
+  network; it no longer joins a sealingAI production application network
+  (`paperless/docker-compose.yml:1-36`).
 - Paperless script can call internal RAG ingest webhook with document ID and token (`paperless/scripts/sealai-rag-webhook.sh:4-15`, `paperless/scripts/sealai-rag-webhook.sh:20-35`).
 - A user-level timer/service definition exists for periodic Paperless to RAG sync, but this audit did not inspect systemd runtime state (`ops/systemd/user/sealai-rag-paperless-sync.service:1-6`, `ops/systemd/user/sealai-rag-paperless-sync.timer:1-12`).
 - CLI wrapper `ops/bin/sealai-rag-paperless-sync` runs `sync_paperless_to_rag` and `process_pending_paperless_documents` inside the backend container (`ops/bin/sealai-rag-paperless-sync:1-23`).

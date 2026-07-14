@@ -78,8 +78,8 @@ validate_required_keys() {
       echo "fatal: $key is empty in $file" >&2
       exit 1
     fi
-    if [[ "$MODE" == "prod" && ( "$value" == "SET_IN_SECRET_STORE" || "$value" == "<REPLACE_ME>" ) ]]; then
-      echo "fatal: $key in $file still uses a placeholder value ($value)" >&2
+    if [[ "$MODE" == "prod" && ( "$value" == *"REPLACE"* || "$value" == *"CHANGE_ME"* || "$value" == *"<SET"* || "$value" == "SET_IN_SECRET_STORE" ) ]]; then
+      echo "fatal: $key in $file still uses a placeholder value" >&2
       exit 1
     fi
   done
@@ -95,15 +95,41 @@ validate_image_ref() {
     exit 1
   fi
   if [[ "$value" == *":latest"* ]]; then
-    echo "fatal: $key in $file must not use a floating :latest reference ($value)" >&2
+    echo "fatal: $key in $file must not use a floating :latest reference" >&2
     exit 1
   fi
-  if [[ "$value" != *@sha256:* ]]; then
-    echo "fatal: $key in $file must be pinned as tag@digest or digest-only ($value)" >&2
+  if [[ ! "$value" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+    echo "fatal: $key in $file must be pinned as an exact name@sha256 digest" >&2
     exit 1
   fi
-  if [[ "$value" == *"<REPLACE_ME>"* || "$value" == *"SET_IN_SECRET_STORE"* ]]; then
-    echo "fatal: $key in $file still uses a placeholder value ($value)" >&2
+}
+
+validate_scoped_credential() {
+  local file=$1
+  local key=$2
+  local value
+
+  if ! value="$(extract_key "$file" "$key")"; then
+    echo "fatal: $key not set in $file" >&2
+    exit 1
+  fi
+  if [[ ! "$value" =~ ^[A-Za-z0-9._~-]{32,256}$ ]]; then
+    echo "fatal: $key must use the scoped base64url-safe credential contract" >&2
+    exit 1
+  fi
+}
+
+validate_database_identifier() {
+  local file=$1
+  local key=$2
+  local value
+
+  if ! value="$(extract_key "$file" "$key")"; then
+    echo "fatal: $key not set in $file" >&2
+    exit 1
+  fi
+  if [[ ! "$value" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; then
+    echo "fatal: $key must be a bounded lowercase database identifier" >&2
     exit 1
   fi
 }
@@ -128,9 +154,54 @@ fi
 validate_required_keys "$SOURCE_FILE" "${required_keys[@]}"
 
 if [[ "$MODE" == "prod" ]]; then
-  validate_image_ref "$SOURCE_FILE" BACKEND_IMAGE
-  validate_image_ref "$SOURCE_FILE" KEYCLOAK_IMAGE
-  validate_image_ref "$SOURCE_FILE" FRONTEND_IMAGE
+  production_secret_keys=(
+    QDRANT_API_KEY
+    KC_DB_NAME
+    KC_DB_USERNAME
+    KC_DB_PASSWORD
+    SEALAI_V2_DB_USER
+    SEALAI_V2_DB_PASSWORD
+    GRAFANA_ADMIN_PASSWORD
+    MISTRAL_API_KEY
+  )
+  production_image_keys=(
+    BACKEND_IMAGE
+    BACKEND_V2_IMAGE
+    KEYCLOAK_IMAGE
+    FRONTEND_IMAGE
+    NGINX_IMAGE
+    POSTGRES_IMAGE
+    REDIS_IMAGE
+    QDRANT_IMAGE
+    GOTENBERG_IMAGE
+    TIKA_IMAGE
+  )
+  production_runtime_keys=(
+    STRAPI_POSTGRES_NETWORK_NAME
+    POSTGRES_MEMORY_LIMIT POSTGRES_CPU_LIMIT POSTGRES_PIDS_LIMIT
+    REDIS_MEMORY_LIMIT REDIS_CPU_LIMIT REDIS_PIDS_LIMIT
+    QDRANT_MEMORY_LIMIT QDRANT_CPU_LIMIT QDRANT_PIDS_LIMIT
+    GOTENBERG_MEMORY_LIMIT GOTENBERG_CPU_LIMIT GOTENBERG_PIDS_LIMIT
+    TIKA_MEMORY_LIMIT TIKA_CPU_LIMIT TIKA_PIDS_LIMIT
+    PROMETHEUS_MEMORY_LIMIT PROMETHEUS_CPU_LIMIT PROMETHEUS_PIDS_LIMIT
+    GRAFANA_MEMORY_LIMIT GRAFANA_CPU_LIMIT GRAFANA_PIDS_LIMIT
+    FRONTEND_MEMORY_LIMIT FRONTEND_CPU_LIMIT FRONTEND_PIDS_LIMIT
+    KEYCLOAK_MEMORY_LIMIT KEYCLOAK_CPU_LIMIT KEYCLOAK_PIDS_LIMIT
+    NGINX_MEMORY_LIMIT NGINX_CPU_LIMIT NGINX_PIDS_LIMIT
+    BACKEND_V2_MEMORY_LIMIT BACKEND_V2_CPU_LIMIT BACKEND_V2_PIDS_LIMIT
+    BACKEND_V2_WORKER_MEMORY_LIMIT BACKEND_V2_WORKER_CPU_LIMIT BACKEND_V2_WORKER_PIDS_LIMIT
+  )
+  for image_key in "${production_image_keys[@]}"; do
+    validate_image_ref "$SOURCE_FILE" "$image_key"
+  done
+  validate_required_keys "$SOURCE_FILE" "${production_secret_keys[@]}"
+  validate_required_keys "$SOURCE_FILE" "${production_runtime_keys[@]}"
+  for credential_key in QDRANT_API_KEY KC_DB_PASSWORD SEALAI_V2_DB_PASSWORD GRAFANA_ADMIN_PASSWORD; do
+    validate_scoped_credential "$SOURCE_FILE" "$credential_key"
+  done
+  for identifier_key in KC_DB_NAME KC_DB_USERNAME SEALAI_V2_DB_USER; do
+    validate_database_identifier "$SOURCE_FILE" "$identifier_key"
+  done
   exit 0
 fi
 

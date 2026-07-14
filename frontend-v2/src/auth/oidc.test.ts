@@ -5,21 +5,19 @@ import {
   challengeFromVerifier,
   clearAccessToken,
   getAccessToken,
-  getIdToken,
   givenNameFromToken,
   logoutUrl,
   randomVerifier,
   rpInitiatedLogout,
   setAccessToken,
-  setIdToken,
   type OidcConfig,
 } from "./oidc";
 
 const CFG: OidcConfig = {
   issuer: "https://sealingai.com/realms/sealAI",
   clientId: "sealai-v2",
-  redirectUri: "https://sealingai.com/dashboard/callback",
-  postLogoutRedirectUri: "https://sealingai.com/dashboard/",
+  redirectUri: `${location.origin}/dashboard/callback`,
+  postLogoutRedirectUri: `${location.origin}/dashboard/`,
 };
 
 afterEach(() => {
@@ -52,54 +50,41 @@ describe("oidc token store (check 4: in-memory only)", () => {
 });
 
 describe("RP-initiated logout (Part 3: Abmelden must end the Keycloak SSO session)", () => {
-  it("builds the realm's end-session URL with id_token_hint + post_logout_redirect_uri + client_id", () => {
-    const url = new URL(logoutUrl(CFG, { idToken: "idtok-abc" }));
+  it("builds the realm's end-session URL without an authentication identifier", () => {
+    const url = new URL(logoutUrl(CFG));
     expect(url.origin + url.pathname).toBe(
       "https://sealingai.com/realms/sealAI/protocol/openid-connect/logout",
     );
-    expect(url.searchParams.get("id_token_hint")).toBe("idtok-abc");
-    expect(url.searchParams.get("post_logout_redirect_uri")).toBe("https://sealingai.com/dashboard/");
+    expect(url.searchParams.has("id_token_hint")).toBe(false);
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(`${location.origin}/dashboard/`);
     expect(url.searchParams.get("client_id")).toBe("sealai-v2");
   });
 
-  it("omits id_token_hint when no id_token is held (Keycloak then asks for confirmation)", () => {
-    const url = new URL(logoutUrl(CFG, { idToken: null }));
+  it("always omits id_token_hint (Keycloak may ask for confirmation)", () => {
+    const url = new URL(logoutUrl(CFG));
     expect(url.searchParams.has("id_token_hint")).toBe(false);
     expect(url.searchParams.get("client_id")).toBe("sealai-v2"); // still identifies the client
-    expect(url.searchParams.get("post_logout_redirect_uri")).toBe("https://sealingai.com/dashboard/");
+    expect(url.searchParams.get("post_logout_redirect_uri")).toBe(`${location.origin}/dashboard/`);
   });
 
   it("falls back to the app origin when no postLogoutRedirectUri is configured", () => {
     const cfg = { ...CFG, postLogoutRedirectUri: undefined };
-    const url = new URL(logoutUrl(cfg, { idToken: null }));
+    const url = new URL(logoutUrl(cfg));
     expect(url.searchParams.get("post_logout_redirect_uri")).toBe(`${location.origin}/dashboard/`);
-  });
-
-  it("holds the id_token in memory only and clears it together with the access token", () => {
-    setIdToken("idtok-xyz");
-    expect(getIdToken()).toBe("idtok-xyz");
-    const dump = JSON.stringify({ ...localStorage, ...sessionStorage });
-    expect(dump).not.toContain("idtok-xyz"); // never web storage (same XSS posture as access token)
-    clearAccessToken();
-    expect(getIdToken()).toBeNull();
   });
 
   it("rpInitiatedLogout clears the local tokens BEFORE navigating to the end-session URL", () => {
     setAccessToken("acc-tok", 3600);
-    setIdToken("idtok-1");
     let urlAtNavigate: string | null = null;
     let accessAtNavigate: string | null = "sentinel";
-    let idAtNavigate: string | null = "sentinel";
     rpInitiatedLogout(CFG, (url) => {
       urlAtNavigate = url;
       accessAtNavigate = getAccessToken(); // captured AT navigation time → proves ordering
-      idAtNavigate = getIdToken();
     });
     expect(accessAtNavigate).toBeNull();
-    expect(idAtNavigate).toBeNull();
     const url = new URL(urlAtNavigate as unknown as string);
     expect(url.pathname).toBe("/realms/sealAI/protocol/openid-connect/logout");
-    expect(url.searchParams.get("id_token_hint")).toBe("idtok-1"); // the hint survives the clear
+    expect(url.searchParams.has("id_token_hint")).toBe(false);
   });
 });
 

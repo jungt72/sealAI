@@ -22,12 +22,26 @@ export interface OidcConfig {
   postLogoutRedirectUri?: string; // https://sealingai.com/dashboard/ (must be allowlisted in Keycloak)
 }
 
+const AUTH_TRANSACTION_KEY = "sealai.v2.oidc.transaction.v1";
+const AUTH_TRANSACTION_TTL_MS = 5 * 60_000;
+
+interface AuthTransaction {
+  version: 1;
+  verifier: string;
+  state: string;
+  nonce: string;
+  createdAt: number;
+  issuer: string;
+  clientId: string;
+  redirectUri: string;
+}
+
 // --- in-memory token store: a module-local holder, NEVER persisted to web storage ----------------
 let _accessToken: string | null = null;
 let _expiresAt = 0; // epoch ms
-let _idToken: string | null = null; // kept ONLY as the RP-initiated-logout id_token_hint
 let _refreshToken: string | null = null; // in-memory ONLY; rotated on every refresh, dropped on clear
 let _refreshInFlight: Promise<TokenResponse> | null = null; // single-flight guard (rotation-safe)
+let _tokenGeneration = 0; // invalidates a refresh response that races logout/session clearing
 
 export function setAccessToken(token: string, expiresInSec: number): void {
   _accessToken = token;
@@ -45,17 +59,10 @@ export function msUntilExpiry(): number {
 export function hasRefreshToken(): boolean {
   return _refreshToken !== null;
 }
-export function setIdToken(token: string | null): void {
-  _idToken = token;
-}
-// no expiry check: an expired id_token is still a valid logout hint (it only names the session)
-export function getIdToken(): string | null {
-  return _idToken;
-}
 export function clearAccessToken(): void {
+  _tokenGeneration += 1;
   _accessToken = null;
   _expiresAt = 0;
-  _idToken = null;
   _refreshToken = null;
 }
 
@@ -136,10 +143,64 @@ export async function challengeFromVerifier(verifier: string): Promise<string> {
   return b64url(digest); // S256
 }
 
+function canonicalIssuer(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function assertOidcConfig(cfg: OidcConfig): void {
+  const issuer = new URL(cfg.issuer);
+  const redirect = new URL(cfg.redirectUri);
+  const postLogout = cfg.postLogoutRedirectUri ? new URL(cfg.postLogoutRedirectUri) : null;
+  const localHttp = issuer.protocol === "http:" && issuer.hostname === "localhost";
+  if ((issuer.protocol !== "https:" && !localHttp) || issuer.search || issuer.hash) {
+    throw new Error("OIDC configuration rejected");
+  }
+  if (redirect.origin !== location.origin || redirect.search || redirect.hash || !cfg.clientId) {
+    throw new Error("OIDC configuration rejected");
+  }
+  if (
+    postLogout &&
+    (postLogout.origin !== location.origin || postLogout.search || postLogout.hash)
+  ) {
+    throw new Error("OIDC configuration rejected");
+  }
+}
+
+function fixedTimeEqual(left: string, right: string): boolean {
+  let mismatch = left.length ^ right.length;
+  const width = Math.max(left.length, right.length);
+  for (let index = 0; index < width; index += 1) {
+    mismatch |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+  }
+  return mismatch === 0;
+}
+
+/** Create one short-lived authorization transaction for this tab. Tokens remain memory-only; the
+ * PKCE verifier/state/nonce are consumed before callback exchange and cannot be replayed. */
+export async function beginAuthorization(
+  cfg: OidcConfig,
+  opts: { silent?: boolean; now?: number } = {},
+): Promise<string> {
+  assertOidcConfig(cfg);
+  const tx: AuthTransaction = {
+    version: 1,
+    verifier: randomVerifier(),
+    state: randomVerifier(),
+    nonce: randomVerifier(),
+    createdAt: opts.now ?? Date.now(),
+    issuer: canonicalIssuer(cfg.issuer),
+    clientId: cfg.clientId,
+    redirectUri: cfg.redirectUri,
+  };
+  sessionStorage.setItem(AUTH_TRANSACTION_KEY, JSON.stringify(tx));
+  return authorizeUrl(cfg, { ...tx, silent: opts.silent });
+}
+
 export function authorizeUrl(
   cfg: OidcConfig,
-  opts: { verifier: string; state: string; silent?: boolean },
+  opts: { verifier: string; state: string; nonce: string; silent?: boolean },
 ): Promise<string> {
+  assertOidcConfig(cfg);
   return challengeFromVerifier(opts.verifier).then((challenge) => {
     const p = new URLSearchParams({
       client_id: cfg.clientId,
@@ -147,11 +208,12 @@ export function authorizeUrl(
       redirect_uri: cfg.redirectUri,
       scope: cfg.scope ?? "openid email profile",
       state: opts.state,
+      nonce: opts.nonce,
       code_challenge: challenge,
       code_challenge_method: "S256",
     });
     if (opts.silent) p.set("prompt", "none"); // silent renewal via the SSO session
-    return `${cfg.issuer}/protocol/openid-connect/auth?${p.toString()}`;
+    return `${canonicalIssuer(cfg.issuer)}/protocol/openid-connect/auth?${p.toString()}`;
   });
 }
 
@@ -162,12 +224,134 @@ export interface TokenResponse {
   id_token?: string;
 }
 
+function decodeJwtClaims(token: string): Record<string, unknown> {
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[1]) throw new Error("OIDC response rejected");
+  try {
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+    const claims = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    if (!claims || typeof claims !== "object" || Array.isArray(claims)) {
+      throw new Error("invalid claims");
+    }
+    return claims as Record<string, unknown>;
+  } catch {
+    throw new Error("OIDC response rejected");
+  }
+}
+
+function validateIdToken(
+  token: string | undefined,
+  cfg: OidcConfig,
+  expectedNonce: string,
+  nowMs = Date.now(),
+): void {
+  if (!token) throw new Error("OIDC response rejected");
+  const claims = decodeJwtClaims(token);
+  const audience = claims.aud;
+  const audienceMatches =
+    audience === cfg.clientId ||
+    (Array.isArray(audience) && audience.some((entry) => entry === cfg.clientId));
+  const multiAudience = Array.isArray(audience) && audience.length > 1;
+  const nowSeconds = Math.floor(nowMs / 1000);
+  if (
+    claims.iss !== canonicalIssuer(cfg.issuer) ||
+    !audienceMatches ||
+    (multiAudience && claims.azp !== cfg.clientId) ||
+    typeof claims.nonce !== "string" ||
+    !fixedTimeEqual(claims.nonce, expectedNonce) ||
+    typeof claims.exp !== "number" ||
+    claims.exp <= nowSeconds - 30 ||
+    typeof claims.iat !== "number" ||
+    claims.iat > nowSeconds + 60 ||
+    claims.iat < nowSeconds - 300
+  ) {
+    throw new Error("OIDC response rejected");
+  }
+}
+
+function consumeAuthorizationTransaction(
+  cfg: OidcConfig,
+  callbackUrl: URL,
+  nowMs = Date.now(),
+): { code: string; verifier: string; nonce: string } {
+  assertOidcConfig(cfg);
+  const serialized = sessionStorage.getItem(AUTH_TRANSACTION_KEY);
+  // One-time semantics: remove before parsing/comparison/network I/O.
+  sessionStorage.removeItem(AUTH_TRANSACTION_KEY);
+  if (!serialized) throw new Error("OIDC callback rejected");
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(serialized);
+  } catch {
+    throw new Error("OIDC callback rejected");
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("OIDC callback rejected");
+  }
+  const tx = raw as Partial<AuthTransaction>;
+  const state = callbackUrl.searchParams.get("state");
+  const code = callbackUrl.searchParams.get("code");
+  const responseIssuer = callbackUrl.searchParams.get("iss");
+  const redirect = new URL(cfg.redirectUri);
+  if (
+    tx.version !== 1 ||
+    typeof tx.createdAt !== "number" ||
+    tx.createdAt > nowMs + 30_000 ||
+    nowMs - tx.createdAt > AUTH_TRANSACTION_TTL_MS ||
+    typeof tx.state !== "string" ||
+    typeof state !== "string" ||
+    callbackUrl.searchParams.getAll("state").length !== 1 ||
+    !fixedTimeEqual(tx.state, state) ||
+    typeof tx.verifier !== "string" ||
+    !/^[A-Za-z0-9_-]{43,128}$/.test(tx.verifier) ||
+    typeof tx.nonce !== "string" ||
+    !/^[A-Za-z0-9_-]{43,128}$/.test(tx.nonce) ||
+    tx.issuer !== canonicalIssuer(cfg.issuer) ||
+    tx.clientId !== cfg.clientId ||
+    tx.redirectUri !== cfg.redirectUri ||
+    callbackUrl.origin !== redirect.origin ||
+    callbackUrl.pathname !== redirect.pathname ||
+    (responseIssuer !== null && responseIssuer !== canonicalIssuer(cfg.issuer)) ||
+    callbackUrl.searchParams.has("error") ||
+    typeof code !== "string" ||
+    callbackUrl.searchParams.getAll("code").length !== 1 ||
+    !code ||
+    code.length > 2048
+  ) {
+    throw new Error("OIDC callback rejected");
+  }
+  return { code, verifier: tx.verifier, nonce: tx.nonce };
+}
+
+/** Remove protocol credentials from browser history before validation/exchange can yield or fail. */
+export function scrubAuthorizationCallback(): void {
+  window.history.replaceState({}, "", "/dashboard/");
+}
+
+export async function completeAuthorizationCallback(
+  cfg: OidcConfig,
+  callbackUrl: URL,
+  nowMs = Date.now(),
+): Promise<TokenResponse> {
+  const tx = consumeAuthorizationTransaction(cfg, callbackUrl, nowMs);
+  return exchangeCode(cfg, tx.code, tx.verifier, { expectedNonce: tx.nonce, nowMs });
+}
+
+export function discardAuthorizationTransaction(): void {
+  sessionStorage.removeItem(AUTH_TRANSACTION_KEY);
+}
+
 export async function exchangeCode(
   cfg: OidcConfig,
   code: string,
   verifier: string,
+  validation: { expectedNonce?: string; nowMs?: number } = {},
 ): Promise<TokenResponse> {
-  const res = await fetch(`${cfg.issuer}/protocol/openid-connect/token`, {
+  assertOidcConfig(cfg);
+  const res = await fetch(`${canonicalIssuer(cfg.issuer)}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -180,9 +364,30 @@ export async function exchangeCode(
   });
   if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
   const tok = (await res.json()) as TokenResponse;
+  if (
+    !tok ||
+    typeof tok.access_token !== "string" ||
+    !tok.access_token ||
+    typeof tok.expires_in !== "number" ||
+    !Number.isFinite(tok.expires_in) ||
+    tok.expires_in <= 0 ||
+    tok.expires_in > 86_400 ||
+    (tok.refresh_token !== undefined && typeof tok.refresh_token !== "string") ||
+    (tok.id_token !== undefined && typeof tok.id_token !== "string")
+  ) {
+    throw new Error("OIDC response rejected");
+  }
+  if (validation.expectedNonce) {
+    validateIdToken(tok.id_token, cfg, validation.expectedNonce, validation.nowMs);
+  }
+  // A completed authorization-code exchange starts a new local token generation. Any older
+  // refresh response still in flight belongs to the superseded session and may no longer mutate
+  // this token set, regardless of whether that old response succeeds or fails.
+  _tokenGeneration += 1;
   setAccessToken(tok.access_token, tok.expires_in); // in memory only
-  if (tok.refresh_token) _refreshToken = tok.refresh_token; // in memory only → silent refresh
-  setIdToken(tok.id_token ?? null); // held only as the future logout id_token_hint
+  // Replace the whole credential set. If this response has no refresh token, retaining one from
+  // an older authorization session would cross session boundaries.
+  _refreshToken = tok.refresh_token || null; // in memory only → silent refresh
   return tok;
 }
 
@@ -201,42 +406,74 @@ export function refreshTokens(cfg: OidcConfig): Promise<TokenResponse> {
 }
 
 async function _doRefresh(cfg: OidcConfig): Promise<TokenResponse> {
+  assertOidcConfig(cfg);
   if (!_refreshToken) throw new Error("no refresh token");
-  const res = await fetch(`${cfg.issuer}/protocol/openid-connect/token`, {
+  const tokenGeneration = _tokenGeneration;
+  const presentedRefreshToken = _refreshToken;
+  const res = await fetch(`${canonicalIssuer(cfg.issuer)}/protocol/openid-connect/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: cfg.clientId,
-      refresh_token: _refreshToken,
+      refresh_token: presentedRefreshToken,
     }),
   });
   if (!res.ok) {
-    _refreshToken = null; // rotated-away / expired / revoked → useless, never retry with it
+    // Clear only the exact token generation that produced this request. A delayed failure from a
+    // logged-out/superseded session must never erase a freshly established session's token.
+    if (
+      tokenGeneration === _tokenGeneration &&
+      _refreshToken === presentedRefreshToken
+    ) {
+      _refreshToken = null; // rotated-away / expired / revoked → never retry with it
+    }
     throw new Error(`refresh failed: ${res.status}`);
   }
   const tok = (await res.json()) as TokenResponse;
+  if (
+    !tok ||
+    typeof tok.access_token !== "string" ||
+    !tok.access_token ||
+    typeof tok.expires_in !== "number" ||
+    !Number.isFinite(tok.expires_in) ||
+    tok.expires_in <= 0 ||
+    tok.expires_in > 86_400 ||
+    (tok.refresh_token !== undefined && typeof tok.refresh_token !== "string") ||
+    (tok.id_token !== undefined && typeof tok.id_token !== "string")
+  ) {
+    if (
+      tokenGeneration === _tokenGeneration &&
+      _refreshToken === presentedRefreshToken
+    ) {
+      _refreshToken = null;
+    }
+    throw new Error("OIDC response rejected");
+  }
+  // Logout/401 clearing wins over a response already in flight. Without this generation check,
+  // a delayed refresh could republish access and refresh tokens after the local session ended.
+  if (tokenGeneration !== _tokenGeneration) throw new Error("refresh superseded");
   setAccessToken(tok.access_token, tok.expires_in);
-  if (tok.refresh_token) _refreshToken = tok.refresh_token; // ROTATION: keep the new one-time token
-  if (tok.id_token) setIdToken(tok.id_token);
+  // With rotation enabled, the presented token is consumed. If the IdP omits a replacement,
+  // retain no dead credential and let the caller fall back to prompt=none re-authentication.
+  _refreshToken = tok.refresh_token || null;
   return tok;
 }
 
 // --- RP-initiated logout (OIDC end-session) --------------------------------------------------------
-/** End-session URL on the realm. id_token_hint lets Keycloak log out WITHOUT a confirmation screen;
- * absent (e.g. after a reload — tokens are memory-only), client_id still identifies the client and
- * Keycloak shows its confirm prompt — logout still works, one extra click. The
- * post_logout_redirect_uri must be allowlisted on the Keycloak client (owner config). */
-export function logoutUrl(cfg: OidcConfig, opts: { idToken?: string | null } = {}): string {
+/** End-session URL on the realm. We deliberately omit ``id_token_hint``: Keycloak may show its
+ * confirmation screen, but no authentication identifier enters history, request lines or proxy
+ * logs. The post-logout URI remains an exact allowlisted public callback. */
+export function logoutUrl(cfg: OidcConfig): string {
+  assertOidcConfig(cfg);
   const p = new URLSearchParams({
     client_id: cfg.clientId,
     post_logout_redirect_uri: cfg.postLogoutRedirectUri ?? `${location.origin}/dashboard/`,
   });
-  if (opts.idToken) p.set("id_token_hint", opts.idToken);
-  return `${cfg.issuer}/protocol/openid-connect/logout?${p.toString()}`;
+  return `${canonicalIssuer(cfg.issuer)}/protocol/openid-connect/logout?${p.toString()}`;
 }
 
-/** The Abmelden action: build the end-session URL from the held id_token, clear ALL local tokens
+/** The Abmelden action: build the end-session URL without an authentication token, clear ALL local tokens
  * FIRST (the SPA is logged out even if the redirect is interrupted), then leave for Keycloak.
  * `navigate` is injectable for tests; production uses a full-page redirect (front-channel). */
 export function rpInitiatedLogout(
@@ -245,7 +482,7 @@ export function rpInitiatedLogout(
     window.location.href = url;
   },
 ): void {
-  const url = logoutUrl(cfg, { idToken: getIdToken() });
-  clearAccessToken(); // clears access + id token; the hint is already baked into the URL
+  const url = logoutUrl(cfg);
+  clearAccessToken();
   navigate(url);
 }

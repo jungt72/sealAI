@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from threading import Event
 
 import pytest
 
@@ -47,3 +48,31 @@ def test_worker_healthcheck_rejects_stale_heartbeat(tmp_path):
             heartbeat_path=heartbeat,
             now=1000,
         )
+
+
+def test_empty_daemon_keeps_paid_gate_and_embedder_lazy(tmp_path, monkeypatch):
+    factories: list[str] = []
+    monkeypatch.setattr(
+        outbox_daemon,
+        "_make_client",
+        lambda _settings: factories.append("qdrant") or _Qdrant(),
+    )
+    monkeypatch.setattr(
+        outbox_daemon,
+        "_make_memory_embedder",
+        lambda _settings: factories.append("embedder"),
+    )
+
+    monkeypatch.setattr(outbox_daemon, "_write_heartbeat", lambda: None)
+    stop = Event()
+    stop.set()
+    outbox_daemon.run(
+        Settings(
+            database_url=f"sqlite:///{tmp_path / 'worker.db'}",
+            qdrant_url="http://qdrant",
+            embed_provider="openai",
+        ),
+        stop=stop,
+    )
+
+    assert factories == ["qdrant"]

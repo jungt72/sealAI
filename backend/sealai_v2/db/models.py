@@ -35,6 +35,7 @@ an application-layer concern, same as every other table here).
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
     JSON,
     Boolean,
     Float,
@@ -59,6 +60,11 @@ class V2Session(Base):
     # unowned row fails closed instead of implicitly claiming it.
     owner_subject: Mapped[str | None] = mapped_column(
         String(255), nullable=True, index=True
+    )
+    # New rows are explicitly owned. Existing rows stay nullable until the separately authorized
+    # GATE-07 profile/quarantine flow; schema deployment never guesses an owner or deletes data.
+    ownership_state: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="owned"
     )
     turns: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     case_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -195,6 +201,9 @@ class V2DurableFact(Base):
     tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     owner_subject: Mapped[str | None] = mapped_column(
         String(255), nullable=True, index=True
+    )
+    ownership_state: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="owned"
     )
     original_feld: Mapped[str | None] = mapped_column(String(255), nullable=True)
     feld: Mapped[str] = mapped_column(String(255), primary_key=True)
@@ -340,6 +349,14 @@ class V2Lead(Base):
     lead_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
     tenant_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     session_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    # Exact RFQ authority. Nullable only for legacy rows that GATE-07 must profile and quarantine;
+    # every new RFQ writes the verified subject and selected immutable case revision.
+    owner_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    case_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    case_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ownership_state: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="owned"
+    )
     briefing_title: Mapped[str] = mapped_column(Text, default="", nullable=False)
     briefing_body: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
@@ -452,6 +469,9 @@ class V2MemoryItem(Base):
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     owner_subject: Mapped[str | None] = mapped_column(
         String(255), nullable=True, index=True
+    )
+    ownership_state: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default="owned"
     )
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     scope_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -718,6 +738,45 @@ class V2KnowledgeOutbox(Base):
     )
 
 
+class V2KnowledgeAuthorityEpoch(Base):
+    """Monotonic Postgres-owned invalidation sequence for knowledge governance."""
+
+    __tablename__ = "v2_knowledge_authority_epochs"
+
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2OwnershipQuarantine(Base):
+    """Privacy-minimized audit record for ambiguous legacy ownership.
+
+    Only keyed fingerprints are stored. A quarantine row never grants access, assigns an owner, or
+    deletes source data; resolution remains a separately authorized GATE-07 action.
+    """
+
+    __tablename__ = "v2_ownership_quarantine"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_table",
+            "record_fingerprint",
+            "reason_code",
+            name="uq_v2_ownership_quarantine_record_reason",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_table: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    record_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    detected_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    resolution_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unresolved"
+    )
+    resolution_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class V2LegalAcceptance(Base):
     """Legal-by-Design Phase B (Goal 3): the B2B onboarding / Legal-Gate acceptance record — one row
     per tenant (last acceptance wins, mirrors ``V2DurableFact``'s tenant-scoped-not-session-scoped
@@ -750,3 +809,49 @@ class V2LegalAcceptance(Base):
         String(64), nullable=False, default=""
     )
     accepted_user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class V2ProviderQuotaWindow(Base):
+    """Shared, atomic request/quota/budget counters; scope refs are one-way hashes, never PII."""
+
+    __tablename__ = "v2_provider_quota_windows"
+
+    scope_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    scope_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    window_start: Mapped[str] = mapped_column(String(32), primary_key=True)
+    admitted_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    denied_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    reserved_cost_micros: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2ProviderAdmission(Base):
+    """Privacy-minimized admission/audit row with an expiring concurrency lease."""
+
+    __tablename__ = "v2_provider_admissions"
+    __table_args__ = (
+        Index(
+            "ix_v2_provider_admission_subject_active",
+            "subject_ref",
+            "released_at",
+            "expires_at",
+        ),
+        Index(
+            "ix_v2_provider_admission_tenant_active",
+            "tenant_ref",
+            "released_at",
+            "expires_at",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    started_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    expires_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    released_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    reserved_cost_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)

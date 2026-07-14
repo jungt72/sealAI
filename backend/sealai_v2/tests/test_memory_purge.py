@@ -159,6 +159,21 @@ def test_reap_never_touches_items_in_other_statuses(db_url):
         assert s.get(V2MemoryItem, "mem-1") is not None
 
 
+def test_reap_never_deletes_quarantined_or_unresolved_ownership(db_url):
+    store = _store(db_url)
+    store.create_candidate(_item())
+    _soft_delete(store, purge_after="2026-08-01T00:00:00Z")
+    session_factory = make_sessionmaker(make_engine(db_url))
+    with session_factory.begin() as session:
+        session.get(V2MemoryItem, "mem-1").ownership_state = "quarantined"
+
+    assert reap_purge_pending(
+        session_factory, now="2026-09-01T00:00:00Z"
+    ) == PurgeResult(reaped=0)
+    with session_factory() as session:
+        assert session.get(V2MemoryItem, "mem-1") is not None
+
+
 def test_reap_only_touches_eligible_rows_leaves_others_across_a_mixed_batch(db_url):
     store = _store(db_url)
     store.create_candidate(_item(id="mem-eligible", semantic_key="k1"))

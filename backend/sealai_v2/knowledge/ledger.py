@@ -25,11 +25,12 @@ from sealai_v2.db.models import (
     V2KnowledgeOutbox,
     V2KnowledgeReview,
 )
+from sealai_v2.knowledge.authority import bump_authority_epoch
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog
 
 GLOBAL_KNOWLEDGE_TENANT = "sealai"
 _ID_NAMESPACE = uuid.UUID("32288829-9179-5be3-8864-3a5858e78cc6")
-_REVIEW_STATES = frozenset({"draft", "approved", "quarantined", "rejected"})
+_REVIEW_STATES = frozenset({"draft", "reviewed", "approved", "quarantined", "rejected"})
 _HUMAN_REVIEW_ORIGINS = frozenset({"human_api", "human_seed"})
 _UNCERTAINTY_STATES = frozenset(
     {"bounded", "conditional", "conflicted", "not_sufficiently_supported"}
@@ -274,6 +275,14 @@ def _human_review_is_preservable(row: V2KnowledgeClaim) -> bool:
         return False
     if row.review_status == "approved":
         return _approved_claim_is_current(row)
+    if row.review_status == "reviewed":
+        return bool(
+            row.evidence_json
+            and row.applicability_json
+            and row.review_expires_at
+            and row.uncertainty in _UNCERTAINTY_STATES
+            and row.transferability in _TRANSFERABILITY_STATES
+        )
     return row.review_status in {"quarantined", "rejected"}
 
 
@@ -311,12 +320,16 @@ def _claim_transferability(claim) -> str:
 
 
 def _projection_event(review_status: str) -> str:
+    # A completed review is intentionally not authority. The first reviewer
+    # removes any former draft projection; only the separate approver may put
+    # the reviewed claim back into the rebuildable Qdrant index.
     return "upsert" if review_status in {"approved", "draft"} else "delete"
 
 
 def _quelle(row: V2KnowledgeClaim) -> str:
     labels = {
         "approved": "reviewed",
+        "reviewed": "reviewed - wartet auf unabhaengige Freigabe",
         "draft": "draft - vorlaeufig, gegen Hersteller verifizieren",
         "quarantined": "quarantined - nicht zur Ausgabe freigegeben",
         "rejected": "rejected",
@@ -352,6 +365,7 @@ def _claim_payload(row: V2KnowledgeClaim, document: V2KnowledgeDocument) -> dict
         "document_sha256": document.content_sha256,
         "review_state": {
             "approved": "reviewed",
+            "reviewed": "reviewed_pending_approval",
             "draft": "draft",
             "quarantined": "quarantined",
             "rejected": "rejected",
@@ -744,6 +758,8 @@ class PostgresKnowledgeLedger:
                 )
                 enqueued += 1
 
+            if created or updated or retired:
+                bump_authority_epoch(session, now=now)
             session.commit()
             return LedgerWriteResult(
                 document_id=doc.id,
@@ -842,22 +858,22 @@ class PostgresKnowledgeLedger:
                 "knowledge review requires an authenticated human actor"
             )
         evidence_records = _normalise_evidence(list(evidence))
-        if to_status == "approved":
+        if to_status == "reviewed":
             if not evidence_records:
-                raise KnowledgeLedgerError("approving a claim requires review evidence")
+                raise KnowledgeLedgerError("reviewing a claim requires review evidence")
             if not applicability:
-                raise KnowledgeLedgerError("approving a claim requires applicability")
+                raise KnowledgeLedgerError("reviewing a claim requires applicability")
             if uncertainty not in _UNCERTAINTY_STATES:
                 raise KnowledgeLedgerError(
-                    "approving a claim requires a controlled uncertainty state"
+                    "reviewing a claim requires a controlled uncertainty state"
                 )
             if transferability not in _TRANSFERABILITY_STATES:
                 raise KnowledgeLedgerError(
-                    "approving a claim requires a controlled transferability state"
+                    "reviewing a claim requires a controlled transferability state"
                 )
             if not review_expires_at:
                 raise KnowledgeLedgerError(
-                    "approving a claim requires a review expiry timestamp"
+                    "reviewing a claim requires a review expiry timestamp"
                 )
             _validate_review_expiry(review_expires_at, now=now)
         with self._sf() as session:
@@ -881,6 +897,37 @@ class PostgresKnowledgeLedger:
                 or conflicts
                 or change_reason
             )
+            if to_status == "approved":
+                if previous != "reviewed":
+                    raise KnowledgeLedgerError(
+                        "approval requires a completed independent review"
+                    )
+                if actor == row.reviewed_by:
+                    raise KnowledgeLedgerError(
+                        "reviewer and approver must be different human actors"
+                    )
+                if metadata_change:
+                    raise KnowledgeLedgerError(
+                        "approver cannot alter the independently reviewed contract"
+                    )
+                if not (
+                    row.evidence_json
+                    and row.applicability_json
+                    and row.review_expires_at
+                    and row.uncertainty in _UNCERTAINTY_STATES
+                    and row.transferability in _TRANSFERABILITY_STATES
+                ):
+                    raise KnowledgeLedgerError(
+                        "approval requires a complete independently reviewed contract"
+                    )
+                _validate_review_expiry(row.review_expires_at, now=now)
+            elif to_status == "reviewed" and previous not in {
+                "draft",
+                "quarantined",
+            }:
+                raise KnowledgeLedgerError(
+                    "review requires a draft or quarantined claim"
+                )
             if previous == to_status and not metadata_change:
                 document = session.get(V2KnowledgeDocument, row.document_id)
                 return _claim_payload(row, document)
@@ -888,11 +935,15 @@ class PostgresKnowledgeLedger:
             row.active = to_status != "rejected"
             row.version += 1
             row.updated_at = now
-            row.reviewed_at = now
-            row.reviewed_by = actor
+            # Approval records its actor in the append-only transition log but
+            # preserves the first reviewer's identity on the claim. This makes
+            # the two-person invariant durable and queryable after approval.
+            if to_status != "approved":
+                row.reviewed_at = now
+                row.reviewed_by = actor
             row.review_origin = "human_api"
             row.qdrant_sync_state = "pending"
-            if to_status == "approved":
+            if to_status == "reviewed":
                 citations = [item["citation"] for item in evidence_records]
                 row.sources_json = list(
                     dict.fromkeys([*(row.sources_json or []), *citations])
@@ -924,6 +975,7 @@ class PostgresKnowledgeLedger:
                 now=now,
                 document=document,
             )
+            bump_authority_epoch(session, now=now)
             session.commit()
             return _claim_payload(row, document)
 
@@ -970,6 +1022,8 @@ class PostgresKnowledgeLedger:
                     )
                 )
                 _enqueue(session, row, event_type="delete", now=now)
+            if rows:
+                bump_authority_epoch(session, now=now)
             session.commit()
             return len(rows)
 

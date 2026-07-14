@@ -1,26 +1,11 @@
-name: Build and Push Backend V2
+name: Build Immutable Backend V2 RC
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/build-and-push.yml"
-      - "backend/Dockerfile.v2"
-      - "backend/docker-entrypoint-v2.sh"
-      - "backend/requirements-v2.txt"
-      - "backend/sealai_v2/**"
-      - "ops/release-backend-v2.sh"
-      - "ops/production-release-gate-check.sh"
-      - "ops/production_release_gate.py"
-      - "ops/production-release-state.json"
-      - "ops/tree-hash.sh"
-      - "ops/verify-image-attestations.sh"
-      - "ops/verify_attestation_payload.py"
   workflow_dispatch:
     inputs:
       source_sha:
-        description: "Commit to build (defaults to the selected ref)"
-        required: false
+        description: "Exact reviewed source commit to build before Gate 10"
+        required: true
         type: string
 
 permissions:
@@ -35,33 +20,54 @@ env:
 
 jobs:
   push:
-    name: Build and push immutable backend-v2 image
+    name: Build, attest and push immutable backend-v2 RC
     runs-on: ubuntu-latest
     steps:
+      - name: Validate exact source coordinate
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          WORKFLOW_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "source_sha must be one full SHA-1" >&2
+            exit 2
+          }
+          [[ "$WORKFLOW_REF" == "refs/heads/main" && "$SOURCE_SHA" == "$WORKFLOW_SHA" ]] || {
+            echo "the immutable RC must be dispatched on main for its exact HEAD" >&2
+            exit 2
+          }
+
       - name: Checkout source at the requested commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ inputs.source_sha || github.sha }}
-
-      - name: Enforce release freeze before image build or publication
-        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        run: |
-          set -euo pipefail
-          # shellcheck source=ops/production-release-gate-check.sh
-          source "$PWD/ops/production-release-gate-check.sh"
-          production_release_gate_check \
-            "$PWD/ops/production_release_gate.py" build
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Compute served tree hash
         id: source
         shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        env:
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
+          [[ "$sha" == "$EXPECTED_SOURCE_SHA" ]] || {
+            echo "checkout does not match requested source_sha" >&2
+            exit 2
+          }
+          [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || {
+            echo "RC checkout is not clean" >&2
+            exit 2
+          }
           tree_hash="$(/bin/bash -p ops/tree-hash.sh)"
           test -n "$tree_hash"
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "short_sha=${sha:0:8}" >> "$GITHUB_OUTPUT"
+          echo "rc_tag=rc-${sha}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
           echo "tree_hash=$tree_hash" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
@@ -86,9 +92,7 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=backend-v2
           cache-to: type=gha,mode=max,scope=backend-v2
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.short_sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.rc_tag }}
           build-args: |
             GATE_TREE_HASH=${{ steps.source.outputs.tree_hash }}
             SOURCE_GIT_SHA=${{ steps.source.outputs.sha }}
@@ -132,7 +136,8 @@ jobs:
             echo "### backend-v2 artifact"
             echo "- commit: \`${{ steps.source.outputs.sha }}\`"
             echo "- tree hash: \`${{ steps.source.outputs.tree_hash }}\`"
-            echo "- image tag: \`${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.sha }}\`"
+            echo "- one-shot RC tag: \`${{ env.REGISTRY }}/${{ env.IMAGE_BACKEND_V2 }}:${{ steps.source.outputs.rc_tag }}\`"
             echo "- image digest: \`${{ steps.build.outputs.digest }}\`"
             echo "- supply chain: BuildKit OCI provenance/SBOM plus GitHub-signed provenance and SPDX SBOM"
+            echo "- status: immutable RC only; this build does not lift Gate 10 and cannot deploy"
           } >> "$GITHUB_STEP_SUMMARY"

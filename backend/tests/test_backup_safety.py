@@ -1250,7 +1250,12 @@ def test_qdrant_delete_is_after_local_verification_gate() -> None:
     assert 'QDRANT_INTERNAL_URL}" != "http://qdrant:6333"' in script
     assert script.index("qdrant_endpoint_invalid") < script.index("-X POST")
     assert "--connect-timeout 30 --max-time 540" in script
-    assert script.count("/usr/bin/timeout --signal=TERM") >= 5
+    assert script.count("/usr/bin/timeout --signal=TERM") >= 4
+    assert "qdrant_api -X POST" in script
+    assert "qdrant_api -X DELETE" in script
+    assert "SEALAI_V2_QDRANT_API_KEY" in script
+    assert "curl --config -" in script
+    assert 'header = "api-key: %s"' in script
     assert (
         '--setting "QDRANT_REMOTE_DELETE_POLICY=${QDRANT_REMOTE_DELETE_POLICY}"'
         in script

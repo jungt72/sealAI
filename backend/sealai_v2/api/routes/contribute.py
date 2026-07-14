@@ -2,7 +2,7 @@
 - POST /api/v2/contribute — a USER opts to share their situation + outcome (anonymous by default). Captured
   as an untrusted DRAFT in the review queue; identity is dropped when anonymous. P0: tenant/subject from the
   verified token only, used solely for non-anonymous provenance.
-- GET/PUT /api/v2/admin/contributions — the OWNER review queue (require_admin). The owner reviews, then
+- GET/PUT /api/v2/admin/contributions — the OWNER review queue (require_platform_owner). The owner reviews, then
   promotes a case to a field_validated Fachkarte / eval-trap OUTSIDE this endpoint (the review gate).
 STRUCTURAL FIREWALL: a contribution NEVER feeds the trust spine / grounding / produktspec — it is a separate
 store, reachable only by the user (write) and the owner (review)."""
@@ -14,7 +14,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_contribution_store, require_admin
+from sealai_v2.api.deps import (
+    current_identity,
+    get_contribution_store,
+    require_platform_owner,
+)
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.contributions import Contribution, ContributionStore
 
@@ -69,7 +73,7 @@ def contribute(
 
 @router.get("/admin/contributions")
 def list_contributions(
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     store: ContributionStore = Depends(get_contribution_store),
 ) -> dict:
     return {
@@ -101,7 +105,7 @@ class StatusUpdate(BaseModel):
 def set_contribution_status(
     contribution_id: int,
     body: StatusUpdate,
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     store: ContributionStore = Depends(get_contribution_store),
 ) -> dict:
     if body.status not in _VALID_STATUS:

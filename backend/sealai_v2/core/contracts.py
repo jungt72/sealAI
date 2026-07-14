@@ -280,11 +280,14 @@ class VerifiedIdentity:
     session_id: str
     subject: str
     # Verified token roles (Keycloak realm_access.roles). Additive + default-empty so every existing
-    # 3-arg construction is unchanged; used ONLY for owner/admin gating, NEVER the tenant boundary.
+    # 3-arg construction is unchanged; used only for explicit role gates, never the tenant boundary.
     roles: tuple[str, ...] = ()
     # Verified manufacturer-partner id (Keycloak hersteller_id claim). Additive + default-empty; scopes
     # the manufacturer SELF-SERVICE surface to their OWN partner record. Never the tenant boundary.
     hersteller_id: str = ""
+    # Explicitly verified IdP claim. Missing/non-boolean claims are false in the production
+    # validator; provider-backed endpoints require True before they can incur cost.
+    email_verified: bool = False
 
 
 class AuthValidator(Protocol):
@@ -635,6 +638,17 @@ class CaseRevisionConflict(RuntimeError):
 
 
 @dataclass(frozen=True)
+class ArtifactCaseSnapshot:
+    """Exact read-only conversation projection used by Briefing/RFQ exports."""
+
+    case_id: str
+    case_revision: int
+    message_index: int
+    question: str
+    answer: str
+
+
+@dataclass(frozen=True)
 class MemoryView:
     """What ``recall`` returns for a turn: the working window (L1) + structured case-state (L2)
     + any relevance-injected durable facts (L4, empty until that sub-gate lands). Empty everywhere
@@ -743,6 +757,15 @@ class ConversationMemory(Protocol):
     def recall(
         self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> MemoryView: ...
+
+    def artifact_snapshot(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        owner_subject: str,
+        expected_case_revision: int,
+    ) -> ArtifactCaseSnapshot: ...
 
     def record_turn(
         self,
@@ -862,6 +885,9 @@ class PipelineResult:
     # no catalogs. Always attached (not flag-gated: pure metadata, never fed to L1/L3, so exposing it
     # cannot perturb the eval/golden).
     wissensstand: str = ""
+    # Request-bound mutable Postgres authority. Empty only for hermetic/offline pipelines without
+    # a database authority; production responses carry the epoch that passed the final recheck.
+    authority_epoch: str = ""
     # Legal-by-Design Phase D (Goal 6): deterministic risk-flag terms found in the user's QUESTION
     # text (safety.risk_flags.detect_risk_flags) — e.g. ("ATEX", "Sauerstoff"), or () when none
     # matched. Always attached (not flag-gated: pure deterministic detection over already-available

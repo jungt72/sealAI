@@ -1,0 +1,79 @@
+gate_id: GATE-06
+objective: >-
+  Close self-registration, require verified email, pin the sealai-v2 OIDC client to exact redirects,
+  and prove the hardened login/callback flow without enabling paid-provider traffic.
+current_state: >-
+  Local uncommitted candidate only. No production Keycloak, database, deployment, provider, secret,
+  role, session, or user mutation has been performed. The audit-reported runtime state must be
+  reverified read-only immediately before approval. Paid-provider activation is BLOCKED_EXTERNAL
+  and mechanically disabled.
+exact_actions:
+  - Confirm a separately approved maintenance window and identify the running Keycloak container.
+  - Capture an encrypted/0600 realm and sealai-v2-client rollback export without printing it.
+  - Count enabled/verified/unverified users without emitting identities; notify affected owners.
+  - Set registrationAllowed=false and verifyEmail=true; keep resetPasswordAllowed=false while SMTP is absent.
+  - Set the sealai-v2 redirect URI to https://sealingai.com/dashboard/callback and post-logout URI to https://sealingai.com/dashboard/.
+  - Do not run the broad keycloak_ensure_roles.sh reconciler for this narrow gate; it also mutates roles, MFA, sessions, and temporary admins.
+  - Verify with one explicitly designated staging/test identity; do not create users or revoke sessions unless separately approved.
+  - Keep SEALAI_V2_PROVIDER_REQUESTS_ENABLED=false.
+exact_commands_sanitized:
+  - "ssh -t sealai-vps"
+  - "export KEYCLOAK_CONTAINER='<verified-container>' KCADM_CONFIG='/tmp/<approved-kcadm-session>.config'"
+  - "install -d -m 0700 /home/thorsten/keycloak-backups/<gate-timestamp>"
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh get realms/sealAI --config \"$KCADM_CONFIG\" > /home/thorsten/keycloak-backups/<gate-timestamp>/realm-before.json"
+  - "chmod 0600 /home/thorsten/keycloak-backups/<gate-timestamp>/realm-before.json"
+  - "V2_CLIENT_UUID=\"$(docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh get clients -r sealAI -q clientId=sealai-v2 --fields id,clientId --config \"$KCADM_CONFIG\" | jq -er '.[] | select(.clientId == \"sealai-v2\") | .id')\""
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh get \"clients/$V2_CLIENT_UUID\" -r sealAI --config \"$KCADM_CONFIG\" > /home/thorsten/keycloak-backups/<gate-timestamp>/sealai-v2-client-before.json"
+  - "chmod 0600 /home/thorsten/keycloak-backups/<gate-timestamp>/sealai-v2-client-before.json"
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh update realms/sealAI --config \"$KCADM_CONFIG\" -s registrationAllowed=false -s verifyEmail=true -s resetPasswordAllowed=false"
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh update \"clients/$V2_CLIENT_UUID\" -r sealAI --config \"$KCADM_CONFIG\" -s 'redirectUris=[\"https://sealingai.com/dashboard/callback\"]' -s 'webOrigins=[\"https://sealingai.com\"]' -s 'attributes.\"post.logout.redirect.uris\"=https://sealingai.com/dashboard/'"
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh get realms/sealAI --fields registrationAllowed,verifyEmail,resetPasswordAllowed --config \"$KCADM_CONFIG\" | jq -e '.registrationAllowed == false and .verifyEmail == true and .resetPasswordAllowed == false'"
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh get \"clients/$V2_CLIENT_UUID\" -r sealAI --fields redirectUris,webOrigins,attributes --config \"$KCADM_CONFIG\" | jq -e '.redirectUris == [\"https://sealingai.com/dashboard/callback\"] and .webOrigins == [\"https://sealingai.com\"] and .attributes[\"post.logout.redirect.uris\"] == \"https://sealingai.com/dashboard/\"'"
+affected_services:
+  - Keycloak realm sealAI
+  - sealai-v2 OIDC browser client
+  - dashboard login/logout callback
+  - backend-v2 authentication boundary after a separately approved deployment
+expected_downtime: >-
+  No planned service restart or downtime. New logins may be blocked for unverified users; that is an
+  intentional safe state and must be communicated before execution.
+data_risk: >-
+  Low if commands remain limited to realm/client settings. Backups can contain sensitive realm or
+  SMTP material and must be 0600, encrypted by the approved backup policy, never printed or attached.
+security_risk: >-
+  Mis-typed redirect settings can deny login. Reopening registration, enabling recovery without
+  SMTP, broad role/session mutation, or enabling provider requests is outside this gate and forbidden.
+preconditions:
+  - Explicit single-gate owner approval naming GATE-06, command set, environment, window, and rollback.
+  - Current production fingerprint and release freeze reverified; GATE-08 is not implied.
+  - Owner-authenticated kcadm session already exists; no credential is passed on a command line or read by Codex.
+  - Backup target has sufficient space, correct permissions, encryption, and a restore/readback check.
+  - Counts-only impact inventory for verified/unverified enabled users and an owner communication plan.
+  - One verified staging/test identity and browser available; no production provider invocation.
+  - SMTP, Captcha, immediate session introspection, provider-price contract, and external alerts remain recorded BLOCKED_EXTERNAL.
+backup_status: >-
+  NOT_TAKEN. This plan creates realm-before.json and sealai-v2-client-before.json only after approval;
+  both require 0600/encrypted handling and a non-secret readback before mutation.
+verification:
+  - Readback proves registrationAllowed=false, verifyEmail=true, resetPasswordAllowed=false, and exact redirects.
+  - Registration UI/action is absent and no anonymous account is created.
+  - Designated login succeeds with PKCE; callback URL/history is synchronously query-free.
+  - Wrong/missing/replayed state and wrong response issuer/nonce/audience are denied.
+  - Existing verified owner/admin access and required MFA succeed; no role or user count changed.
+  - Nginx access-log fixture contains no OAuth code/state/token/id_token_hint/case identifier.
+  - Provider kill switch remains false and no provider request/cost is generated.
+rollback:
+  - Stop immediately; do not reopen registration, disable email verification, remove redaction, or enable providers.
+  - If only the sealai-v2 client redirect change broke login, restore that client from the 0600 pre-change JSON using the same authenticated kcadm session, then read back and retest.
+  - "docker cp /home/thorsten/keycloak-backups/<gate-timestamp>/sealai-v2-client-before.json \"$KEYCLOAK_CONTAINER\":/tmp/sealai-v2-client-before.json"
+  - "docker exec \"$KEYCLOAK_CONTAINER\" /opt/keycloak/bin/kcadm.sh update \"clients/$V2_CLIENT_UUID\" -r sealAI -f /tmp/sealai-v2-client-before.json --config \"$KCADM_CONFIG\""
+  - "docker exec \"$KEYCLOAK_CONTAINER\" rm -f /tmp/sealai-v2-client-before.json"
+  - Prefer a forward fix for callback/JWKS code. If an exact artifact rollback is separately approved under GATE-08, keep provider_requests_enabled=false and the closed realm settings.
+  - Do not downgrade migration 0011 during this gate; dropping it would destroy quota/audit state and belongs to GATE-07.
+stop_conditions:
+  - Missing or unreadable backup, insufficient disk, unexpected secret output, or no authenticated rollback path.
+  - Runtime fingerprint differs from the approved target or another production mutation is in progress.
+  - More than one sealai-v2 client, unexpected redirect/origin state, or readback differs from the command intent.
+  - Verified owner/admin cannot complete login/MFA, or any role/user/session mutation appears.
+  - Any command would enable registration, recovery without validated SMTP, provider traffic, paid smoke, or broad keycloak reconciliation.
+  - Any required approval (GATE-06; and GATE-07/GATE-08 where applicable) is absent or expired.

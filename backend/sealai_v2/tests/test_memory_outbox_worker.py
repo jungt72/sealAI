@@ -9,8 +9,11 @@ window directly, since none of the pre-existing tests otherwise would."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from sqlalchemy import select
 
+from sealai_v2.config import settings as settings_module
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
 from sealai_v2.db.memory_store import PostgresMemoryStore
 from sealai_v2.db.models import V2MemoryOutbox
@@ -21,7 +24,18 @@ from sealai_v2.memory.curated import (
     MemoryStatus,
     MemoryType,
 )
-from sealai_v2.memory.outbox_worker import drain_outbox, outbox_health
+from sealai_v2.memory import outbox_worker as outbox_worker_module
+from sealai_v2.memory.outbox_worker import (
+    drain_outbox,
+    ensure_memory_collection,
+    outbox_health,
+)
+from sealai_v2.security.cost_control import (
+    CostControlPolicy,
+    EmbeddingServiceAdmission,
+    InMemoryCostControlStore,
+    REMOTE_EMBEDDING_MAX_INPUT_BYTES,
+)
 
 import pytest
 
@@ -41,8 +55,20 @@ class _ListLike(list):
 
 
 class _FakeEmbedder:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
     def embed(self, texts):
-        return [_ListLike([0.1, 0.2, 0.3]) for _ in texts]
+        batch = tuple(texts)
+        self.calls.append(batch)
+        return [_ListLike([0.1, 0.2, 0.3]) for _ in batch]
+
+
+class _FailingEmbedder(_FakeEmbedder):
+    def embed(self, texts):
+        batch = tuple(texts)
+        self.calls.append(batch)
+        raise ConnectionError("single embedding attempt failed")
 
 
 class _FakeQdrantClient:
@@ -62,7 +88,10 @@ class _AlwaysFailingQdrantClient:
     logic exists for."""
 
     def upsert(self, collection: str, points):
-        raise ConnectionError("simulated Qdrant outage")
+        raise ConnectionError(
+            "RAW-DOCUMENT-CANARY url=https://qdrant.invalid/items?doc=42 "
+            "auth=AUTH-METADATA-CANARY"
+        )
 
 
 def _item(**overrides) -> MemoryItem:
@@ -87,6 +116,26 @@ def _store(url: str) -> PostgresMemoryStore:
     return PostgresMemoryStore(make_sessionmaker(make_engine(url)))
 
 
+def _service_gate(store: InMemoryCostControlStore) -> EmbeddingServiceAdmission:
+    return EmbeddingServiceAdmission(
+        store,
+        CostControlPolicy(
+            subject_per_minute=100,
+            tenant_per_minute=100,
+            subject_per_day=100,
+            tenant_per_day=100,
+            tenant_per_month=1000,
+            subject_max_concurrent=100,
+            tenant_max_concurrent=100,
+            lease_s=60,
+            reservation_micros=100,
+            daily_budget_micros=10_000,
+            monthly_budget_micros=100_000,
+        ),
+        service="memory_outbox",
+    )
+
+
 def test_create_candidate_enqueues_and_drain_syncs_it(db_url):
     _store(db_url).create_candidate(_item())
     sm = make_sessionmaker(make_engine(db_url))
@@ -103,6 +152,266 @@ def test_create_candidate_enqueues_and_drain_syncs_it(db_url):
     assert points[0].id == "mem-1"
     assert points[0].payload["tenant_id"] == "tenant-a"
     assert points[0].payload["status"] == "candidate"
+
+
+def test_remote_memory_batch_uses_one_shared_non_refundable_admission(db_url):
+    _store(db_url).create_candidate(_item())
+    _store(db_url).create_candidate(
+        _item(id="mem-2", semantic_key="pref:units:imperial", content="uses inches")
+    )
+    sm = make_sessionmaker(make_engine(db_url))
+    cost_store = InMemoryCostControlStore()
+    embedder = _FakeEmbedder()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=embedder,
+        now="2026-07-03T01:00:00Z",
+        remote_embeddings=True,
+        service_admission=_service_gate(cost_store),
+    )
+
+    assert result.claimed == result.synced == 2
+    assert embedder.calls == [("prefers metric units", "uses inches")]
+    summary = cost_store.summary()
+    assert summary["active_requests"] == 0
+    assert summary["day"]["admitted_requests"] == 1
+    assert summary["day"]["reserved_cost_micros"] == 100
+
+
+def test_remote_provider_failure_stops_after_one_admitted_worker_attempt(db_url):
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    cost_store = InMemoryCostControlStore()
+    embedder = _FailingEmbedder()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=embedder,
+        now="2026-07-03T01:00:00Z",
+        remote_embeddings=True,
+        service_admission=_service_gate(cost_store),
+    )
+
+    assert result.claimed == 1 and result.synced == 0
+    assert embedder.calls == [("prefers metric units",)]
+    summary = cost_store.summary()
+    assert summary["day"]["admitted_requests"] == 1
+    assert summary["day"]["reserved_cost_micros"] == 100
+    with sm() as session:
+        row = session.scalar(select(V2MemoryOutbox))
+        assert row.status == "pending" and row.attempts == 1
+        assert row.next_attempt_at == "2026-07-03T01:00:30Z"
+        assert row.last_error == "infrastructure_error:ConnectionError"
+
+
+def test_remote_memory_collection_warmup_has_its_own_admission(monkeypatch):
+    cost_store = InMemoryCostControlStore()
+    embedder = _FakeEmbedder()
+    ensured: list[tuple[str, int, bool]] = []
+    monkeypatch.setattr(
+        outbox_worker_module,
+        "ensure_collection",
+        lambda _client, collection, dim, *, sparse: ensured.append(
+            (collection, dim, sparse)
+        ),
+    )
+
+    ensure_memory_collection(
+        object(),
+        embedder,
+        collection="memory-v1",
+        remote_embeddings=True,
+        service_admission=_service_gate(cost_store),
+    )
+
+    assert embedder.calls == [("_warmup_",)]
+    assert ensured == [("memory-v1", 3, False)]
+    assert cost_store.summary()["day"]["admitted_requests"] == 1
+
+
+def test_empty_remote_memory_queue_has_no_admission_or_embedding_call(db_url):
+    sm = make_sessionmaker(make_engine(db_url))
+    embedder = _FakeEmbedder()
+    prepared: list[bool] = []
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=embedder,
+        now="2026-07-03T01:00:00Z",
+        remote_embeddings=True,
+        prepare_embeddings=lambda: prepared.append(True),
+    )
+
+    assert result.claimed == 0
+    assert prepared == []
+    assert embedder.calls == []
+
+
+@pytest.mark.parametrize("content", ("", "x" * (REMOTE_EMBEDDING_MAX_INPUT_BYTES + 1)))
+def test_invalid_remote_memory_payload_is_rejected_before_lazy_factory_or_admission(
+    db_url, content
+):
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as session:
+        session.add(
+            V2MemoryOutbox(
+                memory_item_id="mem-invalid",
+                tenant_id="tenant-a",
+                event_type="upsert",
+                payload={"id": "mem-invalid", "content": content},
+                created_at="2026-07-03T00:00:00Z",
+            )
+        )
+        session.commit()
+    prepared: list[bool] = []
+    cost_store = InMemoryCostControlStore()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=None,
+        now="2026-07-03T01:00:00Z",
+        remote_embeddings=True,
+        prepare_embeddings=lambda: prepared.append(True)
+        or (_FakeEmbedder(), _service_gate(cost_store)),
+    )
+
+    assert result.claimed == 1 and result.synced == 0
+    assert prepared == []
+    assert cost_store.summary()["day"]["admitted_requests"] == 0
+    with sm() as session:
+        row = session.scalar(select(V2MemoryOutbox))
+        assert row.status == "pending" and row.attempts == 1
+        assert row.last_error in {
+            "embedding_input_empty",
+            "embedding_input_bytes_exceeded",
+        }
+
+
+def test_remote_delete_only_memory_pass_has_no_admission_or_warmup(db_url):
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as session:
+        session.add(
+            V2MemoryOutbox(
+                memory_item_id="mem-deleted",
+                tenant_id="tenant-a",
+                event_type="delete",
+                payload={"id": "mem-deleted"},
+                created_at="2026-07-03T00:00:00Z",
+            )
+        )
+        session.commit()
+    embedder = _FakeEmbedder()
+    prepared: list[bool] = []
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=embedder,
+        now="2026-07-03T01:00:00Z",
+        batch_size=51,
+        max_attempts=6,
+        remote_embeddings=True,
+        prepare_embeddings=lambda: prepared.append(True),
+    )
+
+    assert result.claimed == result.synced == 1
+    assert prepared == []
+    assert embedder.calls == []
+
+
+def test_remote_memory_batch_without_service_gate_fails_before_provider_io(db_url):
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    embedder = _FakeEmbedder()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=embedder,
+        now="2026-07-03T01:00:00Z",
+        remote_embeddings=True,
+    )
+
+    assert result.claimed == 1 and result.synced == 0
+    assert embedder.calls == []
+    with sm() as session:
+        row = session.scalar(select(V2MemoryOutbox))
+        assert row.status == "pending"
+        assert row.last_error == "provider_admission_missing"
+
+
+def test_memory_cli_empty_queue_keeps_paid_gate_and_embedder_lazy(db_url, monkeypatch):
+    monkeypatch.setattr(
+        settings_module,
+        "Settings",
+        lambda: SimpleNamespace(
+            database_url=db_url,
+            qdrant_url="http://qdrant",
+            embed_provider="openai",
+            provider_requests_enabled=False,
+            outbox_max_attempts=5,
+            outbox_claim_timeout_s=300,
+            memory_qdrant_collection="memory-v1",
+        ),
+    )
+    provider_factories: list[str] = []
+    monkeypatch.setattr(
+        outbox_worker_module,
+        "_make_client",
+        lambda _settings: provider_factories.append("qdrant"),
+    )
+    monkeypatch.setattr(
+        outbox_worker_module,
+        "_make_memory_embedder",
+        lambda _settings: provider_factories.append("embedder"),
+    )
+
+    assert outbox_worker_module.main(["drain"]) == 0
+
+    assert provider_factories == ["qdrant"]
+
+
+def test_memory_cli_upsert_checks_kill_switch_before_remote_embedder(
+    db_url, monkeypatch
+):
+    _store(db_url).create_candidate(_item())
+    monkeypatch.setattr(
+        settings_module,
+        "Settings",
+        lambda: SimpleNamespace(
+            database_url=db_url,
+            qdrant_url="http://qdrant",
+            embed_provider="openai",
+            provider_requests_enabled=False,
+            outbox_max_attempts=5,
+            outbox_claim_timeout_s=300,
+            memory_qdrant_collection="memory-v1",
+        ),
+    )
+    factories: list[str] = []
+    monkeypatch.setattr(
+        outbox_worker_module,
+        "_make_client",
+        lambda _settings: factories.append("qdrant") or _FakeQdrantClient(),
+    )
+    monkeypatch.setattr(
+        outbox_worker_module,
+        "_make_memory_embedder",
+        lambda _settings: factories.append("embedder") or _FakeEmbedder(),
+    )
+
+    assert outbox_worker_module.main(["drain"]) == 1
+
+    assert factories == ["qdrant"]
+    with make_sessionmaker(make_engine(db_url))() as session:
+        row = session.scalar(select(V2MemoryOutbox))
+        assert row.status == "pending"
+        assert row.last_error == "provider_requests_disabled"
 
 
 def test_drain_targets_configured_versioned_collection(db_url):
@@ -214,7 +523,10 @@ def test_simulated_qdrant_outage_retries_then_permanently_fails(db_url):
         row = s.scalars(select(V2MemoryOutbox)).one()
         assert row.status == "failed"
         assert row.attempts == 5
-        assert "simulated Qdrant outage" in row.last_error
+        assert row.last_error == "infrastructure_error:ConnectionError"
+        assert "RAW-DOCUMENT-CANARY" not in row.last_error
+        assert "qdrant.invalid" not in row.last_error
+        assert "AUTH-METADATA-CANARY" not in row.last_error
 
 
 def test_a_permanently_failed_row_is_never_claimed_again(db_url):

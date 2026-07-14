@@ -27,7 +27,9 @@ I9  Durable L4-Memory speist nie den Calc-Binder.
 A0  (Meta) Eval-REPLAY / 8 Schranken halten 1.000 durch jedes Increment.
     Eval ist live-LLM + owner-adjudiziert (API-Key .env-denied) -> strukturell NICHT CI-automatisierbar;
     die menschliche Adjudikation IST die Doktrin. Bindung HART am Deploy: ops/v2_deploy_gate.py
-    refuset Deploy (exit 2) ohne adjudizierten, tree-hash-gebundenen Run mit schranken_quota_final==1.0.
+    refuset Deploy (exit 2) ohne vollständigen Full-Suite-Replay mit exaktem Tree-Hash,
+    Served-L1 und Runtime-Profil-Hash, `provisional_until_deep_audit == false` und
+    schranken_quota_final==1.0. Targeted/chained Evidence und Owner-Waiver autorisieren nie Promotion.
     | [ENFORCED AT DEPLOY (hart); gate.sh Stufe 5 pre-merge = WARN by design, relay-kompatibel]
 
 ## Benannte Durchsetzungs-Luecken (Haertungs-Reihenfolge)

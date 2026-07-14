@@ -34,6 +34,7 @@ readonly LEGACY_CRON_LINE='0 * * * * /home/thorsten/sealai/ops/disk_safeguard.sh
 readonly -a ARTIFACTS=(
   docs/ops/docker-disk-guard.md
   docs/ops/production-release-freeze.md
+  frontend-v2/scripts/dashboard_release.py
   ops/bootstrap_gate08_remediation_control.py
   ops/disk-guard.example.json
   ops/docker-disk-guard.sh
@@ -43,7 +44,9 @@ readonly -a ARTIFACTS=(
   ops/production-release-gate-check.sh
   ops/production-release-state.json
   ops/production-storage-lease.sh
+  ops/production_release_control.py
   ops/production_release_gate.py
+  ops/sudoers/sealai-production-deploy
   ops/sudoers/sealai-storage-preflight
   ops/systemd/sealai-disk-guard.service
   ops/systemd/sealai-disk-guard.timer
@@ -231,6 +234,12 @@ install -m 0755 -o root -g root \
 install -m 0755 -o root -g root \
   "${STAGE_DIR}/ops/production-deploy-remote-entrypoint.sh" \
   /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh
+install -m 0755 -o root -g root \
+  "${STAGE_DIR}/ops/production_release_control.py" \
+  /usr/local/libexec/sealai/production_release_control.py
+install -m 0755 -o root -g root \
+  "${STAGE_DIR}/frontend-v2/scripts/dashboard_release.py" \
+  /usr/local/libexec/sealai/dashboard_release.py
 
 for trusted_path in /usr/local /usr/local/libexec /usr/local/libexec/sealai; do
   [[ "$(stat -Lc '%F:%a:%U:%G' "${trusted_path}")" == 'directory:755:root:root' ]] || {
@@ -248,8 +257,22 @@ done
   'regular file:755:root:root' ]] || exit 78
 [[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh)" == \
   'regular file:755:root:root' ]] || exit 78
+[[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/production_release_control.py)" == \
+  'regular file:755:root:root' ]] || exit 78
+[[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/dashboard_release.py)" == \
+  'regular file:755:root:root' ]] || exit 78
 
-install -d -m 0700 -o root -g root /etc/sealai
+install -d -m 0700 -o root -g root /etc/sealai /etc/sealai/approvals
+install -d -m 0755 -o root -g root \
+  /var/lib/sealai \
+  /var/lib/sealai/release-control \
+  /var/lib/sealai/release-control/releases \
+  /var/lib/sealai/release-evidence \
+  /var/lib/sealai/release-evidence/runs \
+  /var/lib/sealai/dashboard-releases \
+  /var/lib/sealai/deployment-receipts
+install -d -m 0700 -o root -g root \
+  /var/lib/sealai/deployment-receipts/consumed
 if [[ -L /etc/sealai/disk-guard.json ]]; then
   printf 'disk-guard installer: refusing symlinked configuration\n' >&2
   exit 78
@@ -272,12 +295,23 @@ visudo -cf "${STAGE_DIR}/ops/sudoers/sealai-storage-preflight" >/dev/null
 install -m 0440 -o root -g root \
   "${STAGE_DIR}/ops/sudoers/sealai-storage-preflight" \
   /etc/sudoers.d/sealai-storage-preflight
+visudo -cf "${STAGE_DIR}/ops/sudoers/sealai-production-deploy" >/dev/null
+install -m 0440 -o root -g root \
+  "${STAGE_DIR}/ops/sudoers/sealai-production-deploy" \
+  /etc/sudoers.d/sealai-production-deploy
+visudo -cf /etc/sudoers.d/sealai-storage-preflight >/dev/null
+visudo -cf /etc/sudoers.d/sealai-production-deploy >/dev/null
+[[ "$(stat -Lc '%F:%a:%U:%G' /etc/sudoers.d/sealai-production-deploy)" == \
+  'regular file:440:root:root' ]] || exit 78
 
 test -x /usr/local/libexec/sealai/docker-disk-guard.sh
 test -r /usr/local/libexec/sealai/production-storage-lease.sh
 test -x /usr/local/libexec/sealai/production-release-gate-check.sh
 test -x /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh
+test -x /usr/local/libexec/sealai/production_release_control.py
+test -x /usr/local/libexec/sealai/dashboard_release.py
 /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py --help >/dev/null
+/usr/bin/python3 -I /usr/local/libexec/sealai/production_release_control.py --help >/dev/null
 systemd-tmpfiles --create /etc/tmpfiles.d/sealai-storage-mutation.conf
 test "$(stat -Lc '%F:%a:%U:%G' /run/lock/sealai-storage-mutation.lock)" = \
   'regular file:660:root:thorsten'

@@ -505,6 +505,7 @@ def test_production_build_pull_paths_gate_storage_before_mutation() -> None:
     assert "ops/production-storage-lease.sh" in installer
     assert "/etc/tmpfiles.d/sealai-storage-mutation.conf" in installer
     assert "/etc/sudoers.d/sealai-storage-preflight" in installer
+    assert "/etc/sudoers.d/sealai-production-deploy" in installer
     assert installer.index("systemctl daemon-reload") < installer.index(
         "systemctl enable --now sealai-disk-guard.timer"
     )
