@@ -86,6 +86,19 @@ class TestSmalltalkNavigation:
         assert d.route == RouteName.SMALLTALK_NAVIGATION
         assert d.forced_full_pipeline is False
 
+    def test_combined_greeting_from_production_routes_smalltalk(self) -> None:
+        for question in (
+            "Hallo und guten abend",
+            "Hallo, guten Abend!",
+            "Hi und guten Morgen",
+        ):
+            for decision in (
+                classify_route(question, intent=Intent.GESPRAECH),
+                classify_route_deterministic(question),
+            ):
+                assert decision.route is RouteName.SMALLTALK_NAVIGATION, question
+                assert decision.forced_full_pipeline is False
+
     def test_greeting_never_hides_engineering_signal(self) -> None:
         d = classify_route(
             "Hallo, ich brauche eine Dichtung für 150 °C.", intent=Intent.GESPRAECH
