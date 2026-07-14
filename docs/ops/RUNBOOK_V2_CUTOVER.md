@@ -121,6 +121,10 @@ The command is illustrative, not an authorization. Installation/staging,
 external RC evidence, Gate 10 and the per-deployment GATE-08 receipt are all
 still required. While the checked-in freeze is active this remains blocked. Do
 not replace the entrypoint with a direct Docker, Compose, Git or symlink command.
+Inside that root-trusted transaction, the hash-bound repository release step is
+`./ops/release-backend-v2.sh --final`; it is not a standalone operator entrypoint.
+Until the installed boundary, exact receipts and external evidence are proven,
+this step stays deliberately blocked.
 
 Verify: `curl -fsS --max-time 10 http://127.0.0.1:8001/health`; then
 `curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/api/v2/chat -H 'Content-Type: application/json' -d '{"message":"x"}'` → **401** (503 = auth env missing → STOP, fix env).

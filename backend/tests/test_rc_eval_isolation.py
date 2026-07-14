@@ -65,7 +65,7 @@ def _run_contract(
     command = (
         f'source "{CONTRACT}"; '
         f'rc_contract_load "{repo}" "{mode}" && '
-        'printf contract-valid'
+        "printf contract-valid"
     )
     env = {
         "HOME": str(tmp_path),
@@ -128,9 +128,7 @@ def test_rc_contract_accepts_only_complete_nonproduction_literal_input(
             "RC_POSTGRES_PASSWORD",
         ),
         (
-            _replace_line(
-                _valid_contract(), "RC_POSTGRES_SNAPSHOT_SHA256", "0" * 64
-            ),
+            _replace_line(_valid_contract(), "RC_POSTGRES_SNAPSHOT_SHA256", "0" * 64),
             "invalid_sha256",
             "RC_POSTGRES_SNAPSHOT_SHA256",
         ),
@@ -207,7 +205,9 @@ def test_rc_contract_rejects_inherited_prod_or_target_environment(
 
 
 def test_rc_contract_rejects_group_readable_or_symlinked_file(tmp_path: Path) -> None:
-    permissive = _run_contract(tmp_path / "permissive", _valid_contract(), file_mode=0o640)
+    permissive = _run_contract(
+        tmp_path / "permissive", _valid_contract(), file_mode=0o640
+    )
     assert permissive.returncode == 78
     assert "unsafe_contract_mode" in permissive.stderr
 
@@ -396,8 +396,12 @@ def test_rc_compose_has_only_segmented_internal_networks_and_rc_data_paths() -> 
         "rc_qdrant",
         "rc_provider",
     }
-    assert all(network.get("internal") is True for network in value["networks"].values())
-    assert all(network.get("external") is not True for network in value["networks"].values())
+    assert all(
+        network.get("internal") is True for network in value["networks"].values()
+    )
+    assert all(
+        network.get("external") is not True for network in value["networks"].values()
+    )
     assert "sealai_default" not in text_content
     assert ".env.prod" not in text_content
 
@@ -492,7 +496,7 @@ def test_eval_and_staging_entrypoints_use_only_the_rc_contract() -> None:
     assert '--env-file "${RC_ENV_FILE}"' in run_eval
     assert "docker-compose.staging.yml" in run_eval
     assert "--no-deps" in run_eval
-    assert "retriever_backend != \"qdrant\"" in run_eval
+    assert 'retriever_backend != "qdrant"' in run_eval
     assert "Postgres snapshot is empty" in run_eval
     assert "Qdrant knowledge collection is empty" in run_eval
     assert "RC_STUB_NON_ELIGIBLE" in run_eval
@@ -513,9 +517,7 @@ def test_compose_config_renders_without_contacting_the_daemon(
     if docker is None:
         pytest.skip("Docker Compose CLI not installed")
     env_file = tmp_path / "rc.env"
-    env_file.write_text(
-        _valid_contract(staging=include_web_inputs), encoding="utf-8"
-    )
+    env_file.write_text(_valid_contract(staging=include_web_inputs), encoding="utf-8")
     env_file.chmod(0o600)
     env = {
         "COMPOSE_DISABLE_ENV_FILE": "1",
