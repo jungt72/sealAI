@@ -1,4 +1,160 @@
 services:
+  # Production-only overrides for the shared development services. Keeping
+  # these controls out of docker-compose.yml preserves the local dev stack;
+  # the production overlay is fail-closed on exact digests and measured limits.
+  postgres:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE required - use an immutable name@sha256 digest}
+    read_only: true
+    tmpfs:
+    - /run/postgresql:rw,noexec,nosuid,nodev,uid=999,gid=999,mode=0770
+    - /tmp:rw,noexec,nosuid,nodev,uid=999,gid=999,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    cap_add:
+    - CHOWN
+    - DAC_OVERRIDE
+    - FOWNER
+    - SETGID
+    - SETUID
+    pids_limit: ${POSTGRES_PIDS_LIMIT:?POSTGRES_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:?POSTGRES_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${POSTGRES_CPU_LIMIT:?POSTGRES_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - postgres_keycloak_network
+    - postgres_backend_network
+    - strapi_postgres_network
+  redis:
+    image: ${REDIS_IMAGE:?REDIS_IMAGE required - use an immutable name@sha256 digest}
+    read_only: true
+    tmpfs:
+    - /run:rw,noexec,nosuid,nodev,mode=0755
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    cap_add:
+    - CHOWN
+    - SETGID
+    - SETUID
+    pids_limit: ${REDIS_PIDS_LIMIT:?REDIS_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${REDIS_MEMORY_LIMIT:?REDIS_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${REDIS_CPU_LIMIT:?REDIS_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - redis_network
+  qdrant:
+    image: ${QDRANT_IMAGE:?QDRANT_IMAGE required - use an immutable name@sha256 digest}
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY required - provision only through GATE-02/GATE-05}
+    volumes:
+    - qdrant_snapshots:/qdrant/snapshots
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${QDRANT_PIDS_LIMIT:?QDRANT_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${QDRANT_MEMORY_LIMIT:?QDRANT_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${QDRANT_CPU_LIMIT:?QDRANT_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - qdrant_backend_network
+  gotenberg:
+    image: ${GOTENBERG_IMAGE:?GOTENBERG_IMAGE required - use an immutable name@sha256 digest}
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    - /home/gotenberg:rw,noexec,nosuid,nodev,mode=0700
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${GOTENBERG_PIDS_LIMIT:?GOTENBERG_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${GOTENBERG_MEMORY_LIMIT:?GOTENBERG_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${GOTENBERG_CPU_LIMIT:?GOTENBERG_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - document_network
+  tika:
+    image: ${TIKA_IMAGE:?TIKA_IMAGE required - use an immutable name@sha256 digest}
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${TIKA_PIDS_LIMIT:?TIKA_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${TIKA_MEMORY_LIMIT:?TIKA_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${TIKA_CPU_LIMIT:?TIKA_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - document_network
+  prometheus:
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${PROMETHEUS_PIDS_LIMIT:?PROMETHEUS_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${PROMETHEUS_MEMORY_LIMIT:?PROMETHEUS_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${PROMETHEUS_CPU_LIMIT:?PROMETHEUS_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - observability_network
+    - backend_metrics_network
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required - rotate through GATE-02}
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${GRAFANA_PIDS_LIMIT:?GRAFANA_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${GRAFANA_MEMORY_LIMIT:?GRAFANA_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${GRAFANA_CPU_LIMIT:?GRAFANA_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks:
+    - observability_network
   frontend:
     profiles:
     - frontend-container
@@ -33,9 +189,28 @@ services:
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: ${FRONTEND_PULL_POLICY:-always}
     networks:
-      default:
+      frontend_network:
         aliases:
         - sealai-frontend
+      frontend_egress_network:
+        gw_priority: 1
+    user: 1001:1001
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,uid=1001,gid=1001,mode=1770
+    - /app/.next/cache:rw,noexec,nosuid,nodev,uid=1001,gid=1001,mode=0700
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${FRONTEND_PIDS_LIMIT:?FRONTEND_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${FRONTEND_MEMORY_LIMIT:?FRONTEND_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${FRONTEND_CPU_LIMIT:?FRONTEND_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
   keycloak:
     container_name: keycloak
     depends_on:
@@ -44,12 +219,12 @@ services:
     restart: unless-stopped
     environment:
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sealai}
-      KC_DB_USERNAME: ${KC_DB_USERNAME:-sealai}
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KC_DB_NAME:?KC_DB_NAME required - use the dedicated Keycloak database}
+      KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME required - use the dedicated Keycloak database role}
       # KCRAW preserves literal '$' sequences instead of treating them as
-      # SmallRye Config expressions. POSTGRES_PASSWORD is the single source for
-      # the shared Postgres role used by this deployment.
-      KCRAW_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set in .env or .env.prod}
+      # SmallRye Config expressions. Keycloak and V2 use independent roles;
+      # the credentials are provisioned only through the gated DB cutover.
+      KCRAW_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD required - rotate/provision only through GATE-02/GATE-07}
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: 'true'
       KC_HOSTNAME: ${KC_HOSTNAME:-https://sealingai.com}
@@ -74,11 +249,33 @@ services:
       retries: 12
       start_period: 60s
     networks:
-      default:
+      keycloak_edge_network:
         aliases:
         - sealai-keycloak
+      backend_identity_network:
+        aliases:
+        - sealai-keycloak
+      postgres_keycloak_network: {}
+      keycloak_egress_network:
+        gw_priority: 1
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,uid=1000,gid=0,mode=1770
+    - /opt/keycloak/data:rw,noexec,nosuid,nodev,uid=1000,gid=0,mode=0700
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${KEYCLOAK_PIDS_LIMIT:?KEYCLOAK_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${KEYCLOAK_MEMORY_LIMIT:?KEYCLOAK_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${KEYCLOAK_CPU_LIMIT:?KEYCLOAK_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
   nginx:
-    image: nginx:1.29.4
+    image: ${NGINX_IMAGE:?NGINX_IMAGE required - use an immutable name@sha256 digest}
     container_name: nginx
     depends_on:
       keycloak:
@@ -105,6 +302,33 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    networks:
+    - edge_network
+    - frontend_network
+    - backend_network
+    - keycloak_edge_network
+    read_only: true
+    tmpfs:
+    - /var/cache/nginx:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=0750
+    - /var/run:rw,noexec,nosuid,nodev,uid=101,gid=101,mode=0750
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    cap_add:
+    - CHOWN
+    - NET_BIND_SERVICE
+    - SETGID
+    - SETUID
+    pids_limit: ${NGINX_PIDS_LIMIT:?NGINX_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${NGINX_MEMORY_LIMIT:?NGINX_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${NGINX_CPU_LIMIT:?NGINX_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
   # V2 green-field backend (cutover arc) — OFF by default behind the `v2` profile; defined HERE
   # (not only in an overlay) so `up -d --remove-orphans` with the standard file set never treats a
   # running backend-v2 as an orphan. Routed only after `ops/v2-flip.sh --apply` enables the nginx
@@ -113,7 +337,7 @@ services:
     container_name: backend-v2
     profiles:
     - v2
-    image: ${BACKEND_V2_IMAGE:-sealai-backend-v2:local}
+    image: ${BACKEND_V2_IMAGE:?BACKEND_V2_IMAGE required - use an immutable name@sha256 digest}
     pull_policy: ${BACKEND_V2_PULL_POLICY:-missing}
     build:
       context: ./backend
@@ -198,7 +422,7 @@ services:
       # SQLAlchemy adapters (system-of-record) — a DEDICATED `sealai_v2` database in the shared
       # postgres instance (own tables, own snapshot/restore unit; the V1 `sealai` DB is never
       # touched). Unset → the in-process store (offline). Values are never logged.
-      SEALAI_V2_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-sealai}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set in .env or .env.prod}@postgres:5432/sealai_v2
+      SEALAI_V2_DATABASE_URL: postgresql+psycopg2://${SEALAI_V2_DB_USER:?SEALAI_V2_DB_USER required - use the dedicated V2 database role}:${SEALAI_V2_DB_PASSWORD:?SEALAI_V2_DB_PASSWORD required - provision only through GATE-02/GATE-07}@postgres:5432/sealai_v2
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge_v1}
       SEALAI_V2_MEMORY_QDRANT_COLLECTION: ${SEALAI_V2_MEMORY_QDRANT_COLLECTION:-sealai_v2_memory}
@@ -207,6 +431,7 @@ services:
       # in-process keyword matcher on a missing dep / unreachable Qdrant / missing collection.
       SEALAI_V2_RETRIEVER_BACKEND: ${SEALAI_V2_RETRIEVER_BACKEND:-in_process}
       SEALAI_V2_QDRANT_URL: ${SEALAI_V2_QDRANT_URL:-http://qdrant:6333}
+      SEALAI_V2_QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY required - rotate/provision only through GATE-02/GATE-05}
       SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-/app/models}
       # Wave 2 RAG: embedding provider. PROD = openai text-embedding-3-small (1536-dim, RAM-safe — the
       # local e5-large OOM'd the 7.6 GB host; the openai API embeds with NO local model). DATA leaves the
@@ -298,8 +523,6 @@ services:
     - /home/thorsten/sealai-v2-fastembed:/app/models:ro
     expose:
     - '8001'
-    ports:
-    - 127.0.0.1:8001:8001
     healthcheck:
       test:
       - CMD-SHELL
@@ -309,9 +532,30 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      default:
+      backend_network:
         aliases:
         - sealai-backend-v2
+      backend_identity_network: {}
+      postgres_backend_network: {}
+      qdrant_backend_network: {}
+      backend_metrics_network: {}
+      backend_egress_network:
+        gw_priority: 1
+    read_only: true
+    tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,uid=10001,gid=10001,mode=1770
+    security_opt:
+    - no-new-privileges:true
+    cap_drop:
+    - ALL
+    pids_limit: ${BACKEND_V2_PIDS_LIMIT:?BACKEND_V2_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${BACKEND_V2_MEMORY_LIMIT:?BACKEND_V2_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${BACKEND_V2_CPU_LIMIT:?BACKEND_V2_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
   # Durable queue consumer. It extends the exact backend-v2 image and allow-listed
   # environment, but has no HTTP port and no API responsibility. Keeping it as a
   # separate container makes outbox delivery restart-safe without adding a hidden
@@ -328,8 +572,14 @@ services:
     - sealai_v2.memory.outbox_daemon
     ports: !reset []
     expose: !reset []
-    networks: !reset
-      default: {}
+    networks: !override
+      postgres_backend_network: {}
+      qdrant_backend_network: {}
+      backend_egress_network:
+        gw_priority: 1
+    pids_limit: ${BACKEND_V2_WORKER_PIDS_LIMIT:?BACKEND_V2_WORKER_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${BACKEND_V2_WORKER_MEMORY_LIMIT:?BACKEND_V2_WORKER_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${BACKEND_V2_WORKER_CPU_LIMIT:?BACKEND_V2_WORKER_CPU_LIMIT required after bounded-load measurement}
     healthcheck:
       test:
       - CMD
@@ -350,3 +600,34 @@ services:
         condition: service_started
 volumes:
   backend-data: null
+  qdrant_snapshots: null
+networks:
+  postgres_keycloak_network:
+    internal: true
+  postgres_backend_network:
+    internal: true
+  qdrant_backend_network:
+    internal: true
+  redis_network:
+    internal: true
+  document_network:
+    internal: true
+  observability_network:
+    internal: true
+  backend_metrics_network:
+    internal: true
+  strapi_postgres_network:
+    external: true
+    name: ${STRAPI_POSTGRES_NETWORK_NAME:?STRAPI_POSTGRES_NETWORK_NAME required for the scoped cross-project bridge}
+  edge_network: {}
+  frontend_network:
+    internal: true
+  backend_network:
+    internal: true
+  keycloak_edge_network:
+    internal: true
+  backend_identity_network:
+    internal: true
+  frontend_egress_network: {}
+  backend_egress_network: {}
+  keycloak_egress_network: {}

@@ -72,6 +72,8 @@ SERVICE="backend-v2"
 WORKER_SERVICE="backend-v2-worker"
 RUNS_DIR="backend/sealai_v2/eval/runs"
 COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2)
+/bin/bash -p "${SCRIPT_DIR}/validate-production-compose-security.sh" \
+  "${REPO_ROOT}/.env.prod"
 BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
 LOCAL_BACKEND_IMAGE="sealai-backend-v2:local"
 ROLLBACK_IMAGE_OVERRIDE="${SEALAI_V2_ROLLBACK_IMAGE:-}"
