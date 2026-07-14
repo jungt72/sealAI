@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from prometheus_client import Counter, Histogram
+
 from sealai_v2.obs.log_redaction import (
     opaque_reference,
     safe_code_or_placeholder,
@@ -24,6 +26,45 @@ from sealai_v2.obs.telemetry_sampling import (
     resolve_telemetry_sample_rate,
     should_sample,
 )
+
+_LLM_CALLS = Counter(
+    "sealai_v2_llm_calls_total",
+    "LLM calls observed by the V2 runtime.",
+    ("provider", "model", "stage", "status"),
+)
+_LLM_TOKENS = Counter(
+    "sealai_v2_llm_tokens_total",
+    "LLM tokens observed by the V2 runtime.",
+    ("provider", "model", "stage", "token_type"),
+)
+_LLM_LATENCY = Histogram(
+    "sealai_v2_llm_call_duration_seconds",
+    "LLM call wall time in seconds.",
+    ("provider", "model", "stage", "status"),
+    buckets=(0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180),
+)
+
+
+def _metric_label(value: str | None) -> str:
+    safe = safe_code_or_placeholder(value, placeholder="none").value
+    return safe[:96]
+
+
+def _record_metrics(event: "LlmCallTelemetry") -> None:
+    provider = _metric_label(event.provider)
+    model = _metric_label(event.model)
+    stage = _metric_label(event.stage)
+    status = _metric_label(event.status)
+    _LLM_CALLS.labels(provider, model, stage, status).inc()
+    for token_type, count in (
+        ("prompt", event.prompt_tokens),
+        ("cached", event.cached_tokens),
+        ("completion", event.completion_tokens),
+    ):
+        _LLM_TOKENS.labels(provider, model, stage, token_type).inc(max(0, count))
+    _LLM_LATENCY.labels(provider, model, stage, status).observe(
+        max(0.0, event.latency_ms / 1000.0)
+    )
 
 
 @dataclass(frozen=True)
@@ -80,6 +121,10 @@ class LoggingTelemetrySink:
         )
 
     def record(self, event: LlmCallTelemetry) -> None:
+        try:
+            _record_metrics(event)
+        except Exception:  # noqa: BLE001 - metrics must never affect an LLM call
+            pass
         if event.status != "error" and not should_sample(self._sample_rate):
             return
         self._logger.info(

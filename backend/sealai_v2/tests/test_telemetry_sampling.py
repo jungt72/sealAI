@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+from prometheus_client import REGISTRY, generate_latest
 
 from sealai_v2.llm.telemetry import LlmCallTelemetry, LoggingTelemetrySink
 from sealai_v2.obs.telemetry_sampling import (
@@ -69,3 +70,15 @@ def test_error_logs_are_never_sampled_out(caplog) -> None:
     assert "status=error" in rendered
     assert "ProviderTimeout" in rendered
     assert "sealai:global" not in rendered
+
+
+def test_metrics_are_not_sampled_with_the_log_copy() -> None:
+    event = _event("ok")
+    event = LlmCallTelemetry(**{**event.__dict__, "model": "test-observability-model"})
+    LoggingTelemetrySink(sample_rate=0.0).record(event)
+    rendered = generate_latest(REGISTRY).decode("utf-8")
+    assert (
+        'sealai_v2_llm_calls_total{model="test-observability-model",'
+        'provider="mistral",stage="l1",status="ok"} 1.0'
+    ) in rendered
+    assert 'token_type="prompt"} 10.0' in rendered
