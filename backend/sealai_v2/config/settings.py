@@ -518,7 +518,9 @@ class Settings(BaseSettings):
     # This flips between them as pure config. Default "in_process" keeps offline eval/CI byte-stable;
     # an explicit "qdrant" selection requires both data services and fails closed if unavailable.
     retriever_backend: str = "in_process"  # "in_process" | "qdrant"
-    qdrant_url: str | None = None  # e.g. http://qdrant:6333; required for explicit Qdrant
+    qdrant_url: str | None = (
+        None  # e.g. http://qdrant:6333; required for explicit Qdrant
+    )
     qdrant_collection: str = "sealai_v2_knowledge_v1"  # ledger-derived index; legacy direct-write collection stays rollback-only
     # Memory uses the same embedding provider but a physically separate, tenant-scoped index. Keep
     # the name configurable so an embedding-model/dimension migration can create a new collection
