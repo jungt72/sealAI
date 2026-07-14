@@ -133,6 +133,36 @@ def get_case_decision_store():
 
 
 @lru_cache(maxsize=1)
+def get_interview_shadow_store():
+    """Tenant-scoped shadow telemetry store for the admin-only aggregate report."""
+    settings = get_settings()
+    if not settings.adaptive_interview_shadow_reporting_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "product_mode_unavailable",
+                "mode": "adaptive_interview_shadow_reporting",
+                "maturity": "implemented_default_off",
+            },
+        )
+    if settings.database_url:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.interview import PostgresInterviewRepository
+
+        return PostgresInterviewRepository(
+            make_sessionmaker(make_engine(settings.database_url))
+        )
+    pipeline = get_pipeline()
+    service = pipeline.adaptive_interview_service
+    if service is not None:
+        return service.repository
+    raise HTTPException(
+        status_code=503,
+        detail="adaptive interview shadow telemetry is unavailable",
+    )
+
+
+@lru_cache(maxsize=1)
 def get_knowledge_ledger():
     """Authoritative Postgres review queue; never falls back to process memory."""
     from sealai_v2.knowledge.ledger import build_knowledge_ledger

@@ -42,6 +42,10 @@ from sealai_v2.orchestration.answer_cache import (
     exact_answer_key,
 )
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
+from sealai_v2.pipeline.adaptive_interview import (
+    AdaptiveInterviewEvaluation,
+    AdaptiveInterviewService,
+)
 from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
 from sealai_v2.pipeline.route_telemetry import (
     LoggingRouteTelemetrySink,
@@ -568,6 +572,11 @@ class Pipeline:
     # (never gates/routes), threaded through the existing `understand` LLM call. OFF -> the two new
     # Understanding fields stay None -> byte-identical prompt/eval.
     pack_suggestion_enabled: bool = False
+    # Adaptive Bedarfsanalyse Phase 0/1. The service is pure-controller + persistence only and is
+    # constructed exclusively when the rwdr pack plus active or shadow mode are enabled.
+    adaptive_interview_enabled: bool = False
+    adaptive_interview_shadow_enabled: bool = False
+    adaptive_interview_service: AdaptiveInterviewService | None = None
     # V2.2 INC-COVERAGE-GATE (§4): when True, compute the deterministic coverage_status this turn and
     # attach it to the result. OFF → coverage stays None → byte-identical. (The status→mode COUPLING
     # into L1 is a separate, also-gated sub-step; this field only governs the computation/exposure.)
@@ -905,6 +914,7 @@ class Pipeline:
         # failure cancels it (same failure surface as the serial order, pure reordering).
         understand_task: asyncio.Task | None = None
         understanding: Understanding | None = None
+        adaptive_next_question = None
         if self.understand_enabled and not self.execution_policy_enabled:
             archetype_keys = (
                 tuple(self.archetypes.keys) if self.archetypes is not None else ()
@@ -1692,6 +1702,20 @@ class Pipeline:
                         expected_case_revision=committed_revision,
                     )
                     scheduled_background = True
+                    # Active response preparation is additive and default-off. The final shadow
+                    # measurement waits for the background distiller so it compares against the
+                    # fully committed state instead of logging a knowingly stale pre-distill view.
+                    if self.adaptive_interview_enabled:
+                        evaluation = self.refresh_adaptive_interview(
+                            tenant_id=scope.tenant_id,
+                            session_id=session.session_id,
+                            owner_subject=session.owner_subject,
+                            legacy_answer_text=answer.text,
+                            persist_shadow=False,
+                        )
+                        adaptive_next_question = (
+                            evaluation.next_question if evaluation is not None else None
+                        )
                 else:
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
@@ -1699,6 +1723,15 @@ class Pipeline:
                         session_id=session.session_id,
                         owner_subject=session.owner_subject,
                     )
+                    evaluation = self.refresh_adaptive_interview(
+                        tenant_id=scope.tenant_id,
+                        session_id=session.session_id,
+                        owner_subject=session.owner_subject,
+                        legacy_answer_text=answer.text,
+                        persist_shadow=self.adaptive_interview_shadow_enabled,
+                    )
+                    if self.adaptive_interview_enabled and evaluation is not None:
+                        adaptive_next_question = evaluation.next_question
         except BaseException:
             if understand_task is not None:
                 if understand_task.done():
@@ -1787,6 +1820,7 @@ class Pipeline:
             route_name=(
                 route_decision.route.value if route_decision is not None else None
             ),
+            next_question=adaptive_next_question,
         )
 
     async def _l1_generate(
@@ -1908,6 +1942,77 @@ class Pipeline:
             owner_subject=owner_subject,
         ).derived
 
+    def refresh_adaptive_interview(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        owner_subject: str = "",
+        legacy_answer_text: str = "",
+        persist_shadow: bool | None = None,
+    ) -> AdaptiveInterviewEvaluation | None:
+        """Evaluate the one canonical interview policy from the committed state.
+
+        Shadow instrumentation is fail-open: a telemetry/persistence failure never changes the
+        authoritative answer or form mutation. No LLM client is reachable from this service.
+        """
+        if self.adaptive_interview_service is None or self.memory is None:
+            return None
+        try:
+            view = self.memory.recall(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                owner_subject=owner_subject,
+            )
+            case_state = view.case_state_v2 or CaseStateV2.from_remembered_facts(
+                case_id=session_id,
+                revision=0,
+                facts=view.case_state,
+            )
+            derived_reader = getattr(self.memory, "derived_facts", None)
+            derived = (
+                derived_reader(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    owner_subject=owner_subject,
+                )
+                if callable(derived_reader)
+                else ()
+            )
+            return self.adaptive_interview_service.evaluate(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                case_state=case_state,
+                derived_facts=tuple(derived),
+                legacy_answer_text=legacy_answer_text,
+                persist_shadow=(
+                    self.adaptive_interview_shadow_enabled
+                    if persist_shadow is None
+                    else persist_shadow
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - default-off shadow must never break the product
+            _log.warning(
+                "adaptive interview shadow evaluation failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            return None
+
+    def clear_adaptive_interview(self, *, tenant_id: str, session_id: str) -> None:
+        if self.adaptive_interview_service is None:
+            return
+        try:
+            self.adaptive_interview_service.clear(
+                tenant_id=tenant_id, session_id=session_id
+            )
+        except Exception as exc:  # noqa: BLE001 - legacy clear must still succeed
+            _log.warning(
+                "adaptive interview state clear failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+
     async def flush_memory(self, *, tenant_id: str, session_id: str) -> None:
         """P2 ordering guard: await this session's in-flight background remember so the
         distilled case-state has landed before any subsequent recall, memory read (chips
@@ -2013,6 +2118,13 @@ class Pipeline:
                 tenant_id=tenant_id,
                 session_id=session.session_id,
                 owner_subject=session.owner_subject,
+            )
+            self.refresh_adaptive_interview(
+                tenant_id=tenant_id,
+                session_id=session.session_id,
+                owner_subject=session.owner_subject,
+                legacy_answer_text=answer_text,
+                persist_shadow=self.adaptive_interview_shadow_enabled,
             )
         except Exception as exc:  # noqa: BLE001 — a background task must never die unhandled
             _log.warning(
@@ -2160,6 +2272,7 @@ def build_pipeline(
     memory: ConversationMemory | None = None
     cross_session: CrossSessionMemory | None = None
     distiller: Distiller | None = None
+    session_factory = None
     if settings.memory_enabled:
         if settings.database_url:
             # Lazy import: the offline path never touches SQLAlchemy.
@@ -2185,6 +2298,30 @@ def build_pipeline(
                     model=settings.helper_model, temperature=settings.helper_temperature
                 ),
             )
+
+    adaptive_interview_service: AdaptiveInterviewService | None = None
+    if (
+        memory is not None
+        and settings.adaptive_interview_pack_rwdr_enabled
+        and (
+            settings.adaptive_interview_enabled
+            or settings.adaptive_interview_shadow_enabled
+        )
+    ):
+        from sealai_v2.db.interview import (
+            InProcessInterviewRepository,
+            PostgresInterviewRepository,
+        )
+        from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
+
+        interview_repository = (
+            PostgresInterviewRepository(session_factory)
+            if session_factory is not None
+            else InProcessInterviewRepository()
+        )
+        adaptive_interview_service = AdaptiveInterviewService(
+            pack=load_rwdr_v1_pack(), repository=interview_repository
+        )
 
     # G4: owner-reviewed archetype store (Anwendungs-Archetypen) — feeds the understand annotation +
     # the L1 interview. Loaded with understand (it is the understand stage's grounding); file-backed
@@ -2306,6 +2443,9 @@ def build_pipeline(
         memory_context_enabled=settings.memory_context_enabled,
         produktspec_enabled=settings.produktspec_enabled,
         pack_suggestion_enabled=settings.pack_suggestion_enabled,
+        adaptive_interview_enabled=settings.adaptive_interview_enabled,
+        adaptive_interview_shadow_enabled=settings.adaptive_interview_shadow_enabled,
+        adaptive_interview_service=adaptive_interview_service,
         coverage_gate_enabled=settings.coverage_gate_enabled,
         response_contract_enabled=settings.response_contract_enabled,
         response_contract_general_guard_enabled=settings.response_contract_general_guard_enabled,

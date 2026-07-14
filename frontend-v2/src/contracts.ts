@@ -239,6 +239,26 @@ export interface Verification {
   hedged: boolean;
   ran: boolean;
 }
+export interface NextQuestionPayload {
+  case_id: string;
+  topic_id: string;
+  state_revision: number;
+  pack_id: string;
+  pack_version: string;
+  policy_version: string;
+  question_id: string;
+  primary_need_id: string;
+  related_need_ids: string[];
+  question_text: string;
+  question_type: string;
+  answer_schema: Record<string, unknown>;
+  allowed_unknown: boolean;
+  allowed_unobtainable: boolean;
+  criticality: string;
+  rule_refs: string[];
+  dependency_refs: string[];
+  pending_question_id: string;
+}
 export interface ChatResponse {
   answer: string;
   model: string;
@@ -278,6 +298,9 @@ export interface ChatResponse {
   show_evidence?: boolean; // gate the "Belege" (citations) section
   show_calculations?: boolean; // gate calculation-derived sections (no matching block in Answer yet)
   show_rfq_sections?: boolean; // gate RFQ-specific sections (no matching block in Answer yet)
+  // Phase 0/1 only: optional contract preparation. ChatPane deliberately does not consume this
+  // during shadow mode; FIELD_PRIORITY remains the visible legacy policy until a later cutover.
+  next_question?: NextQuestionPayload;
 }
 export interface RememberedFact {
   feld: string;

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from sealai_v2.core.case_state import CaseStateV2
+    from sealai_v2.core.interview.contracts import NextQuestionPayload
     from sealai_v2.core.medium_research import MediumIntelligence
     from sealai_v2.memory.context_assembler import MemoryContextBundle
 
@@ -875,6 +876,10 @@ class PipelineResult:
     # per-route chat-UI display flags (route_prompt_matrix) so smalltalk turns stop showing
     # "Technische Vorbewertung"/"Belege". None on every path where classification did not run.
     route_name: str | None = None
+    # Adaptive interview Phase 0/1: the canonical backend-owned next question. It remains None
+    # unless the active feature flag is explicitly enabled; shadow mode persists/logs the same
+    # decision without exposing this field to the client.
+    next_question: "NextQuestionPayload | None" = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

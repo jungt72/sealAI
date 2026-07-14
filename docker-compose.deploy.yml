@@ -244,6 +244,10 @@ services:
       # OFF by default (annotate-only via the understand stage; never gates/routes). Byte-identical
       # when unset.
       SEALAI_V2_PACK_SUGGESTION_ENABLED: ${SEALAI_V2_PACK_SUGGESTION_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED:-false}
       # V2.2 INC-COVERAGE-GATE: deterministic case-level coverage_status, wired but OFF by default —
       # goes productive only when the extended eval ruler is green (I-CAL-1). Byte-identical when unset.
       SEALAI_V2_COVERAGE_GATE_ENABLED: ${SEALAI_V2_COVERAGE_GATE_ENABLED:-false}

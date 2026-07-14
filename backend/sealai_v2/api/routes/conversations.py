@@ -149,6 +149,11 @@ async def edit_fact(
         session_id=session_id,
         owner_subject=identity.subject,
     )
+    pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
     return {"status": "ok"}
 
 
@@ -194,6 +199,11 @@ async def submit_facts(
         )
     # one recompute over the merged settled inputs (persists the derived slice), then confirm
     comp = pipeline.compute_for(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    pipeline.refresh_adaptive_interview(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
@@ -255,6 +265,11 @@ async def forget_fact(
         session_id=session_id,
         owner_subject=identity.subject,
     )
+    pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
     return {"status": "ok"}
 
 
@@ -273,5 +288,8 @@ async def forget_all(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
+    )
+    pipeline.clear_adaptive_interview(
+        tenant_id=identity.tenant_id, session_id=session_id
     )
     return {"status": "ok"}

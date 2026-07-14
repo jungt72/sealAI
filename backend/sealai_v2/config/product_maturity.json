@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "ssot_version": "2.0",
-  "updated_at": "2026-07-11",
+  "updated_at": "2026-07-14",
   "status_values": [
     "verified_available",
     "beta",
@@ -37,5 +37,20 @@
     "substitution": {"horizon": "H3", "status": "planned", "activation_gate": "G8"},
     "manufacturer_fit": {"horizon": "H4", "status": "planned", "activation_gate": "M8"},
     "lifecycle": {"horizon": "H5", "status": "planned", "activation_gate": "G8"}
+  },
+  "capabilities": {
+    "adaptive_interview_rwdr": {
+      "horizon": "H2",
+      "status": "in_build",
+      "implementation_status": "implemented_default_off",
+      "pack_id": "rwdr.v1",
+      "activation_gate": "G8",
+      "activation_blockers": [
+        "shadow_data_not_collected",
+        "human_shadow_review_not_completed",
+        "domain_owner_stop_profile_review",
+        "frontend_cutover_not_implemented"
+      ]
+    }
   }
 }
