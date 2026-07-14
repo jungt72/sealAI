@@ -141,6 +141,18 @@
       "scope": "local_worktree",
       "status": "PASSED",
       "summary": "Twenty-six adversarial network contract tests plus inherited release regressions passed with pinned Ruff format/lint, production Compose rendering and policy validation, Bash syntax, secret scanning, and diff checks. No Docker daemon or network mutation was used."
+    },
+    {
+      "check_id": "P1-AUTH-COST-CONTROL-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Closed onboarding, bounded fail-closed JWKS validation, OIDC state/nonce/PKCE, atomic shared provider admission, worker cost boundaries, case/query privacy, and RAG log minimization are implemented. Production auth is unchanged; provider requests remain disabled and Gates 06/08 were not executed."
+    },
+    {
+      "check_id": "P1-AUTH-COST-CONTROL-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "The full 2110-test V2 suite, 319 frontend tests, 257 focused stack regressions, TypeScript, production frontend build, pinned Ruff format/lint, Bash, Compose, secret, npm-audit, and diff checks passed. No paid provider was contacted."
     }
   ],
   "production_mutations_performed": false,
