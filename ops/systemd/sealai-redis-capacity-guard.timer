@@ -1,0 +1,13 @@
+[Unit]
+Description=Run sealingAI Redis capacity guard every fifteen minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+AccuracySec=1min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=sealai-redis-capacity-guard.service
+
+[Install]
+WantedBy=timers.target

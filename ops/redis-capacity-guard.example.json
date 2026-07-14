@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "redis": {
+    "unix_socket_path": "/run/redis/redis-server.sock",
+    "expected_socket_uid": 999,
+    "expected_socket_gid": 999,
+    "expected_socket_mode": 504,
+    "expected_peer_uid": 999,
+    "expected_peer_gid": 999,
+    "expected_run_id_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "expected_acl_username_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "expected_role": "master",
+    "expected_maxmemory_bytes": 1073741824,
+    "expected_maxmemory_policy": "noeviction",
+    "databases": [0],
+    "operation_timeout_ms": 15000
+  },
+  "state_dir": "/var/lib/sealai-redis-capacity-guard",
+  "lock_file": "/run/sealai-redis-capacity-guard/guard.lock",
+  "scan_count": 1000,
+  "maximum_keys": 250000,
+  "categories": [
+    {
+      "id": "replace_with_reviewed_cache_namespace",
+      "owner": "replace_with_reviewed_service_owner",
+      "database": 0,
+      "prefixes": ["REPLACE_WITH_REVIEWED_PREFIX:"],
+      "expected_types": ["string"],
+      "ttl_policy": "required",
+      "kind": "cache",
+      "max_keys": 10000,
+      "max_queue_depth": null
+    }
+  ]
+}
