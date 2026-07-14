@@ -69,3 +69,21 @@ attestations, must not be presented as externally researched, carry the
 conservative uncertainty/transferability states in the decision record, and
 require revalidation by 2026-10-12. Any authority-fingerprint change
 invalidates the corresponding approval. H1 activation still requires M15.
+
+## ODR-10: Limited RWDR adaptive-interview cutover
+
+Decision: on 2026-07-14 the sealingAI owner approved implementation and
+production activation of the visible RWDR adaptive interview on
+`rwdr.v1@1.0.1`. The 30 blinded, controlled cases in review set
+`rwdr-shadow-controlled-v2` are accepted as sufficient for this limited RWDR
+cutover. A separate production-derived review population and a paid Eval-REPLAY
+are explicitly waived for this cutover. The signed evidence is preserved under
+`docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/`.
+
+Consequence: the backend controller owns the visible next-question decision for
+explicit RWDR cases. The legacy frontend checklist remains display-only and is
+the operational fallback when the active flags are disabled. The controller
+must remain cost-neutral, tenant-scoped, pack-versioned, and reversible through
+the documented flags. This decision does not activate another seal type, raise
+the maturity of H2 as a whole, authorize technical release, or waive future
+final-release evidence outside this bounded cutover.

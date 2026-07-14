@@ -1,16 +1,16 @@
 # RWDR Shadow Review Protocol
 
-Status: `implemented_default_off`
+Status: `controlled_review_complete_cutover_approved`
 Pack: `rwdr.v1@1.0.1`
 Updated: 2026-07-14
 
-This protocol governs evidence collection before any visible RWDR chat
-cutover. It does not authorize deployment, technical suitability, or product
-activation.
+This protocol governed evidence collection before the visible RWDR chat
+cutover. It never self-authorizes deployment or technical suitability; ODR-10
+records the separate owner activation decision.
 
 ## Runtime posture
 
-The controlled shadow posture is:
+The controlled pre-cutover shadow posture was:
 
 ```text
 SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED=true
@@ -22,6 +22,16 @@ SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED=false
 Migration `20260713_0009` must be applied before those flags are enabled. The
 backend must be recreated through the sanctioned release process; a restart
 does not apply compose allow-list changes.
+
+The owner-approved limited production posture keeps observation available
+while making the controller visible:
+
+```text
+SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED=true
+SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED=true
+SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED=true
+SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED=true
+```
 
 ## Aggregate review surface
 
@@ -140,10 +150,9 @@ production incidence evidence. Before a visible cutover, the release owner
 must explicitly record whether the controlled sample is sufficient or whether
 a separately approved production-derived review population is also required.
 
-## Cutover gate
+## Cutover decision
 
-No code or metric self-authorizes activation. A later chat-cutover change
-requires all of:
+No code or metric self-authorizes activation. The controlled gate required:
 
 - owner-signed blinded review worksheet;
 - at least 30 reviewable divergence cases;
@@ -153,5 +162,13 @@ requires all of:
 - green property, contract, migration, tenant-isolation, and golden tests;
 - explicit owner decision recorded in the current SSoT decision register.
 
-Until then, `FIELD_PRIORITY`, visible chat behavior, and legacy
-`missing_information` remain authoritative.
+Review set `rwdr-shadow-controlled-v2` completed all 30 units. The controller
+was preferred in 30/30 cases, skipped zero critical gates, asked for documented
+information in zero cases, and added zero LLM/network calls. Thorsten Jung's
+blinded-review attestation and all reproducible artifacts are stored under
+`docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/`.
+
+ODR-10 accepts this controlled population as sufficient for the limited RWDR
+cutover and explicitly waives an additional production-derived population and
+paid Eval-REPLAY. The tool's `automatic_activation_authorized=false` remains
+correct: owner governance, not the adjudicator, authorized activation.

@@ -1,0 +1,9 @@
+{
+  "attestation": "Ich bestaetige, alle Zeilen verblindet und vor dem Oeffnen von blinding_key.json bewertet zu haben.",
+  "required_attestation_text": "Ich bestaetige, alle Zeilen verblindet und vor dem Oeffnen von blinding_key.json bewertet zu haben.",
+  "review_set_id": "rwdr-shadow-controlled-v2",
+  "reviewed_at": "2026-07-14T09:45:13Z",
+  "reviewed_blinded": true,
+  "reviewer": "Thorsten Jung",
+  "schema_version": "1.0"
+}

@@ -497,6 +497,23 @@
 .badge-hedged { background: transparent; border: 0; color: var(--color-warning-fg); }
 .badge-unverified { background: transparent; border: 0; color: var(--sai-text-subtle); }
 .answer-text { max-width: min(var(--sai-content-max-width), 100%); line-height: 26px; background: transparent; border: 0; box-shadow: none; }
+.next-question {
+  margin-top: 22px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--color-seal-blue);
+  background: #f6f7f9;
+  color: var(--ink);
+}
+.next-question-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.next-question p { margin: 0; font-weight: 600; }
+.next-question small { display: block; margin-top: 6px; color: var(--ink-soft); }
 
 /* P4 (audit L3/L10): the Gegencheck (Modus E) note — reuses the existing error-banner tokens
    (never invents a new color) since a disqualify/bedingt verdict is the same severity tier as

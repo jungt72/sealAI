@@ -66,6 +66,7 @@ export interface ConfirmationResponse {
   not_computed: NotComputed[];
   notes: string[];
   clarifications: Clarification[];
+  next_question?: NextQuestionPayload | null;
 }
 // Medium Intelligence (Phase 2): helper-LLM-researched medium properties + sealing challenges for the
 // MEDIUM panel. ALWAYS vorläufig (LLM knowledge, never reviewed) — the panel renders the badge.
@@ -259,6 +260,10 @@ export interface NextQuestionPayload {
   dependency_refs: string[];
   pending_question_id: string;
 }
+export interface InterviewRefreshResponse {
+  case_id: string;
+  next_question: NextQuestionPayload | null;
+}
 export interface ChatResponse {
   answer: string;
   model: string;
@@ -298,8 +303,8 @@ export interface ChatResponse {
   show_evidence?: boolean; // gate the "Belege" (citations) section
   show_calculations?: boolean; // gate calculation-derived sections (no matching block in Answer yet)
   show_rfq_sections?: boolean; // gate RFQ-specific sections (no matching block in Answer yet)
-  // Phase 0/1 only: optional contract preparation. ChatPane deliberately does not consume this
-  // during shadow mode; FIELD_PRIORITY remains the visible legacy policy until a later cutover.
+  // Backend-owned adaptive-interview question. Absent when the controller is disabled, the case is
+  // outside the active RWDR scope, or no question directive is available.
   next_question?: NextQuestionPayload;
 }
 export interface RememberedFact {

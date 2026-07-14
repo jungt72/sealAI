@@ -1,13 +1,14 @@
 # RWDR Adaptive Interview Phase 0/1
 
-Status: `implemented_default_off`
+Status: `production_active_limited_rwdr`
 Pack: `rwdr.v1@1.0.1`
 Policy: `adaptive-interview.lexicographic.1.0.0`
 Question catalog: `rwdr.questions.1.0.1`
 Updated: 2026-07-14
 
-This document records the implemented shadow slice. It does not activate a
-public interview and does not raise product maturity.
+This document records the owner-approved, visible RWDR slice. ODR-10 limits the
+activation to explicit RWDR cases and does not raise the maturity of H2 as a
+whole.
 
 ## Boundary
 
@@ -44,8 +45,9 @@ the formula.
   `RememberedFact` projection. The canonical projection now preserves
   `user_form`, including round-trip compatibility, so origin and verification
   remain semantically distinct.
-- Existing `missing_information`, frontend `FIELD_PRIORITY`, response fields,
-  and visible ChatPane behavior remain in authority during shadow.
+- Existing `missing_information` remains an answer-body fallback. The backend
+  `NextQuestionPayload` is the single visible next-question authority for an
+  active RWDR case; the frontend RFQ checklist is display-only.
 
 ## Runtime evidence
 
@@ -57,8 +59,10 @@ the formula.
 | Pack data | `backend/sealai_v2/knowledge/domain_packs/rwdr.v1.json` |
 | Orchestration | `backend/sealai_v2/pipeline/adaptive_interview.py` |
 | Persistence | `backend/sealai_v2/db/interview.py` |
-| Schema migration | `backend/sealai_v2/db/migrations/versions/20260713_0009_adaptive_interview_shadow.py` |
-| API contract | `backend/sealai_v2/api/serializers.py`, `frontend-v2/src/contracts.ts` |
+| Schema migration | `backend/sealai_v2/db/migrations/versions/20260713_0009_adaptive_interview_shadow.py`, `backend/sealai_v2/db/migrations/versions/20260714_0010_rwdr_pack_1_0_1_cutover.py` |
+| API contract | `backend/sealai_v2/api/serializers.py`, `backend/sealai_v2/api/routes/conversations.py`, `frontend-v2/src/contracts.ts` |
+| Visible projection | `frontend-v2/src/App.tsx`, `frontend-v2/src/components/Answer.tsx`, `frontend-v2/src/components/ChatPane.tsx` |
+| Owner evidence | `docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/` |
 
 ## Feature gates
 
@@ -71,8 +75,10 @@ SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED
 SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED
 ```
 
-Active or shadow mode requires the pack gate. While both mode flags are false,
-the service and repository are not constructed.
+Active or shadow mode requires the pack gate. Production runs active and
+shadow observation together; all flags remain independent rollback controls.
+While both mode flags are false, the service and repository are not
+constructed.
 
 ## RWDR field mapping
 
@@ -119,13 +125,10 @@ three to five represented goals: new design, replacement, retrofit,
 optimization, and failure analysis. This is a catalog correction discovered
 during the invalidated controlled review v1; it does not change policy order.
 
-Production remains on pack `1.0.0` while controlled review v2 is open. A later
-`1.0.1` deployment must use an explicit owner-approved state-transition plan:
-existing `1.0.0` interview states are pinned and intentionally produce
-`pinned_pack_version_unavailable` against another pack version. The transition
-must preserve append-only shadow decisions and either migrate or clear only the
-ephemeral pending interview state after its review population is closed. A
-normal container restart is not a pack migration.
+Migration `20260714_0010` performs the owner-approved transition to `1.0.1` by
+deleting only reconstructable `rwdr.v1@1.0.0` pending interview state. It never
+touches canonical CaseState, messages, derived values, or append-only shadow
+decisions. The next reconciliation reconstructs pending state under `1.0.1`.
 
 ## Policy tiers
 
@@ -184,36 +187,33 @@ always reports `automatic_activation_authorized=false`.
 
 ## Rollback
 
-1. Set all four adaptive interview flags to `false` and recreate the backend
-   container only during an authorized release operation.
-2. With both mode flags false the old response and frontend behavior remain in
-   authority; no schema rollback is required.
-3. If a development database schema rollback is explicitly required, first
-   retain the append-only audit according to the data policy, then downgrade
-   Alembic from `20260713_0009` to `20260713_0008`. This drops only the two new
-   tables.
+1. Set `SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED=false` to restore the visible
+   legacy fallback. The pack and shadow flags may stay enabled for diagnostics.
+2. Set all four adaptive interview flags to `false` and recreate the backend
+   container to stop the service and reporting entirely.
+3. No schema rollback is required. Migration `20260714_0010` deleted only
+   reconstructable `1.0.0` pending state and its downgrade is intentionally a
+   no-op. Never delete append-only shadow evidence as a runtime rollback.
 4. Never downgrade production merely to disable the controller; flags are the
    operational rollback.
 
 ## Deferred deletion register
 
-Do not remove during shadow:
+Retain during the limited cutover:
 
 - free structured-answer `missing_information` questions in
   `backend/sealai_v2/core/l1_generator.py` and deterministic renderers;
-- `FIELD_PRIORITY` and `missingRows` in
-  `frontend-v2/src/components/ChatPane.tsx`;
+- `RFQ_CORE_FIELDS` and `missingRfqCoreFields` in
+  `frontend-v2/src/components/ChatPane.tsx` as display-only fallback;
 - legacy fallback labels/mappings used by current form and compute panels.
 
-`FIELD_PRIORITY` remains active during shadow phase. It must lose policy
-authority and be deleted or reduced to display-only ordering after successful
-frontend cutover.
+`RFQ_CORE_FIELDS` has no question-selection authority. It remains only for the
+disabled/out-of-scope fallback and RFQ presentation.
 
 ## Activation gate
 
-Shadow activation is not a product release. Before enabling it, migration
-`20260713_0009` must be applied and the exact served tree must pass offline
-contracts and schema checks. A later visible cutover requires owner review of
-the RWDR stop profile, question wording, conflict resolution semantics, and
-measured shadow divergence. No paid LLM eval is required for this cost-neutral
-shadow implementation itself.
+ODR-10 authorizes the limited visible cutover based on 30 controlled blinded
+cases. The owner explicitly waived a second production-derived review
+population and paid Eval-REPLAY for this cutover. Migration, property,
+contract, tenant-isolation, frontend, build, and production smoke checks still
+apply to the exact served artifact. Automatic activation remains forbidden.

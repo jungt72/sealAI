@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "./api/client";
 import { fetchFraming } from "./api/framing";
@@ -18,7 +18,14 @@ import {
 } from "./auth/oidc";
 import { LegalGate } from "./components/LegalGate";
 import { Shell } from "./components/Shell";
-import type { Briefing, CaseSummary, ComputeResponse, ConversationMemory, ParamItem } from "./contracts";
+import type {
+  Briefing,
+  CaseSummary,
+  ComputeResponse,
+  ConversationMemory,
+  NextQuestionPayload,
+  ParamItem,
+} from "./contracts";
 import { FALLBACK_FRAMING, type Framing } from "./framing";
 import { FramingContext } from "./framing-context";
 import {
@@ -82,6 +89,9 @@ export function App() {
   // (code/state) via a hardcoded replaceState a moment later; writing `?case=` here first would
   // just get clobbered by that normalization.
   const [caseId, setCaseId] = useState<string>(() => getCaseIdFromUrl() ?? newCaseId());
+  const caseIdRef = useRef(caseId);
+  caseIdRef.current = caseId;
+  const [nextQuestion, setNextQuestion] = useState<NextQuestionPayload | null>(null);
   const [cases, setCases] = useState<CaseSummary[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
   // Legal-by-Design Phase B: null = not yet checked (renders nothing rather than flashing the
@@ -131,6 +141,16 @@ export function App() {
     api.compute(caseId).then(setCompute).catch(() => undefined);
   }, [api, caseId]);
 
+  const refreshInterview = useCallback(() => {
+    const targetCaseId = caseId;
+    api
+      .refreshInterview(targetCaseId)
+      .then((response) => {
+        if (caseIdRef.current === response.case_id) setNextQuestion(response.next_question);
+      })
+      .catch(() => undefined);
+  }, [api, caseId]);
+
   // "Fälle"-Sidebar: the case list, re-fetched after every turn (a new case appears, the active
   // one's title/timestamp updates) — same fail-quiet discipline as the other refresh calls.
   // `casesLoading` only covers the FIRST fetch (the drawer's initial "Lädt …" state), never
@@ -148,7 +168,8 @@ export function App() {
     refreshMemory();
     refreshCompute();
     refreshCases();
-  }, [refreshMemory, refreshCompute, refreshCases]);
+    refreshInterview();
+  }, [refreshMemory, refreshCompute, refreshCases, refreshInterview]);
 
   useEffect(() => {
     // Single backend-owned framing source; on any failure the fallback stays (never blank).
@@ -262,6 +283,7 @@ export function App() {
       if (!id || id === caseId) return;
       setConvKey((k) => k + 1); // force a fresh ChatPane mount, same as selectCase/newQuestion
       setMemory(EMPTY_MEMORY); // same stale-memory race guard as selectCase/newQuestion
+      setNextQuestion(null);
       setCaseId(id);
     };
     window.addEventListener("popstate", onPop);
@@ -334,7 +356,9 @@ export function App() {
       setError(null);
       setLastMessage(message);
       try {
-        return await api.chatStream(message, setLiveStage, caseId, onToken);
+        const response = await api.chatStream(message, setLiveStage, caseId, onToken);
+        setNextQuestion(response.next_question ?? null);
+        return response;
       } catch (e) {
         setError("Es ist ein Fehler aufgetreten — bitte erneut versuchen.");
         throw e;
@@ -375,6 +399,7 @@ export function App() {
     setConvKey((k) => k + 1);
     // 2026-07-04 audit fix: same stale-memory race as selectCase — reset before the id/URL change.
     setMemory(EMPTY_MEMORY);
+    setNextQuestion(null);
     // "Fälle"-Sidebar: "Neue Frage" starts an actual NEW case (not just a visual reset) — a fresh
     // id, pushed (not replaced) so the back button can step back to the previous case.
     const fresh = newCaseId();
@@ -397,6 +422,7 @@ export function App() {
       // the same batch as setCaseId, means the new ChatPane sees an empty history on its very
       // first render instead of someone else's.
       setMemory(EMPTY_MEMORY);
+      setNextQuestion(null);
       setCaseIdInUrl(id, { replace: false });
       setCaseId(id);
     },
@@ -474,6 +500,7 @@ export function App() {
           onSend={send}
           error={error}
           memory={memory}
+          nextQuestion={nextQuestion}
           greetingName={greetingName}
           liveStage={liveStage}
           onEditFact={(feld, wert) => {
@@ -492,6 +519,7 @@ export function App() {
             try {
               await Promise.all(deletes.map((feld) => api.forgetFact(feld, caseId)));
               const conf = await api.submitParams(items, caseId);
+              setNextQuestion(conf.next_question ?? null);
               refreshState();
               return conf;
             } catch (e) {

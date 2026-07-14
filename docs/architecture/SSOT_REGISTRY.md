@@ -44,7 +44,7 @@ defined in `docs/ssot/sealingAI_SSoT_v2.0.md` and summarized in `AGENTS.md`.
 | Technical answer contract | `backend/sealai_v2/core/technical_answer.py` |
 | Output guard | `backend/sealai_v2/core/output_guard.py` |
 | Case state | `backend/sealai_v2/core/case_state.py` |
-| RWDR adaptive interview (default-off shadow) | `docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md`, `docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md`, `backend/sealai_v2/core/interview/` |
+| RWDR adaptive interview (owner-approved limited production scope) | `docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md`, `docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md`, `docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/`, `backend/sealai_v2/core/interview/` |
 | Knowledge source of record | `backend/sealai_v2/db/models.py`, `backend/sealai_v2/knowledge/ledger.py` |
 | Derived retrieval index | `backend/sealai_v2/knowledge/qdrant_retrieval.py` |
 | Worker/outbox | `backend/sealai_v2/memory/outbox_daemon.py`, `backend/sealai_v2/knowledge/outbox_worker.py` |

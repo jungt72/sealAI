@@ -1,9 +1,11 @@
-"""P2 (PERF tranche 1): the distill LLM call is OFF the user-facing path.
+"""P2 (PERF tranche 1): distillation is normally off the user-facing path.
 
 `stages.remember` (distill + record_turn) runs as a background task when a distiller is wired;
 `Pipeline.flush_memory` is the ordering guard — awaited before the next same-session recall
 (inside `run`), before memory reads (chips re-fetch), and before user mutations (no
-resurrection after "alles vergessen"). Distiller-less remember stays synchronous.
+resurrection after "alles vergessen"). The visible adaptive interview is the deliberate
+exception: it awaits the same call so its next question includes facts stated this turn.
+Distiller-less remember stays synchronous.
 """
 
 from __future__ import annotations
@@ -22,20 +24,31 @@ from sealai_v2.core.contracts import (
     VerifiedIdentity,
 )
 from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.db.interview import InProcessInterviewRepository
+from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 from sealai_v2.memory.distiller import Distiller
 from sealai_v2.memory.store import (
     InProcessConversationMemory,
     InProcessCrossSessionMemory,
 )
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewService
 from sealai_v2.prompts.assembler import DistillPromptAssembler, PromptAssembler
 from sealai_v2.security.tenant import TenantContext
 from sealai_v2.tests._fakes import ScriptedFakeLlmClient
 
 _FACT_JSON = '{"facts": [{"feld": "medium", "wert": "Hydrauliköl"}]}'
+_RWDR_FACT_JSON = '{"facts": [{"feld": "dichtungstyp", "wert": "rwdr"}]}'
 
 
-def _memory_pipeline(client) -> Pipeline:
+def _memory_pipeline(client, *, adaptive_interview: bool = False) -> Pipeline:
+    service = (
+        AdaptiveInterviewService(
+            pack=load_rwdr_v1_pack(), repository=InProcessInterviewRepository()
+        )
+        if adaptive_interview
+        else None
+    )
     return Pipeline(
         generator=L1Generator(client, PromptAssembler(), ModelConfig("fake-l1")),
         client=client,
@@ -46,6 +59,8 @@ def _memory_pipeline(client) -> Pipeline:
         distiller=Distiller(
             client, DistillPromptAssembler(), ModelConfig("fake-helper")
         ),
+        adaptive_interview_enabled=adaptive_interview,
+        adaptive_interview_service=service,
     )
 
 
@@ -53,15 +68,16 @@ class _GatedDistillClient:
     """The distill (helper-tier) response is released only via ``release_distill`` — so a
     synchronous remember blocks ``run`` (old behavior), a backgrounded one does not."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, fact_json: str = _FACT_JSON) -> None:
         self.release_distill = asyncio.Event()
         self.calls: list[str] = []
+        self.fact_json = fact_json
 
     async def generate(self, *, system: str, user: str, model_config: ModelConfig):
         self.calls.append(model_config.model)
         if model_config.model == "fake-helper":
             await asyncio.wait_for(self.release_distill.wait(), timeout=2.0)
-            return LlmResult(text=_FACT_JSON, model=model_config.model)
+            return LlmResult(text=self.fact_json, model=model_config.model)
         return LlmResult(text="ANTWORT", model=model_config.model)
 
 
@@ -95,6 +111,36 @@ def test_run_returns_before_distill_completes_and_flush_lands_the_facts():
                 "Öl",
             ),  # Phase-1 Medium-Wiring (deterministic, always added)
         ]
+
+    asyncio.run(main())
+
+
+def test_visible_adaptive_interview_waits_for_current_turn_facts():
+    async def main():
+        client = _GatedDistillClient(fact_json=_RWDR_FACT_JSON)
+        p = _memory_pipeline(client, adaptive_interview=True)
+        task = asyncio.create_task(
+            p.run(
+                "Ich brauche einen RWDR.",
+                tenant=TenantContext("t1"),
+                session=SessionContext("s1", owner_subject="u1"),
+            )
+        )
+        for _ in range(20):
+            if "fake-helper" in client.calls:
+                break
+            await asyncio.sleep(0)
+        assert "fake-helper" in client.calls
+        assert not task.done()
+
+        client.release_distill.set()
+        result = await asyncio.wait_for(task, timeout=5.0)
+
+        assert result.next_question is not None
+        assert result.next_question.question_id == "rwdr.q.application_goal"
+        assert result.next_question.pack_version == "1.0.1"
+        assert p._pending_remember == {}
+        assert result.case_state.field("dichtungstyp").value == "rwdr"
 
     asyncio.run(main())
 
