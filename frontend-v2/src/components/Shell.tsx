@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { CaseSummary } from "../contracts";
 import { loadNavExpanded, saveNavExpanded } from "../lib/navSidebar";
 import { CaseSidebar } from "./CaseSidebar";
+import { ReleaseIdentity } from "./ReleaseIdentity";
 import { SafetyBanner } from "./SafetyBanner";
 import {
   ComposeIcon,
@@ -151,6 +152,7 @@ export function Shell({
                 Mein Hersteller-Profil
               </button>
             ) : null}
+            <ReleaseIdentity />
             <button className="rail-menu-item" role="menuitem" onClick={onLogout} data-testid="logout">
               Abmelden
             </button>

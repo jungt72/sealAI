@@ -670,6 +670,7 @@ async def run_eval(
     smoke_limit: int | None = None,
     include_auxiliary: bool = True,
     case_ids: frozenset[str] | None = None,
+    release_candidate_evidence: dict | None = None,
     client_factory=None,
 ) -> dict:
     columns = columns or COLUMNS
@@ -1105,6 +1106,11 @@ async def run_eval(
         # environment-driven model, trust-layer and retrieval behavior those bytes serve.
         "runtime_profile": runtime_profile(settings),
         "runtime_profile_hash": runtime_profile_hash(settings),
+        # Optional production-RC identity. Non-RC/smoke/targeted analysis runs
+        # record None and are therefore never promotion-authorizing. Eligible
+        # runs carry the exact descriptor emitted from the separately approved,
+        # canonical evidence file; ops/v2_deploy_gate.py revalidates it.
+        "release_candidate_evidence": release_candidate_evidence,
         "timestamp": timestamp,
         "milestone": milestone,
         "subject": (

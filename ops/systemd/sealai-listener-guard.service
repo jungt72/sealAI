@@ -1,0 +1,23 @@
+[Unit]
+Description=sealingAI read-only host listener allowlist observation
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=nobody
+Group=nogroup
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/sealai/network-listener-guard.py --mode observe --policy /etc/sealai/listener-allowlist.json --timeout-seconds 5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native

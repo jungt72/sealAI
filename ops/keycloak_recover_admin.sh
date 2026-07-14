@@ -45,6 +45,8 @@ COMPOSE=(
   -f "$ROOT_DIR/docker-compose.deploy.yml"
 )
 
+/bin/bash -p "$ROOT_DIR/ops/validate-production-compose-security.sh" "$ENV_FILE"
+
 restore_keycloak_on_failure() {
   if [[ "$KEYCLOAK_WAS_STOPPED" == "true" ]]; then
     "${COMPOSE[@]}" up -d --no-build keycloak >/dev/null 2>&1 || true

@@ -67,6 +67,13 @@
   border-radius: 9px; cursor: pointer;
 }
 .rail-menu-item:hover { background: var(--hover-wash); }
+.release-identity {
+  display: grid; gap: 3px; margin: 3px 5px 5px; padding: 8px 9px;
+  border: 1px solid var(--hairline); border-radius: 9px; color: var(--ink-soft);
+  font-size: 11px; line-height: 1.25; text-decoration: none;
+}
+.release-identity:hover { background: var(--hover-wash); color: var(--ink); }
+.release-identity code { color: inherit; font-size: 10px; }
 
 /* ── "Fälle"-Sidebar: a drawer anchored to the rail's right edge, opened via "Fälle" ──────────── */
 .case-sidebar {

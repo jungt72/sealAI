@@ -118,8 +118,9 @@ survive a process restart.
 ### P3: Contract and UI synchronization
 
 Generate TypeScript API types from the FastAPI OpenAPI document and publish a
-versioned SSE framing contract. Replace the live `frontend-v2/dist` bind mount
-with an immutable dashboard artifact/image after staging proves the cutover.
+versioned SSE framing contract. The mutable live dashboard mount has been
+replaced in source by the digest-bound `frontend-v2/dashboard-releases/current`
+contract; production activation remains a separate GATE-08 deployment.
 
 ### P4: Observability and security
 

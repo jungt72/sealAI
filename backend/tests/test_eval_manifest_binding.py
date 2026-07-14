@@ -35,6 +35,10 @@ def test_manifest_records_tree_hash_and_dirty(tmp_path):
     from sealai_v2.eval.harness import COLUMNS, run_eval
     from sealai_v2.tests._fakes import FakeLlmClient
 
+    rc_binding = {
+        "evidence_type": "sealai_v2_production_rc",
+        "evidence_sha256": "a" * 64,
+    }
     asyncio.run(
         run_eval(
             Settings(),
@@ -46,6 +50,7 @@ def test_manifest_records_tree_hash_and_dirty(tmp_path):
             timestamp="2026-06-19T00:00:00Z",
             columns={"flags_off": COLUMNS["flags_off"]},
             smoke_limit=1,
+            release_candidate_evidence=rc_binding,
             client_factory=lambda _provider: FakeLlmClient("ok"),
         )
     )
@@ -56,3 +61,4 @@ def test_manifest_records_tree_hash_and_dirty(tmp_path):
     assert manifest["dirty"] is True
     assert len(manifest["runtime_profile_hash"]) == 64
     assert manifest["runtime_profile"]["schema_version"] == 1
+    assert manifest["release_candidate_evidence"] == rc_binding

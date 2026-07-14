@@ -7,9 +7,12 @@ GATE-BEDINGUNGEN (alle erfüllt, sonst BLOCK)
 1. Diff deckt sich 1:1 mit dem freigegebenen Increment. Scope-Creep = BLOCK.
 2. Kein Narrations-Pfad berührt Zahl/Limit/Toleranz/Selektion (Kernel-Doktrin, I5). 1 Verstoß = BLOCK.
 3. Das Gate ist mit Exit 0 durchgelaufen (Ausgabe endet mit "GATE: grün").
-   WICHTIG: Die Stufe-5-WARN (Eval<->Tree: "kein adjudizierter REPLAY") ist ERWARTETES
+   WICHTIG: Die Stufe-5-WARN (kein vollständiger, final adjudizierter Full-Replay für
+   den exakten Tree-Hash, Served-L1 und Runtime-Profil-Hash) ist ERWARTETES
    Pre-Merge-Verhalten und KEIN BLOCK-Grund — sie betrifft das Deploy-Gate, nicht den
-   Pre-Merge-Review. Nur ein nicht-grünes Gate (Stufe 1-4 rot) blockt.
+   Pre-Merge-Review. Der lokale Aufrufer übergibt trotzdem immer alle drei Bindungen;
+   targeted/chained Evidence oder ein Owner-Waiver gelten nie als Replay-Pass. Nur ein
+   nicht-grünes Gate (Stufe 1-4 oder eine ungültige Bindung rot) blockt.
 4. Fail-closed-/Error-Pfade unverändert oder im Increment ausdrücklich freigegeben.
 
 WICHTIG

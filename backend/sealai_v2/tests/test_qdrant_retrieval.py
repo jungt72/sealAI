@@ -439,7 +439,7 @@ def test_retrieve_rejects_blank_tenant():
     assert raised
 
 
-def test_build_retriever_default_and_url_guard():
+def test_build_retriever_default_and_qdrant_prerequisite_guard():
     from sealai_v2.knowledge.retrieval import InProcessRetriever
     from sealai_v2.pipeline.pipeline import _build_retriever
 
@@ -447,28 +447,36 @@ def test_build_retriever_default_and_url_guard():
     assert isinstance(
         _build_retriever(Settings(retriever_backend="in_process")), InProcessRetriever
     )
-    # qdrant requested but no url → in-process (the url guard, no embedder load)
-    assert isinstance(
-        _build_retriever(Settings(retriever_backend="qdrant", qdrant_url=None)),
-        InProcessRetriever,
-    )
+    # An explicit production backend must not silently change retrieval semantics.
+    with pytest.raises(RuntimeError, match="requires both Qdrant and Postgres"):
+        _build_retriever(Settings(retriever_backend="qdrant", qdrant_url=None))
 
 
-def test_build_retriever_failsafe_on_construction_error(monkeypatch):
-    # qdrant requested + url set, but construction fails (missing dep / unreachable Qdrant) → the
-    # pipeline must fall back to in-process, never crash startup.
+def test_build_retriever_fails_closed_on_construction_error(monkeypatch):
+    # qdrant requested + endpoints set, but construction fails: refuse to start with a different
+    # retriever than the one covered by release evidence.
     import sealai_v2.knowledge.qdrant_retrieval as qr
-    from sealai_v2.knowledge.retrieval import InProcessRetriever
     from sealai_v2.pipeline.pipeline import _build_retriever
 
     def _boom(*a, **k):
         raise RuntimeError("simulated unavailable dep / unreachable qdrant")
 
     monkeypatch.setattr(qr, "QdrantFachkartenRetriever", _boom)
-    r = _build_retriever(
-        Settings(retriever_backend="qdrant", qdrant_url="http://qdrant:6333")
-    )
-    assert isinstance(r, InProcessRetriever)  # fail-safe fallback, no crash
+    with pytest.raises(RuntimeError, match="configured qdrant retriever is unavailable"):
+        _build_retriever(
+            Settings(
+                retriever_backend="qdrant",
+                qdrant_url="http://qdrant:6333",
+                database_url="postgresql://test:test@postgres/test",
+            )
+        )
+
+
+def test_build_retriever_rejects_unknown_backend():
+    from sealai_v2.pipeline.pipeline import _build_retriever
+
+    with pytest.raises(RuntimeError, match="unsupported retriever backend"):
+        _build_retriever(Settings(retriever_backend="unexpected"))
 
 
 def test_quelle_byte_identical_to_in_process():

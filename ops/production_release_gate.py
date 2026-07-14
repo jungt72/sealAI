@@ -60,6 +60,7 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
     {
         "docs/ops/docker-disk-guard.md",
         "docs/ops/production-release-freeze.md",
+        "frontend-v2/scripts/dashboard_release.py",
         "ops/bootstrap_gate08_remediation_control.py",
         "ops/disk-guard.example.json",
         "ops/docker-disk-guard.sh",
@@ -70,6 +71,8 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
         "ops/production-release-state.json",
         "ops/production_release_gate.py",
         "ops/production-storage-lease.sh",
+        "ops/production_release_control.py",
+        "ops/sudoers/sealai-production-deploy",
         "ops/sudoers/sealai-storage-preflight",
         "ops/systemd/sealai-disk-guard.service",
         "ops/systemd/sealai-disk-guard.timer",
@@ -114,6 +117,7 @@ class GateDecision:
     source_git_sha: str | None = None
     approval_id: str | None = None
     artifact_sha256: dict[str, str] | None = None
+    release_hashes: dict[str, str] | None = None
 
     def as_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -129,6 +133,8 @@ class GateDecision:
             value["approval_id"] = self.approval_id
         if self.artifact_sha256 is not None:
             value["artifact_sha256"] = self.artifact_sha256
+        if self.release_hashes is not None:
+            value["release_hashes"] = self.release_hashes
         return value
 
 
@@ -391,6 +397,8 @@ def _assert_committed_versioned(path: Path) -> None:
     tracked = subprocess.run(
         [
             "/usr/bin/git",
+            "-c",
+            f"safe.directory={REPO_ROOT}",
             "-C",
             str(REPO_ROOT),
             "ls-files",
@@ -406,6 +414,8 @@ def _assert_committed_versioned(path: Path) -> None:
     unchanged = subprocess.run(
         [
             "/usr/bin/git",
+            "-c",
+            f"safe.directory={REPO_ROOT}",
             "-C",
             str(REPO_ROOT),
             "diff",
@@ -427,7 +437,14 @@ def _assert_committed_versioned(path: Path) -> None:
 
 def _git(*args: str) -> str:
     result = subprocess.run(
-        ["/usr/bin/git", "-C", str(REPO_ROOT), *args],
+        [
+            "/usr/bin/git",
+            "-c",
+            f"safe.directory={REPO_ROOT}",
+            "-C",
+            str(REPO_ROOT),
+            *args,
+        ],
         capture_output=True,
         text=True,
         env=GIT_ENV,
@@ -444,6 +461,8 @@ def _assert_clean_checkout() -> None:
     tracked = subprocess.run(
         [
             "/usr/bin/git",
+            "-c",
+            f"safe.directory={REPO_ROOT}",
             "-C",
             str(REPO_ROOT),
             "diff",
@@ -716,6 +735,10 @@ def evaluate(
         state_id,
         required_gate,
         source_git_sha,
+        release_hashes={
+            name: str(manifest["hashes"][name])
+            for name in sorted(requirements["required_manifest_hashes"])
+        },
     )
 
 

@@ -1,25 +1,34 @@
 #!/usr/bin/env python3
 """V2 deploy gate-check — the testable core of ops/release-backend-v2.sh.
 
-Finds an eval run that VALIDATES the served runtime about to be deployed: its
-``manifest.tree_hash`` matches the deployed served-runtime hash (ops/tree-hash.sh), it carries an
-``adjudication`` block (the owner folded the worksheet), and EVERY gated axis is clean
-(``schranken_quota_final == 1.0``). No such run → the deploy is refused (exit 2).
+Finds a complete full-suite eval replay that VALIDATES the served runtime about
+to be deployed: its ``manifest.tree_hash`` matches the deployed served-runtime
+hash (ops/tree-hash.sh), it carries a final deep-audit ``adjudication`` block,
+and EVERY gated axis is clean (``schranken_quota_final == 1.0``). No such run →
+the deploy is refused (exit 2).
 
-[P1.6] ``tree_hash`` binds the served CODE but not environment-driven behavior. ``served_l1`` and
-``runtime_profile_hash`` bind the exact model/trust/retrieval profile that was adjudicated. Production
-passes both; optional arguments remain only for offline backwards-compatible inspection.
+[P1.6/P1-C] ``tree_hash`` binds the legacy served-code projection but not the
+candidate image, canonical served-tree SHA-256, data snapshots, migrations, or
+environment-driven behavior.  Production authorization therefore also requires
+an externally Gate-10-hash-bound canonical RC evidence file.  The run manifest,
+evidence payload, and current candidate inputs must agree exactly.
 
-Pure stdlib, JSON-only: the gate CHECKS artifacts; it cannot run the eval (the OPENAI_API_KEY is
-.env-denied) and never imports sealai_v2, an LLM, or the network. ``provisional_until_deep_audit:
-true`` is accepted (the first-pass mode). ``dirty`` is NOT a gate criterion — ``tree_hash`` already
-binds the exact content (a validate-then-commit eval is dirty-but-bound).
+Pure stdlib, JSON-only: the gate CHECKS artifacts; it cannot run the eval (the
+OPENAI_API_KEY is .env-denied) and never imports sealai_v2, an LLM, or the
+network. Promotion requires ``provisional_until_deep_audit`` to be exactly
+``false``. Targeted/chained remediation helpers remain available for offline
+analysis, but the production CLI never treats them (or an owner waiver) as
+promotion-authorizing evidence. ``dirty`` is NOT a gate criterion —
+``tree_hash`` already binds the exact content (a validate-then-commit eval is
+dirty-but-bound).
 """
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +43,23 @@ _DETERMINISTIC_SCHRANKEN = (
     "parametric_schranken_quota_singleturn",
 )
 
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _load_rc_evidence_module():
+    """Load the pure-stdlib sibling even under ``python -I``."""
+    module_path = Path(__file__).resolve().with_name("v2_rc_evidence.py")
+    spec = importlib.util.spec_from_file_location("_sealai_v2_rc_evidence", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("RC evidence validator is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_RC_EVIDENCE = _load_rc_evidence_module()
+
 
 def _manifest_l1_id(manifest) -> str | None:
     """Normalize ``manifest.roles.l1`` (the resolved L1 descriptor the eval ADJUDICATED) to a flat
@@ -43,13 +69,57 @@ def _manifest_l1_id(manifest) -> str | None:
     matrix.py); the gate compares it as a flat string against the served-runtime L1. A run with no
     ``roles.l1`` (or a partial one) returns None → fail-closed at the call site when an L1 is required.
     """
-    l1 = (manifest.get("roles") or {}).get("l1")
+    roles = manifest.get("roles")
+    if not isinstance(roles, dict):
+        return None
+    l1 = roles.get("l1")
     if not isinstance(l1, dict):
         return None
     provider, model = l1.get("provider"), l1.get("model")
-    if not provider or not model:
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or not isinstance(model, str)
+        or not model
+    ):
         return None
     return f"{provider}/{model}"
+
+
+def _is_complete_full_replay_manifest(manifest: dict) -> bool:
+    """Return whether the manifest proves a complete current-schema replay.
+
+    ``evaluation_scope`` is emitted by the harness from whether case targeting
+    was requested. Requiring ``full_suite`` plus the complete evaluated-case
+    inventory prevents a targeted run from being relabelled by this gate as
+    ``full_replay`` merely because its smaller set of adjudicated columns is
+    clean.
+    """
+    evaluated_case_ids = manifest.get("evaluated_case_ids")
+    n_evaluated_case_ids = manifest.get("n_evaluated_case_ids")
+    n_cases = manifest.get("n_cases")
+    runtime_profile_hash = manifest.get("runtime_profile_hash")
+    return (
+        manifest.get("evaluation_scope") == "full_suite"
+        and "requested_case_ids" in manifest
+        and manifest.get("requested_case_ids") is None
+        and isinstance(evaluated_case_ids, list)
+        and bool(evaluated_case_ids)
+        and all(isinstance(case_id, str) and case_id for case_id in evaluated_case_ids)
+        and len(evaluated_case_ids) == len(set(evaluated_case_ids))
+        and isinstance(n_evaluated_case_ids, int)
+        and not isinstance(n_evaluated_case_ids, bool)
+        and n_evaluated_case_ids == len(evaluated_case_ids)
+        and isinstance(n_cases, int)
+        and not isinstance(n_cases, bool)
+        and n_cases > 0
+        and len(evaluated_case_ids) >= n_cases
+        and manifest.get("auxiliary_suites_included") is True
+        and manifest.get("errors") == []
+        and _manifest_l1_id(manifest) is not None
+        and isinstance(runtime_profile_hash, str)
+        and _SHA256.fullmatch(runtime_profile_hash) is not None
+    )
 
 
 def _read_json(path: Path) -> dict | None:
@@ -149,10 +219,10 @@ def find_gated_remediation(
         return None
     if served_l1 is not None and _manifest_l1_id(baseline_manifest) != served_l1:
         return None
-    baseline_multiturn = ((baseline_data.get("multiturn") or {}).get("summary") or {})
-    baseline_exfiltration = (
-        (baseline_data.get("injection") or {}).get("exfiltration") or {}
-    )
+    baseline_multiturn = (baseline_data.get("multiturn") or {}).get("summary") or {}
+    baseline_exfiltration = (baseline_data.get("injection") or {}).get(
+        "exfiltration"
+    ) or {}
     if baseline_multiturn.get("memory_schranken_quota") != 1.0:
         return None
     if baseline_multiturn.get("parametric_schranken_quota") != 1.0:
@@ -166,14 +236,17 @@ def find_gated_remediation(
         data = _read_json(results_path)
         if not data:
             continue
-        manifest = data.get("manifest") or {}
+        manifest = data.get("manifest")
+        if not isinstance(manifest, dict):
+            continue
         if manifest.get("evaluation_scope") != "targeted_cases":
             continue
         if manifest.get("tree_hash") != tree_hash:
             continue
-        if runtime_profile_hash is not None and manifest.get(
-            "runtime_profile_hash"
-        ) != runtime_profile_hash:
+        if (
+            runtime_profile_hash is not None
+            and manifest.get("runtime_profile_hash") != runtime_profile_hash
+        ):
             continue
         if served_l1 is not None and _manifest_l1_id(manifest) != served_l1:
             continue
@@ -266,10 +339,10 @@ def find_gated_chained_remediation(
         return None
     if served_l1 is not None and _manifest_l1_id(baseline_manifest) != served_l1:
         return None
-    baseline_multiturn = ((baseline_data.get("multiturn") or {}).get("summary") or {})
-    baseline_exfiltration = (
-        (baseline_data.get("injection") or {}).get("exfiltration") or {}
-    )
+    baseline_multiturn = (baseline_data.get("multiturn") or {}).get("summary") or {}
+    baseline_exfiltration = (baseline_data.get("injection") or {}).get(
+        "exfiltration"
+    ) or {}
     if baseline_multiturn.get("memory_schranken_quota") != 1.0:
         return None
     if baseline_multiturn.get("parametric_schranken_quota") != 1.0:
@@ -342,15 +415,18 @@ def find_gated_chained_remediation(
     target = scope.get("target") or {}
     if target.get("tree_hash") != tree_hash:
         return None
-    if runtime_profile_hash is not None and target.get(
-        "runtime_profile_hash"
-    ) != runtime_profile_hash:
+    if (
+        runtime_profile_hash is not None
+        and target.get("runtime_profile_hash") != runtime_profile_hash
+    ):
         return None
     for results_path in sorted(runs.glob("*/results.json")):
         data = _read_json(results_path)
         if not data:
             continue
-        manifest = data.get("manifest") or {}
+        manifest = data.get("manifest")
+        if not isinstance(manifest, dict):
+            continue
         if manifest.get("evaluation_scope") != "targeted_cases":
             continue
         if manifest.get("tree_hash") != tree_hash:
@@ -432,12 +508,18 @@ def find_gated_run(
     tree_hash: str,
     served_l1: str | None = None,
     runtime_profile_hash: str | None = None,
+    release_candidate_evidence: dict | None = None,
+    required_run_label: str | None = None,
+    required_results_sha256: str | None = None,
 ):
-    """Return a small match dict for the first run whose manifest.tree_hash == tree_hash that is
-    FULLY adjudicated AND every hard gate is clean, else None.
+    """Return the first complete, final full replay whose hard gates are clean.
 
     A run qualifies only when:
-      • its ``adjudication`` block exists;
+      • its manifest proves an untargeted full-suite replay, includes the
+        auxiliary suites, has a complete evaluated-case inventory, and has no
+        harness errors;
+      • its ``adjudication`` block exists and
+        ``provisional_until_deep_audit`` is exactly ``false``;
       • every deterministic agent-final Schranke is present and == 1.0 (``_DETERMINISTIC_SCHRANKEN``
         — memory_fabrication, exfiltration, parametric multiturn + singleturn);
       • every GATED column (``n_gate_cases > 0``) is fully adjudicated (``n_gates_pending == 0`` and
@@ -451,16 +533,39 @@ def find_gated_run(
     == 0) is skipped. A run with no gated column at all is not a usable proof.
     """
     runs = Path(runs_dir)
-    for results in sorted(runs.glob("*/results.json")):
-        try:
-            data = json.loads(results.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+    if (required_run_label is None) != (required_results_sha256 is None):
+        return None
+    candidates = (
+        [runs / required_run_label / "results.json"]
+        if required_run_label is not None
+        else sorted(runs.glob("*/results.json"))
+    )
+    for results in candidates:
+        if required_results_sha256 is not None:
+            try:
+                results_raw = _RC_EVIDENCE.read_results_bytes(results)
+                if hashlib.sha256(results_raw).hexdigest() != required_results_sha256:
+                    continue
+                data = _RC_EVIDENCE.parse_json_bytes(results_raw)
+            except _RC_EVIDENCE.EvidenceError:
+                continue
+            if not isinstance(data, dict):
+                continue
+        else:
+            data = _read_json(results)
+        if data is None:
             continue
-        manifest = data.get("manifest") or {}
+        manifest = data.get("manifest")
+        if not isinstance(manifest, dict):
+            continue
         if not tree_hash or manifest.get("tree_hash") != tree_hash:
+            continue
+        if not _is_complete_full_replay_manifest(manifest):
             continue
         adj = data.get("adjudication")
         if not isinstance(adj, dict):
+            continue
+        if adj.get("provisional_until_deep_audit") is not False:
             continue
 
         # P1.6 — the eval↔deploy MODEL binding. When the caller pins the served L1, a run scored on a
@@ -472,13 +577,28 @@ def find_gated_run(
             and manifest.get("runtime_profile_hash") != runtime_profile_hash
         ):
             continue
+        if (
+            release_candidate_evidence is not None
+            and manifest.get("release_candidate_evidence") != release_candidate_evidence
+        ):
+            continue
+        if release_candidate_evidence is not None and (
+            manifest.get("git_sha") != release_candidate_evidence.get("source_git_sha")
+            or manifest.get("dirty") is not False
+        ):
+            continue
 
         # G1 — every deterministic hard-gate Schranke present and clean (missing/None → fail closed).
         if any(adj.get(k) != 1.0 for k in _DETERMINISTIC_SCHRANKEN):
             continue
 
         # G2 — every gated column fully adjudicated (no pending) and clean.
-        cols = list((adj.get("columns") or {}).values())
+        columns = adj.get("columns")
+        if not isinstance(columns, dict) or not all(
+            isinstance(column, dict) for column in columns.values()
+        ):
+            continue
+        cols = list(columns.values())
         gated = [c for c in cols if (c.get("n_gate_cases") or 0) > 0]
         if not gated:
             continue
@@ -490,7 +610,7 @@ def find_gated_run(
         ):
             continue
 
-        return {
+        match = {
             "evidence_type": "full_replay",
             "run_label": manifest.get("run_label"),
             "results_path": str(results),
@@ -498,57 +618,176 @@ def find_gated_run(
             "dirty": manifest.get("dirty"),
             "gated_axes": sorted(c.get("column") for c in gated),
             "l1": _manifest_l1_id(manifest),
+            "runtime_profile_hash": manifest.get("runtime_profile_hash"),
+            "evaluation_scope": "full_suite",
+            "provisional_until_deep_audit": False,
         }
+        if release_candidate_evidence is not None:
+            match["release_candidate_evidence"] = release_candidate_evidence
+            match["results_sha256"] = required_results_sha256
+        return match
     return None
+
+
+def _is_promotion_authorizing_match(
+    match: object,
+    served_l1: str,
+    runtime_profile_hash: str,
+    release_candidate_evidence: dict,
+    run_label: str,
+    results_sha256: str,
+    source_git_sha: str,
+) -> bool:
+    """Validate the final CLI handoff independently of discovery helpers."""
+    return (
+        isinstance(match, dict)
+        and match.get("evidence_type") == "full_replay"
+        and match.get("evaluation_scope") == "full_suite"
+        and match.get("provisional_until_deep_audit") is False
+        and match.get("l1") == served_l1
+        and match.get("runtime_profile_hash") == runtime_profile_hash
+        and match.get("release_candidate_evidence") == release_candidate_evidence
+        and match.get("run_label") == run_label
+        and match.get("results_sha256") == results_sha256
+        and match.get("git_sha") == source_git_sha
+        and match.get("dirty") is False
+    )
+
+
+_PRODUCTION_OPTIONS = frozenset(
+    {
+        "--rc-evidence",
+        "--rc-evidence-sha256",
+        "--candidate-image-config-digest",
+        "--candidate-image-digest",
+        "--served-tree-sha256",
+        "--database-migration-sha256",
+        "--authority-epoch",
+        "--source-git-sha",
+    }
+)
+
+
+def _usage() -> str:
+    return (
+        "usage: v2_deploy_gate.py <runs_dir> <tree_hash> <served_l1> "
+        "<runtime_profile_hash> --rc-evidence FILE --rc-evidence-sha256 HEX64 "
+        "--candidate-image-digest sha256:HEX64 "
+        "--candidate-image-config-digest sha256:HEX64 --served-tree-sha256 HEX64 "
+        "--database-migration-sha256 HEX64 --authority-epoch sha256:HEX64"
+        " --source-git-sha GIT_SHA"
+    )
+
+
+def _parse_production_argv(argv: list[str]) -> tuple[list[str], dict[str, str]] | None:
+    if len(argv) != 4 + (2 * len(_PRODUCTION_OPTIONS)):
+        return None
+    positional = argv[:4]
+    options: dict[str, str] = {}
+    remainder = argv[4:]
+    for index in range(0, len(remainder), 2):
+        name, value = remainder[index : index + 2]
+        if name not in _PRODUCTION_OPTIONS or name in options or not value:
+            return None
+        options[name] = value
+    if set(options) != _PRODUCTION_OPTIONS:
+        return None
+    return positional, options
 
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not 2 <= len(argv) <= 4:
+    parsed = _parse_production_argv(argv)
+    if parsed is None:
+        print(_usage(), file=sys.stderr)
+        return 2
+    positional, options = parsed
+    runs_dir, tree_hash, served_l1, runtime_hash = positional
+    if not tree_hash or not served_l1 or _SHA256.fullmatch(runtime_hash) is None:
         print(
-            "usage: v2_deploy_gate.py <runs_dir> <tree_hash> [served_l1] "
-            "[runtime_profile_hash]",
+            "DEPLOY GATE (V2): tree_hash, served_l1, and a lowercase SHA-256 "
+            "runtime_profile_hash are required — refuse",
             file=sys.stderr,
         )
         return 2
-    runs_dir, tree_hash = argv[0], argv[1]
-    served_l1 = argv[2] if len(argv) >= 3 else None
-    runtime_hash = argv[3] if len(argv) == 4 else None
-    if served_l1 is None:
-        # P1.6 — without a served-L1 pin the gate binds CODE (tree_hash) but not the model, so an
-        # ``.env``-only L1 swap could ship unevaluated. Callers (release-backend-v2.sh) MUST pass it.
+    if (
+        _SHA256.fullmatch(options["--rc-evidence-sha256"]) is None
+        or _DIGEST.fullmatch(options["--candidate-image-digest"]) is None
+        or _DIGEST.fullmatch(options["--candidate-image-config-digest"]) is None
+        or _SHA256.fullmatch(options["--served-tree-sha256"]) is None
+        or _SHA256.fullmatch(options["--database-migration-sha256"]) is None
+        or _DIGEST.fullmatch(options["--authority-epoch"]) is None
+        or re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", options["--source-git-sha"])
+        is None
+    ):
         print(
-            "DEPLOY GATE (V2): WARNING — no served_l1 given; L1-model binding NOT enforced "
-            "(an .env-only model swap could ship with no fresh eval)",
-            file=sys.stderr,
-        )
-    if runtime_hash is None:
-        print(
-            "DEPLOY GATE (V2): WARNING — no runtime_profile_hash given; full runtime-policy "
-            "binding NOT enforced",
-            file=sys.stderr,
-        )
-    match = find_gated_run(runs_dir, tree_hash, served_l1, runtime_hash)
-    if match is None:
-        match = find_gated_chained_remediation(
-            runs_dir, tree_hash, served_l1, runtime_hash
-        )
-    if match is None:
-        match = find_gated_remediation(
-            runs_dir, tree_hash, served_l1, runtime_hash
-        )
-    if match is None:
-        detail = f"tree {tree_hash}" + (
-            f" + L1 {served_l1}" if served_l1 is not None else ""
-        )
-        if runtime_hash is not None:
-            detail += f" + runtime profile {runtime_hash}"
-        print(
-            f"DEPLOY GATE (V2): no adjudicated full replay or approved targeted remediation "
-            f"for {detail} — refuse",
+            "DEPLOY GATE (V2): RC candidate bindings are invalid — refuse",
             file=sys.stderr,
         )
         return 2
+    try:
+        promotion_document, promotion_file_hash = _RC_EVIDENCE.load_promotion_evidence(
+            options["--rc-evidence"],
+            expected_sha256=options["--rc-evidence-sha256"],
+        )
+        promotion_payload = promotion_document["payload"]
+        evidence_document = promotion_payload["rc_descriptor"]
+        evidence_binding = _RC_EVIDENCE.manifest_binding(
+            evidence_document,
+            file_sha256=promotion_payload["rc_descriptor_sha256"],
+        )
+    except _RC_EVIDENCE.EvidenceError:
+        print(
+            "DEPLOY GATE (V2): final promotion evidence is invalid or not Gate-10-bound — refuse",
+            file=sys.stderr,
+        )
+        return 2
+    expected_evidence_fields = {
+        "candidate_image_digest": options["--candidate-image-digest"],
+        "candidate_image_config_digest": options["--candidate-image-config-digest"],
+        "served_tree_sha256": options["--served-tree-sha256"],
+        "database_migration_sha256": options["--database-migration-sha256"],
+        "authority_epoch": options["--authority-epoch"],
+        "runtime_profile_sha256": runtime_hash,
+        "source_git_sha": options["--source-git-sha"],
+    }
+    if any(
+        evidence_binding.get(field) != expected
+        for field, expected in expected_evidence_fields.items()
+    ):
+        print(
+            "DEPLOY GATE (V2): RC evidence does not match the exact approved candidate — refuse",
+            file=sys.stderr,
+        )
+        return 2
+    match = find_gated_run(
+        runs_dir,
+        tree_hash,
+        served_l1,
+        runtime_hash,
+        evidence_binding,
+        promotion_payload["results"]["run_label"],
+        promotion_payload["results"]["results_sha256"],
+    )
+    if not _is_promotion_authorizing_match(
+        match,
+        served_l1,
+        runtime_hash,
+        evidence_binding,
+        promotion_payload["results"]["run_label"],
+        promotion_payload["results"]["results_sha256"],
+        options["--source-git-sha"],
+    ):
+        print(
+            f"DEPLOY GATE (V2): no complete, final-adjudicated full replay for "
+            f"tree {tree_hash} + exact RC evidence + L1 {served_l1} + "
+            f"runtime profile {runtime_hash} "
+            "— targeted/chained remediation and owner waivers cannot authorize "
+            "promotion; refuse",
+            file=sys.stderr,
+        )
+        return 2
+    match["promotion_evidence_sha256"] = promotion_file_hash
     print(json.dumps(match))
     return 0
 
