@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ─────────────────────────────────────────────────────────────────────────────
 # ops/release-backend-v2.sh — THE ONLY sanctioned V2 (`backend-v2`) deploy.
 #
@@ -7,17 +7,14 @@
 # `docker compose … --profile v2 up --build backend-v2` shipped UNGATED. This
 # wrapper supports explicit release stages and bakes a start-time marker so
 # a raw build refuses to run: `candidate` is restricted to explicitly declared
-# non-production environments; `final` binds production to an adjudicated replay;
-# `owner-waiver` records an explicit production risk acceptance without weakening
-# any supply-chain, backup, migration, rollback or smoke control.
+# non-production environments and `final` binds production to an adjudicated replay.
 #
 # Gate chain:
 #   1. TREE_HASH = ops/tree-hash.sh backend/sealai_v2   (served-runtime content)
 #   2. Pull the immutable candidate, verify its signed SLSA provenance + SPDX
 #      SBOM, then derive its secret-free runtime-profile hash.
 #   3. final: ops/v2_deploy_gate.py -> an adjudicated run with that exact tree,
-#      L1 and runtime profile; all gated axes are clean. owner-waiver: require and
-#      ledger an explicit approver, reason and fixed acknowledgement.
+#      L1 and runtime profile; all gated axes are clean. There is no waiver path.
 #   4. Rollback rung, verified pre-migration backup and Alembic migration,
 #      idempotent knowledge-ledger bootstrap + derived-index drain, then recreate
 #      backend-v2 + its durable worker from the same image.
@@ -30,21 +27,17 @@
 # logic (step 2, ops/v2_deploy_gate.py) is unit-tested offline.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 usage() {
   cat <<'EOF'
-usage: ops/release-backend-v2.sh [--candidate|--final|--owner-waiver]
+usage: ops/release-backend-v2.sh [--candidate|--final]
 
   --candidate  Deploy an explicitly unvalidated candidate only when APP_ENV is
                development, test, or staging. Never accepted for production.
   --final      Deploy a final release. Requires a fully adjudicated eval replay.
                This is the default when no option is supplied.
-  --owner-waiver
-               Deploy a signed production artifact without eval approval after
-               explicit owner risk acceptance. Requires:
-                 SEALAI_OWNER_WAIVER_ACK=I_ACCEPT_UNEVALUATED_PRODUCTION_DEPLOY
-                 SEALAI_OWNER_WAIVER_APPROVER=<identity>
-                 SEALAI_OWNER_WAIVER_REASON=<reason>
 EOF
 }
 
@@ -52,12 +45,25 @@ RELEASE_STAGE="final"
 case "${1:-}" in
   --candidate) RELEASE_STAGE="candidate"; shift ;;
   --final)     shift ;;
-  --owner-waiver) RELEASE_STAGE="owner-waiver"; shift ;;
   "")         ;;
   --help|-h)   usage; exit 0 ;;
   *)           usage >&2; echo "release-backend-v2: unknown option: $1" >&2; exit 2 ;;
 esac
 [[ $# -eq 0 ]] || { usage >&2; echo "release-backend-v2: unexpected arguments: $*" >&2; exit 2; }
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+RELEASE_GATE_DECISION="${PRODUCTION_RELEASE_GATE_DECISION}"
+APPROVED_SOURCE_SHA="${PRODUCTION_RELEASE_APPROVED_SOURCE_SHA}"
+[[ "${APPROVED_SOURCE_SHA}" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] || {
+  echo "release-backend-v2: release gate did not return an approved source parent" >&2
+  exit 2
+}
+# shellcheck source=production-storage-lease.sh
+source /usr/local/libexec/sealai/production-storage-lease.sh
+acquire_production_storage_lease
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
@@ -69,9 +75,6 @@ COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-com
 BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
 LOCAL_BACKEND_IMAGE="sealai-backend-v2:local"
 ROLLBACK_IMAGE_OVERRIDE="${SEALAI_V2_ROLLBACK_IMAGE:-}"
-WAIVER_ACK="${SEALAI_OWNER_WAIVER_ACK:-}"
-WAIVER_APPROVER="${SEALAI_OWNER_WAIVER_APPROVER:-}"
-WAIVER_REASON="${SEALAI_OWNER_WAIVER_REASON:-}"
 
 die() { echo "release-backend-v2: $*" >&2; exit 1; }
 env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
@@ -87,16 +90,8 @@ if [[ "${RELEASE_STAGE}" == "candidate" ]]; then
   esac
   echo "!! CANDIDATE: paid eval replay intentionally deferred; this is not final release approval." >&2
 fi
-if [[ "${RELEASE_STAGE}" == "owner-waiver" ]]; then
-  [[ "${WAIVER_ACK}" == "I_ACCEPT_UNEVALUATED_PRODUCTION_DEPLOY" ]] \
-    || die "owner-waiver requires the exact SEALAI_OWNER_WAIVER_ACK acknowledgement"
-  [[ -n "${WAIVER_APPROVER}" ]] || die "owner-waiver requires SEALAI_OWNER_WAIVER_APPROVER"
-  [[ -n "${WAIVER_REASON}" ]] || die "owner-waiver requires SEALAI_OWNER_WAIVER_REASON"
-  echo "!! OWNER WAIVER: paid eval approval is explicitly waived by ${WAIVER_APPROVER}." >&2
-  echo "!! OWNER WAIVER REASON: ${WAIVER_REASON}" >&2
-fi
-if [[ ("${RELEASE_STAGE}" == "final" || "${RELEASE_STAGE}" == "owner-waiver") && -z "${BACKEND_IMAGE_REF}" ]]; then
-  die "final and owner-waiver releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
+if [[ "${RELEASE_STAGE}" == "final" && -z "${BACKEND_IMAGE_REF}" ]]; then
+  die "final releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
 fi
 
 # Production is an artifact promotion. Never deploy bytes from an uncommitted
@@ -104,13 +99,16 @@ fi
 if [[ -n "$(git status --porcelain)" ]]; then
   die "worktree is dirty; commit and deploy the exact reviewed commit"
 fi
-GIT_SHA_FULL="$(git rev-parse HEAD)"
+GATE_CONTROL_GIT_SHA="$(git rev-parse HEAD)"
+SOURCE_GIT_SHA="${APPROVED_SOURCE_SHA}"
+[[ "$(git rev-parse HEAD^)" == "${SOURCE_GIT_SHA}" ]] \
+  || die "Gate-10 source parent changed after release authorization"
 RUNTIME_DIR="${SEALAI_RUNTIME_DIR:-${REPO_ROOT}/.runtime}"
 LEDGER="${RUNTIME_DIR}/deploy-ledger.jsonl"
 mkdir -p "${RUNTIME_DIR}"
 
 # ── 1. served-runtime content hash (single source of truth) ──────────────────
-TREE_HASH="$(bash ops/tree-hash.sh)"
+TREE_HASH="$(/bin/bash -p ops/tree-hash.sh)"
 [ -n "${TREE_HASH}" ] || die "empty tree_hash from ops/tree-hash.sh"
 echo ">> served tree_hash = ${TREE_HASH}"
 
@@ -167,15 +165,15 @@ if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
   IMAGE_TREE_HASH="$(docker image inspect --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
   IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
   [[ "${IMAGE_TREE_HASH}" == "${TREE_HASH}" ]] || die "image tree hash ${IMAGE_TREE_HASH:-<missing>} does not match served tree ${TREE_HASH}"
-  [[ "${IMAGE_REVISION}" == "${GIT_SHA_FULL}" ]] || die "image revision ${IMAGE_REVISION:-<missing>} does not match checkout ${GIT_SHA_FULL}"
-  bash ops/verify-image-attestations.sh \
-    "${BACKEND_IMAGE_REF}" "${GIT_SHA_FULL}" ".github/workflows/build-and-push.yml" \
+  [[ "${IMAGE_REVISION}" == "${SOURCE_GIT_SHA}" ]] || die "image revision ${IMAGE_REVISION:-<missing>} does not match approved source ${SOURCE_GIT_SHA}"
+  /bin/bash -p ops/verify-image-attestations.sh \
+    "${BACKEND_IMAGE_REF}" "${SOURCE_GIT_SHA}" ".github/workflows/build-and-push.yml" \
     || die "candidate image provenance or SBOM attestation verification failed"
   PREPARED_IMAGE="${BACKEND_IMAGE_REF}"
 else
   echo "!! non-production local candidate has no signed registry attestations" >&2
   echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
-  "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${GIT_SHA_FULL}" "${SERVICE}"
+  "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${SOURCE_GIT_SHA}" "${SERVICE}"
   PREPARED_IMAGE="$(docker image inspect --format '{{.Id}}' "${LOCAL_BACKEND_IMAGE}" 2>/dev/null || true)"
   [[ -n "${PREPARED_IMAGE}" ]] || die "could not resolve locally built candidate image"
 fi
@@ -186,30 +184,22 @@ RUNTIME_PROFILE_HASH="$("${COMPOSE[@]}" run --rm --no-deps --entrypoint python "
 [[ "${RUNTIME_PROFILE_HASH}" =~ ^[0-9a-f]{64}$ ]] || die "invalid runtime profile hash: ${RUNTIME_PROFILE_HASH:-<empty>}"
 echo ">> runtime profile = ${RUNTIME_PROFILE_HASH}"
 
-# ── 3. RELEASE STAGE: candidate defers; final proves; waiver accepts risk ────
+# ── 3. RELEASE STAGE: candidate defers; final proves ────────────────────────────
 if [[ "${RELEASE_STAGE}" == "final" ]]; then
-  if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
+  if ! MATCH="$(/usr/bin/python3 -I ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
     echo "!! refusing FINAL deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}, L1 ${SERVED_L1}, runtime profile ${RUNTIME_PROFILE_HASH}" >&2
     echo "!! provide either a complete adjudicated replay or the approved fully adjudicated targeted remediation under this exact production profile, then retry." >&2
     exit 2
   fi
-  RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
-  EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
-  EVAL_DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
-  EVAL_EVIDENCE_TYPE="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("evidence_type") or "full_replay")')"
-  EVAL_BASELINE_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("baseline_run_label") or "")')"
+  RUN_LABEL="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
+  EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
+  EVAL_DIRTY="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
+  EVAL_EVIDENCE_TYPE="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("evidence_type") or "full_replay")')"
+  EVAL_BASELINE_LABEL="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("baseline_run_label") or "")')"
   EVAL_STATUS="passed"
   echo ">> final gate PASS — ${EVAL_EVIDENCE_TYPE} run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
-elif [[ "${RELEASE_STAGE}" == "owner-waiver" ]]; then
-  RUN_LABEL="owner-waiver-no-eval-${GIT_SHA_FULL:0:8}"
-  EVAL_GIT_SHA=""
-  EVAL_DIRTY=""
-  EVAL_EVIDENCE_TYPE="owner_waiver"
-  EVAL_BASELINE_LABEL=""
-  EVAL_STATUS="waived_by_owner"
-  echo ">> owner-waiver gate PASS — eval intentionally not required; all deterministic release controls remain active"
 else
-  RUN_LABEL="candidate-no-eval-${GIT_SHA_FULL:0:8}"
+  RUN_LABEL="candidate-no-eval-${SOURCE_GIT_SHA:0:8}"
   EVAL_GIT_SHA=""
   EVAL_DIRTY=""
   EVAL_EVIDENCE_TYPE="candidate"
@@ -225,7 +215,7 @@ docker image rm "${ROLLBACK_HOLD_TAG}" >/dev/null 2>&1 || true
 echo ">> rollback rung: ${ROLLBACK_TAG} -> ${ROLLBACK_FROM}"
 
 echo ">> creating verified pre-migration backup"
-MIGRATION_BACKUP="$(ENV_FILE="${REPO_ROOT}/.env.prod" bash ops/backup_v2_database.sh)"
+MIGRATION_BACKUP="$(ENV_FILE="${REPO_ROOT}/.env.prod" /bin/bash -p ops/backup_v2_database.sh)"
 [[ -f "${MIGRATION_BACKUP}" ]] || die "pre-migration backup was not created"
 echo ">> pre-migration backup = ${MIGRATION_BACKUP}"
 
@@ -301,23 +291,19 @@ for i in $(seq 1 30); do
 done
 
 # ── 6. ledger (machine-readable commit→deploy index) + GOVERNANCE_LOG paste ───
-LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA_FULL" "$ROLLBACK_FROM" "$SERVED_L1" "$BACKEND_IMAGE_REF" "$RUNTIME_PROFILE_HASH" "$MIGRATION_BACKUP" "$RELEASE_STAGE" "$EVAL_STATUS" "$WAIVER_APPROVER" "$WAIVER_REASON" "$WAIVER_ACK" <<'PY'
+LINE="$(/usr/bin/python3 -I - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$SOURCE_GIT_SHA" "$GATE_CONTROL_GIT_SHA" "$ROLLBACK_FROM" "$SERVED_L1" "$BACKEND_IMAGE_REF" "$RUNTIME_PROFILE_HASH" "$MIGRATION_BACKUP" "$RELEASE_STAGE" "$EVAL_STATUS" <<'PY'
 import json, sys
-ts, tree_hash, run_label, image_sha, git_sha, rollback_from, served_l1, backend_image, runtime_profile_hash, migration_backup, release_stage, eval_status, waiver_approver, waiver_reason, waiver_ack = sys.argv[1:16]
+ts, tree_hash, run_label, image_sha, source_git_sha, gate_control_git_sha, rollback_from, served_l1, backend_image, runtime_profile_hash, migration_backup, release_stage, eval_status = sys.argv[1:14]
 print(json.dumps({
     "ts": ts, "tree_hash": tree_hash, "run_label": run_label,
-    "image_sha": image_sha, "git_sha": git_sha,
+    "image_sha": image_sha, "git_sha": source_git_sha,
+    "gate_control_git_sha": gate_control_git_sha,
     "dirty": False, "rollback_from": rollback_from,
     "l1": served_l1, "backend_image": backend_image or None,
     "runtime_profile_hash": runtime_profile_hash,
     "pre_migration_backup": migration_backup,
     "release_stage": release_stage,
     "eval_status": eval_status,
-    "owner_waiver": {
-        "acknowledged": waiver_ack == "I_ACCEPT_UNEVALUATED_PRODUCTION_DEPLOY",
-        "approver": waiver_approver or None,
-        "reason": waiver_reason or None,
-    } if release_stage == "owner-waiver" else None,
 }))
 PY
 )"
@@ -326,12 +312,10 @@ echo ">> ledger appended: ${LEDGER}"
 
 if [[ "${RELEASE_STAGE}" == "final" ]]; then
   if [[ "${EVAL_EVIDENCE_TYPE}" == targeted_remediation* ]]; then
-    RELEASE_EVIDENCE="Validated by targeted remediation \`${RUN_LABEL}\` against immutable full baseline \`${EVAL_BASELINE_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false). Only the owner-approved failed topics were rerun and fully adjudicated; this is explicitly not represented as a new full replay."
+    RELEASE_EVIDENCE="Validated by targeted remediation \`${RUN_LABEL}\` against immutable full baseline \`${EVAL_BASELINE_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`, dirty=false). Only the owner-approved failed topics were rerun and fully adjudicated; this is explicitly not represented as a new full replay."
   else
-    RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, checkout \`${GIT_SHA_FULL}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
+    RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
   fi
-elif [[ "${RELEASE_STAGE}" == "owner-waiver" ]]; then
-  RELEASE_EVIDENCE="Paid eval approval explicitly waived by \`${WAIVER_APPROVER}\`: ${WAIVER_REASON}. Supply-chain attestations, immutable identity, backup, migration, rollback and smoke gates remained mandatory; eval_status=waived_by_owner."
 else
   RELEASE_EVIDENCE="Live candidate only. Paid eval-REPLAY intentionally deferred (eval_status=pending); this deployment is not final-release evidence."
 fi
@@ -343,6 +327,7 @@ cat <<EOF
 
 **Release stage: ${RELEASE_STAGE}** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` + runtime profile \`${RUNTIME_PROFILE_HASH}\`.
 ${RELEASE_EVIDENCE}
+- approved source commit = \`${SOURCE_GIT_SHA}\`; dedicated Gate-10 control commit = \`${GATE_CONTROL_GIT_SHA}\`
 - new live \`sealai-backend-v2:latest\` = \`${IMAGE_SHA}\`
 - promoted image ref = \`${BACKEND_IMAGE_REF:-local-build}\`
 - rollback rung (read from the daemon) = \`${ROLLBACK_FROM}\`, tagged \`${ROLLBACK_TAG}\`

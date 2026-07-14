@@ -76,7 +76,7 @@ def _tree_binding() -> tuple[str, bool]:
     repo = Path(__file__).resolve().parents[3]
     try:
         tree_hash = subprocess.check_output(
-            ["bash", str(repo / "ops" / "tree-hash.sh")],
+            ["/bin/bash", "-p", str(repo / "ops" / "tree-hash.sh")],
             cwd=str(repo),
             text=True,
         ).strip()

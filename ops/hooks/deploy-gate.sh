@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ─────────────────────────────────────────────────────────────────────────────
 # Deploy gate — Claude Code PreToolUse hook (matcher: Bash). FAIL-CLOSED.
 #
@@ -48,7 +48,7 @@ cmd="$(printf '%s' "${payload}" | jq -er '.tool_input.command // empty' 2>/dev/n
 # Only gate an actual INVOCATION of the release script (command position):
 # start-of-line or a shell separator, optional bash/sh/./ prefix — so a mere
 # mention in a commit message or prose does not trigger.
-RELEASE_RE='(^|[;&|])[[:space:]]*((bash|sh)[[:space:]]+)?(\./)?ops/release-backend\.sh([[:space:]]|;|&|\||$)'
+RELEASE_RE='(^|[;&|])[[:space:]]*((/bin/)?(bash|sh)([[:space:]]+-p)?[[:space:]]+)?(\./)?ops/release-backend\.sh([[:space:]]|;|&|\||$)'
 printf '%s' "${cmd}" | grep -Eq "${RELEASE_RE}" || exit 0
 
 check_sentinel() {  # $1 = file, $2 = human label

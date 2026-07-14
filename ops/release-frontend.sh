@@ -1,5 +1,15 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+# shellcheck source=production-storage-lease.sh
+source /usr/local/libexec/sealai/production-storage-lease.sh
+acquire_production_storage_lease
 
 cd /home/thorsten/sealai
 
@@ -110,7 +120,7 @@ set_env_key FRONTEND_PULL_POLICY "${FRONTEND_PULL_POLICY}"
 
 echo ">> Validating pinned production refs"
 if [[ "${FRONTEND_PULL_POLICY}" == "always" ]]; then
-  ./ops/check-env-drift.sh prod
+  /bin/bash -p ./ops/check-env-drift.sh prod
 else
   echo "!! Skipping pinned-image drift gate for explicit local frontend fallback"
 fi
@@ -145,7 +155,7 @@ compose_prod --profile frontend-container exec -T frontend wget -qO- http://127.
 
 echo ">> Reloading nginx to refresh frontend upstream"
 if docker ps --format '{{.Names}}' | grep -qx nginx; then
-  ./ops/guard-nginx-reload.sh  # refuses a reload that would silently drop live V2 routing (cutover drift guard)
+  /bin/bash -p ./ops/guard-nginx-reload.sh  # refuses a reload that would silently drop live V2 routing (cutover drift guard)
   docker exec nginx nginx -s reload
 else
   echo ">> nginx container not running; skipping reload"
@@ -153,7 +163,8 @@ fi
 
 if [[ "${SKIP_LIVE_SMOKE:-0}" != "1" ]]; then
   echo ">> Running live pilot readiness smoke"
-  BASE_URL="${BASE_URL:-https://sealingai.com}" ./ops/smoke-live-pilot-readiness.sh
+  BASE_URL="${BASE_URL:-https://sealingai.com}" \
+    /bin/bash -p ./ops/smoke-live-pilot-readiness.sh
 else
   echo ">> Live pilot readiness smoke skipped by SKIP_LIVE_SMOKE=1"
 fi

@@ -1,6 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
 umask 077
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" pull
+# shellcheck source=production-storage-lease.sh
+source /usr/local/libexec/sealai/production-storage-lease.sh
+acquire_production_storage_lease
 
 # Starts a candidate Keycloak image against a restored copy of production data.
 # The live database and live Keycloak container are never touched.
@@ -25,9 +35,8 @@ PROOF_DIR="${KEYCLOAK_PROOF_DIR:-$HOME/sealai-review/keycloak}"
 DUMP_FILE="$PROOF_DIR/${POSTGRES_DB}-${STAMP}.dump"
 
 [[ -f "$ENV_FILE" ]] || { echo "missing $ENV_FILE" >&2; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo "python3 is required" >&2; exit 1; }
 if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
-  POSTGRES_PASSWORD="$(python3 - "$ENV_FILE" <<'PY'
+  POSTGRES_PASSWORD="$(/usr/bin/python3 -I - "$ENV_FILE" <<'PY'
 import sys
 from pathlib import Path
 

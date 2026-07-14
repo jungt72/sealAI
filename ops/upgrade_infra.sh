@@ -1,5 +1,15 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+# shellcheck source=production-storage-lease.sh
+source /usr/local/libexec/sealai/production-storage-lease.sh
+acquire_production_storage_lease
 
 compose_cmd=""
 if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
@@ -49,8 +59,8 @@ qdrant_json="$(curl -fsS http://127.0.0.1:6333/ || true)"
 if [[ -n "$qdrant_json" ]]; then
   if command -v jq >/dev/null 2>&1; then
     echo "$qdrant_json" | jq -r '.version // .version_string // .versionNumber // empty'
-  elif command -v python3 >/dev/null 2>&1; then
-    python3 - <<'PY'
+  elif [[ -x /usr/bin/python3 ]]; then
+    /usr/bin/python3 -I - <<'PY'
 import json, sys
 try:
     data = json.loads(sys.stdin.read())

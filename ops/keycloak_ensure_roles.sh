@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 # Idempotently reconciles the sealingAI realm through Keycloak's supported
 # Admin CLI. Credentials are accepted only for this process; the script never

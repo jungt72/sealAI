@@ -1,14 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Eval-REPLAY in the exact candidate image and resolved production Compose environment.
 # Production data stores and tracing are explicitly disconnected; run artifacts are the
 # only host-mounted output. This prevents host-venv and Compose-default profile drift.
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
 [[ -f .env.prod ]] || { echo "ops/run_eval.sh: .env.prod missing" >&2; exit 2; }
-TREE_HASH="$(bash ops/tree-hash.sh)"
+TREE_HASH="$(/bin/bash -p ops/tree-hash.sh)"
 GIT_SHA="$(git rev-parse HEAD)"
 EVAL_IMAGE="sealai-backend-v2:eval-${TREE_HASH:0:12}"
 export BACKEND_V2_IMAGE="${EVAL_IMAGE}"
