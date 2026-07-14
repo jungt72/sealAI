@@ -1,202 +1,65 @@
 {
   "id": null,
-  "uid": "sealai-business",
-  "title": "SeaLAI Business",
-  "tags": [
-    "sealai",
-    "business",
-    "prometheus"
-  ],
+  "uid": "sealai-v2-control-plane",
+  "title": "sealingAI V2 Control Plane",
+  "tags": ["sealai", "v2", "cost", "auth", "recovery"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
-  "refresh": "10s",
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
+  "version": 4,
+  "refresh": "30s",
+  "time": {"from": "now-24h", "to": "now"},
   "panels": [
     {
-      "type": "timeseries",
-      "title": "Chat Requests/s",
+      "type": "stat",
+      "title": "Daily Provider Budget Used",
       "id": 1,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\"/api/agent/chat|/api/agent/chat/stream\"}[5m]))",
-          "refId": "A"
-        }
-      ]
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(sealai_v2_provider_spend_minor_units{period=\"daily\"}) / clamp_min(sum(sealai_v2_provider_budget_limit_minor_units{period=\"daily\"}), 1)", "refId": "A"}]
     },
     {
-      "type": "timeseries",
-      "title": "Workspace Requests/s",
+      "type": "stat",
+      "title": "Backup Age (h)",
       "id": 2,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\".*/workspace/.*|.*/state/workspace.*\"}[5m]))",
-          "refId": "A"
-        }
-      ]
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+      "targets": [{"expr": "max((time() - sealai_backup_last_success_timestamp_seconds) / 3600)", "refId": "A"}]
     },
     {
-      "type": "timeseries",
-      "title": "Review Requests/s",
+      "type": "stat",
+      "title": "Offsite Age (h)",
       "id": 3,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "targets": [
-        {
-          "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\"/api/agent/review|/api/agent/review/seed\"}[5m]))",
-          "refId": "A"
-        }
-      ]
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+      "targets": [{"expr": "max((time() - sealai_offsite_backup_last_success_timestamp_seconds) / 3600)", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "RFQ Surface Requests/s",
+      "title": "Quota Denials/s",
       "id": 4,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "targets": [
-        {
-          "expr": "sum by (path) (rate(sealai_http_requests_total{path=~\".*/rfq-document.*|.*/rfq-generate-pdf.*|.*/rfq-handover.*|.*/rfq-confirm.*|/api/v1/rfq/download\"}[5m]))",
-          "refId": "A"
-        }
-      ]
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "targets": [{"expr": "sum(rate(sealai_v2_quota_denials_total[5m]))", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "Business Surface 5xx/s",
+      "title": "Authentication Denials/s",
       "id": 5,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(sealai_http_requests_total{status=~\"5..\",path=~\"/api/agent/chat|/api/agent/chat/stream|.*/workspace/.*|.*/state/workspace.*|/api/agent/review|/api/agent/review/seed|.*/rfq-document.*|.*/rfq-generate-pdf.*|.*/rfq-handover.*|.*/rfq-confirm.*|/api/v1/rfq/download\"}[5m]))",
-          "refId": "A"
-        }
-      ]
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "targets": [{"expr": "sum(rate(sealai_v2_auth_denials_total[5m]))", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "Business Surface Latency p95 (s)",
+      "title": "Provider Spend and Limit (minor units)",
       "id": 6,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
       "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(sealai_http_request_duration_seconds_bucket{path=~\"/api/agent/chat|/api/agent/chat/stream|.*/workspace/.*|.*/state/workspace.*|/api/agent/review|/api/agent/review/seed|.*/rfq-document.*|.*/rfq-generate-pdf.*|.*/rfq-handover.*|.*/rfq-confirm.*|/api/v1/rfq/download\"}[5m])))",
-          "refId": "A"
-        }
+        {"expr": "sum by (provider) (sealai_v2_provider_spend_minor_units{period=\"daily\"})", "legendFormat": "spend {{provider}}", "refId": "A"},
+        {"expr": "sum by (provider) (sealai_v2_provider_budget_limit_minor_units{period=\"daily\"})", "legendFormat": "limit {{provider}}", "refId": "B"}
       ]
     },
     {
       "type": "timeseries",
-      "title": "Gate Route Decisions/s",
+      "title": "Recovery Evidence Valid",
       "id": 7,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "targets": [
-        {
-          "expr": "sum by (route) (rate(sealai_gate_route_decisions_total[5m]))",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "timeseries",
-      "title": "Inquiries Created & Sent/s",
-      "id": 8,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
-      "targets": [
-        {
-          "expr": "sum by (status) (rate(sealai_inquiry_created_total[5m]))",
-          "legendFormat": "created {{status}}",
-          "refId": "A"
-        },
-        {
-          "expr": "sum by (status) (rate(sealai_inquiry_sent_total[5m]))",
-          "legendFormat": "sent {{status}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "type": "timeseries",
-      "title": "fit_score Distribution p50/p95",
-      "id": 9,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 32
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(sealai_fit_score_bucket[5m])) by (le))",
-          "legendFormat": "p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(sealai_fit_score_bucket[5m])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "type": "timeseries",
-      "title": "LLM Token Consumption/s",
-      "id": 10,
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 32
-      },
-      "targets": [
-        {
-          "expr": "sum by (model, type) (rate(sealai_llm_tokens_total[5m]))",
-          "refId": "A"
-        }
-      ]
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "targets": [{"expr": "sealai_backup_receipt_valid", "legendFormat": "{{component}}", "refId": "A"}]
     }
   ]
 }

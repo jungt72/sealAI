@@ -82,3 +82,23 @@ def test_metrics_are_not_sampled_with_the_log_copy() -> None:
         'provider="mistral",stage="l1",status="ok"} 1.0'
     ) in rendered
     assert 'token_type="prompt"} 10.0' in rendered
+
+
+def test_provider_timeout_metric_uses_a_bounded_category() -> None:
+    event = _event("error")
+    event = LlmCallTelemetry(**{**event.__dict__, "model": "timeout-metric-model"})
+
+    LoggingTelemetrySink(sample_rate=0.0).record(event)
+
+    assert (
+        REGISTRY.get_sample_value(
+            "sealai_v2_llm_failures_total",
+            {
+                "provider": "mistral",
+                "model": "timeout-metric-model",
+                "stage": "l1",
+                "category": "timeout",
+            },
+        )
+        == 1
+    )

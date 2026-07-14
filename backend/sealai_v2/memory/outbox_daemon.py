@@ -29,6 +29,7 @@ from sealai_v2.memory.outbox_worker import (
     drain_outbox,
     ensure_memory_collection,
 )
+from sealai_v2.obs.outbox_metrics import collect_outbox_metrics
 
 _LOG = logging.getLogger("sealai_v2.outbox_daemon")
 _HEARTBEAT_PATH = Path("/tmp/sealai-v2-outbox-heartbeat")
@@ -126,6 +127,9 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
                 _LOG.info("knowledge outbox pass: %s", knowledge_result)
         except Exception:  # noqa: BLE001 - the loop must survive transient infrastructure faults
             _LOG.exception("outbox pass failed; retrying after poll interval")
+        metrics_status = collect_outbox_metrics(session_factory)
+        if not all(metrics_status.values()):
+            _LOG.error("outbox metrics refresh failed")
         _write_heartbeat()
         stop_event.wait(settings.outbox_poll_interval_s)
 
@@ -147,6 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.healthcheck:
         healthcheck(settings)
         return 0
+    from prometheus_client import start_http_server
+
+    start_http_server(settings.outbox_metrics_port, addr="0.0.0.0")
     stop = Event()
     signal.signal(signal.SIGTERM, lambda *_args: stop.set())
     signal.signal(signal.SIGINT, lambda *_args: stop.set())

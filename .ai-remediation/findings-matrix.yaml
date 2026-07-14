@@ -415,16 +415,22 @@ findings:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OBS-001
     changes:
       - Added locally tested Redis capacity, TTL coverage, key ownership, queue depth, eviction, write-error, and state-continuity observations with bounded local alert handoff.
-      - Keep external delivery explicitly BLOCKED_EXTERNAL; the broader V2 monitoring stack, dashboards, and receiver-path tests remain P2 work.
+      - Replaced retired V1 scrapes and all three stale dashboards with the V2 API, worker, host, container, Postgres, Redis, Qdrant, recovery, TLS, auth, quota, and provider-cost contracts.
+      - Added 52 fail-closed recording and alert rules, low-cardinality LLM timeout and durable outbox metrics, file-backed Qdrant auth, verified TLS probes, and a file-backed Alertmanager receiver.
+      - Keep external delivery explicitly BLOCKED_EXTERNAL until a human-owned receiver and production GATE-08 exist.
     tests:
-      - Controlled signal-to-receiver tests and dashboard query validation.
+      - Contract tests reject V1 scrapes, V1 dashboard metrics, missing required signals, embedded secrets, permissive TLS, and mutable image references.
+      - Checksum-verified promtool 3.10.0 accepted all 52 rules and Prometheus configuration; amtool 0.31.1 accepted Alertmanager configuration.
+      - The loopback-only synthetic rehearsal received both firing and resolved webhooks through the committed receiver contract.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Disable individual noisy rules while preserving the base monitoring path.
     evidence_after:
       - docs/ops/redis-capacity-guard.md
-      - Forty-four adversarial guard tests and an independent security re-review passed; the service is not installed.
-    residual_risk: Critical capacity, backup, service, and cost failures remain silent until the V2 monitoring stack is deployed.
+      - docs/ops/v2-observability.md
+      - monitoring/rules/sealai-v2-alerts.yml
+      - ops/verify-alert-route.py
+    residual_risk: Repository controls are locally verified, but critical capacity, backup, service, and cost failures remain silent until scoped exporter identities, exact images, production wiring, and external delivery are approved and deployed.
 
   - finding_id: REL-003
     title: Ungated release candidate receives production secrets and network access
@@ -460,18 +466,24 @@ findings:
     root_cause: Debug context is serialized directly without a central allowlist, opaque references, redaction, or stable error codes.
     dependencies: [central redaction contract, observability update]
     remediation_type: [code, configuration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#LOG-001
     changes:
-      - Replace document identifiers with opaque references, emit allowlisted structured fields, and map exceptions to stable codes.
+      - Added process-wide metadata-only redaction, server-owned correlation IDs, opaque references, allowlisted operational codes, stable Paperless failure reasons, and safe exception-class retention without payloads or tracebacks.
+      - Added independently sampled metadata logs while retaining unsampled aggregate LLM and routing metrics.
     tests:
-      - Synthetic PII, secret, document-title, URL, and exception fixtures must not appear in logs or responses.
+      - Synthetic PII, medical data, prompt, secret, token, document-title, URL, connection-string, and exception fixtures do not appear in logs or API failures.
+      - Static logging contracts reject dynamic messages; streaming request correlation and unsampled-metric tests pass.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Retain redaction; use protected short-lived diagnostic sampling instead of restoring raw standard logs.
-    evidence_after: []
-    residual_risk: Logs and clients may receive sensitive metadata until the redaction layer is deployed.
+    evidence_after:
+      - docs/ops/v2-log-redaction.md
+      - backend/sealai_v2/obs/log_redaction.py
+      - backend/sealai_v2/obs/request_context.py
+      - backend/sealai_v2/tests/test_log_redaction.py
+    residual_risk: Production keeps the prior logging behavior until the new image is approved and deployed; downstream proxy and external trace-sink verification remains GATE-08 work.
 
   - finding_id: CONT-001
     title: Containers lack consistent limits and least-privilege runtime hardening

@@ -243,6 +243,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_product_mode_dependencies(self) -> "Settings":
+        if not 1024 <= self.outbox_metrics_port <= 65535:
+            raise ValueError("outbox metrics port must be an unprivileged TCP port")
         if self.exact_answer_cache_enabled:
             if not self.execution_policy_enabled:
                 raise ValueError("exact answer cache requires execution_policy_enabled")
@@ -419,6 +421,9 @@ class Settings(BaseSettings):
     outbox_batch_size: int = 50
     outbox_max_attempts: int = 5
     outbox_claim_timeout_s: int = 300
+    # Internal-only Prometheus listener of the dedicated worker container. The
+    # production network contract never publishes this port on the host.
+    outbox_metrics_port: int = 9101
     # Embedding model: the PROD path is the OpenAI API ("text-embedding-3-small", 1536-dim) — strong on
     # German, reuses OPENAI_API_KEY, and crucially NO local model so NO RAM/OOM (the local e5-large model
     # OOM'd the 7.6 GB host). DATA leaves the box for the embedding call (it IS an API) — this is NOT a

@@ -43,11 +43,30 @@ _LLM_LATENCY = Histogram(
     ("provider", "model", "stage", "status"),
     buckets=(0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180),
 )
+_LLM_FAILURES = Counter(
+    "sealai_v2_llm_failures_total",
+    "Bounded LLM failure categories observed by the V2 runtime.",
+    ("provider", "model", "stage", "category"),
+)
 
 
 def _metric_label(value: str | None) -> str:
     safe = safe_code_or_placeholder(value, placeholder="none").value
     return safe[:96]
+
+
+def _failure_category(error_type: str | None) -> str:
+    """Collapse provider exception class names into a fixed metric-label allowlist."""
+    normalized = (error_type or "").replace("_", "").lower()
+    if "timeout" in normalized or "timedout" in normalized:
+        return "timeout"
+    if "ratelimit" in normalized or "toomanyrequests" in normalized:
+        return "rate_limit"
+    if "authentication" in normalized or "permission" in normalized:
+        return "auth"
+    if "connection" in normalized or "transport" in normalized:
+        return "transport"
+    return "provider"
 
 
 def _record_metrics(event: "LlmCallTelemetry") -> None:
@@ -65,6 +84,13 @@ def _record_metrics(event: "LlmCallTelemetry") -> None:
     _LLM_LATENCY.labels(provider, model, stage, status).observe(
         max(0.0, event.latency_ms / 1000.0)
     )
+    if event.status != "ok":
+        _LLM_FAILURES.labels(
+            provider,
+            model,
+            stage,
+            _failure_category(event.error_type),
+        ).inc()
 
 
 @dataclass(frozen=True)
