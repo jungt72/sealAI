@@ -169,3 +169,31 @@ ops/ESCALATION.md
 # Fachkarten-Ingestion review queue (transient — owner promotes to the seed)
 ops/fachkarten_drafts/
 .runtime/
+
+# Private credential material and raw authenticated diagnostics. Public
+# certificates may be committed; their private counterparts never are.
+*.key
+*.p8
+*.jwk
+id_rsa*
+id_ed25519*
+**/.netrc
+**/.pypirc
+**/.npmrc
+/keycloak/certs/*key*.pem
+/nginx/certbot/accounts/
+/docs/debug_internal_error/live/
+/docs/debug_internal_error/[0-9]*/
+
+# Database/cache payloads must stay in the runtime backup store.
+*.pgdump
+*.rdb
+*.aof
+*.sql.gz
+*.sql.bz2
+*.sql.xz
+
+# Remediation evidence may contain host-specific inventories and command output.
+# Commit only the sanitized evidence policy/README, never raw run evidence.
+.ai-remediation/runs/*/evidence/*
+!.ai-remediation/runs/*/evidence/README.md

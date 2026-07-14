@@ -61,7 +61,7 @@ def _prod_client() -> LsClient:
     assert policy.hide_inputs is True and policy.hide_outputs is True
     # api_key set so construction never reads env / attempts discovery; no network happens here.
     return LsClient(
-        api_key="test-not-used",
+        api_key="DUMMY_LANGSMITH_API_KEY",
         auto_batch_tracing=False,
         hide_inputs=policy.hide_inputs,
         hide_outputs=policy.hide_outputs,

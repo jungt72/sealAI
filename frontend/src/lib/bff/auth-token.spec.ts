@@ -4,17 +4,17 @@ import { encode } from "next-auth/jwt";
 
 import { getAccessTokenResult } from "./auth-token.ts";
 
-const AUTH_SECRET = "test-auth-secret";
+const AUTH_SECRET = "DUMMY_AUTH_SECRET";
 const KEYCLOAK_TOKEN_PATH = "/protocol/openid-connect/token";
 
-async function expiredSessionRequest(refreshToken = "refresh-token"): Promise<Request> {
+async function expiredSessionRequest(refreshToken = "DUMMY_REFRESH_TOKEN"): Promise<Request> {
   const cookieName = "__Secure-authjs.session-token";
   const token = await encode({
     secret: AUTH_SECRET,
     salt: cookieName,
     token: {
       sub: "user-1",
-      accessToken: "expired-access-token",
+      accessToken: "DUMMY_EXPIRED_ACCESS_TOKEN",
       refreshToken,
       expiresAt: Math.floor(Date.now() / 1000) - 5,
     },
@@ -27,8 +27,8 @@ async function expiredSessionRequest(refreshToken = "refresh-token"): Promise<Re
 function keycloakRefreshResponse(overrides: Record<string, unknown> = {}): Response {
   return new Response(
     JSON.stringify({
-      access_token: "fresh-access-token",
-      refresh_token: "rotated-refresh-token",
+      access_token: "DUMMY_FRESH_ACCESS_TOKEN",
+      refresh_token: "DUMMY_ROTATED_REFRESH_TOKEN",
       expires_in: 300,
       ...overrides,
     }),
@@ -43,7 +43,7 @@ beforeEach(() => {
   process.env.AUTH_SECRET = AUTH_SECRET;
   process.env.KEYCLOAK_ISSUER = "https://keycloak.example/realms/sealAI";
   process.env.KEYCLOAK_CLIENT_ID = "nextauth";
-  process.env.KEYCLOAK_CLIENT_SECRET = "client-secret";
+  process.env.KEYCLOAK_CLIENT_SECRET = "DUMMY_CLIENT_SECRET";
   process.env.SEALAI_BACKEND_ORIGIN = "http://127.0.0.1:8000";
 });
 
@@ -78,7 +78,7 @@ describe("single-flight refresh", () => {
 
     expect(keycloakCalls).toBe(1);
     for (const result of results) {
-      expect(result.accessToken).toBe("fresh-access-token");
+      expect(result.accessToken).toBe("DUMMY_FRESH_ACCESS_TOKEN");
     }
   });
 
@@ -103,7 +103,7 @@ describe("single-flight refresh", () => {
     mode = "ok";
     const result = await getAccessTokenResult(request);
     expect(keycloakCalls).toBe(2);
-    expect(result.accessToken).toBe("fresh-access-token");
+    expect(result.accessToken).toBe("DUMMY_FRESH_ACCESS_TOKEN");
   });
 
   it("refreshes again on a subsequent cycle once the slot is freed", async () => {
