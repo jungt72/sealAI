@@ -137,23 +137,28 @@ findings:
     root_cause: The gate binds source settings rather than effective runtime, dataset and authority epochs, and one promoted image digest.
     dependencies: [P0 secrets, P0 storage, P0 Redis, immutable build contract]
     remediation_type: [code, configuration, infrastructure, operational, governance]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-001
       - Pull request 288 activates a limited adaptive path and adds a migration but leaves the final release-gate implementation unchanged.
     changes:
-      - Build once, evaluate the exact digest with production-equivalent isolated Postgres and Qdrant, and fail closed on every final invariant.
-      - Remove targeted, provisional, or waiver evidence from final production eligibility.
-      - P0 locally hard-disables the Gate-10 lift and all artifact-mutating operations until P1 implements and tests the complete exact-artifact contract.
+      - Bound control commit, source commit, served-tree hash, database-migration digest, exact backend image digest, effective runtime, and external RC evidence into one root-trusted promotion transaction.
+      - Made provisional, targeted, stub-provider, mutable-image, stale-evidence, and waiver paths mechanically ineligible for final promotion.
+      - Kept the checked-in release freeze and Gate-10 lift disabled; repository implementation alone cannot publish or deploy an artifact.
     tests:
-      - Tamper tests for retriever type, dataset epoch, authority epoch, digest, SBOM, deep-audit status, and previous golden cases.
+      - Exact-artifact, effective-runtime, migration-digest, RC-isolation, receipt-expiry, source/control drift, and rollback-manifest tamper tests.
+      - Root-boundary invocation tests prove ordinary workflow inputs cannot bypass the installed gate or storage lease.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Revert gate code only to another fail-closed tested version; never restore the permissive final gate.
     evidence_after:
       - docs/ops/production-release-freeze.md
-      - Local gate and every sanctioned invocation path fail closed; the root-installed remote boundary intentionally has no promotion implementation.
-    residual_risk: Untested runtime or dependency behavior can be promoted until the exact-digest gate is deployed and proven.
+      - docs/ops/PRODUCTION_PROMOTION_CONTROL.md
+      - ops/production_release_control.py
+      - ops/v2_rc_evidence.py
+      - backend/tests/test_production_release_control.py
+      - backend/tests/test_v2_rc_evidence.py
+    residual_risk: Production still uses the audited release path. Installation, external exact-digest RC evidence, GATE-08, GATE-10, and a controlled smoke are required before the new transaction can be trusted operationally.
 
   - finding_id: REL-002
     title: Dashboard bytes and cold-recovery configuration are not reproducible
@@ -165,22 +170,25 @@ findings:
     root_cause: Host-built ignored assets and mutable bind mounts are not tied to a commit, artifact digest, or recovery manifest.
     dependencies: [REL-001, immutable artifact storage, restore rehearsal]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-002
       - Pull request 288 changes dashboard source while the production publication path remains an unattested host bind mount.
     changes:
-      - Package and attest immutable dashboard bytes and persist verified backend and frontend digests in the recovery manifest.
-      - P0 prevents ordinary Vite builds from writing to the live bind mount and creates only an isolated dashboard candidate; immutable promotion remains P1 work.
+      - Added deterministic dashboard packaging with a content-addressed release ID, source commit, tree hash, file manifest, and release attestation.
+      - Promotion uses an atomic current-release link and a manifest-bound previous release; build commands cannot write into the live dashboard tree.
+      - Bound the exact dashboard release and Nginx exposure hashes into the root-trusted release transaction and rollback manifest.
     tests:
-      - Fresh-host digest reproduction and atomic artifact rollback tests.
+      - Fresh-host reproduction, manifest/file tamper, symlink/path escape, no-clobber, atomic promotion, exact Nginx binding, and previous-release rollback tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Atomically re-promote the prior attested dashboard artifact and backend digest.
     evidence_after:
-      - frontend-v2/tests/vite-output-guard.test.ts
-      - Candidate build and live-output rejection passed in the 306-test frontend verification.
-    residual_risk: Live UI drift and non-reproducible recovery persist until immutable artifacts replace the host bind mount.
+      - frontend-v2/scripts/dashboard_release.py
+      - frontend-v2/scripts/prepare-dashboard-release.sh
+      - docs/ops/IMMUTABLE_DASHBOARD_RELEASES.md
+      - backend/tests/test_dashboard_immutable_release.py
+    residual_risk: The production dashboard remains the audited mutable host build until an exact attested release is installed and promoted under GATE-08/GATE-10; repository preparation is not deployment evidence.
 
   - finding_id: NET-001
     title: Production, staging, and unrelated workloads share a flat Docker network
@@ -223,18 +231,26 @@ findings:
     root_cause: A test-oriented onboarding profile is live without abuse, payload, identity-verification, or budget controls.
     dependencies: [SMTP or approved verification channel, quota policy, AUTH-002, API-001]
     remediation_type: [code, configuration, infrastructure, operational, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#AUTH-001
     changes:
-      - Add verified onboarding, bot resistance, layered rate limits, hard payload bounds, per-subject or tenant quotas, and provider budget ceilings.
+      - Closed self-registration by default, required verified email for any later approved onboarding flow, and retained the change behind the explicit Gate-06 contract.
+      - Added shared atomic Postgres request-rate, quota, concurrency, daily, and monthly provider-budget admission before every paid provider boundary.
+      - Added hard request, batch, item, byte, retry, and queue bounds; provider requests remain mechanically disabled until an externally approved worst-case cost contract exists.
     tests:
-      - Registration abuse, 429 and budget denial, payload boundary, recovery, and legitimate onboarding tests.
+      - Closed-registration and realm-policy tests; 429, shared quota, concurrency, daily/monthly budget, non-refundable admission, retry, payload, and provider-kill-switch tests.
     production_action_required: true
     approval_gate: GATE-06
     rollback: Feature-flag onboarding changes while retaining provider hard limits and server-side payload ceilings.
-    evidence_after: []
-    residual_risk: Automated account creation can continue to generate cost and storage load until production auth controls change.
+    evidence_after:
+      - docs/runbooks/auth-provider-cost-control.md
+      - docs/security/provider-budget-contract.yaml
+      - backend/sealai_v2/security/cost_control.py
+      - backend/sealai_v2/security/request_limits.py
+      - backend/sealai_v2/tests/test_cost_control.py
+      - backend/sealai_v2/tests/test_provider_admission_api.py
+    residual_risk: Production registration and provider paths remain in the audited state until Gate-06/Gate-08 deployment. Provider activation is BLOCKED_EXTERNAL on a verified worst-case contract and remains disabled in repository defaults.
 
   - finding_id: AUTH-002
     title: JWKS cache delays key revocation and unknown key IDs trigger synchronous refetches
@@ -246,18 +262,22 @@ findings:
     root_cause: Process-local JWKS caching has no bounded freshness, single-flight refresh, or negative cache.
     dependencies: [revocation SLA, Keycloak cache-control behavior, AUTH-001]
     remediation_type: [code, configuration, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#AUTH-002
     changes:
-      - Add bounded TTL and periodic refresh, single-flight fetching, negative caching, and a fail-closed revocation runbook.
+      - Added bounded fresh/stale JWKS windows, single-flight refresh, unknown-kid negative caching, key-rotation handling, maximum token age, and fail-closed identity-provider outage behavior.
+      - Enforced issuer, audience, expiration, subject, and token-time validation without accepting an indefinitely stale signing key.
     tests:
-      - Signing-key rotation and parallel unknown-key-ID fetch-amplification tests.
+      - Unknown kid, parallel amplification, key rotation, expired/old token, revoked key, Keycloak outage, stale cache, issuer, audience, and malformed-claim tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Fall back to a short bounded TTL implementation, never an indefinitely stale cache.
-    evidence_after: []
-    residual_risk: Compromised removed signing keys may remain accepted and forged key IDs can load the identity provider until deployed.
+    evidence_after:
+      - backend/sealai_v2/security/auth.py
+      - backend/sealai_v2/tests/test_auth.py
+      - backend/sealai_v2/tests/test_auth_hardening_contract.py
+    residual_risk: The production backend continues to use its current JWKS behavior until the exact image is deployed under Gate-08 and rotation/outage smoke tests pass.
 
   - finding_id: RAG-001
     title: Exact-answer cache and knowledge release are not bound to mutable ledger authority
@@ -478,19 +498,26 @@ findings:
     root_cause: Candidate validation is coupled to production identities and networks before final eligibility is established.
     dependencies: [REL-001, NET-001, scoped test credentials]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-003
       - The newly activated adaptive code and migration would still enter the existing production-secret candidate path on the next release.
     changes:
-      - Evaluate candidates in an isolated network against snapshot data and fake or tightly scoped provider identities before promotion.
+      - Added a dedicated RC Compose graph with isolated snapshot volumes, internal networks, scoped non-production identities, no published ports, and no production env-file inheritance.
+      - Bound snapshot hashes, runtime observations, provider mode, image digest, source tree, migration digest, dataset epoch, and authority epoch into final RC evidence.
+      - Kept stub-provider runs mechanically non-eligible and required the eligible external-provider run to stay behind its separate budget approval.
     tests:
-      - Pre-promotion denial tests for production secrets, data services, and provider egress.
+      - Production secret/env/network inheritance, mutable snapshot, unexpected egress, published-port, stub-eligibility, stale evidence, and effective-runtime denial tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Remove the isolated candidate without touching production; revert promotion wiring independently.
-    evidence_after: []
-    residual_risk: Candidate code can access or mutate production before failing its gate until isolation is enforced.
+    evidence_after:
+      - ops/staging/docker-compose.staging.yml
+      - ops/staging/rc-contract.sh
+      - docs/ops/RC_EVALUATION_ISOLATION.md
+      - backend/tests/test_rc_eval_isolation.py
+      - backend/tests/test_eval_rc_runtime_binding.py
+    residual_risk: The isolated RC path is not installed or exercised with approved external evidence. The existing production candidate path remains unsafe until GATE-08/GATE-10 cutover and post-install verification.
 
   - finding_id: LOG-001
     title: RAG ingest logs document metadata and raw exceptions
@@ -502,18 +529,24 @@ findings:
     root_cause: Debug context is serialized directly without a central allowlist, opaque references, redaction, or stable error codes.
     dependencies: [central redaction contract, observability update]
     remediation_type: [code, configuration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#LOG-001
     changes:
-      - Replace document identifiers with opaque references, emit allowlisted structured fields, and map exceptions to stable codes.
+      - Replaced RAG source, document, card, case, and exception context with allowlisted structured reason codes and opaque hashes.
+      - Prevented raw exceptions and payloads from entering outbox state, API errors, Nginx access logs, and routine RAG ingest logs.
     tests:
-      - Synthetic PII, secret, document-title, URL, and exception fixtures must not appear in logs or responses.
+      - Canary API key, bearer token, PII, document title, source URL, card/case identifier, exception payload, outbox-state, and Nginx query-log tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Retain redaction; use protected short-lived diagnostic sampling instead of restoring raw standard logs.
-    evidence_after: []
-    residual_risk: Logs and clients may receive sensitive metadata until the redaction layer is deployed.
+    evidence_after:
+      - backend/sealai_v2/api/routes/rag_ingest.py
+      - backend/sealai_v2/knowledge/outbox_worker.py
+      - backend/sealai_v2/memory/outbox_worker.py
+      - backend/sealai_v2/tests/test_rag_ingest.py
+      - nginx/default.conf
+    residual_risk: Production logs remain unchanged until Gate-08 deployment. Central cross-application redaction, telemetry retention, and live alert delivery remain P2 work.
 
   - finding_id: CONT-001
     title: Containers lack consistent limits and least-privilege runtime hardening
@@ -587,19 +620,25 @@ findings:
     root_cause: A minimal in-memory OIDC client omits durable one-time state correlation and URI logging lacks sensitive-route policy.
     dependencies: [compatible login flow, log redaction, APP-001]
     remediation_type: [code, configuration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#AUTH-004
       - Pull request 288 changes dashboard UI and API behavior but not OIDC state validation or sensitive query-string handling.
     changes:
-      - Validate one-time short-lived state and nonce, immediately scrub callback URLs, and remove or mask sensitive query arguments.
+      - Added one-time session-bound OIDC state, nonce, PKCE verifier/challenge, exact callback validation, bounded refresh, and logout/refresh race protection.
+      - Removed case identifiers from query strings, replaced the complete credential set atomically, and configured Nginx access logs without query strings, client IPs, or user agents.
     tests:
-      - Missing, mismatched, and replayed state denial plus token, code, and case-ID log-redaction tests.
+      - State mismatch/replay/expiry, nonce, PKCE, exact callback, refresh rotation/failure, delayed logout race, credential replacement, query privacy, and Nginx logging tests.
     production_action_required: true
     approval_gate: GATE-06
     rollback: Preserve query redaction; retain a compatible stateful login implementation during staged rollout.
-    evidence_after: []
-    residual_risk: Login correlation remains weak and URLs can leak identifiers until UI and proxy changes deploy together.
+    evidence_after:
+      - frontend-v2/src/auth/oidc.ts
+      - frontend-v2/src/auth/oidc.callback.test.ts
+      - frontend-v2/src/auth/oidc.refresh.test.ts
+      - frontend-v2/src/lib/caseId.ts
+      - nginx/default.conf
+    residual_risk: The production dashboard and proxy retain the audited flow until Gate-06/Gate-08 deployment and an exact callback/login/logout smoke succeeds.
 
   - finding_id: API-001
     title: Contribution and lead paths are unpaginated and lack complete consent or PII governance

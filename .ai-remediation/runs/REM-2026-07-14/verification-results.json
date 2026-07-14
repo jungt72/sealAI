@@ -180,6 +180,42 @@
       "evidence": [
         ".ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority"
       ]
+    },
+    {
+      "check_id": "P1-RELEASE-INTEGRITY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "The root-trusted promotion transaction binds immutable backend and dashboard artifacts, source/control trees, migration digest, external RC evidence, Nginx exposure, receipts, and rollback state. The release freeze and Gate-10 denial remain active; nothing was installed or deployed."
+    },
+    {
+      "check_id": "P1-RELEASE-INTEGRITY-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Two hundred twenty-one focused release, RC, dashboard, gate, migration, tree-hash, and backup-safety tests passed together with pinned Ruff format/lint, Bash, Compose, secret, frontend, and diff checks."
+    },
+    {
+      "check_id": "P1-NETWORK-HARDENING-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A deny-by-default segmented production target, per-consumer data networks, Qdrant authentication contract, least-privilege container policy, rendered-Compose guard, listener observer, and rollback-capable firewall runbook are implemented. Production topology, credentials, listeners, and firewall remain unchanged behind Gates 02, 05, 07, 08, and 10."
+    },
+    {
+      "check_id": "P1-NETWORK-HARDENING-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Twenty-six adversarial network contract tests plus inherited release regressions passed with pinned Ruff format/lint, production Compose rendering and policy validation, Bash syntax, secret scanning, and diff checks. No Docker daemon or network mutation was used."
+    },
+    {
+      "check_id": "P1-AUTH-COST-CONTROL-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Closed onboarding, bounded fail-closed JWKS validation, OIDC state/nonce/PKCE, atomic shared provider admission, worker cost boundaries, case/query privacy, and RAG log minimization are implemented. Production auth is unchanged; provider requests remain disabled and Gates 06/08 were not executed."
+    },
+    {
+      "check_id": "P1-AUTH-COST-CONTROL-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "The full 2110-test V2 suite, 319 frontend tests, 257 focused stack regressions, TypeScript, production frontend build, pinned Ruff format/lint, Bash, Compose, secret, npm-audit, and diff checks passed. No paid provider was contacted."
     }
   ],
   "production_mutations_performed": false,
