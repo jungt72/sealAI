@@ -226,7 +226,7 @@ def test_no_claims_after_all_attempts_fails_tagged_failed(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["ingested"] is False
-    assert "no doc-grounded claims" in body["reason"]
+    assert body["reason"] == "no_grounded_claims"
     assert body["attempts"] == 3
     assert (
         len(llm_client.calls) == 3
@@ -254,7 +254,7 @@ def test_llm_exception_retries_then_fails_safe_tagged_failed(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["ingested"] is False
-    assert "extraction_error" in body["reason"]
+    assert body["reason"] == "extraction_failed"
     assert body["attempts"] == 3
     assert add_calls == [("5", 15)]
 
@@ -278,7 +278,7 @@ def test_ledger_commit_error_retries_then_fails_safe_tagged_failed(monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["ingested"] is False
-    assert "knowledge_ledger_commit_failed" in body["reason"]
+    assert body["reason"] == "knowledge_ledger_commit_failed"
     assert body["attempts"] == 3
     assert len(llm_client.calls) == 3  # retried the full extraction+commit attempt
     assert add_calls == [("5", 15)]

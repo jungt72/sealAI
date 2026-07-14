@@ -58,6 +58,7 @@ from sealai_v2.knowledge.paperless_client import (
     remove_tag_from_document,
 )
 from sealai_v2.llm.factory import build_client_factory
+from sealai_v2.obs.log_redaction import opaque_reference, safe_code
 from sealai_v2.prompts.assembler import FachkarteExtractPromptAssembler
 
 router = APIRouter(prefix="/internal/rag", tags=["rag-ingest"])
@@ -113,12 +114,14 @@ def _mark_status(document_id: str, add: str, *, remove: tuple[str, ...] = ()) ->
             old_id = find_tag_id(old_name)
             if old_id is not None:
                 remove_tag_from_document(document_id, old_id)
-    except Exception:  # noqa: BLE001
-        _log.exception(
-            "rag_ingest: failed to update status tags for document %s (add=%s remove=%s)",
-            document_id,
-            add,
-            remove,
+    except Exception as exc:  # noqa: BLE001
+        _log.error(
+            "event=rag_ingest_status_update_failed document_ref=%s add_tag=%s "
+            "remove_count=%d error_class=%s",
+            opaque_reference("paperless", document_id),
+            safe_code(add),
+            len(remove),
+            safe_code(type(exc).__name__),
         )
 
 
@@ -131,10 +134,10 @@ async def _attempt(
     extractor = _build_extractor(settings)
     try:
         draft = await extractor.extract_document(text, source=source)
-    except Exception as exc:  # noqa: BLE001 — an LLM hiccup (rate limit/timeout) must not abort the loop
-        return None, f"extraction_error: {exc}"
+    except Exception:  # noqa: BLE001 — an LLM hiccup (rate limit/timeout) must not abort the loop
+        return None, "extraction_failed"
     if draft is None or draft.empty:
-        return None, "no doc-grounded claims extracted"
+        return None, "no_grounded_claims"
 
     # Stable id: the LLM's own titel_vorschlag can vary across runs of the SAME document, which
     # would otherwise slug into a DIFFERENT card id each time -> duplicate cards instead of a
@@ -143,8 +146,8 @@ async def _attempt(
 
     try:
         card = _card(draft.to_seed_entry())
-    except ValueError as exc:
-        return None, f"invalid draft: {exc}"
+    except ValueError:
+        return None, "invalid_extraction"
 
     catalog = FachkartenCatalog(cards=(card,))
     try:
@@ -163,8 +166,8 @@ async def _attempt(
             now=_utc_now(),
             actor="paperless-webhook",
         )
-    except Exception as exc:  # noqa: BLE001 - a transient DB failure is retryable
-        return None, f"knowledge_ledger_commit_failed: {exc}"
+    except Exception:  # noqa: BLE001 - a transient DB failure is retryable
+        return None, "knowledge_ledger_commit_failed"
 
     return {
         "ingested": True,
@@ -196,13 +199,14 @@ async def ingest(
         except PaperlessConfigError:
             _log.error("rag_ingest: PAPERLESS_URL/TOKEN not configured")
             return {"ingested": False, "reason": "paperless_not_configured"}
-        except Exception:  # noqa: BLE001 — a Paperless/network hiccup must never 500-loop the webhook
+        except Exception as exc:  # noqa: BLE001 — a Paperless/network hiccup must never 500-loop the webhook
             _log.warning(
-                "rag_ingest: fetch attempt %d/%d failed for document %s",
+                "event=rag_ingest_fetch_failed attempt=%d max_attempts=%d "
+                "document_ref=%s error_class=%s",
                 fetch_attempt,
                 _MAX_ATTEMPTS,
-                req.document_id,
-                exc_info=True,
+                opaque_reference("paperless", req.document_id),
+                safe_code(type(exc).__name__),
             )
     if not fetch_ok:
         _mark_status(req.document_id, _STATUS_FAILED_TAG)
@@ -225,12 +229,12 @@ async def ingest(
         result, last_reason = await _attempt(settings, text, source, req.document_id)
         if result is not None:
             _log.info(
-                "rag_ingest: card=%s claims=%d index=%s queued=%d source=%s attempt=%d/%d",
-                result["card_id"],
+                "event=rag_ingest_succeeded document_ref=%s claims=%d index_status=%s "
+                "points_queued=%d attempt=%d max_attempts=%d",
+                opaque_reference("paperless", req.document_id),
                 result["claims"],
-                result["index_status"],
+                safe_code(result["index_status"]),
                 result["points_queued"],
-                source,
                 attempt,
                 _MAX_ATTEMPTS,
             )
@@ -239,20 +243,19 @@ async def ingest(
             )
             return result
         _log.warning(
-            "rag_ingest: attempt %d/%d failed for document %s (%s): %s",
+            "event=rag_ingest_attempt_failed attempt=%d max_attempts=%d "
+            "document_ref=%s reason=%s",
             attempt,
             _MAX_ATTEMPTS,
-            req.document_id,
-            source,
-            last_reason,
+            opaque_reference("paperless", req.document_id),
+            safe_code(last_reason),
         )
 
     _log.error(
-        "rag_ingest: all %d attempts failed for document %s (%s): %s",
+        "event=rag_ingest_terminal_failure attempts=%d document_ref=%s reason=%s",
         _MAX_ATTEMPTS,
-        req.document_id,
-        source,
-        last_reason,
+        opaque_reference("paperless", req.document_id),
+        safe_code(last_reason),
     )
     _mark_status(req.document_id, _STATUS_FAILED_TAG)
     return {"ingested": False, "reason": last_reason, "attempts": _MAX_ATTEMPTS}

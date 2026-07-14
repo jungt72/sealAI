@@ -16,6 +16,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from sealai_v2.obs.log_redaction import (
+    opaque_reference,
+    safe_code_or_placeholder,
+)
+from sealai_v2.obs.telemetry_sampling import (
+    resolve_telemetry_sample_rate,
+    should_sample,
+)
+
 
 @dataclass(frozen=True)
 class LlmCallTelemetry:
@@ -55,26 +64,42 @@ class LoggingTelemetrySink:
     Makes cache/cost telemetry actually observable (grep the logs / ship to whatever log
     aggregation already exists) without requiring a metrics backend to be wired first."""
 
-    def __init__(self, logger_name: str = "sealai_v2.llm.telemetry") -> None:
+    def __init__(
+        self,
+        logger_name: str = "sealai_v2.llm.telemetry",
+        *,
+        sample_rate: float | None = None,
+    ) -> None:
         import logging
 
         self._logger = logging.getLogger(logger_name)
+        self._sample_rate = (
+            resolve_telemetry_sample_rate()
+            if sample_rate is None
+            else resolve_telemetry_sample_rate(str(sample_rate))
+        )
 
     def record(self, event: LlmCallTelemetry) -> None:
+        if event.status != "error" and not should_sample(self._sample_rate):
+            return
         self._logger.info(
             "llm_call provider=%s model=%s stage=%s cache_key=%s prompt_tokens=%d "
             "cached_tokens=%d completion_tokens=%d total_tokens=%d cache_ratio=%.3f "
             "latency_ms=%.1f status=%s error_type=%s",
-            event.provider,
-            event.model,
-            event.stage,
-            event.prompt_cache_key,
+            safe_code_or_placeholder(event.provider),
+            safe_code_or_placeholder(event.model),
+            safe_code_or_placeholder(event.stage, placeholder="none"),
+            (
+                opaque_reference("prompt_cache", event.prompt_cache_key)
+                if event.prompt_cache_key
+                else safe_code_or_placeholder(None, placeholder="none")
+            ),
             event.prompt_tokens,
             event.cached_tokens,
             event.completion_tokens,
             event.total_tokens,
             event.cache_ratio,
             event.latency_ms,
-            event.status,
-            event.error_type,
+            safe_code_or_placeholder(event.status),
+            safe_code_or_placeholder(event.error_type, placeholder="none"),
         )

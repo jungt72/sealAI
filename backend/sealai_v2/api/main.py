@@ -29,8 +29,10 @@ from sealai_v2.api.routes import (
     rag_ingest,
 )
 from sealai_v2.config.settings import Settings
+from sealai_v2.obs.log_redaction import configure_safe_logging
 from sealai_v2.pipeline.timing import configure_timing_logging
 
+configure_safe_logging()
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
 app.include_router(chat.router)

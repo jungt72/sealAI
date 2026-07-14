@@ -17,6 +17,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from sealai_v2.obs.log_redaction import (
+    opaque_reference,
+    safe_code_or_placeholder,
+)
+from sealai_v2.obs.telemetry_sampling import (
+    resolve_telemetry_sample_rate,
+    should_sample,
+)
+
 
 @dataclass(frozen=True)
 class RouteTelemetry:
@@ -43,21 +52,33 @@ class LoggingRouteTelemetrySink:
     module — no new dependency, no behavior change, safe to leave on by default (same reasoning as
     ``llm.telemetry.LoggingTelemetrySink``)."""
 
-    def __init__(self, logger_name: str = "sealai_v2.pipeline.routing") -> None:
+    def __init__(
+        self,
+        logger_name: str = "sealai_v2.pipeline.routing",
+        *,
+        sample_rate: float | None = None,
+    ) -> None:
         import logging
 
         self._logger = logging.getLogger(logger_name)
+        self._sample_rate = (
+            resolve_telemetry_sample_rate()
+            if sample_rate is None
+            else resolve_telemetry_sample_rate(str(sample_rate))
+        )
 
     def record(self, event: RouteTelemetry) -> None:
+        if not should_sample(self._sample_rate):
+            return
         self._logger.info(
             "route_decision route=%s reason=%s confidence=%.2f forced_full_pipeline=%s "
             "signal_count=%d latency_ms=%.2f prompt_family=%s l3_bypassed=%s",
-            event.route_name,
-            event.route_reason,
+            safe_code_or_placeholder(event.route_name),
+            opaque_reference("route_reason", event.route_reason),
             event.route_confidence,
             event.forced_full_pipeline,
             event.deterministic_signal_count,
             event.route_latency_ms,
-            event.prompt_family,
+            safe_code_or_placeholder(event.prompt_family, placeholder="none"),
             event.l3_bypassed,
         )

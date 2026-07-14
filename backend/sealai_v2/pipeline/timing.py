@@ -16,6 +16,8 @@ import sys
 import time
 import uuid
 
+from sealai_v2.obs.log_redaction import SafeLogValue
+
 logger = logging.getLogger("sealai_v2.timing")
 logger.addHandler(logging.NullHandler())
 
@@ -37,7 +39,7 @@ def configure_timing_logging() -> None:
 
 def emit(payload: dict) -> None:
     """One JSON line per turn. Module-level seam so tests can monkeypatch/capture."""
-    logger.info(json.dumps(payload, ensure_ascii=False))
+    logger.info("%s", SafeLogValue(json.dumps(payload, ensure_ascii=False)))
 
 
 class TurnTimer:

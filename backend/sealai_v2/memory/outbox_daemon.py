@@ -17,6 +17,7 @@ from threading import Event
 from sqlalchemy import text
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.obs.log_redaction import configure_safe_logging
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.knowledge.qdrant_retrieval import _make_client, _make_sparse_embedder
 from sealai_v2.knowledge.outbox_worker import (
@@ -137,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sealai_v2.memory.outbox_daemon")
     parser.add_argument("--healthcheck", action="store_true")
     args = parser.parse_args(argv)
+    configure_safe_logging()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
