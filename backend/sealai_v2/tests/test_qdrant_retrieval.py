@@ -462,7 +462,9 @@ def test_build_retriever_fails_closed_on_construction_error(monkeypatch):
         raise RuntimeError("simulated unavailable dep / unreachable qdrant")
 
     monkeypatch.setattr(qr, "QdrantFachkartenRetriever", _boom)
-    with pytest.raises(RuntimeError, match="configured qdrant retriever is unavailable"):
+    with pytest.raises(
+        RuntimeError, match="configured qdrant retriever is unavailable"
+    ):
         _build_retriever(
             Settings(
                 retriever_backend="qdrant",
