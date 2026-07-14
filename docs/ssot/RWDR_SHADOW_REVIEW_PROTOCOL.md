@@ -76,6 +76,60 @@ Production shadow telemetry is not expanded with raw case context merely to
 make this review convenient. The worksheet uses controlled test cases or a
 separately approved data-handling process.
 
+## Controlled review workflow
+
+The repository provides a cost-free controlled review path for the first
+human comparison. It executes the production `rwdr.v1` policy against 30
+versioned CaseState variants, compares the resulting question with a mapped
+legacy question, and makes no LLM, retrieval, network, or production-database
+call:
+
+```text
+PYTHONPATH=backend python -m sealai_v2.eval.interview_shadow_review export \
+  --output-dir .runtime/rwdr-shadow-review/v1
+```
+
+The export contains:
+
+- `worksheet.csv`: balanced, source-blinded A/B questions with empty human
+  rating fields;
+- `blinding_key.json`: source mapping, need IDs, divergence type, and rule
+  references; the reviewer must not open it before completing the worksheet;
+- `review_attestation.json`: reviewer identity, timestamp, and blinded-review
+  attestation template;
+- `manifest.json`: corpus, pack, worksheet, key, and attestation hashes plus the
+  explicit zero-call and no-auto-activation posture.
+
+The reviewer completes every worksheet row using only the allowed values:
+
+```text
+preferred_next_action: A | B | tie
+relevant_to_case: A | B | both | neither
+critical_gate_skipped: A | B | both | none
+asks_documented_information: A | B | both | none
+answerable_or_handles_unknown: A | B | both | neither
+rationale: non-empty human explanation
+```
+
+After the worksheet and attestation are complete, the result can be validated
+and unblinded without an LLM call:
+
+```text
+PYTHONPATH=backend python -m sealai_v2.eval.interview_shadow_review adjudicate \
+  --review-dir .runtime/rwdr-shadow-review/v1
+```
+
+The command rejects changed case context, questions, row IDs, source mapping,
+corpus, or domain pack. Its `adjudication.json` reports human preference and
+quality counts, but always carries `automatic_activation_authorized=false`.
+It does not issue a PASS/FAIL verdict and cannot replace the owner's cutover
+decision.
+
+Controlled cases are review evidence for question-selection quality, not
+production incidence evidence. Before a visible cutover, the release owner
+must explicitly record whether the controlled sample is sufficient or whether
+a separately approved production-derived review population is also required.
+
 ## Cutover gate
 
 No code or metric self-authorizes activation. A later chat-cutover change

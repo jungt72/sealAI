@@ -36,7 +36,9 @@ auditable.
   the full adjudicated reference replay.
 - Shadow promotion follows `RWDR_SHADOW_REVIEW_PROTOCOL.md`: tenant-admin
   aggregate reporting, at least 30 reviewable divergence cases, and a blinded
-  human A/B worksheet. The report cannot authorize activation itself.
+  human A/B worksheet. The versioned controlled-case exporter and adjudicator
+  run without LLM or network calls, preserve A/B source blinding, and reject
+  modified review units. Their report cannot authorize activation itself.
 
 ## Incident and CAPA
 

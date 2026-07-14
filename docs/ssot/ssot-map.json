@@ -109,7 +109,10 @@
         "docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md",
         "backend/sealai_v2/core/interview/",
         "backend/sealai_v2/knowledge/domain_packs/rwdr.v1.json",
-        "backend/sealai_v2/tests/test_adaptive_interview_policy.py"
+        "backend/sealai_v2/eval/interview_shadow_review.py",
+        "backend/sealai_v2/eval/seed_cases/rwdr_shadow_review_v1.json",
+        "backend/sealai_v2/tests/test_adaptive_interview_policy.py",
+        "backend/sealai_v2/tests/test_interview_shadow_review.py"
       ]
     }
   }
