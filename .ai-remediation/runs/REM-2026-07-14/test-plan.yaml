@@ -1,0 +1,38 @@
+schema_version: 1
+run_id: REM-2026-07-14
+global_preconditions:
+  - no production credentials or production data in tests
+  - isolated local services only
+  - secret scan runs before and after generated artifacts
+suites:
+  p0-secret-hygiene:
+    - synthetic positive patterns for PEM, JWK, JWT, Bearer, API keys, connection strings, env files, dumps, and backups
+    - safe placeholder negative fixtures
+    - filename and content traversal including Markdown and extensionless files
+    - tracked-tree and history modes
+    - report and log redaction assertions
+    - CI workflow fail-closed behavior
+  p0-storage-safety:
+    - threshold boundary tests at 74, 75, 84, and 85 percent
+    - dry-run and lock contention tests
+    - active volume and unverified backup protection
+    - build, pull, backup, and release preflight denial at critical space
+    - structured event and alert contract tests
+  p0-redis-stability:
+    - no Redis, Celery, or Kombu dependency or import in V2
+    - no Redis credential or dependency in V2 Compose services
+    - V2 API and outbox worker function when Redis is absent
+    - read-only memory thresholds, write-error counters, namespace redaction, and unknown-category denial
+    - non-rebuildable queue and checkpoint protection plus metrics and alerts
+  p1-data-authority:
+    - authority epoch invalidation after quarantine, revocation, and expiry
+    - ledger and Qdrant reconciliation
+    - exact-answer cache namespace and cardinality bounds
+  regression:
+    - backend lint and focused tests
+    - frontend lint, typecheck, and focused tests when touched
+    - compose configuration validation
+    - repository-wide secret scan
+production_verification:
+  status: NOT_AUTHORIZED
+  requires_gate: GATE-08

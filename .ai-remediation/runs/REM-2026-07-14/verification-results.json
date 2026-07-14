@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "updated_at": "2026-07-14T11:29:48Z",
+  "overall_status": "IN_PROGRESS",
+  "checks": [
+    {
+      "check_id": "REPO-FETCH-001",
+      "scope": "local_repository",
+      "status": "PASSED",
+      "summary": "Origin refs fetched and pruned; origin/main fingerprint recorded."
+    },
+    {
+      "check_id": "PROD-FINGERPRINT-001",
+      "scope": "production_read_only",
+      "status": "PASSED",
+      "summary": "Expected clean production commit and healthy core services re-confirmed."
+    },
+    {
+      "check_id": "PROD-STOP-CONDITIONS-001",
+      "scope": "production_read_only",
+      "status": "PASSED_WITH_RISK",
+      "summary": "No immediate stop condition triggered; storage remains critical at 95 percent and Redis remains near maxmemory."
+    },
+    {
+      "check_id": "FINDINGS-REVERIFY-001",
+      "scope": "repository_and_production",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Reverification found 22 confirmed and one partially confirmed finding; no finding was removed or reduced by the four commits after production."
+    },
+    {
+      "check_id": "POST-PRODUCTION-COMMITS-001",
+      "scope": "repository_git_objects",
+      "status": "PASSED",
+      "summary": "Two content commits and two merge commits affect only offline RWDR shadow review, seed cases, tests, domain pack, and documentation; none changes an audited remediation path."
+    },
+    {
+      "check_id": "P0-SECRET-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Seventeen credential, raw-diagnostic, and ACME runtime artifacts were removed; full non-ignored worktree scanning, redaction, hooks, CI, lifecycle, rotation, permission, and history plans are implemented and locally tested. Production rotation, permission repair, and history rewrite remain gated."
+    },
+    {
+      "check_id": "P0-SECRET-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Fifteen scanner/control tests, twenty-one affected backend tests, three frontend auth-token tests, one SEO redaction test, Ruff, hook shell syntax, workflow YAML, fail-closed invalid-tree behavior, and diff checks passed."
+    }
+  ],
+  "production_mutations_performed": false,
+  "secret_values_recorded": false
+}

@@ -1,0 +1,75 @@
+schema_version: 1
+run_id: REM-2026-07-14
+policy: explicit_single_gate_only
+default_status: PENDING
+approvals:
+  - gate_id: GATE-01
+    name: CREDENTIAL_ROTATION
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-02
+    name: FILE_PERMISSION_REMEDIATION
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-03
+    name: STORAGE_CLEANUP
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-04
+    name: REDIS_DATA_CHANGE
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-05
+    name: NETWORK_CUTOVER
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-06
+    name: AUTH_FLOW_CHANGE
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-07
+    name: DATABASE_MIGRATION
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-08
+    name: PRODUCTION_DEPLOYMENT
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-09
+    name: HISTORY_REWRITE
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null
+  - gate_id: GATE-10
+    name: RELEASE_FREEZE_LIFT
+    status: PENDING
+    approved_by: null
+    approved_at: null
+    approval_scope: null
+    expires_at: null

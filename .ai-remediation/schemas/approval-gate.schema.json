@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealingai.local/schemas/approval-gate.schema.json",
+  "title": "sealingAI production approval gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["gate_id", "objective", "current_state", "exact_actions", "exact_commands_sanitized", "affected_services", "expected_downtime", "data_risk", "security_risk", "preconditions", "backup_status", "verification", "rollback", "stop_conditions"],
+  "properties": {
+    "gate_id": {"type": "string", "pattern": "^GATE-(0[1-9]|10)$"},
+    "objective": {"type": "string", "minLength": 1},
+    "current_state": {"type": "string", "minLength": 1},
+    "exact_actions": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "exact_commands_sanitized": {"type": "array", "items": {"type": "string"}},
+    "affected_services": {"type": "array", "items": {"type": "string"}},
+    "expected_downtime": {"type": "string"},
+    "data_risk": {"type": "string"},
+    "security_risk": {"type": "string"},
+    "preconditions": {"type": "array", "items": {"type": "string"}},
+    "backup_status": {"type": "string"},
+    "verification": {"type": "array", "items": {"type": "string"}},
+    "rollback": {"type": "array", "items": {"type": "string"}},
+    "stop_conditions": {"type": "array", "items": {"type": "string"}}
+  }
+}
