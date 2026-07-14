@@ -30,15 +30,9 @@ def test_findings_matrix_is_complete_unique_and_schema_shaped() -> None:
 
     required = set(schema["required"])
     allowed_properties = set(schema["properties"])
-    verification_statuses = set(
-        schema["properties"]["verification_status"]["enum"]
-    )
-    implementation_statuses = set(
-        schema["properties"]["implementation_status"]["enum"]
-    )
-    remediation_types = set(
-        schema["properties"]["remediation_type"]["items"]["enum"]
-    )
+    verification_statuses = set(schema["properties"]["verification_status"]["enum"])
+    implementation_statuses = set(schema["properties"]["implementation_status"]["enum"])
+    remediation_types = set(schema["properties"]["remediation_type"]["items"]["enum"])
 
     finding_ids: list[str] = []
     for finding in findings:
@@ -85,8 +79,7 @@ def test_local_changes_do_not_claim_production_verification() -> None:
     assert state["production_mutations_authorized"] is False
     assert state["findings"]["remediation_verified_in_production"] == 0
     assert all(
-        finding["implementation_status"] != "VERIFIED"
-        for finding in matrix["findings"]
+        finding["implementation_status"] != "VERIFIED" for finding in matrix["findings"]
     )
 
 
