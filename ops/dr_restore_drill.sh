@@ -125,6 +125,14 @@ if docker_local network ls --format '{{.Name}}' | grep -Eq '^sealai(_default)?$'
   fail production_network_present
 fi
 
+# Authorize the exact encrypted snapshot before ``restic check --read-data``
+# or restore can transfer any backup payload to this runner. The restored
+# manifest is bound to the same receipt again before containers start.
+/usr/bin/python3 -I "${DR_HELPER}" verify-gate-08-selection \
+  --receipt "${GATE08_RECEIPT}" --action dr_restore_drill \
+  --set-id "${SET_ID}" --snapshot-id "${SNAPSHOT_ID}" >/dev/null \
+  || fail gate_08_missing
+
 STARTED_AT=$(date +%s)
 RUN_TOKEN=$(/usr/bin/python3 -I -c 'import secrets; print(secrets.token_hex(8))')
 PROJECT="sealaidr${SET_ID:0:8}${RUN_TOKEN:0:8}"
@@ -146,7 +154,8 @@ restic restore "${SNAPSHOT_ID}" --target "${RESTORE_DIR}" \
   || fail restored_set_mismatch
 /usr/bin/python3 -I "${DR_HELPER}" verify-gate-08 \
   --root "${RESTORED_SET}" --receipt "${GATE08_RECEIPT}" \
-  --action dr_restore_drill >/dev/null || fail gate_08_missing
+  --action dr_restore_drill --snapshot-id "${SNAPSHOT_ID}" >/dev/null \
+  || fail gate_08_missing
 
 POSTGRES_PASSWORD=$(/usr/bin/python3 -I -c 'import secrets; print(secrets.token_urlsafe(48))')
 QDRANT_API_KEY=$(/usr/bin/python3 -I -c 'import secrets; print(secrets.token_urlsafe(48))')

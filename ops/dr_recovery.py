@@ -1131,8 +1131,7 @@ def write_drill_receipt(
     return receipt
 
 
-def verify_gate08_receipt(
-    root: Path,
+def _read_gate08_receipt(
     receipt_path: Path,
     action: str,
     *,
@@ -1144,32 +1143,38 @@ def verify_gate08_receipt(
     metadata = _regular_file(receipt_path, private=True, reason="unsafe_gate_receipt")
     if metadata.st_uid != required_uid:
         _fail("unsafe_gate_receipt")
-    manifest = verify_manifest(root)
-    receipt = _require_object(
-        _read_json(receipt_path),
-        {
-            "schema_version",
-            "gate_id",
-            "action",
-            "manifest_sha256",
-            "set_id_sha256",
-            "approval_id_sha256",
-            "issued_at",
-            "expires_at",
-        },
-        reason="invalid_gate_receipt_schema",
-    )
+    keys = {
+        "schema_version",
+        "gate_id",
+        "action",
+        "manifest_sha256",
+        "set_id_sha256",
+        "approval_id_sha256",
+        "issued_at",
+        "expires_at",
+    }
+    if action == "dr_restore_drill":
+        keys.add("snapshot_id_sha256")
+    raw_receipt = _read_json(receipt_path)
+    if (
+        not isinstance(raw_receipt, dict)
+        or raw_receipt.get("schema_version") != SCHEMA_VERSION
+        or raw_receipt.get("gate_id") != "GATE-08"
+        or raw_receipt.get("action") != action
+    ):
+        _fail("gate_receipt_scope_mismatch")
+    receipt = _require_object(raw_receipt, keys, reason="invalid_gate_receipt_schema")
     if (
         receipt["schema_version"] != SCHEMA_VERSION
         or receipt["gate_id"] != "GATE-08"
         or receipt["action"] != action
     ):
         _fail("gate_receipt_scope_mismatch")
-    if receipt["manifest_sha256"] != _manifest_digest(root):
-        _fail("gate_manifest_mismatch")
-    if receipt["set_id_sha256"] != manifest["set_id_sha256"]:
-        _fail("gate_set_mismatch")
+    _require_sha256(receipt["manifest_sha256"], reason="invalid_gate_manifest")
+    _require_sha256(receipt["set_id_sha256"], reason="invalid_gate_set")
     _require_sha256(receipt["approval_id_sha256"], reason="invalid_gate_approval_id")
+    if action == "dr_restore_drill":
+        _require_sha256(receipt["snapshot_id_sha256"], reason="invalid_gate_snapshot")
     issued_at = _parse_timestamp(receipt["issued_at"], reason="invalid_gate_issued_at")
     expires_at = _parse_timestamp(
         receipt["expires_at"], reason="invalid_gate_expires_at"
@@ -1182,6 +1187,66 @@ def verify_gate08_receipt(
         or observed_now > expires_at
     ):
         _fail("gate_receipt_expired")
+    return receipt
+
+
+def verify_gate08_selection(
+    receipt_path: Path,
+    action: str,
+    *,
+    set_id: str,
+    snapshot_id: str,
+    now: dt.datetime | None = None,
+    required_uid: int = 0,
+) -> dict[str, Any]:
+    """Authorize the exact offsite object before any full-data read begins."""
+    if action != "dr_restore_drill":
+        _fail("invalid_gate_action")
+    _require_sha256(set_id, reason="invalid_set_id")
+    _require_sha256(snapshot_id, reason="invalid_snapshot_id")
+    receipt = _read_gate08_receipt(
+        receipt_path, action, now=now, required_uid=required_uid
+    )
+    if receipt["set_id_sha256"] != set_id:
+        _fail("gate_set_mismatch")
+    if (
+        receipt["snapshot_id_sha256"]
+        != hashlib.sha256(snapshot_id.encode("ascii")).hexdigest()
+    ):
+        _fail("gate_snapshot_mismatch")
+    return receipt
+
+
+def verify_gate08_receipt(
+    root: Path,
+    receipt_path: Path,
+    action: str,
+    *,
+    snapshot_id: str | None = None,
+    now: dt.datetime | None = None,
+    required_uid: int = 0,
+) -> dict[str, Any]:
+    receipt = _read_gate08_receipt(
+        receipt_path, action, now=now, required_uid=required_uid
+    )
+    manifest = verify_manifest(root)
+    if receipt["manifest_sha256"] != _manifest_digest(root):
+        _fail("gate_manifest_mismatch")
+    if receipt["set_id_sha256"] != manifest["set_id_sha256"]:
+        _fail("gate_set_mismatch")
+    if action == "dr_restore_drill":
+        if snapshot_id is None:
+            _fail("gate_snapshot_required")
+        verify_gate08_selection(
+            receipt_path,
+            action,
+            set_id=manifest["set_id_sha256"],
+            snapshot_id=snapshot_id,
+            now=now,
+            required_uid=required_uid,
+        )
+    elif snapshot_id is not None:
+        _fail("unexpected_gate_snapshot")
     return receipt
 
 
@@ -1322,6 +1387,13 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--root", required=True, type=_path)
     gate.add_argument("--receipt", required=True, type=_path)
     gate.add_argument("--action", required=True, choices=sorted(ALLOWED_GATE_ACTIONS))
+    gate.add_argument("--snapshot-id")
+
+    selection = commands.add_parser("verify-gate-08-selection")
+    selection.add_argument("--receipt", required=True, type=_path)
+    selection.add_argument("--action", required=True, choices=("dr_restore_drill",))
+    selection.add_argument("--set-id", required=True)
+    selection.add_argument("--snapshot-id", required=True)
 
     metrics = commands.add_parser("render-metrics")
     metrics.add_argument("--status", required=True, type=_path)
@@ -1381,8 +1453,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             _emit("ok", "restore_drill_receipt_written")
         elif args.command == "verify-gate-08":
-            verify_gate08_receipt(args.root, args.receipt, args.action)
+            verify_gate08_receipt(
+                args.root,
+                args.receipt,
+                args.action,
+                snapshot_id=args.snapshot_id,
+            )
             _emit("ok", "gate_08_verified")
+        elif args.command == "verify-gate-08-selection":
+            verify_gate08_selection(
+                args.receipt,
+                args.action,
+                set_id=args.set_id,
+                snapshot_id=args.snapshot_id,
+            )
+            _emit("ok", "gate_08_selection_verified")
         elif args.command == "render-metrics":
             payload = render_metrics(args.status).encode("ascii")
             _atomic_write(args.output, payload, replace=True)

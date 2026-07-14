@@ -392,11 +392,12 @@ findings:
       - Added provider-neutral Restic transport with no inherited credential environment, short manifest-bound Gate-08 receipts, dry-run-only retention, and full-download receipt requirements.
       - Added a dedicated internal-network restore runner for Postgres integrity, Qdrant checksum/point/tenant invariants, file verification, RPO/RTO receipts, and monthly scheduling.
       - Receipt creation now rejects recovery points that are stale at verification time, and metric rendering rejects omission of any required recovery component.
+      - The restore runner verifies a short-lived Gate-08 receipt bound to the exact set and snapshot identifier before any full-data read, then rebinds it to the restored manifest before containers start.
     tests:
       - Capacity stop conditions, descriptor and inode binding, poisoned environment and shell functions, no-clobber publication, retention, checksum, offsite receipt, Qdrant deletion, and restore-response tests.
       - Empty-host execution against real offsite data remains blocked on external storage, key custody, a dedicated runner, P1-D rebuild authority, and Gate-08.
       - Adversarial manifest, receipt, secret-inventory, Qdrant-plan, metrics, and isolated-runner contract tests.
-      - Stale recovery-point receipt and missing-component metric regressions; 91 combined backup/DR tests passed.
+      - Stale recovery-point receipt, missing-component metric, pre-download gate-order, set/snapshot mismatch, and missing-snapshot-binding regressions; 92 combined backup/DR tests passed.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Add offsite copies without reducing local retention until two successful restore drills.

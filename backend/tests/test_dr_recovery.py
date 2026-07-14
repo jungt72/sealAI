@@ -384,6 +384,66 @@ def test_gate_08_is_short_lived_action_and_manifest_bound(tmp_path: Path) -> Non
         )
 
 
+def test_restore_gate_precedes_data_read_and_binds_snapshot(tmp_path: Path) -> None:
+    root = _manifest_set(tmp_path)
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    manifest = dr.verify_manifest(root)
+    snapshot_id = "7" * 64
+    receipt = tmp_path / "restore-gate.json"
+    _json(
+        receipt,
+        {
+            "schema_version": 1,
+            "gate_id": "GATE-08",
+            "action": "dr_restore_drill",
+            "manifest_sha256": dr._manifest_digest(root),
+            "set_id_sha256": manifest["set_id_sha256"],
+            "snapshot_id_sha256": hashlib.sha256(
+                snapshot_id.encode("ascii")
+            ).hexdigest(),
+            "approval_id_sha256": "4" * 64,
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + dt.timedelta(minutes=10)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        },
+    )
+
+    dr.verify_gate08_selection(
+        receipt,
+        "dr_restore_drill",
+        set_id=manifest["set_id_sha256"],
+        snapshot_id=snapshot_id,
+        now=now,
+        required_uid=os.geteuid(),
+    )
+    dr.verify_gate08_receipt(
+        root,
+        receipt,
+        "dr_restore_drill",
+        snapshot_id=snapshot_id,
+        now=now,
+        required_uid=os.geteuid(),
+    )
+    with pytest.raises(dr.DrError, match="gate_snapshot_mismatch"):
+        dr.verify_gate08_selection(
+            receipt,
+            "dr_restore_drill",
+            set_id=manifest["set_id_sha256"],
+            snapshot_id="8" * 64,
+            now=now,
+            required_uid=os.geteuid(),
+        )
+    with pytest.raises(dr.DrError, match="gate_snapshot_required"):
+        dr.verify_gate08_receipt(
+            root,
+            receipt,
+            "dr_restore_drill",
+            now=now,
+            required_uid=os.geteuid(),
+        )
+
+
 def test_metrics_have_only_stable_names_and_component_label(tmp_path: Path) -> None:
     status = tmp_path / "status.json"
     fields = {
@@ -552,6 +612,10 @@ def test_offsite_and_restore_scripts_preserve_security_boundaries() -> None:
         "docker_socket_unsafe",
     ):
         assert contract in restore
+    assert restore.index("verify-gate-08-selection") < restore.index(
+        "\nrestic check --read-data"
+    )
+    assert '--snapshot-id "${SNAPSHOT_ID}"' in restore
 
 
 def test_restore_compose_is_internal_unpublished_and_pinned() -> None:

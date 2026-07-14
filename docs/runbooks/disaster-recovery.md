@@ -148,14 +148,19 @@ DR_VERIFIER_IMAGE=<registry>/<backend>@sha256:<64-hex>
 `pull_policy: never` makes a missing image fail closed. The drill generates only ephemeral
 non-production Postgres/Qdrant credentials and removes their private env file on exit. It performs:
 
-1. complete Restic repository read-data verification;
-2. exact snapshot download and recovery-set manifest verification;
-3. fresh manifest-bound `GATE-08` verification before containers start;
+1. fresh `GATE-08` verification bound to the exact set ID and SHA-256 of the selected Restic
+   snapshot ID, before any full-data read or restore begins;
+2. complete Restic repository read-data verification;
+3. exact snapshot download followed by a second manifest- and snapshot-bound `GATE-08` check;
 4. full `pg_dumpall` restore, V2 schema assertion, and `pg_amcheck`;
 5. Qdrant snapshot recovery with checksum, exact point count, duplicate-ID detection, and exact
    tenant-count digest;
 6. a second whole-set verification; and
 7. canonical offsite and restore receipts bound to the manifest and set ID.
+
+The short-lived `dr_restore_drill` gate receipt must contain `snapshot_id_sha256`, the SHA-256 of
+the 64-hex Restic snapshot ID. This value is an identifier binding, not backup content. A receipt
+for another set or snapshot is rejected before `restic check --read-data` can read payload bytes.
 
 Run an explicitly selected set/snapshot with:
 
