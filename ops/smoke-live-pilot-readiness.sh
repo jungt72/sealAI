@@ -3,12 +3,16 @@ set -euo pipefail
 readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/lib/verified-tls.sh
+source "${SCRIPT_DIR}/lib/verified-tls.sh"
+
 BASE_URL="${BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"
-TMP_DIR="${TMPDIR:-/tmp}"
-BODY_FILE="${TMP_DIR}/sealai-live-smoke-body.$$"
-HEADER_FILE="${TMP_DIR}/sealai-live-smoke-headers.$$"
-trap 'rm -f "${BODY_FILE}" "${HEADER_FILE}"' EXIT
+WORK_DIR=""
+BODY_FILE=""
+HEADER_FILE=""
+trap 'if [[ -n "${WORK_DIR}" ]]; then rm -rf -- "${WORK_DIR}"; fi' EXIT
 
 pass() { printf 'PASS: %s\n' "$1"; }
 fail() {
@@ -25,19 +29,27 @@ need_cmd() {
 
 need_cmd curl
 need_cmd jq
+need_cmd mktemp
+sealai_configure_tls_client || exit $?
+sealai_validate_https_origin "$BASE_URL" BASE_URL || exit $?
+WORK_DIR="$(mktemp -d /tmp/sealai-live-smoke.XXXXXX)"
+BODY_FILE="${WORK_DIR}/body.txt"
+HEADER_FILE="${WORK_DIR}/headers.txt"
 
 request_code() {
   local method="$1"
   local url="$2"
   local data="${3:-}"
   if [[ "$method" == "GET" ]]; then
-    curl -k -sS --max-time 15 -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}' "$url"
+    curl "${SEALAI_CURL_TLS_ARGS[@]}" -sS --max-time 15 \
+      -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}' -- "$url"
   else
-    curl -k -sS --max-time 15 -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
+    curl "${SEALAI_CURL_TLS_ARGS[@]}" -sS --max-time 15 \
+      -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}' \
       -X "$method" \
       -H 'Content-Type: application/json' \
       -d "$data" \
-      "$url"
+      -- "$url"
   fi
 }
 
@@ -92,12 +104,18 @@ assert_no_legacy_domain() {
 printf 'SeaLAI live pilot readiness smoke (%s)\n' "$BASE_URL"
 
 assert_code GET /api/health 200
+sealai_assert_security_headers "$HEADER_FILE" false \
+  || fail 'frontend API health is missing required security headers'
+pass 'frontend API health has HSTS, XCTO, referrer, and permissions policy'
 assert_json_field '.status == "ok"' 'frontend API health reports ok'
 
 assert_code GET /api/v2/health 200
 assert_json_field '.status == "ok"' 'backend-v2 health reports ok'
 
 assert_code_any GET /dashboard/new '200,302,307,308'
+sealai_assert_security_headers "$HEADER_FILE" true \
+  || fail 'dashboard auth boundary is missing required security headers'
+pass 'dashboard auth boundary has HSTS, CSP, XCTO, referrer, and permissions policy'
 assert_no_legacy_domain 'dashboard auth boundary'
 # frontend-v2 is a client-rendered Vite SPA: the server-side HTML shell never
 # contains brand strings, a Next.js "__next" marker, or a server-redirected

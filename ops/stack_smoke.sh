@@ -5,6 +5,8 @@ export PATH
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+# shellcheck source=ops/lib/verified-tls.sh
+source "${SCRIPT_DIR}/lib/verified-tls.sh"
 
 COMPOSE_ARGS=(
   --env-file "$REPO_ROOT/.env.prod"
@@ -24,6 +26,8 @@ SERVICE_SLEEP_SECONDS="${STACK_SMOKE_SERVICE_SLEEP_SECONDS:-2}"
 HTTP_ATTEMPTS="${STACK_SMOKE_HTTP_ATTEMPTS:-45}"
 HTTP_SLEEP_SECONDS="${STACK_SMOKE_HTTP_SLEEP_SECONDS:-2}"
 KEYCLOAK_OIDC_URL="${KEYCLOAK_OIDC_URL:-https://sealingai.com/realms/sealAI/.well-known/openid-configuration}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-https://sealingai.com}"
+PUBLIC_BASE_URL="${PUBLIC_BASE_URL%/}"
 
 dump_diagnostics() {
   set +e
@@ -39,11 +43,12 @@ dump_diagnostics() {
 
   echo
   echo "=== public backend health ==="
-  curl -k -i -sS --max-time 10 https://sealingai.com/api/v2/health || true
+  curl "${SEALAI_CURL_TLS_ARGS[@]}" -i -sS --max-time 10 \
+    -- "${PUBLIC_BASE_URL}/api/v2/health" || true
 
   echo
   echo "=== keycloak oidc metadata ==="
-  curl -k -i -sS --max-time 10 "$KEYCLOAK_OIDC_URL" || true
+  curl "${SEALAI_CURL_TLS_ARGS[@]}" -i -sS --max-time 10 -- "$KEYCLOAK_OIDC_URL" || true
 
   echo
   echo "=== backend-v2 internal health ==="
@@ -83,6 +88,9 @@ ensure_command() {
 
 ensure_command docker
 ensure_command curl
+sealai_configure_tls_client || exit $?
+sealai_validate_https_origin "$PUBLIC_BASE_URL" PUBLIC_BASE_URL || exit $?
+sealai_validate_https_url "$KEYCLOAK_OIDC_URL" KEYCLOAK_OIDC_URL || exit $?
 
 services_ready() {
   local service
@@ -141,7 +149,8 @@ http_get_with_retries() {
   delim="__STACK_SMOKE_HTTP_CODE__"
 
   for ((attempt = 1; attempt <= HTTP_ATTEMPTS; attempt++)); do
-    response="$(curl -k --max-time 10 -sS -w "${delim}%{http_code}" "$url")" || response=""
+    response="$(curl "${SEALAI_CURL_TLS_ARGS[@]}" --max-time 10 -sS \
+      -w "${delim}%{http_code}" -- "$url")" || response=""
 
     if [[ -n "$response" && "$response" == *"$delim"* ]]; then
       http_code="${response##*$delim}"
@@ -163,7 +172,7 @@ http_get_with_retries() {
 
 check_public_backend_health() {
   http_get_with_retries \
-    "https://sealingai.com/api/v2/health" \
+    "${PUBLIC_BASE_URL}/api/v2/health" \
     '"status":"ok"' \
     "public backend health"
 }

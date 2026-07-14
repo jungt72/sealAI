@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T19:40:45Z",
+  "updated_at": "2026-07-14T23:12:03Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -128,7 +128,19 @@
       "check_id": "P2-OBSERVABILITY-TESTS-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "The complete 2412-test backend/V2 collection passed with 2411 successes and one pre-existing skip, together with pinned Ruff, real daemon-free Compose rendering, YAML semantics, loopback route rehearsal, secret scan, and diff checks. Native promtool/amtool, real exporter digests/identities, cAdvisor host compatibility, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
+      "summary": "The complete 2427-test backend/V2 collection passed with 2426 successes and one pre-existing skip, together with pinned Ruff, real daemon-free Compose rendering, YAML semantics, loopback route rehearsal, secret scan, and diff checks. Native promtool/amtool, real exporter digests/identities, cAdvisor host compatibility, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
+    },
+    {
+      "check_id": "P2-TLS-CONTRACT-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "All five previously bypass-capable operational TLS smokes now share a fail-closed HTTPS, trust-store, TLS-version, hostname, SAN, and security-header contract without an insecure transport path. The canonical www policy is explicit. Production DNS, certificate, headers, and redirect remain unchanged and require GATE-08."
+    },
+    {
+      "check_id": "P2-TLS-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Twenty focused TLS and remediation-control tests and the complete 2427-test backend/V2 collection passed with one pre-existing skip, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks. Negative URL, CA-file, missing-header, bypass, and Nginx inheritance fixtures fail closed; no external endpoint was contacted."
     }
   ],
   "production_mutations_performed": false,

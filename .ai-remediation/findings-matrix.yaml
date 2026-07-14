@@ -588,15 +588,23 @@ findings:
     root_cause: Hostname, DNS, certificate, proxy-header, and smoke-test sources of truth are not synchronized and TLS verification is bypassed in smoke tests.
     dependencies: [hostname owner decision, certificate issuance plan, external DNS access]
     remediation_type: [code, configuration, infrastructure, operational, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#TLS-001
     changes:
-      - Make the WWW hostname decision explicit, align DNS and SAN atomically or remove the block, and assert verified TLS and security headers without insecure curl flags.
+      - Kept www.sealingai.com explicitly as an HTTPS-only 308 alias of the canonical apex; its DNS, trusted chain, exact SAN, headers, and rollback must pass atomically before activation.
+      - Added one fail-closed TLS client contract to all five previously bypass-capable operational smoke paths, requiring HTTPS origins, TLS 1.2 or newer, system trust or an explicit absolute readable non-symlink CA file, and no userinfo, query, fragment, or insecure curl flag.
+      - Added HSTS, XCTO, referrer, and permissions policy to the sealingAI and existing header-bearing Nginx TLS contexts and repeated all inherited headers plus the strict CSP in the dashboard location.
+      - Replaced predictable smoke-response files with private mktemp directories and bound certificate inspection to the exact connected hostname with chain and hostname verification.
     tests:
-      - Certificate chain, SAN, TLS policy, HSTS, CSP, XCTO, referrer, and permissions-policy assertions.
+      - Negative HTTPS origin, port, custom-CA, missing-header, and TLS-bypass fixtures plus positive apex and staging-origin fixtures.
+      - Shell syntax, repository-wide operational-script bypass scan, exact chain/hostname/SAN contract, and Nginx server/dashboard header-context assertions.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Use planned DNS TTL rollback and retain the previous valid certificate and server configuration as versioned artifacts.
-    evidence_after: []
-    residual_risk: WWW remains unreliable and header or certificate regressions can pass current smoke checks until the decision and checks are deployed.
+    evidence_after:
+      - ops/lib/verified-tls.sh
+      - backend/tests/test_tls_verification_contract.py
+      - docs/runbook_production_readiness.md
+      - 20 focused TLS and remediation-control tests and the complete 2427-test backend/V2 collection passed with one pre-existing skip, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks; no external endpoint was contacted.
+    residual_risk: Production DNS, the currently served certificate and headers, and the www redirect remain externally unverified and unchanged until the exact GATE-08 plan is approved, deployed, and observed without a verification bypass.
