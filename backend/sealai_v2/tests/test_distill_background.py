@@ -38,7 +38,7 @@ from sealai_v2.security.tenant import TenantContext
 from sealai_v2.tests._fakes import ScriptedFakeLlmClient
 
 _FACT_JSON = '{"facts": [{"feld": "medium", "wert": "Hydrauliköl"}]}'
-_RWDR_FACT_JSON = '{"facts": [{"feld": "dichtungstyp", "wert": "rwdr"}]}'
+_EMPTY_FACT_JSON = '{"facts": []}'
 
 
 def _memory_pipeline(client, *, adaptive_interview: bool = False) -> Pipeline:
@@ -117,11 +117,14 @@ def test_run_returns_before_distill_completes_and_flush_lands_the_facts():
 
 def test_visible_adaptive_interview_waits_for_current_turn_facts():
     async def main():
-        client = _GatedDistillClient(fact_json=_RWDR_FACT_JSON)
+        # Regression for the production entry phrase: the helper deliberately
+        # returns no type. The deterministic inline binder must still activate
+        # the visible RWDR controller on this same turn.
+        client = _GatedDistillClient(fact_json=_EMPTY_FACT_JSON)
         p = _memory_pipeline(client, adaptive_interview=True)
         task = asyncio.create_task(
             p.run(
-                "Ich brauche einen RWDR.",
+                "Ich benötige einen RWDR.",
                 tenant=TenantContext("t1"),
                 session=SessionContext("s1", owner_subject="u1"),
             )
@@ -140,7 +143,16 @@ def test_visible_adaptive_interview_waits_for_current_turn_facts():
         assert result.next_question.question_id == "rwdr.q.application_goal"
         assert result.next_question.pack_version == "1.0.1"
         assert p._pending_remember == {}
-        assert result.case_state.field("dichtungstyp").value == "rwdr"
+        seal_type = result.case_state.field("dichtungstyp")
+        assert seal_type is not None
+        assert seal_type.value == "RWDR"
+        assert seal_type.source.kind == "conversation_distilled"
+        stored_type = next(
+            fact
+            for fact in p.memory.case_state(tenant_id="t1", session_id="s1")
+            if fact.feld == "dichtungstyp"
+        )
+        assert stored_type.provenance == "chat-inline"
 
     asyncio.run(main())
 

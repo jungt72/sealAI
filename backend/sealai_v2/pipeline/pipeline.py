@@ -85,6 +85,7 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
+from sealai_v2.core.seal_type_extract import extract_seal_type_facts
 from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContextService
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
@@ -1667,7 +1668,13 @@ class Pipeline:
             result_case_state = case_state_v2
             committed_revision = case_state_v2.revision
             if self.memory is not None and session is not None:
-                immediate_facts = extract_medium_facts(question)
+                # Explicit type/medium mentions are canonical inputs, not model
+                # judgments. Persist them before interview reconciliation so an
+                # initial "Ich benötige einen RWDR" turn enters rwdr.v1 even when
+                # the conservative LLM distiller returns an empty fact list.
+                immediate_facts = extract_medium_facts(
+                    question
+                ) + extract_seal_type_facts(question)
                 self.memory.record_turn(
                     tenant_id=scope.tenant_id,
                     session_id=session.session_id,
