@@ -106,6 +106,7 @@
       "policy_version": "adaptive-interview.lexicographic.1.0.0",
       "evidence": [
         "docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md",
+        "docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md",
         "backend/sealai_v2/core/interview/",
         "backend/sealai_v2/knowledge/domain_packs/rwdr.v1.json",
         "backend/sealai_v2/tests/test_adaptive_interview_policy.py"

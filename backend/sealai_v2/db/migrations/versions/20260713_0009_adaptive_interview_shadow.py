@@ -49,6 +49,7 @@ def upgrade() -> None:
             sa.Column("policy_version", sa.String(128), nullable=False),
             sa.Column("legacy_question_present", sa.Boolean(), nullable=False),
             sa.Column("legacy_question_fingerprint", sa.String(64), nullable=True),
+            sa.Column("legacy_need_id", sa.String(128), nullable=True),
             sa.Column("controller_directive", sa.String(64), nullable=False),
             sa.Column("controller_question_id", sa.String(128), nullable=True),
             sa.Column("rule_refs_json", sa.JSON(), nullable=False),
@@ -67,6 +68,17 @@ def upgrade() -> None:
             "ix_v2_interview_shadow_decisions_case_reference",
             "v2_interview_shadow_decisions",
             ["case_reference"],
+        )
+        op.create_index(
+            "ix_v2_interview_shadow_scope_created",
+            "v2_interview_shadow_decisions",
+            [
+                "tenant_id",
+                "pack_id",
+                "pack_version",
+                "policy_version",
+                "created_at",
+            ],
         )
 
 

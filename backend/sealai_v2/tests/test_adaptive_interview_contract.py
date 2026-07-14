@@ -85,6 +85,7 @@ def test_all_interview_flags_default_off() -> None:
     assert settings.adaptive_interview_enabled is False
     assert settings.adaptive_interview_shadow_enabled is False
     assert settings.adaptive_interview_pack_rwdr_enabled is False
+    assert settings.adaptive_interview_shadow_reporting_enabled is False
 
 
 def test_mode_flag_requires_rwdr_pack_gate() -> None:
@@ -95,6 +96,8 @@ def test_mode_flag_requires_rwdr_pack_gate() -> None:
         adaptive_interview_pack_rwdr_enabled=True,
     )
     assert settings.adaptive_interview_shadow_enabled is True
+    with pytest.raises(ValidationError, match="shadow reporting"):
+        Settings(adaptive_interview_shadow_reporting_enabled=True)
 
 
 def test_deploy_compose_allowlists_all_default_off_flags() -> None:
@@ -105,6 +108,7 @@ def test_deploy_compose_allowlists_all_default_off_flags() -> None:
         "SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED",
         "SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED",
         "SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED",
+        "SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED",
     ):
         assert f"{name}: ${{{name}:-false}}" in compose
 

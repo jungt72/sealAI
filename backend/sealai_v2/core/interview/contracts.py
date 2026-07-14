@@ -315,4 +315,5 @@ class InterviewShadowRecord:
     decision_duration_ms: float
     completeness: dict[str, Any]
     created_at: str
+    legacy_need_id: str | None = None
     record_id: str = ""

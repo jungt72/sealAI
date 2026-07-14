@@ -34,7 +34,16 @@ an application-layer concern, same as every other table here).
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from sealai_v2.db.engine import Base
@@ -146,6 +155,16 @@ class V2InterviewShadowDecision(Base):
     """Privacy-minimized, append-only shadow decision telemetry."""
 
     __tablename__ = "v2_interview_shadow_decisions"
+    __table_args__ = (
+        Index(
+            "ix_v2_interview_shadow_scope_created",
+            "tenant_id",
+            "pack_id",
+            "pack_version",
+            "policy_version",
+            "created_at",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
@@ -158,6 +177,7 @@ class V2InterviewShadowDecision(Base):
     legacy_question_fingerprint: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    legacy_need_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     controller_directive: Mapped[str] = mapped_column(String(64), nullable=False)
     controller_question_id: Mapped[str | None] = mapped_column(
         String(128), nullable=True

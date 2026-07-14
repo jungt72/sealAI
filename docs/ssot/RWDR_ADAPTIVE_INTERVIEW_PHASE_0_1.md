@@ -68,6 +68,7 @@ All gates default to `false` in Settings and `docker-compose.deploy.yml`:
 SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED
 SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED
 SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED
+SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED
 ```
 
 Active or shadow mode requires the pack gate. While both mode flags are false,
@@ -155,15 +156,22 @@ rewrite an open pending question. Existing unevaluated cases remain
 
 The append-only log stores hashed case reference, state/pack/policy versions,
 legacy-question presence and HMAC fingerprint, controller directive/question,
-rule refs, divergence, duration, and separated completeness counts. It stores
+mapped legacy Need ID, rule refs, divergence, duration, and separated
+completeness counts. It stores
 no turn text, answer text, document body, secret, email, or exact user-facing
 legacy question. `additional_llm_calls_by_controller` is always `0`.
 Unsupported primary cases are still deterministically rejected by the pure
 policy, but they create neither RWDR interview state nor RWDR shadow records.
 
+The separate reporting flag exposes only an admin- and tenant-gated aggregate
+at `GET /api/v2/admin/adaptive-interview/shadow-summary`. It returns counts,
+rates, Need-transition counts, completeness, and latency percentiles. It never
+returns case references, fingerprints, raw decisions, or question text and
+always reports `automatic_activation_authorized=false`.
+
 ## Rollback
 
-1. Set all three adaptive interview flags to `false` and recreate the backend
+1. Set all four adaptive interview flags to `false` and recreate the backend
    container only during an authorized release operation.
 2. With both mode flags false the old response and frontend behavior remain in
    authority; no schema rollback is required.

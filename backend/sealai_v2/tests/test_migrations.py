@@ -24,6 +24,11 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert "alembic_version" in tables
     current, head = migration_status(engine)
     assert current == head == "20260713_0009"
+    indexes = {
+        item["name"]
+        for item in inspect(engine).get_indexes("v2_interview_shadow_decisions")
+    }
+    assert "ix_v2_interview_shadow_scope_created" in indexes
     validate_schema(engine)
 
 

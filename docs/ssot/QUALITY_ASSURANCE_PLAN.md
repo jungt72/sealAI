@@ -34,6 +34,9 @@ auditable.
   call. Paid evals remain skipped for Phase 0/1; later changed prompt/model
   behavior uses targeted failed-topic replay, and only final activation uses
   the full adjudicated reference replay.
+- Shadow promotion follows `RWDR_SHADOW_REVIEW_PROTOCOL.md`: tenant-admin
+  aggregate reporting, at least 30 reviewable divergence cases, and a blinded
+  human A/B worksheet. The report cannot authorize activation itself.
 
 ## Incident and CAPA
 

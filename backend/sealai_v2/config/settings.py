@@ -163,6 +163,7 @@ class Settings(BaseSettings):
     adaptive_interview_enabled: bool = False
     adaptive_interview_shadow_enabled: bool = False
     adaptive_interview_pack_rwdr_enabled: bool = False
+    adaptive_interview_shadow_reporting_enabled: bool = False
     # P0-B (owner Leitbild-Audit 2026-07-02): widens the output_guard (forbidden phrase / invented
     # number / invented material) to turns WITHOUT a gegencheck_verdict — requires
     # response_contract_enabled=True. Never touches the L1 prompt/Renderer-Modus (guard-only contract,
@@ -234,6 +235,14 @@ class Settings(BaseSettings):
         ) and not self.adaptive_interview_pack_rwdr_enabled:
             raise ValueError(
                 "adaptive interview modes require adaptive_interview_pack_rwdr_enabled"
+            )
+        if (
+            self.adaptive_interview_shadow_reporting_enabled
+            and not self.adaptive_interview_pack_rwdr_enabled
+        ):
+            raise ValueError(
+                "adaptive interview shadow reporting requires "
+                "adaptive_interview_pack_rwdr_enabled"
             )
         if self.manufacturer_fit_enabled and not self.capability_profiles_enabled:
             raise ValueError(

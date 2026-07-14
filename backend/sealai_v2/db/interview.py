@@ -6,7 +6,7 @@ import uuid
 from dataclasses import asdict
 from threading import RLock
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from sealai_v2.core.interview.contracts import (
@@ -19,6 +19,7 @@ from sealai_v2.core.interview.contracts import (
     PendingQuestion,
     PendingQuestionStatus,
 )
+from sealai_v2.core.interview.shadow_reporting import InterviewShadowRecordPage
 from sealai_v2.db.models import V2InterviewShadowDecision, V2InterviewState
 from sealai_v2.security.tenant import TenantContext, require_tenant
 
@@ -155,9 +156,37 @@ class InProcessInterviewRepository:
             if shadow is not None:
                 self._logs.append(shadow)
 
-    def shadow_records(self) -> tuple[InterviewShadowRecord, ...]:
+    def list_shadow_records(
+        self,
+        *,
+        tenant_id: str,
+        pack_id: str,
+        pack_version: str,
+        policy_version: str,
+        since: str | None,
+        until: str | None,
+        limit: int,
+    ) -> InterviewShadowRecordPage:
+        require_tenant(TenantContext(tenant_id))
         with self._lock:
-            return tuple(self._logs)
+            matching = [
+                item
+                for item in self._logs
+                if item.tenant_id == tenant_id
+                and item.pack_id == pack_id
+                and item.pack_version == pack_version
+                and item.policy_version == policy_version
+                and (since is None or item.created_at >= since)
+                and (until is None or item.created_at < until)
+            ]
+            matching.sort(
+                key=lambda item: (item.created_at, item.record_id), reverse=True
+            )
+            return InterviewShadowRecordPage(
+                records=tuple(matching[:limit]),
+                total=len(matching),
+                limit=limit,
+            )
 
     def clear(self, *, tenant_id: str, session_id: str) -> None:
         require_tenant(TenantContext(tenant_id))
@@ -230,6 +259,7 @@ class PostgresInterviewRepository:
                         policy_version=shadow.policy_version,
                         legacy_question_present=shadow.legacy_question_present,
                         legacy_question_fingerprint=shadow.legacy_question_fingerprint,
+                        legacy_need_id=shadow.legacy_need_id,
                         controller_directive=shadow.controller_directive,
                         controller_question_id=shadow.controller_question_id,
                         rule_refs_json=list(shadow.rule_refs),
@@ -249,3 +279,72 @@ class PostgresInterviewRepository:
                     V2InterviewState.session_id == session_id,
                 )
             )
+
+    def list_shadow_records(
+        self,
+        *,
+        tenant_id: str,
+        pack_id: str,
+        pack_version: str,
+        policy_version: str,
+        since: str | None,
+        until: str | None,
+        limit: int,
+    ) -> InterviewShadowRecordPage:
+        require_tenant(TenantContext(tenant_id))
+        filters = (
+            V2InterviewShadowDecision.tenant_id == tenant_id,
+            V2InterviewShadowDecision.pack_id == pack_id,
+            V2InterviewShadowDecision.pack_version == pack_version,
+            V2InterviewShadowDecision.policy_version == policy_version,
+        )
+        time_filters = []
+        if since is not None:
+            time_filters.append(V2InterviewShadowDecision.created_at >= since)
+        if until is not None:
+            time_filters.append(V2InterviewShadowDecision.created_at < until)
+        with self._sf() as session:
+            total = int(
+                session.scalar(
+                    select(func.count())
+                    .select_from(V2InterviewShadowDecision)
+                    .where(*filters, *time_filters)
+                )
+                or 0
+            )
+            rows = session.scalars(
+                select(V2InterviewShadowDecision)
+                .where(*filters, *time_filters)
+                .order_by(
+                    V2InterviewShadowDecision.created_at.desc(),
+                    V2InterviewShadowDecision.id.desc(),
+                )
+                .limit(limit)
+            ).all()
+        return InterviewShadowRecordPage(
+            records=tuple(_shadow_record(row) for row in rows),
+            total=total,
+            limit=limit,
+        )
+
+
+def _shadow_record(row: V2InterviewShadowDecision) -> InterviewShadowRecord:
+    return InterviewShadowRecord(
+        record_id=row.id,
+        tenant_id=row.tenant_id,
+        case_reference=row.case_reference,
+        state_revision=row.state_revision,
+        pack_id=row.pack_id,
+        pack_version=row.pack_version,
+        policy_version=row.policy_version,
+        legacy_question_present=row.legacy_question_present,
+        legacy_question_fingerprint=row.legacy_question_fingerprint,
+        legacy_need_id=row.legacy_need_id,
+        controller_directive=row.controller_directive,
+        controller_question_id=row.controller_question_id,
+        rule_refs=tuple(row.rule_refs_json),
+        divergence_type=row.divergence_type,
+        decision_duration_ms=row.decision_duration_ms,
+        completeness=dict(row.completeness_json),
+        created_at=row.created_at,
+    )

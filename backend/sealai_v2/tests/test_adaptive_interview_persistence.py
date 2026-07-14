@@ -54,6 +54,13 @@ def test_postgres_repository_persists_pending_and_privacy_safe_shadow(tmp_path) 
         legacy_answer_text="**Noch erforderlich**\n- Welches Medium liegt an?",
         persist_shadow=True,
     )
+    service.evaluate(
+        tenant_id="tenant-b",
+        session_id="rwdr-session",
+        case_state=_state(revision=1),
+        legacy_answer_text="**Noch erforderlich**\n- Welche Drehzahl liegt an?",
+        persist_shadow=True,
+    )
 
     assert evaluation is not None
     stored = repo.load(
@@ -68,6 +75,18 @@ def test_postgres_repository_persists_pending_and_privacy_safe_shadow(tmp_path) 
         )
         == 1
     )
+    page = repo.list_shadow_records(
+        tenant_id="tenant-a",
+        pack_id="rwdr.v1",
+        pack_version="1.0.0",
+        policy_version="adaptive-interview.lexicographic.1.0.0",
+        since=None,
+        until=None,
+        limit=100,
+    )
+    assert page.total == 1
+    assert len(page.records) == 1
+    assert page.records[0].tenant_id == "tenant-a"
 
     with sf() as session:
         shadow = session.scalar(select(V2InterviewShadowDecision))
@@ -156,7 +175,16 @@ def test_out_of_scope_case_is_decided_but_not_persisted_as_rwdr_shadow() -> None
 
     assert evaluation is not None
     assert evaluation.decision.directives[0].reason_code == "out_of_scope_primary_case"
-    assert repo.shadow_records() == ()
+    page = repo.list_shadow_records(
+        tenant_id="tenant-a",
+        pack_id="rwdr.v1",
+        pack_version="1.0.0",
+        policy_version="adaptive-interview.lexicographic.1.0.0",
+        since=None,
+        until=None,
+        limit=100,
+    )
+    assert page.records == ()
     stored = repo.load(
         tenant_id="tenant-a", session_id="glrd-session", topic_id="rwdr.default"
     )

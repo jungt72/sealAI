@@ -177,6 +177,7 @@ class AdaptiveInterviewService:
                 legacy_question_fingerprint=(
                     hmac_id("\n".join(legacy_items)) if legacy_items else None
                 ),
+                legacy_need_id=legacy_need,
                 controller_directive=(directive.type.value if directive else "none"),
                 controller_question_id=(directive.question_id if directive else None),
                 rule_refs=decision.rule_refs,
