@@ -135,6 +135,12 @@ def _secure_record(record: logging.LogRecord) -> logging.LogRecord:
         record.exc_info = None
         record.exc_text = None
         record.stack_info = None
+    from sealai_v2.obs.request_context import current_request_id
+
+    request_id = current_request_id()
+    record.request_id = request_id or "-"
+    if request_id and isinstance(record.msg, str):
+        record.msg = f"request_id={request_id} {record.msg}"
     return record
 
 

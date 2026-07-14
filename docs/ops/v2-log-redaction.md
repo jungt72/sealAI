@@ -17,6 +17,11 @@ routers and timing logging are configured. It:
 - rejects free text passed as a purported safe code;
 - leaves numeric counters and booleans available for operations.
 
+The pure-ASGI request middleware always generates a new 128-bit correlation ID, ignores an inbound
+client ID, returns the server ID as `X-Request-ID`, and keeps its context through streamed response
+delivery. The same ID is injected into application logs and timing events. A proxy may log the
+upstream response header, but must not copy a client-supplied value into this field.
+
 Paperless ingestion additionally emits only fixed reason codes and opaque document references. It
 never logs a document title, source URI, raw exception, extracted text, prompt, or ledger payload.
 Client-visible retry failures likewise use fixed codes rather than exception text.

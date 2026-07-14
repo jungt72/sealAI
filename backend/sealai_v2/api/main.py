@@ -30,11 +30,13 @@ from sealai_v2.api.routes import (
 )
 from sealai_v2.config.settings import Settings
 from sealai_v2.obs.log_redaction import configure_safe_logging
+from sealai_v2.obs.request_context import RequestIdMiddleware
 from sealai_v2.pipeline.timing import configure_timing_logging
 
 configure_safe_logging()
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(RequestIdMiddleware)
 app.include_router(chat.router)
 app.include_router(adaptive_interview.router)
 app.include_router(conversations.router)
