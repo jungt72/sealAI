@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from sealai_v2.core.seal_type_extract import extract_seal_type
+
 # Canonical material tags from the Verträglichkeitsmatrix allowlist.
 # Key: token to match (case-insensitive, word boundary); value: canonical tag.
 _MATERIAL_SYNONYMS: dict[str, str] = {
@@ -28,19 +30,6 @@ _MATERIAL_SYNONYMS: dict[str, str] = {
 _MATERIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b" + re.escape(token) + r"\b", re.IGNORECASE), canonical)
     for token, canonical in _MATERIAL_SYNONYMS.items()
-]
-
-# Fixed set of recognised seal types — only unambiguous, terminology-stable terms.
-_TYPE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\bRWDR\b", re.IGNORECASE), "RWDR"),
-    (re.compile(r"\bO-Ring\b", re.IGNORECASE), "O-Ring"),
-    (re.compile(r"\bX-Ring\b", re.IGNORECASE), "X-Ring"),
-    (re.compile(r"\bV-Ring\b", re.IGNORECASE), "V-Ring"),
-    (re.compile(r"\bNutring\b", re.IGNORECASE), "Nutring"),
-    (re.compile(r"\bWellendichtring\b", re.IGNORECASE), "Wellendichtring"),
-    (re.compile(r"\bGleitringdichtung\b", re.IGNORECASE), "Gleitringdichtung"),
-    (re.compile(r"\bGLRD\b", re.IGNORECASE), "Gleitringdichtung"),
-    (re.compile(r"\bMechanical\s+Seal\b", re.IGNORECASE), "Gleitringdichtung"),
 ]
 
 
@@ -68,12 +57,8 @@ def extract_seal_spec(message: str) -> dict | None:
 
     result: dict[str, str] = {"material": found[0]}
 
-    found_types: list[str] = []
-    for pattern, seal_type in _TYPE_PATTERNS:
-        if pattern.search(message) and seal_type not in found_types:
-            found_types.append(seal_type)
-
-    if len(found_types) == 1:
-        result["type"] = found_types[0]
+    seal_type = extract_seal_type(message)
+    if seal_type is not None:
+        result["type"] = seal_type
 
     return result

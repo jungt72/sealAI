@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import re
 
-from sealai_v2.core.seal_spec_extract import _MATERIAL_PATTERNS, _TYPE_PATTERNS
+from sealai_v2.core.seal_spec_extract import _MATERIAL_PATTERNS
+from sealai_v2.core.seal_type_extract import extract_seal_type
 
 # A dimension group: 2-3 numbers separated by x / × / * / - / (DIN-style "40x62x10", "40-62-10").
 _DIM_RE = re.compile(
@@ -58,11 +59,7 @@ def decode_designation(message: str) -> dict | None:
             mats.append(canon)
     material = mats[0] if len(mats) == 1 else None
 
-    types: list[str] = []
-    for pat, t in _TYPE_PATTERNS:
-        if pat.search(message) and t not in types:
-            types.append(t)
-    stype = types[0] if len(types) == 1 else None
+    stype = extract_seal_type(message)
 
     m = _DIM_RE.search(message)
     dims = [_num(g) for g in m.groups() if g is not None] if m else None
