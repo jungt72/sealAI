@@ -1,72 +1,192 @@
-#!/bin/bash
-# Nightly Postgres backup (ops hardening, 2026-07-03) — full-instance pg_dumpall (all databases +
-# roles: sealai_v2, sealai/Keycloak, paperless, and anything else on the shared `postgres` container),
-# gzip-compressed, timestamped, rotated. Closes the "no recovery path" gap found in the ops/security
-# sweep — this is a LOGICAL backup (SQL dump), not a raw volume copy, so it survives a Postgres major
-# version upgrade and is restorable into a fresh instance.
-#
-# Runs OUTSIDE the container via `docker exec` (no dependency on a client tool on the host) using the
-# credentials already required by the stack (POSTGRES_USER/POSTGRES_PASSWORD from .env.prod).
-#
-# Retention: local disk is NOT off-host — this protects against data corruption / bad migration /
-# accidental deletion, NOT against total-disk or total-VPS loss. See ops/RESTORE.md for the caveat
-# and an off-host-copy recommendation.
+#!/bin/bash -p
+# Verified full-instance Postgres backup with target-aware capacity and retention gates.
 set -euo pipefail
+umask 077
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset PYTHONPATH PYTHONHOME
 
-ENV_FILE=${ENV_FILE:-"$HOME/sealai/.env.prod"}
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "$ENV_FILE"
-  set +a
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SAFETY_HELPER="${SCRIPT_DIR}/backup_safety.py"
+readonly SAFE_HOME=/home/thorsten
+readonly COMMAND_TIMEOUT_SECONDS=3600
 
-POSTGRES_USER=${POSTGRES_USER:-sealai}
 POSTGRES_CONTAINER=${POSTGRES_CONTAINER:-postgres}
-TARGET_DIR=${TARGET_DIR:-"$HOME/sealai-backups/postgres"}
+TARGET_DIR=${TARGET_DIR:-"${SAFE_HOME}/sealai-backups/postgres"}
 RETENTION_DAYS=${RETENTION_DAYS:-14}
+BACKUP_MIN_LOCAL_COPIES=${BACKUP_MIN_LOCAL_COPIES:-2}
+BACKUP_MIN_FREE_BYTES=${BACKUP_MIN_FREE_BYTES:-3221225472}
+BACKUP_ESTIMATED_BYTES=${POSTGRES_BACKUP_ESTIMATED_BYTES:-${BACKUP_ESTIMATED_BYTES:-1073741824}}
+BACKUP_SAFETY_STATE_DIR=${BACKUP_SAFETY_STATE_DIR:-"${SAFE_HOME}/.local/state/sealai-backup"}
+readonly PRODUCTION_STORAGE_LEASE_LIB=/usr/local/libexec/sealai/production-storage-lease.sh
 
-if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
-  echo "backup_postgres: POSTGRES_PASSWORD not set (checked \$ENV_FILE=$ENV_FILE) — aborting" >&2
+TMP_FILE=""
+LIFECYCLE_LOCK_FD=${SEALAI_BACKUP_LIFECYCLE_FD:-}
+TARGET_DIRECTORY_FD=${SEALAI_BACKUP_TARGET_FD:-}
+BACKUP_COMPLETE=0
+
+safe_helper() {
+  /usr/bin/env -i HOME="${SAFE_HOME}" PATH="${PATH}" LANG=C LC_ALL=C \
+    /usr/bin/python3 -I "${SAFETY_HELPER}" "$@"
+}
+
+event() {
+  safe_helper event --component backup_postgres "$@" >&2
+}
+
+release_lifecycle_lock() {
+  if [[ -n "${LIFECYCLE_LOCK_FD}" ]]; then
+    flock -u "${LIFECYCLE_LOCK_FD}" || true
+    exec {LIFECYCLE_LOCK_FD}>&-
+    LIFECYCLE_LOCK_FD=""
+  fi
+  if [[ -n "${TARGET_DIRECTORY_FD}" ]]; then
+    exec {TARGET_DIRECTORY_FD}>&-
+    TARGET_DIRECTORY_FD=""
+  fi
+}
+
+publish_no_clobber() {
+  if ! ln -- "${TMP_FILE}" "${FILE}"; then
+    event --event local_verification --status blocked --reason final_name_collision
+    return 1
+  fi
+  if ! rm -f -- "${TMP_FILE}"; then
+    rm -f -- "${FILE}" || true
+    event --event local_verification --status blocked --reason partial_cleanup_failed
+    return 1
+  fi
+  TMP_FILE=""
+}
+
+cleanup() {
+  local rc=$?
+  if [[ -n "${TMP_FILE}" ]]; then
+    rm -f -- "${TMP_FILE}"
+  fi
+  release_lifecycle_lock
+  if [[ "${rc}" -ne 0 && "${BACKUP_COMPLETE}" -eq 0 ]]; then
+    event --event backup --status error --reason backup_failed || true
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
+load_production_env() {
+  local -a values=()
+  mapfile -d '' -t values < <(safe_helper read-production-env --profile postgres)
+  if [[ ${#values[@]} -ne 4 \
+    || "${values[0]}" != POSTGRES_USER \
+    || "${values[2]}" != POSTGRES_PASSWORD ]]; then
+    return 1
+  fi
+  POSTGRES_USER=${values[1]}
+  POSTGRES_PASSWORD=${values[3]}
+  unset values
+}
+
+if ! load_production_env || [[ -z "${POSTGRES_PASSWORD}" ]]; then
+  event --event configuration --status blocked --reason credential_missing
+  exit 1
+fi
+if [[ ! "${POSTGRES_USER}" =~ ^[A-Za-z_][A-Za-z0-9_.-]{0,62}$ ]]; then
+  event --event configuration --status blocked --reason postgres_user_invalid
   exit 1
 fi
 
-mkdir -p "$TARGET_DIR"
-chmod 700 "$TARGET_DIR"
+# The lease performs the root-mediated canonical Docker-filesystem preflight
+# and stays held until this shell exits.
+if [[ ! -r "${PRODUCTION_STORAGE_LEASE_LIB}" || -L "${PRODUCTION_STORAGE_LEASE_LIB}" ]]; then
+  event --event storage_lease --status blocked --reason lease_library_unavailable
+  exit 1
+fi
+# shellcheck source=production-storage-lease.sh
+source "${PRODUCTION_STORAGE_LEASE_LIB}"
+if ! declare -F acquire_production_storage_lease >/dev/null \
+  || ! acquire_production_storage_lease >&2; then
+  event --event storage_lease --status blocked --reason lease_acquisition_failed
+  exit 1
+fi
+
+# This must run before mkdir, mktemp, or pg_dump writes anything into TARGET_DIR.
+safe_helper preflight \
+  --component backup_postgres \
+  --target-dir "${TARGET_DIR}" \
+  --estimated-write-bytes "${BACKUP_ESTIMATED_BYTES}" \
+  --minimum-reserve-bytes "${BACKUP_MIN_FREE_BYTES}" \
+  --state-dir "${BACKUP_SAFETY_STATE_DIR}" >&2
+
+if [[ -z "${LIFECYCLE_LOCK_FD}" || -z "${TARGET_DIRECTORY_FD}" ]]; then
+  exec /usr/bin/env -i HOME="${SAFE_HOME}" PATH="${PATH}" LANG=C LC_ALL=C \
+    /usr/bin/python3 -I "${SAFETY_HELPER}" run-with-lifecycle \
+    --writer postgres --target-dir "${TARGET_DIR}" \
+    --setting "RETENTION_DAYS=${RETENTION_DAYS}" \
+    --setting "BACKUP_MIN_LOCAL_COPIES=${BACKUP_MIN_LOCAL_COPIES}" \
+    --setting "BACKUP_MIN_FREE_BYTES=${BACKUP_MIN_FREE_BYTES}" \
+    --setting "BACKUP_ESTIMATED_BYTES=${BACKUP_ESTIMATED_BYTES}" \
+    --setting "BACKUP_SAFETY_STATE_DIR=${BACKUP_SAFETY_STATE_DIR}" \
+    --setting "POSTGRES_CONTAINER=${POSTGRES_CONTAINER}"
+fi
+if ! safe_helper validate-lifecycle --target-dir "${TARGET_DIR}" \
+  --target-fd "${TARGET_DIRECTORY_FD}" --lock-fd "${LIFECYCLE_LOCK_FD}" >&2; then
+  event --event lifecycle_lock --status blocked --reason lifecycle_binding_changed
+  exit 1
+fi
+safe_helper preflight-bound \
+  --component backup_postgres \
+  --target-dir "${TARGET_DIR}" \
+  --target-fd "${TARGET_DIRECTORY_FD}" \
+  --lock-fd "${LIFECYCLE_LOCK_FD}" \
+  --estimated-write-bytes "${BACKUP_ESTIMATED_BYTES}" \
+  --minimum-reserve-bytes "${BACKUP_MIN_FREE_BYTES}" \
+  --state-dir "${BACKUP_SAFETY_STATE_DIR}" >&2
+readonly BOUND_TARGET_DIR="/proc/self/fd/${TARGET_DIRECTORY_FD}"
 DATE=$(date -u +%Y-%m-%d_%H-%M-%S)
-FILE="$TARGET_DIR/postgres-all-${DATE}.sql.gz"
-TMP_FILE="${FILE}.partial"
+TMP_FILE=$(mktemp "${BOUND_TARGET_DIR}/.postgres-all-${DATE}.partial.XXXXXX")
+TOKEN=${TMP_FILE##*.}
+FILE="${BOUND_TARGET_DIR}/postgres-all-${DATE}-${TOKEN}.sql.gz"
+chmod 600 "${TMP_FILE}"
 
-echo "backup_postgres: dumping all databases from container '${POSTGRES_CONTAINER}' -> ${FILE}"
-docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$POSTGRES_CONTAINER" \
-  pg_dumpall -U "$POSTGRES_USER" | gzip -9 > "$TMP_FILE"
-chmod 600 "$TMP_FILE"
+event --event backup --status ok --reason backup_started
+PGPASSWORD=${POSTGRES_PASSWORD}
+export PGPASSWORD
+/usr/bin/timeout --signal=TERM --kill-after=30s "${COMMAND_TIMEOUT_SECONDS}s" \
+  docker exec -e PGPASSWORD "${POSTGRES_CONTAINER}" \
+  pg_dumpall -U "${POSTGRES_USER}" | gzip -9 > "${TMP_FILE}"
+unset PGPASSWORD
 
-# Sanity checks BEFORE the temp file replaces any prior good backup: non-trivial size + valid gzip +
-# contains at least one recognisable SQL statement (a truncated/failed dump must never look "done").
-SIZE=$(stat -c%s "$TMP_FILE" 2>/dev/null || stat -f%z "$TMP_FILE")
-if [[ "$SIZE" -lt 1024 ]]; then
-  echo "backup_postgres: dump suspiciously small (${SIZE} bytes) — NOT keeping it" >&2
-  rm -f "$TMP_FILE"
+SIZE=$(stat -c%s "${TMP_FILE}" 2>/dev/null || stat -f%z "${TMP_FILE}")
+if [[ "${SIZE}" -lt 1024 ]]; then
+  event --event local_verification --status blocked --reason backup_too_small
   exit 1
 fi
-if ! gzip -t "$TMP_FILE"; then
-  echo "backup_postgres: gzip integrity check failed — NOT keeping it" >&2
-  rm -f "$TMP_FILE"
+if ! gzip -t "${TMP_FILE}"; then
+  event --event local_verification --status blocked --reason gzip_invalid
   exit 1
 fi
-# NOTE: must be `grep -c` (reads to EOF), NOT `grep -q` (exits on first match). With `pipefail` set,
-# `grep -q` exiting early on a multi-hundred-MB stream can make `zcat` receive SIGPIPE before it
-# finishes writing; pipefail then reports the *pipeline* as failed even though grep found the
-# pattern fine — a real, reproduced false-negative that silently discarded every good dump so far.
-if ! zcat "$TMP_FILE" | grep -c "PostgreSQL database dump" >/dev/null; then
-  echo "backup_postgres: dump does not look like a Postgres dump — NOT keeping it" >&2
-  rm -f "$TMP_FILE"
+# grep must consume the complete stream; grep -q can make zcat fail under pipefail.
+if ! zcat "${TMP_FILE}" | grep -c "PostgreSQL database dump" >/dev/null; then
+  event --event local_verification --status blocked --reason dump_format_invalid
   exit 1
 fi
 
-mv "$TMP_FILE" "$FILE"
-echo "backup_postgres: OK, $(du -h "$FILE" | cut -f1) -> $FILE"
+publish_no_clobber
+chmod 600 "${FILE}"
+safe_helper write-checksum \
+  --component backup_postgres --backup "${FILE}" >&2
+safe_helper verify-local \
+  --component backup_postgres --backup "${FILE}" >&2
+release_lifecycle_lock
 
-# Rotation: delete backups older than RETENTION_DAYS. Never deletes the file just written.
-find "$TARGET_DIR" -name 'postgres-all-*.sql.gz' -mtime "+${RETENTION_DAYS}" -print -delete
+# The helper deletes only old, checksum-valid copies with a matching verified
+# offsite receipt, and always preserves BACKUP_MIN_LOCAL_COPIES good local files.
+safe_helper prune \
+  --component backup_postgres \
+  --target-dir "${TARGET_DIR}" \
+  --pattern 'postgres-all-*.sql.gz' \
+  --retention-days "${RETENTION_DAYS}" \
+  --minimum-local-copies "${BACKUP_MIN_LOCAL_COPIES}" >&2
+
+BACKUP_COMPLETE=1
+event --event backup --status ok --reason backup_completed --metric "bytes=${SIZE}"
