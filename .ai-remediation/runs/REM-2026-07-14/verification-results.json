@@ -117,6 +117,30 @@
       "scope": "independent_local_review",
       "status": "PASSED",
       "summary": "Independent adversarial re-reviews reported no remaining findings in the Redis guard or the non-executable Gate-04 observer after all High, Medium, and Low review findings were corrected."
+    },
+    {
+      "check_id": "P1-RELEASE-INTEGRITY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "The root-trusted promotion transaction binds immutable backend and dashboard artifacts, source/control trees, migration digest, external RC evidence, Nginx exposure, receipts, and rollback state. The release freeze and Gate-10 denial remain active; nothing was installed or deployed."
+    },
+    {
+      "check_id": "P1-RELEASE-INTEGRITY-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Two hundred twenty-one focused release, RC, dashboard, gate, migration, tree-hash, and backup-safety tests passed together with pinned Ruff format/lint, Bash, Compose, secret, frontend, and diff checks."
+    },
+    {
+      "check_id": "P1-NETWORK-HARDENING-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A deny-by-default segmented production target, per-consumer data networks, Qdrant authentication contract, least-privilege container policy, rendered-Compose guard, listener observer, and rollback-capable firewall runbook are implemented. Production topology, credentials, listeners, and firewall remain unchanged behind Gates 02, 05, 07, 08, and 10."
+    },
+    {
+      "check_id": "P1-NETWORK-HARDENING-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Twenty-six adversarial network contract tests plus inherited release regressions passed with pinned Ruff format/lint, production Compose rendering and policy validation, Bash syntax, secret scanning, and diff checks. No Docker daemon or network mutation was used."
     }
   ],
   "production_mutations_performed": false,
