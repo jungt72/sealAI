@@ -37,7 +37,11 @@ the formula.
   only after those commits.
 - The productive RWDR form submits `dichtungstyp` before its field values. The
   pack therefore starts only from an explicit RWDR case or an existing RWDR
-  signal field; a general knowledge-only turn remains untouched.
+  signal field; a general knowledge-only turn remains untouched. Explicit
+  chat aliases (`RWDR`, `Radialwellendichtring`, `Simmerring`,
+  `Wellendichtung`) are bound deterministically to `dichtungstyp=RWDR` before
+  reconciliation. This entry path makes no LLM call and fails closed when more
+  than one distinct sealing type is named.
 - The existing `rauheit` field does not distinguish Ra from Rz. Both precise
   Need IDs remain inactive and the current value maps only to the explicitly
   ambiguous `rwdr.shaft.roughness` Need.
