@@ -130,7 +130,14 @@ def _redact_dynamic(value: Any) -> Any:
     if isinstance(value, (bytes, bytearray, memoryview)):
         return f"[REDACTED_BYTES length={len(value)}]"
     if isinstance(value, dict):
-        return {str(key): _redact_dynamic(item) for key, item in value.items()}
+        # Mapping keys can be just as attacker-controlled as values (for
+        # example parsed document metadata or a prompt-derived JSON object).
+        # Do not preserve them unless a reviewed logging schema flattens them
+        # into explicit ``extra=`` fields at the call site.
+        return {
+            f"redacted_field_{index}": _redact_dynamic(item)
+            for index, item in enumerate(value.values())
+        }
     if isinstance(value, tuple):
         return tuple(_redact_dynamic(item) for item in value)
     return f"[REDACTED_OBJECT type={type(value).__name__}]"

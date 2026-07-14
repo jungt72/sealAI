@@ -99,9 +99,9 @@ def _render_compose() -> dict:
 
 def test_prometheus_scrapes_only_current_v2_and_required_exporters() -> None:
     config = _yaml(PROMETHEUS)
-    assert config["alerting"]["alertmanagers"][0]["static_configs"][0][
-        "targets"
-    ] == ["alertmanager:9093"]
+    assert config["alerting"]["alertmanagers"][0]["static_configs"][0]["targets"] == [
+        "alertmanager:9093"
+    ]
     jobs = {item["job_name"]: item for item in config["scrape_configs"]}
     required = {
         "prometheus",
@@ -131,9 +131,7 @@ def test_prometheus_scrapes_only_current_v2_and_required_exporters() -> None:
         "regex": "sealai_(backup|offsite_backup|restore_drill)_.*",
         "action": "drop",
     }
-    assert jobs["sealai-dr-status"]["metric_relabel_configs"][0]["action"] == (
-        "keep"
-    )
+    assert jobs["sealai-dr-status"]["metric_relabel_configs"][0]["action"] == ("keep")
 
 
 def test_alert_contract_covers_every_master_required_signal() -> None:
@@ -191,7 +189,9 @@ def test_alert_contract_covers_every_master_required_signal() -> None:
 def test_rules_fail_closed_when_required_metrics_are_missing() -> None:
     config = _yaml(ALERTS)
     rules = [rule for group in config["groups"] for rule in group["rules"]]
-    alert_rules = {rule["alert"]: str(rule["expr"]) for rule in rules if "alert" in rule}
+    alert_rules = {
+        rule["alert"]: str(rule["expr"]) for rule in rules if "alert" in rule
+    }
     targets = alert_rules["SealAIRequiredScrapeTargetMissing"]
     for job in (
         "prometheus",
@@ -275,7 +275,9 @@ def test_notification_family_contract_does_not_require_a_prior_failure() -> None
 def test_recovery_rules_require_each_metric_for_each_required_component() -> None:
     config = _yaml(ALERTS)
     rules = [rule for group in config["groups"] for rule in group["rules"]]
-    alert_rules = {rule["alert"]: str(rule["expr"]) for rule in rules if "alert" in rule}
+    alert_rules = {
+        rule["alert"]: str(rule["expr"]) for rule in rules if "alert" in rule
+    }
     metric_alerts = {
         "sealai_backup_last_success_timestamp_seconds": "SealAIBackupSuccessComponentMissing",
         "sealai_backup_last_failure_timestamp_seconds": "SealAIBackupFailureComponentMissing",
@@ -302,9 +304,7 @@ def test_projection_metric_does_not_claim_unmeasured_qdrant_drift() -> None:
             (ROOT / "backend" / "sealai_v2" / "obs" / "outbox_metrics.py").read_text(
                 encoding="utf-8"
             ),
-            (DASHBOARDS / "sealai-rag-intelligence.json").read_text(
-                encoding="utf-8"
-            ),
+            (DASHBOARDS / "sealai-rag-intelligence.json").read_text(encoding="utf-8"),
         )
     )
     assert "sealai_v2_projection_backlog_rows" in combined
@@ -340,7 +340,9 @@ def test_alertmanager_receiver_is_external_file_backed_and_sends_resolution() ->
         "send_resolved": True,
     }
     route = next(
-        item for item in config["route"]["routes"] if item["receiver"] == "external-watchdog"
+        item
+        for item in config["route"]["routes"]
+        if item["receiver"] == "external-watchdog"
     )
     assert route["matchers"] == ['alertname="SealAIWatchdog"']
     assert route["repeat_interval"] == "1m"
@@ -447,9 +449,10 @@ def test_rendered_compose_wires_rules_secrets_retention_and_metrics_networks() -
     assert "backend_metrics_network" in services["backend-v2"]["networks"]
     assert "backend_metrics_network" in services["backend-v2-worker"]["networks"]
     assert "keycloak_metrics_network" in services["keycloak"]["networks"]
-    assert services["backend-v2"]["environment"][
-        "SEALAI_V2_TELEMETRY_SAMPLE_RATE"
-    ] == "0.10"
+    assert (
+        services["backend-v2"]["environment"]["SEALAI_V2_TELEMETRY_SAMPLE_RATE"]
+        == "0.10"
+    )
     assert services["redis-exporter"]["environment"]["REDIS_PASSWORD_FILE"] == (
         "/run/secrets/redis_exporter_password"
     )
@@ -459,8 +462,9 @@ def test_rendered_compose_wires_rules_secrets_retention_and_metrics_networks() -
     assert rendered["secrets"]["qdrant_read_only_api_key"]["environment"] == (
         "QDRANT_READ_ONLY_API_KEY"
     )
-    assert services["qdrant"]["environment"]["QDRANT__SERVICE__API_KEY"] == (
-        services["backend-v2"]["environment"]["SEALAI_V2_QDRANT_API_KEY"]
+    assert (
+        services["qdrant"]["environment"]["QDRANT__SERVICE__API_KEY"]
+        == (services["backend-v2"]["environment"]["SEALAI_V2_QDRANT_API_KEY"])
     )
 
 

@@ -22,9 +22,7 @@ def safe_http_error(status_code: int, code: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code})
 
 
-async def _safe_unhandled_exception(
-    _request: Request, exc: Exception
-) -> JSONResponse:
+async def _safe_unhandled_exception(_request: Request, exc: Exception) -> JSONResponse:
     """Map an unexpected failure to a stable payload and metadata-only log."""
     _LOG.error(
         "event=unhandled_request_exception error_class=%s",

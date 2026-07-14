@@ -410,18 +410,18 @@ findings:
     root_cause: Retired V1 monitoring was not migrated to V2 and critical signals lack active rules and delivery paths.
     dependencies: [metrics contract, alert receiver, OPS-001, OPS-002]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OBS-001
     changes:
       - Added locally tested Redis capacity, TTL coverage, key ownership, queue depth, eviction, write-error, and state-continuity observations with bounded local alert handoff.
-      - Replaced retired V1 scrapes and all three stale dashboards with the V2 API, worker, host, container, Postgres, Redis, Qdrant, recovery, TLS, auth, quota, and provider-cost contracts.
-      - Added 52 fail-closed recording and alert rules, low-cardinality LLM timeout and durable outbox metrics, file-backed Qdrant auth, verified TLS probes, and a file-backed Alertmanager receiver.
-      - Keep external delivery explicitly BLOCKED_EXTERNAL until a human-owned receiver and production GATE-08 exist.
+      - Replaced retired V1 scrapes and dashboards with a renderable isolated V2 graph for API, worker, Keycloak, host, containers, Postgres, Redis, Qdrant, recovery, TLS, auth, quota, and provider-cost contracts.
+      - Added 58 fail-closed recording/alert rules, including explicit absent and up=0 behavior, per-queue and per-DR-component completeness, file-backed Qdrant auth, and bounded retention.
+      - Added separate primary and external dead-man Alertmanager receivers; external ownership, missed-heartbeat proof, exact exporter digests/identities, and production GATE-08 remain BLOCKED_EXTERNAL.
     tests:
       - Contract tests reject V1 scrapes, V1 dashboard metrics, missing required signals, embedded secrets, permissive TLS, and mutable image references.
-      - Checksum-verified promtool 3.10.0 accepted all 52 rules and Prometheus configuration; amtool 0.31.1 accepted Alertmanager configuration.
-      - The loopback-only synthetic rehearsal received both firing and resolved webhooks through the committed receiver contract.
+      - Native YAML/PromQL-shape validation, alert truth tables, real daemon-free Compose rendering, graph semantics, and a loopback-only firing/resolved receiver rehearsal passed.
+      - Native promtool/amtool validation remains BLOCKED_EXTERNAL because neither pinned binary is installed; no download or container daemon was used.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Disable individual noisy rules while preserving the base monitoring path.
@@ -430,7 +430,7 @@ findings:
       - docs/ops/v2-observability.md
       - monitoring/rules/sealai-v2-alerts.yml
       - ops/verify-alert-route.py
-    residual_risk: Repository controls are locally verified, but critical capacity, backup, service, and cost failures remain silent until scoped exporter identities, exact images, production wiring, and external delivery are approved and deployed.
+    residual_risk: Production monitoring remains stopped. Exact exporter images and scoped identities, cAdvisor host compatibility, a DR textfile producer, an external watchdog owner with missed-heartbeat receipt, native promtool/amtool evidence, and GATE-08 deployment are still required.
 
   - finding_id: REL-003
     title: Ungated release candidate receives production secrets and network access

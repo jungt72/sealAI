@@ -15,7 +15,8 @@ API routers and timing logging are configured. It:
 - removes exception payloads, tracebacks, and stack dumps while retaining the exception class;
 - scrubs authorization values, bearer/JWT shapes, common secret assignments, credential-bearing
   connection strings, naked provider-key shapes, URLs with query strings, and structured `extra`
-  values as defense in depth;
+  values as defense in depth; nested mapping keys are untrusted too and become positional
+  placeholders rather than log content;
 - rejects free text passed as a purported safe code;
 - leaves numeric counters and booleans available for operations.
 
@@ -54,7 +55,7 @@ owner-only storage, an expiry, and a deletion receipt. Enabling LangSmith
 ## Verification and rollout
 
 The Canary suite covers credentials, JWTs, URLs, email/medical-looking content, prompts, document
-titles, exception messages, and tracebacks. An AST contract rejects dynamic application logging
+titles, nested mapping keys, exception messages, and tracebacks. An AST contract rejects dynamic application logging
 messages so arbitrary f-strings cannot bypass argument redaction. Deployment is a GATE-08 action;
 production verification must inject synthetic canaries through an isolated test path and then prove
 they are absent from every configured log/trace sink without exposing real values.

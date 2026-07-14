@@ -117,6 +117,18 @@
       "scope": "independent_local_review",
       "status": "PASSED",
       "summary": "Independent adversarial re-reviews reported no remaining findings in the Redis guard or the non-executable Gate-04 observer after all High, Medium, and Low review findings were corrected."
+    },
+    {
+      "check_id": "P2-OBSERVABILITY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A complete isolated V2 scrape/exporter/Alertmanager graph, fail-closed required-signal rules, external dead-man route, bounded retention, safe exception mapping, sampled metadata telemetry, and process-wide log redaction are implemented. Production remains unchanged and external alert ownership/runtime evidence is blocked."
+    },
+    {
+      "check_id": "P2-OBSERVABILITY-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "The complete 2412-test backend/V2 collection passed with 2411 successes and one pre-existing skip, together with pinned Ruff, real daemon-free Compose rendering, YAML semantics, loopback route rehearsal, secret scan, and diff checks. Native promtool/amtool, real exporter digests/identities, cAdvisor host compatibility, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
     }
   ],
   "production_mutations_performed": false,

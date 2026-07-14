@@ -125,6 +125,25 @@ def test_structured_extra_fields_are_redacted_after_record_merge() -> None:
     assert "[REDACTED_TEXT length=" in rendered
 
 
+def test_nested_mapping_keys_cannot_bypass_redaction() -> None:
+    configure_safe_logging()
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s payload=%(payload)s"))
+    logger = logging.getLogger("sealai_v2.tests.redaction.mapping_key")
+    logger.handlers = [handler]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+    logger.error(
+        "event=synthetic_mapping_key",
+        extra={"payload": {_CANARY_EMAIL: _CANARY_SECRET}},
+    )
+    rendered = stream.getvalue()
+    assert _CANARY_EMAIL not in rendered
+    assert _CANARY_SECRET not in rendered
+    assert "redacted_field_0" in rendered
+
+
 def test_opaque_reference_is_stable_in_process_without_revealing_input() -> None:
     first = str(opaque_reference("paperless", "small-enumerable-id-7"))
     second = str(opaque_reference("paperless", "small-enumerable-id-7"))
