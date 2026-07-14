@@ -16,4 +16,5 @@ prohibited:
   - waiver or provisional evidence for final production promotion
   - mutable dashboard bind-mount publication
   - automatic deployment or restart
-next_gate: GATE-01
+next_gate: null
+next_local_package: p0-redis-stability

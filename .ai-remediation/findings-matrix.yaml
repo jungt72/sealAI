@@ -69,19 +69,28 @@ findings:
     root_cause: Shared-host capacity and retention drift plus missing or contradictory guard implementations without actionable alerting.
     dependencies: [release freeze, object-specific storage inventory, verified recovery source]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OPS-001
       - .ai-remediation/runs/REM-2026-07-14/production-fingerprint.json
     changes:
-      - Repair and unify fail-closed disk guards with dry-run, locking, structured events, alerts, and critical-space preflights.
-      - Define category-specific retention and a non-destructive recovery plan.
+      - Replaced the destructive legacy cleanup path with one root-owned, non-destructive 75/85/80 disk guard, structured redacted events, fixed locks, and release or backup preflights.
+      - Added a global storage-mutation lease and a hash-bound GATE-08 bootstrap which installs only the remediation controls while normal releases remain frozen.
+      - Added an exact GATE-03 image-removal manifest and executor which protects active, stopped, staging, rollback, legacy, and foreign-workload images and never invokes prune.
+      - Enforced the release freeze across host entrypoints, staging, dashboard builds, backend and Keycloak image publication, migrations, pulls, and deployment boundaries.
     tests:
-      - Disk threshold boundary, dry-run, locking, active-volume protection, and release-denial tests.
+      - Disk threshold, hysteresis, inode and symlink safety, global locking, active-volume protection, and external-alert contracts.
+      - Gate-08 root-bootstrap, release-freeze, Bash-function poisoning, workflow publication-denial, staging, V2 cutover rollback, and dashboard output-guard tests.
+      - GATE-03 manifest drift, exact-object protection, signal-boundary, indeterminate-result, minimum-reclaim, and recovery-source tests.
     production_action_required: true
     approval_gate: GATE-03
     rollback: Guard code is independently revertible; approved cleanup is recoverable only from its named verified backup or artifact source.
-    evidence_after: []
+    evidence_after:
+      - docs/ops/docker-disk-guard.md
+      - docs/ops/production-release-freeze.md
+      - docs/ops/gate-03-storage-cleanup.md
+      - .ai-remediation/runs/REM-2026-07-14/storage-inventory.yaml
+      - 198 P0-B tests and 7 evaluation or tree-hash tests passed with one expected platform skip; frontend verify passed 306 tests and npm audit reported zero vulnerabilities.
     residual_risk: ENOSPC can interrupt stateful services until production headroom is below 85 percent and guards are operational.
 
   - finding_id: OPS-002
@@ -94,7 +103,7 @@ findings:
     root_cause: A retired V1 LangGraph checkpointer left persistent unbounded DB0 state, while unrelated consumers share one global memory limit and V2 Compose misleadingly injects unused Redis settings.
     dependencies: [data-owner retention decision, isolated Redis Stack restore, persistence verification, OPS-001]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OPS-002
       - .ai-remediation/runs/REM-2026-07-14/production-fingerprint.json
@@ -108,7 +117,9 @@ findings:
     production_action_required: true
     approval_gate: GATE-04
     rollback: Disable new cache behavior or restore prior scoped configuration; never bulk-delete and restore durable state only from verified persistence.
-    evidence_after: []
+    evidence_after:
+      - .ai-remediation/runs/REM-2026-07-14/redis-inventory-summary.json
+      - Read-only aggregate inventory attributes 190834 documents and secondary registries to the retired V1 LangGraph checkpointer; active clients map only to Paperless and V2 DB1 is empty.
     residual_risk: Writes can fail after roughly another 31.6 MiB and swap can amplify latency until the legacy owner decision, verified backup and approved Gate-04 action reduce memory to at most 70 percent.
 
   - finding_id: REL-001
@@ -121,19 +132,22 @@ findings:
     root_cause: The gate binds source settings rather than effective runtime, dataset and authority epochs, and one promoted image digest.
     dependencies: [P0 secrets, P0 storage, P0 Redis, immutable build contract]
     remediation_type: [code, configuration, infrastructure, operational, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-001
       - Pull request 288 activates a limited adaptive path and adds a migration but leaves the final release-gate implementation unchanged.
     changes:
       - Build once, evaluate the exact digest with production-equivalent isolated Postgres and Qdrant, and fail closed on every final invariant.
       - Remove targeted, provisional, or waiver evidence from final production eligibility.
+      - P0 locally hard-disables the Gate-10 lift and all artifact-mutating operations until P1 implements and tests the complete exact-artifact contract.
     tests:
       - Tamper tests for retriever type, dataset epoch, authority epoch, digest, SBOM, deep-audit status, and previous golden cases.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Revert gate code only to another fail-closed tested version; never restore the permissive final gate.
-    evidence_after: []
+    evidence_after:
+      - docs/ops/production-release-freeze.md
+      - Local gate and every sanctioned invocation path fail closed; the root-installed remote boundary intentionally has no promotion implementation.
     residual_risk: Untested runtime or dependency behavior can be promoted until the exact-digest gate is deployed and proven.
 
   - finding_id: REL-002
@@ -146,18 +160,21 @@ findings:
     root_cause: Host-built ignored assets and mutable bind mounts are not tied to a commit, artifact digest, or recovery manifest.
     dependencies: [REL-001, immutable artifact storage, restore rehearsal]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-002
       - Pull request 288 changes dashboard source while the production publication path remains an unattested host bind mount.
     changes:
       - Package and attest immutable dashboard bytes and persist verified backend and frontend digests in the recovery manifest.
+      - P0 prevents ordinary Vite builds from writing to the live bind mount and creates only an isolated dashboard candidate; immutable promotion remains P1 work.
     tests:
       - Fresh-host digest reproduction and atomic artifact rollback tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Atomically re-promote the prior attested dashboard artifact and backend digest.
-    evidence_after: []
+    evidence_after:
+      - frontend-v2/tests/vite-output-guard.test.ts
+      - Candidate build and live-output rejection passed in the 306-test frontend verification.
     residual_risk: Live UI drift and non-reproducible recovery persist until immutable artifacts replace the host bind mount.
 
   - finding_id: NET-001
@@ -356,17 +373,23 @@ findings:
     root_cause: Backups were designed for local corruption recovery rather than encrypted offsite disaster recovery and full-host reconstruction.
     dependencies: [external object storage access, immutable manifest, OPS-001, REL-002]
     remediation_type: [configuration, infrastructure, operational, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#DR-001
     changes:
-      - Add provider-neutral encrypted offsite transfer, checksums, immutability and retention contracts, and isolated restore verification.
+      - Added fail-closed target and capacity binding, no-clobber publication, checksums, fixed command timeouts, lifecycle locks, and safe local retention for Postgres and Qdrant backups.
+      - Added a provider-neutral encrypted-offsite receipt contract binding local plaintext, downloaded ciphertext, decrypted plaintext, object identity, and versioned key identity.
+      - Hardened Qdrant snapshot deletion and restore to preserve the verified local inode, wait for completion, and validate the exact success response.
     tests:
-      - Empty-host restore rehearsal covering data stores, uploads, auth, configuration, and artifact digests.
+      - Capacity stop conditions, descriptor and inode binding, poisoned environment and shell functions, no-clobber publication, retention, checksum, offsite receipt, Qdrant deletion, and restore-response tests.
+      - Empty-host offsite restore covering Redis, uploads, auth, configuration, and artifact digests remains pending P2 and external infrastructure.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Add offsite copies without reducing local retention until two successful restore drills.
-    evidence_after: []
+    evidence_after:
+      - docs/runbooks/backup-storage-safety.md
+      - ops/RESTORE.md
+      - Local backup safety tests passed; no production backup, deletion, offsite transfer, or restore was executed.
     residual_risk: Host or volume loss can destroy production and all local recovery material until external storage is configured and tested.
 
   - finding_id: OBS-001

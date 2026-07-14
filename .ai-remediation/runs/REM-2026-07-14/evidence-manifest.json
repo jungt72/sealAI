@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T11:10:35Z",
+  "updated_at": "2026-07-14T14:47:44Z",
   "artifacts": [
     {
       "name": "production-sensitive-file-metadata.jsonl",
@@ -29,6 +29,37 @@
         "external_owner": 2,
         "v1_decommission": 1
       }
+    },
+    {
+      "name": "production-fingerprint-refresh.json",
+      "classification": "SANITIZED_VERSIONED_READ_ONLY_SUMMARY",
+      "sha256": "53cdb95c45f9d9be86a6ed05688465fcabd9c805396323d11a2d4ad4b43ccda2",
+      "mode": "0644",
+      "content_values_collected": false,
+      "production_mutation_performed": false
+    },
+    {
+      "name": "repository-fingerprint-refresh.json",
+      "classification": "SANITIZED_VERSIONED_SUMMARY",
+      "sha256": "11b70ab4d24b2ff8a79bfa49fdb06b01ade3e890befc117c8b1048cd42a8b72a",
+      "mode": "0644",
+      "content_values_collected": false
+    },
+    {
+      "name": "redis-inventory-summary.json",
+      "classification": "SANITIZED_VERSIONED_READ_ONLY_AGGREGATE",
+      "sha256": "ec015d6151eef3062a5e3fa29b2c22d5e6846d02ef64cafa222a6caf2c953f05",
+      "mode": "0644",
+      "content_values_collected": false,
+      "production_mutation_performed": false
+    },
+    {
+      "name": "storage-inventory.yaml",
+      "classification": "SANITIZED_VERSIONED_READ_ONLY_SUMMARY",
+      "sha256": "d3a895e41eede5d0e9e92321bca490ef23d571749d69a2b300b5af9c4d936bfb",
+      "mode": "0644",
+      "content_values_collected": false,
+      "production_mutation_performed": false
     }
   ]
 }

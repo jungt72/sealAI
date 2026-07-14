@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "captured_at": "2026-07-14T14:35:28Z",
+  "classification": "SANITIZED_READ_ONLY_AGGREGATE",
+  "redis": {
+    "version": "7.4.7",
+    "role": "master",
+    "database": 0,
+    "keys": 193992,
+    "keys_with_expiry": 2,
+    "used_memory_bytes": 1040855672,
+    "maxmemory_bytes": 1073741824,
+    "maxmemory_policy": "noeviction",
+    "aof_enabled": true,
+    "aof_last_write_status": "ok",
+    "rdb_last_bgsave_status": "ok",
+    "evicted_keys": 0
+  },
+  "active_client_ownership": {
+    "mapped_application_containers": ["paperless"],
+    "sealai_v2_clients_observed": 0,
+    "raw_addresses_recorded": false
+  },
+  "categories": [
+    {
+      "category": "langgraph_checkpoint_write",
+      "count": 187761,
+      "types": {"ReJSON-RL": 187761},
+      "keys_with_expiry": 0,
+      "rebuildability": "retired_v1_candidate_pending_gate04_owner_confirmation"
+    },
+    {
+      "category": "langgraph_checkpoint",
+      "count": 3073,
+      "types": {"ReJSON-RL": 3073},
+      "keys_with_expiry": 0,
+      "rebuildability": "retired_v1_candidate_pending_gate04_owner_confirmation"
+    },
+    {
+      "category": "langgraph_write_keys_zset",
+      "count": 3088,
+      "types": {"zset": 3088},
+      "keys_with_expiry": 0,
+      "members": 187841,
+      "average_members": 60.83,
+      "maximum_members": 72,
+      "rebuildability": "secondary_registry_pending_relationship_validation"
+    },
+    {
+      "category": "langgraph_other",
+      "count": 66,
+      "types": {"string": 66},
+      "keys_with_expiry": 0,
+      "rebuildability": "unknown_until_exact_relationship_validation"
+    },
+    {
+      "category": "paperless_django_cache",
+      "count": 2,
+      "types": {"string": 2},
+      "keys_with_expiry": 2,
+      "rebuildability": "application_cache"
+    },
+    {
+      "category": "paperless_celery_kombu",
+      "count": 2,
+      "types": {"set": 2},
+      "keys_with_expiry": 0,
+      "rebuildability": "not_assumed_queue_state"
+    }
+  ],
+  "relationship_evidence": {
+    "library": "langgraph-checkpoint-redis==0.4.0",
+    "retired_v1_call": "AsyncRedisSaver.from_conn_string without ttl configuration",
+    "write_registry_prefix": "write_keys_zset",
+    "checkpoint_ttl_default": "none"
+  },
+  "memory_method_limit": "Per-key RedisJSON MEMORY USAGE results are non-additive and exceeded allocator truth when summed. Category values are therefore not reported as exact memory shares; used_memory is authoritative.",
+  "scan_method": "Bounded EVAL_RO cursor batches; only fixed aggregate categories left Redis.",
+  "raw_key_names_recorded": false,
+  "redis_values_read_or_recorded": false,
+  "personally_identifiable_information_recorded": false,
+  "production_mutation_performed": false
+}

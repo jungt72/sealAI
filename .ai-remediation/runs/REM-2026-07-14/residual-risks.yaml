@@ -12,12 +12,20 @@ risks:
     blocked_by: [GATE-02]
   - risk_id: RISK-P0-STORAGE
     severity: CRITICAL
-    summary: Production data storage remains at 95 percent and guards are not operational.
-    blocked_by: [GATE-03]
+    summary: Local non-destructive guards, release interlocks, backup safety, and exact-object cleanup controls are implemented and tested, but production data storage remains at 95 percent because none of them has been deployed or executed.
+    blocked_by: [GATE-03, GATE-08]
   - risk_id: RISK-P0-REDIS
     severity: HIGH
-    summary: Redis remains near maxmemory with noeviction, high swap, and almost no expirations.
+    summary: Redis remains near maxmemory with noeviction and only two expiring keys; read-only discovery attributes nearly all persistent objects to the retired V1 LangGraph checkpointer, but ownership confirmation, recovery evidence, and all mutation remain pending.
     blocked_by: [GATE-04]
+  - risk_id: RISK-PARALLEL-DEPLOYMENT
+    severity: HIGH
+    summary: Production advanced independently from the initial audited commit to 6e5608c3 while remediation was active; it is healthy and clean, but the locally tested release freeze is not deployed and therefore did not govern that event.
+    blocked_by: [GATE-08, GATE-10]
+  - risk_id: RISK-DR-OFFSITE
+    severity: HIGH
+    summary: Local backup lifecycle controls and an encrypted offsite receipt contract are implemented, but no external object store, managed key lifecycle, or two isolated full restore drills are available yet.
+    blocked_by: [external alert receiver, external encrypted object storage, two isolated restore drills, GATE-08]
   - risk_id: RISK-P1-RELEASE
     severity: HIGH
     summary: The final gate does not yet prove the exact production retrieval path and immutable artifacts.

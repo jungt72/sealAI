@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T11:35:38Z",
+  "updated_at": "2026-07-14T14:47:44Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -51,6 +51,42 @@
       "scope": "local_worktree",
       "status": "PASSED",
       "summary": "Fifteen scanner/control tests, twenty-one affected backend tests, three frontend auth-token tests, one SEO redaction test, Ruff, hook shell syntax, workflow YAML, fail-closed invalid-tree behavior, and diff checks passed."
+    },
+    {
+      "check_id": "PROD-PARALLEL-CHANGE-001",
+      "scope": "production_read_only",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Production independently advanced from ab91faf4 to clean detached commit 6e5608c3 while remediation was active. Backend and worker use the same new digest and core services are healthy, but the local release freeze did not govern that external event; remediation performed no production mutation."
+    },
+    {
+      "check_id": "P0-STORAGE-GUARD-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Fail-closed 75/85/80 disk guard, exact filesystem binding, global storage-mutation lease, structured redacted events, external-alert contract, release freeze, and hash-bound control bootstrap are implemented and tested locally; none is deployed."
+    },
+    {
+      "check_id": "P0-BACKUP-SAFETY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Postgres and Qdrant backup lifecycle, capacity reserve, checksum, no-clobber, retention, encrypted-offsite receipt, and exact restore contracts passed local tests. External object storage, key lifecycle, and two isolated full restore drills remain unavailable."
+    },
+    {
+      "check_id": "P0-GATE03-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Exact image-ID cleanup planning and execution reject drift, protected or indeterminate objects, signal interruption, weak recovery evidence, and insufficient reclaim. No prune, image removal, or other production cleanup was run."
+    },
+    {
+      "check_id": "P0-STORAGE-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Independent post-merge verification passed 198 P0-B tests with one expected macOS skip, 7 evaluation or tree-hash tests, 5 remediation-control tests, Ruff, 43 shell syntax checks, 34 structured-file parses, Compose validation, 306 frontend tests and build, npm audit with zero vulnerabilities, and diff checks."
+    },
+    {
+      "check_id": "P0-REDIS-DISCOVERY-001",
+      "scope": "production_read_only",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A bounded read-only aggregate inventory found 193992 DB0 keys, only two expirations, 1040855672 bytes used of 1073741824, and no V2 clients. Nearly all persistent objects map to the retired V1 LangGraph checkpointer; owner confirmation, recovery proof, code controls, and every Gate-04 mutation remain pending."
     }
   ],
   "production_mutations_performed": false,
