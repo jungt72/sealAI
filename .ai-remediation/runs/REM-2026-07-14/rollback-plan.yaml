@@ -22,9 +22,11 @@ packages:
       - approved deletion is restored only from the named verified backup or immutable artifact
   p0-redis-stability:
     reversible:
-      - code-side namespace, TTL, metrics, and cache toggles are independently revertible
+      - V2 Redis-independence wiring, disabled cache contract, read-only guard, and observation tooling are independently revertible before deployment
     recovery:
-      - cache can be disabled; non-rebuildable state requires a verified persistence backup before mutation
+      - exact-answer cache remains hard-disabled; do not make any old namespace valid during rollback
+      - non-rebuildable state requires verified persistence and restore evidence before any separately implemented mutation
+      - a guard rollback must preserve noeviction and must not authorize legacy-key cleanup
   production_deployment:
     recovery:
       - re-promote the previously attested backend digest and dashboard artifact

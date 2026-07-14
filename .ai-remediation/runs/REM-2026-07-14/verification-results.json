@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T14:47:44Z",
+  "updated_at": "2026-07-14T19:40:45Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -87,6 +87,36 @@
       "scope": "production_read_only",
       "status": "PASSED_WITH_RISK",
       "summary": "A bounded read-only aggregate inventory found 193992 DB0 keys, only two expirations, 1040855672 bytes used of 1073741824, and no V2 clients. Nearly all persistent objects map to the retired V1 LangGraph checkpointer; owner confirmation, recovery proof, code controls, and every Gate-04 mutation remain pending."
+    },
+    {
+      "check_id": "P0-REDIS-V2-INDEPENDENCE-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "V2 and its durable Postgres outbox have no Redis, Celery, or Kombu dependency, import, Compose wiring, or production-template setting. The exact-answer cache is disabled by default and hard-disabled until a mutable authority epoch is atomically coupled."
+    },
+    {
+      "check_id": "P0-REDIS-GUARD-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A read-only aggregate guard passed Unix-socket peer and inode binding, namespace, TTL, queue, cardinality, write-error, eviction-policy, RESP-budget, resource-limit, state-continuity, and 70/75/80 boundary tests. It is not installed and external alert delivery is BLOCKED_EXTERNAL."
+    },
+    {
+      "check_id": "P0-GATE04-OBSERVER-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "The legacy Redis tool performs only two consistent read-only EVAL_RO inventory passes bound to the exact container ID. It has no report, approval, execution, local-write, or Redis-mutation path and explicitly cannot prove a snapshot or authorize cleanup."
+    },
+    {
+      "check_id": "P0-REDIS-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "The combined suite passed 2007 V2 tests, 44 Redis guard tests, 32 Gate-04 observer tests, and 5 remediation-control tests, plus Ruff, formatting, Python and shell syntax, Compose validation, example JSON, diff checks, and the repository-wide redacting secret scanner."
+    },
+    {
+      "check_id": "P0-REDIS-SECURITY-REVIEW-001",
+      "scope": "independent_local_review",
+      "status": "PASSED",
+      "summary": "Independent adversarial re-reviews reported no remaining findings in the Redis guard or the non-executable Gate-04 observer after all High, Medium, and Low review findings were corrected."
     }
   ],
   "production_mutations_performed": false,

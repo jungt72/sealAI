@@ -103,24 +103,29 @@ findings:
     root_cause: A retired V1 LangGraph checkpointer left persistent unbounded DB0 state, while unrelated consumers share one global memory limit and V2 Compose misleadingly injects unused Redis settings.
     dependencies: [data-owner retention decision, isolated Redis Stack restore, persistence verification, OPS-001]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OPS-002
       - .ai-remediation/runs/REM-2026-07-14/production-fingerprint.json
     changes:
-      - Remove dead V2 Redis configuration and enforce V2 Redis independence as an executable contract.
-      - Add read-only memory and write-error release safety checks, namespace ownership records, metrics, alerts, and a controlled legacy-key runbook.
-      - Separate future cache use from non-rebuildable queue or state before introducing any Redis-backed V2 feature.
+      - Removed dead V2 and marketing Redis wiring and made V2 API plus its Postgres outbox executable without Redis, Celery, or Kombu.
+      - Added a fail-closed read-only capacity guard with exact Unix-socket peer binding, namespace ownership, TTL and queue metrics, fixed 70/75/80 thresholds, write-error and eviction checks, cardinality bounds, and aggregate-only output.
+      - Added a two-pass read-only legacy inventory verifier; execution, approval, local report creation, and every Redis mutation are hard-disabled until exact key selection, recovery evidence, and GATE-04 exist.
+      - Kept noeviction unchanged and hard-disabled exact-answer cache activation until a mutable authority epoch is atomically coupled.
     tests:
       - V2 dependency, import, Compose, and Redis-absent runtime contract tests.
-      - Memory threshold, write-error, namespace redaction, unknown-category, and non-rebuildable-state protection tests.
+      - Memory threshold, write-error, namespace redaction, unknown-category, non-rebuildable-state, socket peer, RESP budget, policy drift, and state continuity tests.
+      - Duplicate-input, Bool-as-integer, container drift, two-pass consistency, evidence-expiry, no-write, and no-mutation tests for the GATE-04 observer.
     production_action_required: true
     approval_gate: GATE-04
     rollback: Disable new cache behavior or restore prior scoped configuration; never bulk-delete and restore durable state only from verified persistence.
     evidence_after:
       - .ai-remediation/runs/REM-2026-07-14/redis-inventory-summary.json
       - Read-only aggregate inventory attributes 190834 documents and secondary registries to the retired V1 LangGraph checkpointer; active clients map only to Paperless and V2 DB1 is empty.
-    residual_risk: Writes can fail after roughly another 31.6 MiB and swap can amplify latency until the legacy owner decision, verified backup and approved Gate-04 action reduce memory to at most 70 percent.
+      - docs/ops/redis-capacity-guard.md
+      - docs/ops/gate-04-redis-remediation.md
+      - 2007 V2 tests, 44 Redis guard tests, and 32 GATE-04 observer tests passed; independent reviews found no remaining findings in those controls.
+    residual_risk: Production remains near maxmemory and can still reject writes after roughly another 31.6 MiB. The guard is not deployed, external alert delivery is blocked, and cleanup execution intentionally does not exist until recovery evidence, exact collision-free selection, GATE-04, and GATE-08 are satisfied.
 
   - finding_id: REL-001
     title: Final release gate does not attest the exact production retrieval and image path
@@ -256,18 +261,21 @@ findings:
     root_cause: Cache and release evidence bind code or seed state, not the mutable active-claim authority epoch.
     dependencies: [authority epoch contract, ledger and Qdrant reconciliation, production-faithful release evidence]
     remediation_type: [code, configuration, data_migration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#RAG-001
     changes:
-      - Introduce an authority epoch in cache keys, responses, evaluation, and deployment evidence with synchronous quarantine invalidation.
+      - Added canonical authority-epoch cache namespace primitives, finite TTL, per-tenant and global cardinality bounds, aggregate metrics, and explicit invalidation.
+      - Hard-disabled serving-cache activation because a static environment digest cannot prove atomic quarantine, revocation, expiry, or claim-update coupling; ledger lifecycle integration remains P1 work.
     tests:
       - Approve, cache, quarantine, revoke, and expire sequences must miss or revalidate immediately.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Disable the cache; do not make old namespace entries valid after reverting code.
-    evidence_after: []
-    residual_risk: Revoked or quarantined authority can remain served from cache until epoch invalidation is deployed.
+    evidence_after:
+      - docs/ops/redis-cache-contract.md
+      - Settings reject cache activation even with a syntactically valid static epoch; lifecycle namespace and tenant-isolation tests pass offline.
+    residual_risk: Exact-answer caching remains unavailable by design. Mutable ledger epoch propagation into responses, evaluation, Qdrant reconciliation, and release evidence is still unimplemented.
 
   - finding_id: DATA-001
     title: Legacy ownership and relational integrity are incomplete
@@ -402,17 +410,20 @@ findings:
     root_cause: Retired V1 monitoring was not migrated to V2 and critical signals lack active rules and delivery paths.
     dependencies: [metrics contract, alert receiver, OPS-001, OPS-002]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OBS-001
     changes:
-      - Add minimal V2 SLO metrics, alerts, dashboards, and receiver-path tests for disk, Redis, API, backup, certificates, outbox, and LLM usage.
+      - Added locally tested Redis capacity, TTL coverage, key ownership, queue depth, eviction, write-error, and state-continuity observations with bounded local alert handoff.
+      - Keep external delivery explicitly BLOCKED_EXTERNAL; the broader V2 monitoring stack, dashboards, and receiver-path tests remain P2 work.
     tests:
       - Controlled signal-to-receiver tests and dashboard query validation.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Disable individual noisy rules while preserving the base monitoring path.
-    evidence_after: []
+    evidence_after:
+      - docs/ops/redis-capacity-guard.md
+      - Forty-four adversarial guard tests and an independent security re-review passed; the service is not installed.
     residual_risk: Critical capacity, backup, service, and cost failures remain silent until the V2 monitoring stack is deployed.
 
   - finding_id: REL-003

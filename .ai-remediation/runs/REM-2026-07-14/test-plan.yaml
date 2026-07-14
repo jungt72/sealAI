@@ -24,6 +24,10 @@ suites:
     - V2 API and outbox worker function when Redis is absent
     - read-only memory thresholds, write-error counters, namespace redaction, and unknown-category denial
     - non-rebuildable queue and checkpoint protection plus metrics and alerts
+    - pre-auth Unix-socket inode and peer-credential binding with zero credential bytes on failure
+    - exact maxmemory-policy, config fingerprint, two-sample continuity, and cumulative RESP budgets
+    - two-pass Gate-04 observation with duplicate-input, evidence-expiry, container-drift, no-write, and no-mutation denial
+    - full V2 regression suite plus independent adversarial re-review
   p1-data-authority:
     - authority epoch invalidation after quarantine, revocation, and expiry
     - ledger and Qdrant reconciliation

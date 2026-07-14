@@ -17,4 +17,4 @@ prohibited:
   - mutable dashboard bind-mount publication
   - automatic deployment or restart
 next_gate: null
-next_local_package: p0-redis-stability
+next_local_package: p1-release-integrity

@@ -28,9 +28,10 @@ dependency_order:
     local_scope:
       - remove unused V2 Redis credentials and misleading namespace configuration
       - enforce V2 Redis independence through dependency, import, Compose, and runtime contracts
-      - add read-only capacity and write-error gates plus redacted namespace inventory
-      - add metrics and an object-specific legacy-checkpoint cleanup runbook
-    production_gates: [GATE-04]
+      - add a peer-bound read-only capacity and write-error guard plus redacted namespace inventory
+      - hard-disable exact-answer cache activation until mutable authority lifecycle coupling exists
+      - add a non-executable two-pass legacy observation runbook with no approval or report path
+    production_gates: [GATE-04, GATE-08]
   - package: p1-release-integrity
     branch: remediation/p1-release-integrity
     findings: [REL-001, REL-002, REL-003]

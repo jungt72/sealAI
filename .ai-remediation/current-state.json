@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "recorded_at": "2026-07-14T14:35:28Z",
+  "recorded_at": "2026-07-14T19:40:45Z",
   "release_freeze": {
     "status": "ACTIVE",
     "deployment_status": "IMPLEMENTED_NOT_DEPLOYED",
@@ -19,9 +19,9 @@
   },
   "repository": {
     "authoritative_path": "/Users/thorstenjung/Documents/New project/sealai-reconcile",
-    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p0-storage",
-    "remediation_branch": "remediation/p0-storage-safety",
-    "implementation_parent_commit": "b870a27f30ce22ec0d55559b18001ce4350ea5de",
+    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p0-redis",
+    "remediation_branch": "remediation/p0-redis-stability",
+    "implementation_parent_commit": "1eaccff9f29844d14065bce2fdf922d5e9994b04",
     "integrated_p0a_commit": "9d822aca296d3dc79349a538aa8e4ecb3f0a9b97",
     "origin_main_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
     "production_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
@@ -50,9 +50,9 @@
     "confirmed": 22,
     "partially_confirmed": 1,
     "remediation_verified_in_production": 0,
-    "implemented_not_deployed": 3,
-    "implementation_in_progress": 4,
-    "implementation_confirmed_unstarted": 16,
+    "implemented_not_deployed": 4,
+    "implementation_in_progress": 5,
+    "implementation_confirmed_unstarted": 14,
     "closed": 0
   },
   "packages": {
@@ -74,13 +74,21 @@
       "required_gates": ["GATE-03", "GATE-08"]
     },
     "p0-redis-stability": {
-      "local_status": "IN_PROGRESS",
+      "local_status": "IMPLEMENTED_NOT_DEPLOYED",
       "discovery_status": "READ_ONLY_COMPLETE",
       "production_status": "UNCHANGED_NEAR_MAXMEMORY",
-      "required_gate": "GATE-04"
+      "tests_status": "PASSED",
+      "cleanup_execution_status": "HARD_DISABLED_PENDING_EXACT_SELECTION_AND_GATE_04",
+      "external_dependencies": [
+        "reviewed Redis Unix socket and named read-only ACL",
+        "encrypted guard credentials",
+        "external alert receiver",
+        "verified Redis recovery evidence"
+      ],
+      "required_gates": ["GATE-04", "GATE-08"]
     }
   },
-  "next_local_package": "p0-redis-stability",
+  "next_local_package": "p1-release-integrity",
   "next_production_gate": null,
   "production_mutations_authorized": false,
   "production_mutations_performed_by_remediation": false

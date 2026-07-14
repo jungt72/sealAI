@@ -16,8 +16,12 @@ risks:
     blocked_by: [GATE-03, GATE-08]
   - risk_id: RISK-P0-REDIS
     severity: HIGH
-    summary: Redis remains near maxmemory with noeviction and only two expiring keys; read-only discovery attributes nearly all persistent objects to the retired V1 LangGraph checkpointer, but ownership confirmation, recovery evidence, and all mutation remain pending.
-    blocked_by: [GATE-04]
+    summary: Local V2 independence, a fail-closed read-only capacity guard, and a non-executable two-pass legacy inventory observer are implemented and independently reviewed. Production nevertheless remains near maxmemory with noeviction and only two expiring keys; no guard is installed and no cleanup execution path exists.
+    blocked_by: [exact collision-free key selection, verified Redis recovery evidence, external alert receiver, GATE-04, GATE-08]
+  - risk_id: RISK-P0-REDIS-CACHE-AUTHORITY
+    severity: HIGH
+    summary: Exact-answer cache activation is hard-disabled because a static environment digest cannot observe atomic ledger quarantine, revocation, expiry, or claim updates. The lifecycle-bound authority epoch remains P1 work.
+    blocked_by: [mutable ledger epoch implementation, lifecycle integration tests, production-faithful release evidence, GATE-08]
   - risk_id: RISK-PARALLEL-DEPLOYMENT
     severity: HIGH
     summary: Production advanced independently from the initial audited commit to 6e5608c3 while remediation was active; it is healthy and clean, but the locally tested release freeze is not deployed and therefore did not govern that event.
