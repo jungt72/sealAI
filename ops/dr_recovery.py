@@ -528,6 +528,20 @@ def validate_recovery_point(
     return document
 
 
+def require_recovery_point_within_rpo(
+    recovery_point: dict[str, Any], *, now: dt.datetime | None = None
+) -> None:
+    """Reject a receipt for a recovery point that is stale at verification time."""
+    observed_now = _utc_now() if now is None else now
+    for component in recovery_point["components"].values():
+        captured_at = _parse_timestamp(
+            component["captured_at"], reason="invalid_component_capture_time"
+        )
+        age = (observed_now - captured_at).total_seconds()
+        if age < -MAX_CLOCK_SKEW_SECONDS or age > component["rpo_target_seconds"]:
+            _fail("rpo_target_missed")
+
+
 def validate_configuration_inventory(value: Any) -> dict[str, Any]:
     document = _require_object(
         value,
@@ -1046,6 +1060,10 @@ def write_offsite_receipt(
     now: dt.datetime | None = None,
 ) -> dict[str, Any]:
     manifest = verify_manifest(root)
+    recovery_point = validate_recovery_point(
+        _read_json(root / "recovery" / "recovery-point.json")
+    )
+    require_recovery_point_within_rpo(recovery_point, now=now)
     if not SHA256_RE.fullmatch(repository_id) or not SHA256_RE.fullmatch(snapshot_id):
         _fail("invalid_offsite_source_identifier")
     _require_sha256(encryption_key_id_sha256, reason="invalid_offsite_key_id")
@@ -1083,6 +1101,7 @@ def write_drill_receipt(
     recovery_point = validate_recovery_point(
         _read_json(root / "recovery" / "recovery-point.json")
     )
+    require_recovery_point_within_rpo(recovery_point, now=now)
     full_restore_rto = max(
         component["rto_target_seconds"]
         for component in recovery_point["components"].values()
@@ -1175,7 +1194,9 @@ def render_metrics(status_path: Path) -> str:
     if value["schema_version"] != SCHEMA_VERSION:
         _fail("invalid_status_version")
     components = value["components"]
-    if not isinstance(components, dict) or not components:
+    if not isinstance(components, dict) or not set(REQUIRED_COMPONENTS).issubset(
+        components
+    ):
         _fail("invalid_status_components")
     lines: list[str] = []
     for component in sorted(components):

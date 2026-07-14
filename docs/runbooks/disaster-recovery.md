@@ -118,8 +118,9 @@ With a fresh manifest-bound root-owned Gate-08 receipt at
 Upload success is deliberately reported as `backup_uploaded_unverified`. It is not retention
 evidence. A valid `OFFSITE_VERIFIED` receipt exists only after the dedicated runner executes
 `restic check --read-data`, restores the exact snapshot completely, authenticates/decrypts it, and
-re-verifies every manifest byte. Upload responses, object existence, ETags, partial reads, and
-provider dashboards are insufficient.
+re-verifies every manifest byte. Receipt creation also compares every component capture timestamp
+with the current verification time and refuses a recovery point outside its declared RPO. Upload
+responses, object existence, ETags, partial reads, and provider dashboards are insufficient.
 
 The offsite policy is 14 daily, 8 weekly, 12 monthly, and 7 yearly snapshots, while preserving at
 least two independently verified snapshots. `dr_offsite.sh retention-plan` is dry-run only. There
@@ -201,7 +202,9 @@ sealai_backup_receipt_valid{component}
 ```
 
 Alert on a missed RPO, failed backup, invalid/stale receipt, no successful monthly drill within 35
-days, or any timer failure. External alert delivery remains `BLOCKED_EXTERNAL`.
+days, or any timer failure. The renderer rejects a status document that omits any required recovery
+component, so partial exporter state cannot look healthy. External alert delivery remains
+`BLOCKED_EXTERNAL`.
 
 ## Gate-08 request
 

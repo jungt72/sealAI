@@ -312,6 +312,29 @@ def test_receipts_require_full_download_isolation_and_freshness(tmp_path: Path) 
         dr.verify_offsite_receipt(root, offsite, now=now + dt.timedelta(days=2))
 
 
+def test_receipt_writers_refuse_stale_recovery_points(tmp_path: Path) -> None:
+    root = _manifest_set(tmp_path)
+    receipt_dir = tmp_path / "receipts"
+    receipt_dir.mkdir(mode=0o700)
+    stale_now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0) + dt.timedelta(
+        days=2
+    )
+
+    with pytest.raises(dr.DrError, match="rpo_target_missed"):
+        dr.write_offsite_receipt(
+            root,
+            receipt_dir / "offsite.json",
+            repository_id="1" * 64,
+            snapshot_id="2" * 64,
+            encryption_key_id_sha256="3" * 64,
+            now=stale_now,
+        )
+    with pytest.raises(dr.DrError, match="rpo_target_missed"):
+        dr.write_drill_receipt(
+            root, receipt_dir / "drill.json", elapsed_seconds=60, now=stale_now
+        )
+
+
 def test_drill_writer_refuses_missed_rto(tmp_path: Path) -> None:
     root = _manifest_set(tmp_path)
     receipts = tmp_path / "receipts"
@@ -370,13 +393,24 @@ def test_metrics_have_only_stable_names_and_component_label(tmp_path: Path) -> N
         "restore_drill_last_success_timestamp_seconds": 4,
         "backup_receipt_valid": 1,
     }
-    _json(status, {"schema_version": 1, "components": {"postgres": fields}})
+    components = {name: dict(fields) for name in dr.REQUIRED_COMPONENTS}
+    _json(status, {"schema_version": 1, "components": components})
     rendered = dr.render_metrics(status)
     assert set(dr.METRIC_NAMES.values()) == {
         line.split("{", 1)[0] for line in rendered.splitlines()
     }
-    assert all('{component="postgres"}' in line for line in rendered.splitlines())
+    assert all(
+        any(f'{{component="{name}"}}' in line for name in dr.REQUIRED_COMPONENTS)
+        for line in rendered.splitlines()
+    )
     assert "snapshot" not in rendered and "repository" not in rendered
+
+    _json(
+        tmp_path / "missing-component.json",
+        {"schema_version": 1, "components": {"postgres": fields}},
+    )
+    with pytest.raises(dr.DrError, match="invalid_status_components"):
+        dr.render_metrics(tmp_path / "missing-component.json")
 
     _json(
         tmp_path / "bad.json",
