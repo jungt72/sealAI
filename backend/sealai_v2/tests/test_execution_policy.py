@@ -97,6 +97,35 @@ def test_ungrounded_technical_case_is_a_deterministic_evidence_gap():
     assert "kein unabhängig geprüfter Beleg" in deterministic_response(decision)
 
 
+def test_signal_free_ambiguity_never_becomes_a_technical_evidence_gap():
+    route = classify_route_deterministic("Erzaehl mir etwas")
+    decision = decide_execution(ExecutionFeatures(route=route))
+    response = deterministic_response(decision)
+
+    assert route.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+    assert route.deterministic_signal_count == 0
+    assert decision.execution_class is ExecutionClass.D1
+    assert decision.model_tier is ModelTier.NONE
+    assert decision.reason == "ambiguous_no_domain_signal"
+    assert "fachliche Frage zur Dichtungstechnik" in response
+    assert "Werkstoff" not in response
+    assert "Herstellerdatenblatt" not in response
+
+
+def test_ambiguous_high_risk_input_still_fails_closed():
+    decision = decide_execution(
+        ExecutionFeatures(
+            route=_route(RouteName.UNSUPPORTED_OR_AMBIGUOUS, forced=True),
+            risk_flags=("Sauerstoff",),
+        )
+    )
+
+    assert decision.execution_class is ExecutionClass.H1
+    assert decision.model_tier is ModelTier.NONE
+    assert decision.needs_human_review is True
+    assert decision.reason == "ambiguous_high_risk_input"
+
+
 def test_simple_knowledge_uses_standard_once_without_llm_verifier():
     decision = decide_execution(
         ExecutionFeatures(

@@ -208,6 +208,7 @@ _SMALLTALK_PREFIX_RE = re.compile(
 # instead of being swallowed by a social prefix.
 _SOCIAL_REMAINDER_RE = re.compile(
     r"^\s*[,!?.-]*\s*(?:"
+    r"(?:und\s+)?guten\s+(?:morgen|tag|abend)|"
     r"(?:dir|euch)|"
     r"f(?:ue|ü)r\s+die\s+hilfe|"
     r"wie\s+geht(?:'s|\s+es)(?:\s+(?:dir|euch))?|"
