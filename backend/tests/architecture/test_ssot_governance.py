@@ -129,6 +129,40 @@ def test_runtime_maturity_projection_matches_governance_manifest() -> None:
     assert runtime_manifest == _json("product-maturity.json")
 
 
+def test_rwdr_limited_cutover_is_bound_to_owner_review_evidence() -> None:
+    evidence_dir = SSOT_DIR / "reviews" / "2026-07-14-rwdr-adaptive-interview-cutover"
+    expected_hashes = {
+        "worksheet.csv": "55d2b802738f41d81a671fdafe92e897298ad05ed08b1ba55309b8464a90d883",
+        "review_attestation.json": "d55f0303aad47dde87dd4a1f7f3bb831f77c495f2e2a1bd5a772dc870da81e05",
+        "adjudication.json": "bcdc176800614c8bfd8e56909b128fb400b95af9a971c4cdff4f5f5c411a5c56",
+        "manifest.json": "24856baa82dd710576c4276fac1722cc47d8a6858d3c634393d8881f0810bc1b",
+    }
+    for name, expected in expected_hashes.items():
+        assert (
+            hashlib.sha256((evidence_dir / name).read_bytes()).hexdigest() == expected
+        )
+
+    adjudication = json.loads(
+        (evidence_dir / "adjudication.json").read_text(encoding="utf-8")
+    )
+    assert adjudication["review_set_id"] == "rwdr-shadow-controlled-v2"
+    assert adjudication["review_units"] == 30
+    assert adjudication["preferences"] == {"controller": 30, "legacy": 0, "tie": 0}
+    assert adjudication["zero_controller_critical_gate_skips"] is True
+    assert adjudication["additional_llm_calls"] == 0
+    assert adjudication["network_calls"] == 0
+    assert adjudication["automatic_activation_authorized"] is False
+
+    maturity = _json("product-maturity.json")["capabilities"]["adaptive_interview_rwdr"]
+    assert maturity["status"] == "pilot"
+    assert maturity["scope_limit"] == "explicit_rwdr_cases_only"
+    assert maturity["activation_decision"] == "ODR-10"
+
+    decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
+    assert "## ODR-10: Limited RWDR adaptive-interview cutover" in decisions
+    assert "paid Eval-REPLAY" in decisions
+
+
 def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> None:
     compose = (REPO / "docker-compose.deploy.yml").read_text(encoding="utf-8")
 

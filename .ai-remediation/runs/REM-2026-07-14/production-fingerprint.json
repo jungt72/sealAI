@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "captured_at": "2026-07-14T11:00:34Z",
+  "captured_at": "2026-07-14T11:35:38Z",
   "host": "ubuntu-8gb-nbg1-1",
   "repository": {
     "path": "/home/thorsten/sealai",
@@ -18,8 +18,8 @@
   "capacity": {
     "root_filesystem_percent_used": 82,
     "data_filesystem_percent_used": 95,
-    "data_filesystem_bytes_available": 5331283968,
-    "redis_used_memory_bytes": 1040559912,
+    "data_filesystem_bytes_available": 5330395136,
+    "redis_used_memory_bytes": 1040601824,
     "redis_maxmemory_bytes": 1073741824,
     "redis_keys": 193992,
     "redis_keys_with_expiry": 2,

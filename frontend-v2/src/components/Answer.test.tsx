@@ -26,6 +26,44 @@ describe("Answer — base rendering (unchanged behaviour)", () => {
     render(<Answer res={{ ...base, grounded: false }} />);
     expect(screen.getByTestId("vorlaeufig-label")).toBeInTheDocument();
   });
+
+  it("renders the backend-owned next question and unknown handling", () => {
+    render(
+      <Answer
+        res={{
+          ...base,
+          next_question: {
+            case_id: "case-1",
+            topic_id: "rwdr.default",
+            state_revision: 2,
+            pack_id: "rwdr.v1",
+            pack_version: "1.0.1",
+            policy_version: "adaptive-interview.lexicographic.1.0.0",
+            question_id: "rwdr.q.medium_primary",
+            primary_need_id: "rwdr.medium.primary",
+            related_need_ids: [],
+            question_text: "Welches konkrete Medium liegt an der Dichtkante an?",
+            question_type: "structured_text",
+            answer_schema: { type: "object" },
+            allowed_unknown: true,
+            allowed_unobtainable: true,
+            criticality: "decision_critical",
+            rule_refs: ["AI-T4-REQUIRED-001"],
+            dependency_refs: [],
+            pending_question_id: "ipq-1",
+          },
+        }}
+      />,
+    );
+    const prompt = screen.getByTestId("next-question");
+    expect(prompt).toHaveTextContent("Welches konkrete Medium liegt an der Dichtkante an?");
+    expect(prompt).toHaveTextContent("nicht ermittelbar");
+  });
+
+  it("does not invent a next question when the controller payload is absent", () => {
+    render(<Answer res={base} />);
+    expect(screen.queryByTestId("next-question")).toBeNull();
+  });
 });
 
 describe("Answer — P4 Gegencheck note (disqualify-only, E4-1)", () => {

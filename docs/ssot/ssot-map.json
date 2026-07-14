@@ -100,17 +100,22 @@
   },
   "capabilities": {
     "adaptive_interview_rwdr": {
-      "status": "implemented_default_off",
+      "status": "production_active_limited_rwdr",
       "pack_id": "rwdr.v1",
       "pack_version": "1.0.1",
       "policy_version": "adaptive-interview.lexicographic.1.0.0",
       "evidence": [
         "docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md",
         "docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md",
+        "docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/README.md",
+        "docs/ssot/OWNER_DECISION_REGISTER.md",
         "backend/sealai_v2/core/interview/",
         "backend/sealai_v2/knowledge/domain_packs/rwdr.v1.json",
         "backend/sealai_v2/eval/interview_shadow_review.py",
         "backend/sealai_v2/eval/seed_cases/rwdr_shadow_review_v2.json",
+        "backend/sealai_v2/db/migrations/versions/20260714_0010_rwdr_pack_1_0_1_cutover.py",
+        "frontend-v2/src/components/Answer.tsx",
+        "frontend-v2/src/components/ChatPane.tsx",
         "docs/ssot/review-invalidations/RWDR_SHADOW_CONTROLLED_V1_INVALIDATION.md",
         "backend/sealai_v2/tests/test_adaptive_interview_policy.py",
         "backend/sealai_v2/tests/test_interview_shadow_review.py"

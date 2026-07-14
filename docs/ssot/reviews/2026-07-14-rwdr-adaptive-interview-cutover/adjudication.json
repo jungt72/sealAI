@@ -1,0 +1,644 @@
+{
+  "additional_llm_calls": 0,
+  "attestation_sha256": "d55f0303aad47dde87dd4a1f7f3bb831f77c495f2e2a1bd5a772dc870da81e05",
+  "automatic_activation_authorized": false,
+  "controller_at_least_as_good_count": 30,
+  "controller_at_least_as_good_rate": 1.0,
+  "cutover_decision_required": true,
+  "decision_note": "This artifact recomputes human ratings only. It is not a PASS/FAIL verdict and cannot authorize a visible cutover.",
+  "human_review_complete": true,
+  "network_calls": 0,
+  "outcomes": [
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-001",
+      "controller_need_id": "rwdr.application.goal",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-002",
+      "controller_need_id": "rwdr.application.goal",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-003",
+      "controller_need_id": "rwdr.application.goal",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-004",
+      "controller_need_id": "rwdr.application.goal",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-005",
+      "controller_need_id": "rwdr.application.goal",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-006",
+      "controller_need_id": "rwdr.medium.primary",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-007",
+      "controller_need_id": "rwdr.medium.primary",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-008",
+      "controller_need_id": "rwdr.medium.primary",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-009",
+      "controller_need_id": "rwdr.medium.primary",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-010",
+      "controller_need_id": "rwdr.medium.primary",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-011",
+      "controller_need_id": "rwdr.temperature.operating",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-012",
+      "controller_need_id": "rwdr.temperature.operating",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-013",
+      "controller_need_id": "rwdr.temperature.operating",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-014",
+      "controller_need_id": "rwdr.temperature.operating",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-015",
+      "controller_need_id": "rwdr.temperature.operating",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-016",
+      "controller_need_id": "rwdr.pressure.regime",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-017",
+      "controller_need_id": "rwdr.pressure.regime",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-018",
+      "controller_need_id": "rwdr.pressure.regime",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-019",
+      "controller_need_id": "rwdr.pressure.regime",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-020",
+      "controller_need_id": "rwdr.pressure.regime",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-021",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-022",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-023",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-024",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-025",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-026",
+      "controller_need_id": "rwdr.rotation.speed",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-027",
+      "controller_need_id": "rwdr.rotation.speed",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-028",
+      "controller_need_id": "rwdr.rotation.speed",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-029",
+      "controller_need_id": "rwdr.rotation.speed",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    },
+    {
+      "answerable_or_handles_unknown": [
+        "controller",
+        "legacy"
+      ],
+      "asks_documented_information": [
+        "legacy"
+      ],
+      "case_id": "RWDR-SHADOW-030",
+      "controller_need_id": "rwdr.rotation.speed",
+      "critical_gate_skipped": [
+        "legacy"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "preferred_source": "controller",
+      "relevant_to_case": [
+        "controller"
+      ]
+    }
+  ],
+  "preferences": {
+    "controller": 30,
+    "legacy": 0,
+    "tie": 0
+  },
+  "review_set_id": "rwdr-shadow-controlled-v2",
+  "review_units": 30,
+  "reviewed_at": "2026-07-14T09:45:13Z",
+  "reviewer": "Thorsten Jung",
+  "schema_version": "1.0",
+  "source_metrics": {
+    "answerable_or_handles_unknown": {
+      "controller": 30,
+      "legacy": 30
+    },
+    "asks_documented_information": {
+      "controller": 0,
+      "legacy": 30
+    },
+    "critical_gate_skipped": {
+      "controller": 0,
+      "legacy": 30
+    },
+    "relevant_to_case": {
+      "controller": 30,
+      "legacy": 0
+    }
+  },
+  "worksheet_sha256": "55d2b802738f41d81a671fdafe92e897298ad05ed08b1ba55309b8464a90d883",
+  "zero_any_critical_gate_skips": false,
+  "zero_controller_critical_gate_skips": true
+}

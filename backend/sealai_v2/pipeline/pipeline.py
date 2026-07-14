@@ -1693,29 +1693,41 @@ class Pipeline:
                 )
                 result_case_state = committed_view.case_state_v2 or case_state_v2
                 if self.distiller is not None:
-                    self._schedule_remember(
-                        timer,
-                        tenant_id=scope.tenant_id,
-                        session=session,
-                        question=question,
-                        answer_text=answer.text,
-                        expected_case_revision=committed_revision,
-                    )
-                    scheduled_background = True
-                    # Active response preparation is additive and default-off. The final shadow
-                    # measurement waits for the background distiller so it compares against the
-                    # fully committed state instead of logging a knowingly stale pre-distill view.
                     if self.adaptive_interview_enabled:
-                        evaluation = self.refresh_adaptive_interview(
+                        # A visible next question must be based on facts from THIS turn. Waiting for
+                        # the already-existing distillation adds no model call, but prevents the
+                        # controller from re-asking the pending question against stale CaseState.
+                        evaluation = await self._remember_and_refresh_interview(
+                            timer,
                             tenant_id=scope.tenant_id,
-                            session_id=session.session_id,
-                            owner_subject=session.owner_subject,
+                            session=session,
+                            question=question,
+                            answer_text=answer.text,
+                            expected_case_revision=committed_revision,
                             legacy_answer_text=answer.text,
-                            persist_shadow=False,
+                            persist_shadow=self.adaptive_interview_shadow_enabled,
                         )
                         adaptive_next_question = (
                             evaluation.next_question if evaluation is not None else None
                         )
+                        committed_view = self.memory.recall(
+                            tenant_id=scope.tenant_id,
+                            session_id=session.session_id,
+                            owner_subject=session.owner_subject,
+                        )
+                        result_case_state = (
+                            committed_view.case_state_v2 or result_case_state
+                        )
+                    else:
+                        self._schedule_remember(
+                            timer,
+                            tenant_id=scope.tenant_id,
+                            session=session,
+                            question=question,
+                            answer_text=answer.text,
+                            expected_case_revision=committed_revision,
+                        )
+                        scheduled_background = True
                 else:
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
@@ -2094,6 +2106,37 @@ class Pipeline:
         values are discarded rather than overwriting the newer state.
         """
         try:
+            await self._remember_and_refresh_interview(
+                timer,
+                tenant_id=tenant_id,
+                session=session,
+                question=question,
+                answer_text=answer_text,
+                expected_case_revision=expected_case_revision,
+                legacy_answer_text=answer_text,
+                persist_shadow=self.adaptive_interview_shadow_enabled,
+            )
+        finally:
+            timer.emit()
+
+    async def _remember_and_refresh_interview(
+        self,
+        timer: TurnTimer,
+        *,
+        tenant_id: str,
+        session: SessionContext,
+        question: str,
+        answer_text: str,
+        expected_case_revision: int,
+        legacy_answer_text: str,
+        persist_shadow: bool,
+    ) -> AdaptiveInterviewEvaluation | None:
+        """Commit distilled facts, settle derived values, then evaluate the controller.
+
+        Shadow/default operation calls this from a background task. Visible adaptive-interview
+        operation awaits the same work so its next-question payload cannot lag one user turn.
+        """
+        try:
             with timer.stage("distill_ms"):
                 facts = await self.distiller.distill(
                     question=question, answer=answer_text
@@ -2119,21 +2162,20 @@ class Pipeline:
                 session_id=session.session_id,
                 owner_subject=session.owner_subject,
             )
-            self.refresh_adaptive_interview(
+            return self.refresh_adaptive_interview(
                 tenant_id=tenant_id,
                 session_id=session.session_id,
                 owner_subject=session.owner_subject,
-                legacy_answer_text=answer_text,
-                persist_shadow=self.adaptive_interview_shadow_enabled,
+                legacy_answer_text=legacy_answer_text,
+                persist_shadow=persist_shadow,
             )
         except Exception as exc:  # noqa: BLE001 — a background task must never die unhandled
             _log.warning(
-                "background remember failed (turn memory lost): %s: %s",
+                "remember/interview refresh failed (turn memory lost): %s: %s",
                 type(exc).__name__,
                 exc,
             )
-        finally:
-            timer.emit()
+            return None
 
 
 def build_pipeline(

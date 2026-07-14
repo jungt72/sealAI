@@ -124,6 +124,7 @@ findings:
     implementation_status: CONFIRMED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-001
+      - Pull request 288 activates a limited adaptive path and adds a migration but leaves the final release-gate implementation unchanged.
     changes:
       - Build once, evaluate the exact digest with production-equivalent isolated Postgres and Qdrant, and fail closed on every final invariant.
       - Remove targeted, provisional, or waiver evidence from final production eligibility.
@@ -148,6 +149,7 @@ findings:
     implementation_status: CONFIRMED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-002
+      - Pull request 288 changes dashboard source while the production publication path remains an unattested host bind mount.
     changes:
       - Package and attest immutable dashboard bytes and persist verified backend and frontend digests in the recovery manifest.
     tests:
@@ -263,6 +265,7 @@ findings:
     implementation_status: CONFIRMED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#DATA-001
+      - Pull request 288 adds an undeployed state-cleanup migration; it does not add ownership constraints, foreign keys, or RLS and requires GATE-07.
     changes:
       - Design auditable ownership backfill or quarantine followed by NOT NULL, FK, checks, and RLS with a non-bypass application role.
     tests:
@@ -402,6 +405,7 @@ findings:
     implementation_status: CONFIRMED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#REL-003
+      - The newly activated adaptive code and migration would still enter the existing production-secret candidate path on the next release.
     changes:
       - Evaluate candidates in an isolated network against snapshot data and fake or tightly scoped provider identities before promotion.
     tests:
@@ -494,6 +498,7 @@ findings:
     implementation_status: CONFIRMED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#AUTH-004
+      - Pull request 288 changes dashboard UI and API behavior but not OIDC state validation or sensitive query-string handling.
     changes:
       - Validate one-time short-lived state and nonce, immediately scrub callback URLs, and remove or mask sensitive query arguments.
     tests:

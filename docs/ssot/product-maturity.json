@@ -95,16 +95,14 @@
   "capabilities": {
     "adaptive_interview_rwdr": {
       "horizon": "H2",
-      "status": "in_build",
-      "implementation_status": "implemented_default_off",
+      "status": "pilot",
+      "implementation_status": "production_active_limited_rwdr",
       "pack_id": "rwdr.v1",
+      "pack_version": "1.0.1",
       "activation_gate": "G8",
-      "activation_blockers": [
-        "shadow_data_not_collected",
-        "human_shadow_review_not_completed",
-        "domain_owner_stop_profile_review",
-        "frontend_cutover_not_implemented"
-      ]
+      "activation_blockers": [],
+      "scope_limit": "explicit_rwdr_cases_only",
+      "activation_decision": "ODR-10"
     }
   }
 }

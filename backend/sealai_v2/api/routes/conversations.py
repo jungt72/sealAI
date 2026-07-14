@@ -25,6 +25,7 @@ from sealai_v2.core.contracts import (
     VerifiedIdentity,
 )
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewEvaluation
 
 router = APIRouter(prefix="/api/v2/conversations", tags=["conversations"])
 
@@ -48,6 +49,19 @@ def _require_session_access(mem, identity: VerifiedIdentity, session_id: str) ->
         )
     except ConversationAccessDenied as exc:
         raise HTTPException(status_code=404, detail="conversation not found") from exc
+
+
+def _visible_next_question(
+    pipeline: Pipeline, evaluation: AdaptiveInterviewEvaluation | None
+) -> dict | None:
+    """Expose controller state only in active mode; shadow mode remains invisible."""
+    if (
+        not pipeline.adaptive_interview_enabled
+        or evaluation is None
+        or evaluation.next_question is None
+    ):
+        return None
+    return evaluation.next_question.to_dict()
 
 
 @router.get("")
@@ -108,6 +122,36 @@ async def view_memory(
     }
 
 
+@router.post("/current/interview/refresh")
+async def refresh_interview(
+    case_id: CaseIdParam = None,
+    identity: VerifiedIdentity = Depends(current_identity),
+    pipeline: Pipeline = Depends(get_pipeline),
+) -> dict:
+    """Reconcile the current case and return the active controller's next question.
+
+    POST is intentional: reconciliation persists reconstructable pending-question state. The
+    endpoint is user- and tenant-scoped exactly like the memory mutation surface. In shadow-only
+    or disabled mode it returns ``null`` and never exposes the controller decision.
+    """
+    mem = _memory(pipeline)
+    session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
+    evaluation = pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+        # Projection refreshes (reload/case switch) are not new user decisions and must not inflate
+        # append-only shadow telemetry. Chat and fact mutations retain their normal observation.
+        persist_shadow=False,
+    )
+    return {
+        "case_id": session_id,
+        "next_question": _visible_next_question(pipeline, evaluation),
+    }
+
+
 # Allowlisted fact-edit origins (fail-closed): an inline panel edit (default) vs the parameter form.
 # An unrecognized origin is NOT honored — provenance can never be spoofed from the request body.
 _EDIT_ORIGINS = {"user-edited", "user-form"}
@@ -149,12 +193,16 @@ async def edit_fact(
         session_id=session_id,
         owner_subject=identity.subject,
     )
-    pipeline.refresh_adaptive_interview(
+    evaluation = pipeline.refresh_adaptive_interview(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
     )
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "case_id": session_id,
+        "next_question": _visible_next_question(pipeline, evaluation),
+    }
 
 
 class FactBatchItem(BaseModel):
@@ -203,7 +251,7 @@ async def submit_facts(
         session_id=session_id,
         owner_subject=identity.subject,
     )
-    pipeline.refresh_adaptive_interview(
+    evaluation = pipeline.refresh_adaptive_interview(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
@@ -213,9 +261,11 @@ async def submit_facts(
         session_id=session_id,
         owner_subject=identity.subject,
     )
-    return build_param_confirmation(
+    confirmation = build_param_confirmation(
         [it.model_dump() for it in body.items], settled, comp
     )
+    confirmation["next_question"] = _visible_next_question(pipeline, evaluation)
+    return confirmation
 
 
 @router.post("/current/preview")
@@ -265,12 +315,16 @@ async def forget_fact(
         session_id=session_id,
         owner_subject=identity.subject,
     )
-    pipeline.refresh_adaptive_interview(
+    evaluation = pipeline.refresh_adaptive_interview(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
     )
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "case_id": session_id,
+        "next_question": _visible_next_question(pipeline, evaluation),
+    }
 
 
 @router.delete("/current")
@@ -292,4 +346,4 @@ async def forget_all(
     pipeline.clear_adaptive_interview(
         tenant_id=identity.tenant_id, session_id=session_id
     )
-    return {"status": "ok"}
+    return {"status": "ok", "case_id": session_id, "next_question": None}

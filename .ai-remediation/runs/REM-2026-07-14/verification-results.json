@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T11:29:48Z",
+  "updated_at": "2026-07-14T11:35:38Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -32,7 +32,13 @@
       "check_id": "POST-PRODUCTION-COMMITS-001",
       "scope": "repository_git_objects",
       "status": "PASSED",
-      "summary": "Two content commits and two merge commits affect only offline RWDR shadow review, seed cases, tests, domain pack, and documentation; none changes an audited remediation path."
+      "summary": "Three content commits and three merge commits add offline review plus limited RWDR activation; no changed blob in pull request 288 triggered the redacting secret scanner, and the final-gate implementation remains unchanged."
+    },
+    {
+      "check_id": "ORIGIN-ADVANCE-001",
+      "scope": "repository_git_objects",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Pull request 288 advanced origin/main during remediation and is integrated locally without rewriting the three P0-A commits. It resolves none of the 23 findings, changes no final release-gate implementation, and introduces an undeployed migration that remains explicitly subject to GATE-07. Its 32 changed blobs produced no redacted secret-scanner finding."
     },
     {
       "check_id": "P0-SECRET-001",

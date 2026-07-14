@@ -1,7 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatResponse, Clarification, ConfirmationResponse, ConversationMemory } from "../contracts";
+import type {
+  ChatResponse,
+  Clarification,
+  ConfirmationResponse,
+  ConversationMemory,
+  NextQuestionPayload,
+} from "../contracts";
 import { ChatPane } from "./ChatPane";
 import { Shell } from "./Shell";
 
@@ -22,6 +28,27 @@ const WITH_FACTS: ConversationMemory = {
     { feld: "medium", wert: "Hydrauliköl", provenance: "distilled-from-conversation" },
   ],
   history: [],
+};
+const NEXT_QUESTION: NextQuestionPayload = {
+  case_id: "case-1",
+  topic_id: "rwdr.default",
+  state_revision: 2,
+  pack_id: "rwdr.v1",
+  pack_version: "1.0.1",
+  policy_version: "adaptive-interview.lexicographic.1.0.0",
+  question_id: "rwdr.q.application_goal",
+  primary_need_id: "rwdr.application.goal",
+  related_need_ids: [],
+  question_text:
+    "Welches Ziel hat der Fall: Neuauslegung, Austausch oder Retrofit, Optimierung oder Schadensanalyse?",
+  question_type: "single_choice",
+  answer_schema: { type: "string" },
+  allowed_unknown: false,
+  allowed_unobtainable: false,
+  criticality: "decision_critical",
+  rule_refs: ["AI-T4-REQUIRED-001"],
+  dependency_refs: [],
+  pending_question_id: "ipq-1",
 };
 
 function renderPane(over: Partial<Parameters<typeof ChatPane>[0]> = {}) {
@@ -447,6 +474,47 @@ describe("cockpit internals: parameter/readout matrix", () => {
     expect(within(rail).getByTestId("cockpit-warning")).toHaveTextContent("Keine kritischen Punkte");
     expect(rail).not.toHaveTextContent("d1_mm");
     expect(rail).not.toHaveTextContent("rpm");
+  });
+
+  it("lets the backend controller replace the legacy field order in chat and cockpit", async () => {
+    renderPane({
+      memory: WITH_FACTS,
+      onSend: vi.fn(async () => ({
+        answer: "Ich ordne den Fall strukturiert ein.",
+        model: "m",
+        grounded: true,
+        intent: null,
+        citations: [],
+        next_question: NEXT_QUESTION,
+      })),
+    });
+    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: "RWDR prüfen" } });
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(await screen.findByTestId("next-question")).toHaveTextContent(NEXT_QUESTION.question_text);
+    const rail = within(screen.getByTestId("case-state")).getByTestId("cockpit-readout-column");
+    expect(within(rail).getByTestId("cockpit-next-step")).toHaveTextContent(
+      NEXT_QUESTION.question_text,
+    );
+    expect(within(rail).getByTestId("cockpit-missing")).toHaveTextContent("Anwendungsziel");
+    expect(within(rail).getByTestId("cockpit-missing")).not.toHaveTextContent("Drehzahl n");
+    expect(within(rail).getByTestId("cockpit-rfq")).toHaveTextContent("Noch nicht bereit");
+  });
+
+  it("treats the refreshed controller prop as authoritative, including an explicit null", () => {
+    const { props, rerender } = renderPane({ memory: WITH_FACTS, nextQuestion: NEXT_QUESTION });
+    let rail = within(screen.getByTestId("case-state")).getByTestId("cockpit-readout-column");
+    expect(within(rail).getByTestId("cockpit-next-step")).toHaveTextContent(
+      NEXT_QUESTION.question_text,
+    );
+
+    rerender(<ChatPane {...props} nextQuestion={null} />);
+
+    rail = within(screen.getByTestId("case-state")).getByTestId("cockpit-readout-column");
+    expect(within(rail).getByTestId("cockpit-next-step")).toHaveTextContent("Drehzahl ergänzen");
+    expect(within(rail).getByTestId("cockpit-next-step")).not.toHaveTextContent(
+      NEXT_QUESTION.question_text,
+    );
   });
 
   it("the cockpit body is a single scroll-area holding the two-column matrix", () => {

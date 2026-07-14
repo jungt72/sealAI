@@ -1,0 +1,24 @@
+{
+  "additional_llm_calls": 0,
+  "attestation_template_sha256": "9b2fb56b706ba667778c9bd8f77ae89b459de7ef20a73ed658be1b966ec80755",
+  "automatic_activation_authorized": false,
+  "blinding_key_sha256": "1d89ad940ba1b91e8fab4a4aeaa9622e427d504db22b64c9e1026e659ab2e5e6",
+  "controller_a_count": 15,
+  "controller_b_count": 15,
+  "corpus_sha256": "ee37defd9d6f6382d3ecb50af7389e3b9358b8211f90bfc521f44562df8a5c6b",
+  "domain_pack_sha256": "2dcb2063362a3f4db9488ed25421616027be990b21b9fea2e0d28c12fcc0e44b",
+  "human_adjudication_required": true,
+  "network_calls": 0,
+  "pack_id": "rwdr.v1",
+  "pack_version": "1.0.1",
+  "policy_version": "adaptive-interview.lexicographic.1.0.0",
+  "question_catalog_version": "rwdr.questions.1.0.1",
+  "review_instructions_sha256": "2aa210d57881fd9c173d7709fb8b5a72aa792a05c09bf3309c04e22fcef39a52",
+  "review_set_id": "rwdr-shadow-controlled-v2",
+  "review_units": 30,
+  "reviewable_divergence_types": [
+    "different_need"
+  ],
+  "schema_version": "1.0",
+  "worksheet_template_sha256": "63fac1f6acdd6ee907ff5e6f4c049c1242317da10881490ac51db5c41a0bedc9"
+}

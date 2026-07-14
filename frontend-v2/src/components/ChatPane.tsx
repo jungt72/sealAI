@@ -16,6 +16,7 @@ import type {
   ConfirmationResponse,
   ContributePayload,
   ConversationMemory,
+  NextQuestionPayload,
   ParamItem,
   Turn,
 } from "../contracts";
@@ -106,7 +107,9 @@ const SEAL_LABELS: Record<string, string> = {
   statisch: "Statische Dichtung",
 };
 
-const FIELD_PRIORITY = [
+// Display-only RFQ checklist. It never selects the next conversational question; that authority
+// belongs to the backend's versioned adaptive-interview payload whenever one is present.
+const RFQ_CORE_FIELDS = [
   {
     key: "medium",
     label: "Medium",
@@ -177,8 +180,21 @@ function solutionSummary(committed: Record<string, string>, computedCount: numbe
   return { title: "Dichtungssituation offen", meta: "vorläufig · Startpunkt oder Fallbeschreibung fehlt noch" };
 }
 
-function missingRows(committed: Record<string, string>) {
-  return FIELD_PRIORITY.filter((f) => !factValue(committed, f.key));
+function missingRfqCoreFields(committed: Record<string, string>) {
+  return RFQ_CORE_FIELDS.filter((f) => !factValue(committed, f.key));
+}
+
+const NEED_LABELS: Record<string, string> = {
+  "rwdr.application.goal": "Anwendungsziel",
+  "rwdr.medium.primary": "Medium",
+  "rwdr.temperature.operating": "Temperaturprofil",
+  "rwdr.pressure.regime": "Druckregime",
+  "rwdr.shaft.diameter": "Wellendurchmesser",
+  "rwdr.rotation.speed": "Drehzahl und Drehrichtung",
+};
+
+function nextQuestionLabel(question: NextQuestionPayload): string {
+  return NEED_LABELS[question.primary_need_id] ?? "Fachliche Klärung";
 }
 
 function warningRows(compute: ComputeResponse | null): string[] {
@@ -210,6 +226,7 @@ export function ChatPane({
   onSend,
   error,
   memory,
+  nextQuestion,
   onEditFact,
   onForgetFact,
   onForgetAll,
@@ -232,6 +249,9 @@ export function ChatPane({
   onSend: (message: string, onToken?: (text: string, draft?: boolean) => void) => Promise<ChatResponse>;
   error: string | null;
   memory: ConversationMemory;
+  /** Authoritative current controller state. Undefined keeps the response-history fallback for
+   * isolated/legacy callers; null explicitly means there is no active next question. */
+  nextQuestion?: NextQuestionPayload | null;
   onEditFact: (feld: string, wert: string) => void;
   onForgetFact: (feld: string) => void;
   onForgetAll: () => void;
@@ -504,6 +524,18 @@ export function ChatPane({
     return null;
   }, [msgs]);
 
+  // The most recent live response owns the current question. Historical responses retain their
+  // own prompt in the transcript, while the cockpit always follows the latest controller state.
+  const responseNextQuestion = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.role === "assistant" && m.res.next_question) return m.res.next_question;
+    }
+    return null;
+  }, [msgs]);
+  const latestNextQuestion =
+    nextQuestion === undefined ? responseNextQuestion : nextQuestion;
+
   // The Anfrage briefing is rendered server-side from the SESSION case-state; the message it runs is
   // the user's last substantive question (recalls the worked-out situation). The panel passes only the
   // partner id — the host injects this message + talks to /api/v2/anfrage.
@@ -676,13 +708,25 @@ export function ChatPane({
   // + the Parameter | Readout 2-pane (side-by-side when the panel is wide, stacked when narrow — a CSS
   // container query). The fast-path form is the SINGLE form entry point; its batch submit reuses the
   // SAME settle → confirmation path. Pure placement: no data-flow / settle / recompute change.
-  const missing = missingRows(committed);
+  const rfqMissing = missingRfqCoreFields(committed);
+  const missing = latestNextQuestion
+    ? [
+        {
+          key: latestNextQuestion.primary_need_id,
+          label: nextQuestionLabel(latestNextQuestion),
+          hint: latestNextQuestion.question_text,
+        },
+      ]
+    : rfqMissing;
   const warnings = warningRows(compute ?? null);
   const primaryClarification = (compute?.clarifications ?? [])[0];
   const solution = solutionSummary(committed, compute?.computed?.length ?? 0);
   const nextStep =
-    missing[0]?.action ?? (warnings[0] ? "Kritischen Punkt prüfen" : "Herstelleranfrage vorbereiten");
-  const rfqReady = caseActive && missing.length === 0 && warnings.length === 0;
+    latestNextQuestion?.question_text ??
+    rfqMissing[0]?.action ??
+    (warnings[0] ? "Kritischen Punkt prüfen" : "Herstelleranfrage vorbereiten");
+  const rfqReady =
+    caseActive && latestNextQuestion === null && rfqMissing.length === 0 && warnings.length === 0;
   const rfqStatus = rfqReady
     ? "Vorbereitbar · aktuelle Angaben sind ausreichend strukturiert"
     : `Noch nicht bereit · ${missing.length || 1} ${missing.length === 1 ? "Punkt" : "Punkte"} offen`;
