@@ -1,0 +1,29 @@
+schema_version: 1
+run_id: REM-2026-07-14
+status: OPEN
+risks:
+  - risk_id: RISK-P0-SECRETS
+    severity: CRITICAL
+    summary: Tracked credentials remain present in production history and require human-controlled rotation and later history remediation.
+    blocked_by: [GATE-01, GATE-09]
+  - risk_id: RISK-P0-PERMISSIONS
+    severity: CRITICAL
+    summary: Production secret-adjacent files remain permissively readable until the object-specific permission plan is approved.
+    blocked_by: [GATE-02]
+  - risk_id: RISK-P0-STORAGE
+    severity: CRITICAL
+    summary: Production data storage remains at 95 percent and guards are not operational.
+    blocked_by: [GATE-03]
+  - risk_id: RISK-P0-REDIS
+    severity: HIGH
+    summary: Redis remains near maxmemory with noeviction, high swap, and almost no expirations.
+    blocked_by: [GATE-04]
+  - risk_id: RISK-P1-RELEASE
+    severity: HIGH
+    summary: The final gate does not yet prove the exact production retrieval path and immutable artifacts.
+    blocked_by: [GATE-08, GATE-10]
+  - risk_id: RISK-P1-AUTH-DATA-NETWORK
+    severity: HIGH
+    summary: Auth, authority, tenant data, and network segmentation findings remain open pending later isolated packages.
+    blocked_by: [GATE-05, GATE-06, GATE-07, GATE-08]
+accepted_risks: []

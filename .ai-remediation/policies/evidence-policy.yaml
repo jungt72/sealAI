@@ -1,0 +1,28 @@
+schema_version: 1
+run_id: REM-2026-07-14
+classification:
+  committed:
+    - sanitized fingerprints
+    - aggregate counts
+    - checksums of non-secret artifacts
+    - test summaries
+    - plans, policies, and status records
+  local_untracked:
+    - raw command output
+    - host-specific object inventories
+    - security scan reports requiring manual redaction
+  forbidden:
+    - secret values
+    - private key material or fingerprints
+    - bearer tokens, JWTs, cookies, or authorization headers
+    - personal data or Redis values
+    - production environment contents
+rules:
+  - collect the minimum evidence required
+  - record commands only in sanitized form
+  - prefer counts, types, modes, paths, and hashes over contents
+  - run redaction checks before commit, push, or report publication
+  - never mark a finding VERIFIED from local code changes alone
+retention:
+  sanitized_manifests: versioned
+  raw_local_evidence: delete only under an approved retention procedure

@@ -1,0 +1,68 @@
+schema_version: 1
+run_id: REM-2026-07-14
+release_freeze: ACTIVE
+dependency_order:
+  - package: p0-secret-hygiene
+    branch: remediation/p0-secret-hygiene
+    findings: [SEC-001, SEC-002]
+    local_scope:
+      - remove credential material from current tree
+      - add fail-closed content and filename scanning
+      - add local hook and CI enforcement
+      - add secret lifecycle, rotation, permissions, and history-rewrite plans
+    production_gates: [GATE-01, GATE-02]
+  - package: p0-storage-safety
+    branch: remediation/p0-storage-safety
+    findings: [OPS-001, DR-001]
+    depends_on: [p0-secret-hygiene]
+    local_scope:
+      - release freeze enforcement
+      - disk preflight and guard repair
+      - dry-run, locking, structured output, alert contract, and retention policy
+      - offsite backup prerequisites and restore verification
+    production_gates: [GATE-03]
+  - package: p0-redis-stability
+    branch: remediation/p0-redis-stability
+    findings: [OPS-002]
+    depends_on: [p0-storage-safety]
+    local_scope:
+      - remove unused V2 Redis credentials and misleading namespace configuration
+      - enforce V2 Redis independence through dependency, import, Compose, and runtime contracts
+      - add read-only capacity and write-error gates plus redacted namespace inventory
+      - add metrics and an object-specific legacy-checkpoint cleanup runbook
+    production_gates: [GATE-04]
+  - package: p1-release-integrity
+    branch: remediation/p1-release-integrity
+    findings: [REL-001, REL-002, REL-003]
+    depends_on: [p0-secret-hygiene, p0-storage-safety, p0-redis-stability]
+    production_gates: [GATE-08, GATE-10]
+  - package: p1-auth-cost-control
+    branch: remediation/p1-auth-cost-control
+    findings: [AUTH-001, AUTH-002, AUTH-004]
+    depends_on: [p0-secret-hygiene]
+    production_gates: [GATE-06, GATE-08]
+  - package: p1-network-segmentation
+    branch: remediation/p1-network-segmentation
+    findings: [NET-001, NET-002, CONT-001]
+    depends_on: [p0-storage-safety]
+    production_gates: [GATE-05, GATE-08]
+  - package: p1-data-authority
+    branch: remediation/p1-data-authority
+    findings: [RAG-001, DATA-001, APP-001, AUTH-003, GOV-001]
+    depends_on: [p0-redis-stability]
+    production_gates: [GATE-07, GATE-08]
+  - package: p2-monitoring-hardening
+    branch: remediation/p2-monitoring-hardening
+    findings: [OBS-001, LOG-001, TLS-001]
+    depends_on: [p0-storage-safety]
+    production_gates: [GATE-08]
+  - package: p2-governance-supply-chain
+    branch: remediation/p2-governance-supply-chain
+    findings: [API-001]
+    depends_on: [p1-auth-cost-control, p1-data-authority]
+    production_gates: [GATE-08]
+rules:
+  - one primary implementation workstream at a time
+  - no automatic merge or production deployment
+  - each package has isolated tests, rollback, security impact, and a draft PR or local commit set
+  - production state remains unchanged until its exact gate is approved

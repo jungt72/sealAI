@@ -1,0 +1,36 @@
+schema_version: 1
+run_id: REM-2026-07-14
+principle: safe_local_and_read_only_remote_actions_are_autonomous
+allowed_without_additional_approval:
+  - local repository inspection
+  - local branches and isolated worktrees
+  - local code, tests, documentation, and infrastructure-as-code changes
+  - local builds and isolated tests that do not use production credentials or data
+  - sanitized evidence generation
+  - read-only production inspection
+  - fetch, scoped commits, branch push, and draft pull requests
+requires_explicit_single_gate_approval:
+  - production credential rotation or revocation
+  - production file permission changes
+  - production deletion, cleanup, or prune
+  - production Redis key, persistence, memory, or policy changes
+  - production network or firewall cutover
+  - production authentication-flow changes
+  - production database migrations or data changes
+  - production deployment, restart, or service replacement
+  - Git history rewrite or force push
+  - release-freeze lift
+never_infer:
+  - approval from prior approval
+  - approval from silence
+  - approval for a broader command set
+  - approval for a later gate
+prohibited_without_matching_gate:
+  - destructive production commands
+  - production secret output
+  - bulk recursive permission changes
+  - blanket Docker prune
+  - Redis FLUSHALL or FLUSHDB
+  - uncontrolled SCAN-to-DEL pipelines
+  - automatic merge
+  - automatic production deployment
