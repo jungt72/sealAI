@@ -1,0 +1,167 @@
+{
+  "schema_version": 2,
+  "lock_generator": {
+    "archives": {
+      "aarch64-apple-darwin": "33540eb7c883ab857eff79bd5ac2aa31fe27b595abecb4a9c003a2c998447232",
+      "aarch64-unknown-linux-gnu": "03e9fe0a81b0718d0bc84625de3885df6cc3f89a8b6af6121d6b9f6113fb6533",
+      "x86_64-apple-darwin": "2ad79983127ffca7d77b77ce6a24278d7e4f7b817a1acf72fea5f8124b4aac5e",
+      "x86_64-unknown-linux-gnu": "e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224"
+    },
+    "command": "ops/update-python-locks.sh",
+    "generator": "uv==0.11.28",
+    "platform": "x86_64-manylinux_2_28",
+    "python_version": "3.12",
+    "release_base_url": "https://github.com/astral-sh/uv/releases/download/0.11.28"
+  },
+  "python_locks": [
+    {
+      "input": "backend/requirements-v2.txt",
+      "input_sha256": "9136a0193aeed9f7a6ce572a7b34315574ca54f0a45a6aaf968ee07fd2fdd048",
+      "lock": "backend/requirements-v2.lock",
+      "lock_sha256": "e71846192a8a5129c260be1f09d0d4bfadc122ffcb7d00e88785dfaa36cab856",
+      "name": "backend-v2-runtime"
+    },
+    {
+      "input": "backend/requirements-ci.txt",
+      "input_sha256": "e5ee3a878f8004e43df704500e5087f5a5091d7fb301194a6f77d3691792e1a0",
+      "lock": "backend/requirements-ci.lock",
+      "lock_sha256": "746ff119f08dc7f5eaa129bd549445968f636dd4cef44a11d8f6473435e173d7",
+      "name": "backend-v2-ci"
+    },
+    {
+      "input": "security/tools/requirements.txt",
+      "input_sha256": "e7303ab583186fabc178f43ff9dd70bfb360eeab67151ead9efef0ac26a0a69c",
+      "lock": "security/tools/requirements.lock",
+      "lock_sha256": "75e2aaf47d905ab8823b75d524fcea220ebeb1799b894f9a4606d5f040ab4481",
+      "name": "security-control-tools"
+    }
+  ],
+  "node_projects": [
+    {
+      "name": "repository-tooling",
+      "path": "."
+    },
+    {
+      "name": "marketing-frontend",
+      "path": "frontend"
+    },
+    {
+      "name": "dashboard",
+      "path": "frontend-v2"
+    },
+    {
+      "name": "strapi",
+      "path": "strapi-backend"
+    },
+    {
+      "name": "nginx-node-compat",
+      "path": "nginx"
+    }
+  ],
+  "dockerfiles": [
+    "Dockerfile",
+    "Dockerfile.postgres",
+    "backend/Dockerfile.v2",
+    "calculix/Dockerfile",
+    "frontend/Dockerfile",
+    "keycloak/Dockerfile",
+    "nginx-certbot/Dockerfile",
+    "nginx/Dockerfile",
+    "strapi-backend/Dockerfile"
+  ],
+  "production_manifests": [
+    {
+      "classification": "production",
+      "path": "docker-compose.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "production",
+      "path": "docker-compose.deploy.yml",
+      "required_digest_variables": [
+        {
+          "name": "BACKEND_V2_IMAGE",
+          "repository": "ghcr.io/jungt72/sealai-backend-v2"
+        },
+        {
+          "name": "FRONTEND_IMAGE",
+          "repository": "ghcr.io/jungt72/sealai-frontend"
+        },
+        {
+          "name": "KEYCLOAK_IMAGE",
+          "repository": "ghcr.io/jungt72/sealai-keycloak"
+        }
+      ]
+    },
+    {
+      "classification": "development",
+      "path": "docker-compose.dev.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "development",
+      "path": "docker-compose.override.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "development",
+      "path": "docker-compose.themedev.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "development",
+      "path": "docker-compose.v2.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "blocked_external",
+      "path": "docker-compose.biz.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "staging",
+      "path": "ops/staging/docker-compose.staging.yml",
+      "required_digest_variables": []
+    },
+    {
+      "classification": "production",
+      "path": "paperless/docker-compose.yml",
+      "required_digest_variables": []
+    }
+  ],
+  "audit_policy": {
+    "image_fail_severities": [
+      "high",
+      "critical"
+    ],
+    "license_fail_severities": [
+      "unknown",
+      "high",
+      "critical"
+    ],
+    "license_confidence_level": 0.9,
+    "license_full_scan": true,
+    "node_fail_severities": [
+      "high",
+      "critical"
+    ],
+    "python_fail_on_any_vulnerability": true,
+    "trivy_version": "0.69.3"
+  },
+  "exception_policy": {
+    "allowed_controls": [
+      "image-vulnerability",
+      "license",
+      "node-vulnerability",
+      "python-vulnerability"
+    ],
+    "max_duration_days": 30,
+    "non_waivable_controls": [
+      "attestation",
+      "base-image-digest",
+      "dependency-drift",
+      "lockfile",
+      "secret-exposure"
+    ]
+  }
+}

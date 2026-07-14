@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15
+    image: postgres:15@sha256:c29ef248e25f5282af03e4b2b61ab7fb076d83d6c8625e75eca1c4b7a8c731a4
     container_name: postgres
     restart: unless-stopped
     environment:
@@ -20,7 +20,7 @@ services:
     expose:
     - '5432'
   redis:
-    image: redis/redis-stack-server:7.4.0-v8
+    image: redis/redis-stack-server:7.4.0-v8@sha256:798ab84d9f266936b034ab11c4d04a2b8e4b441884c5aa7d17ac951eefdf742a
     container_name: redis
     restart: unless-stopped
     environment:
@@ -41,7 +41,7 @@ services:
     expose:
     - '6379'
   qdrant:
-    image: qdrant/qdrant:v1.16.0
+    image: qdrant/qdrant:v1.16.0@sha256:1005201498cf927d835383d0f918b17d8c9da7db58550f169f694455e42d78f4
     container_name: qdrant
     restart: unless-stopped
     expose:
@@ -57,7 +57,7 @@ services:
       timeout: 5s
       retries: 3
   gotenberg:
-    image: gotenberg/gotenberg:8.15.0
+    image: gotenberg/gotenberg:8.15.0@sha256:59eab80c51ad02b72eb1a972182bae71004b5522644b1f43dfdc48249e996acd
     container_name: gotenberg
     restart: unless-stopped
     command:
@@ -66,7 +66,7 @@ services:
     expose:
     - '3000'
   tika:
-    image: apache/tika:2.9.2.1
+    image: apache/tika:2.9.2.1@sha256:2be134745fcb59826c54041489946c66218b948ea0c0be3a37cb7919ecc845ba
     container_name: tika
     restart: unless-stopped
     expose:

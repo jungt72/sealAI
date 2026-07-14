@@ -1,9 +1,9 @@
-FROM node:20-bullseye AS base
+FROM node:20-bullseye@sha256:c0122351f25f04facee976f9db7214789eabadb489f4e4aea9cd00a0d6af77c4 AS base
 
 FROM base AS deps
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
 FROM base AS builder

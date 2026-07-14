@@ -16,7 +16,7 @@
 name: sealai-staging
 services:
   nginx-staging:
-    image: nginx:1.29.4
+    image: nginx:1.29.4@sha256:9dd288848f4495869f76676e419ae2d767ca99fece2ec37ec0261f9fdaab5204
     container_name: nginx-staging
     restart: unless-stopped
     ports:

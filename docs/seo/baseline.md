@@ -14,8 +14,9 @@ status observed, file read), not assumed.
   dynamic (`ƒ`).
 - Content: flat Markdown + frontmatter in `content/{wissen,werkstoffe,medien}/*.md`,
   read via `src/lib/content/loader.ts`.
-- Deploy: `ops/release-frontend.sh` — builds a Docker image, health-gates,
-  reloads nginx, runs a live smoke test, auto-rolls-back on health failure.
+- Historical deploy path: `ops/release-frontend.sh`. It is now
+  `BLOCKED_EXTERNAL` and exits before build, push, nginx, or production
+  mutation until an independently verified publisher approval boundary exists.
 
 ## Gate 0 status (legal + private-data + infra readiness)
 

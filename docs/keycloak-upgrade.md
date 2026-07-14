@@ -1,8 +1,15 @@
 # Keycloak 26.7.0: Upgrade, Recovery and Rollback
 
-Target server version: **26.7.0**. The image is built from the digest-pinned
-official amd64 manifest and published by `.github/workflows/keycloak.yml` with
-OCI provenance and an SBOM.
+Target server version: **26.7.0**. The image can be built as an unprivileged OCI
+archive from the digest-pinned official amd64 manifest. The workflow retains a
+scan predicate and an SBOM, but it does not publish an image or registry
+attestation.
+
+> **Current status: `BLOCKED_EXTERNAL`.** The repository has no independently
+> verified publisher/attestation approval boundary. The workflow never pushes,
+> and `ops/keycloak_upgrade_preflight.sh` exits before pulling an image,
+> accessing production data, or starting a container. The commands below are a
+> future operator runbook, not currently executable authorization.
 
 Primary references:
 

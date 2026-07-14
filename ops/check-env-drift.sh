@@ -88,18 +88,23 @@ validate_required_keys() {
 validate_image_ref() {
   local file=$1
   local key=$2
+  local repository=$3
   local value
 
   if ! value="$(extract_key "$file" "$key")"; then
     echo "fatal: $key not set in $file" >&2
     exit 1
   fi
-  if [[ "$value" == *":latest"* ]]; then
-    echo "fatal: $key in $file must not use a floating :latest reference ($value)" >&2
-    exit 1
-  fi
-  if [[ "$value" != *@sha256:* ]]; then
-    echo "fatal: $key in $file must be pinned as tag@digest or digest-only ($value)" >&2
+  if ! /usr/bin/python3 -I - "$value" "$repository" <<'PY'
+import re
+import sys
+
+value, repository = sys.argv[1:]
+pattern = re.escape(repository) + r":[A-Za-z0-9][A-Za-z0-9._-]{0,127}@sha256:[0-9a-f]{64}"
+raise SystemExit(0 if re.fullmatch(pattern, value) else 1)
+PY
+  then
+    echo "fatal: $key in $file must use exact repository ${repository} and tag@sha256 digest" >&2
     exit 1
   fi
   if [[ "$value" == *"<REPLACE_ME>"* || "$value" == *"SET_IN_SECRET_STORE"* ]]; then
@@ -128,9 +133,31 @@ fi
 validate_required_keys "$SOURCE_FILE" "${required_keys[@]}"
 
 if [[ "$MODE" == "prod" ]]; then
-  validate_image_ref "$SOURCE_FILE" BACKEND_IMAGE
-  validate_image_ref "$SOURCE_FILE" KEYCLOAK_IMAGE
-  validate_image_ref "$SOURCE_FILE" FRONTEND_IMAGE
+  validate_image_ref "$SOURCE_FILE" BACKEND_IMAGE ghcr.io/jungt72/sealai-backend
+  validate_image_ref "$SOURCE_FILE" BACKEND_V2_IMAGE ghcr.io/jungt72/sealai-backend-v2
+  validate_image_ref "$SOURCE_FILE" KEYCLOAK_IMAGE ghcr.io/jungt72/sealai-keycloak
+  validate_image_ref "$SOURCE_FILE" FRONTEND_IMAGE ghcr.io/jungt72/sealai-frontend
+
+  images_dir="$(mktemp -d "${TMPDIR:-/tmp}/sealai-compose-images.XXXXXX")"
+  trap 'rm -rf "${images_dir}"' EXIT
+  env \
+    -u BACKEND_IMAGE \
+    -u BACKEND_V2_IMAGE \
+    -u FRONTEND_IMAGE \
+    -u KEYCLOAK_IMAGE \
+    docker compose \
+      --env-file "$SOURCE_FILE" \
+      -f "$REPO_ROOT/docker-compose.yml" \
+      -f "$REPO_ROOT/docker-compose.deploy.yml" \
+      --profile v2 \
+      --profile frontend-container \
+      --profile observability \
+      config --images > "${images_dir}/images.txt"
+  /usr/bin/python3 -I "$REPO_ROOT/ops/supply_chain_gate.py" \
+    verify-materialized-images \
+    --manifest docker-compose.yml \
+    --manifest docker-compose.deploy.yml \
+    --images-file "${images_dir}/images.txt"
   exit 0
 fi
 

@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "control_id": "H6",
+  "repository": "jungt72/sealAI",
+  "protected_branch": "main",
+  "strict": true,
+  "required_checks": [
+    "backend-contracts",
+    "backend ruff-format (re-debt guard)",
+    "dashboard-contracts",
+    "marketing-contracts",
+    "supply-chain-policy",
+    "python-audit (backend-v2-runtime)",
+    "python-audit (backend-v2-ci)",
+    "python-audit (security-control-tools)",
+    "node-audit (repository-tooling)",
+    "node-audit (marketing-frontend)",
+    "node-audit (dashboard)",
+    "node-audit (strapi)",
+    "node-audit (nginx-node-compat)",
+    "node-app-validation (marketing-frontend)",
+    "node-app-validation (dashboard)",
+    "node-app-validation (strapi)",
+    "repository-vulnerability-license-sbom",
+    "secret-scan",
+    "v2-contracts"
+  ],
+  "enforcement_receipt": {
+    "status": "BLOCKED_EXTERNAL",
+    "reason": "GitHub ruleset enforcement and independent review cannot be proven from repository content.",
+    "ruleset_id": null,
+    "verified_at": null,
+    "verified_by": null,
+    "evidence_url": null
+  }
+}

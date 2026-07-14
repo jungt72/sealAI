@@ -190,10 +190,11 @@ workflow engine requires a separate ADR and measured need.
 ## Git / branch workflow
 
 - `main` is the single active line for `sealai_v2`/`frontend-v2` work.
-  Branch protection on `main` requires a PR with 3 green required checks
-  (`backend-contracts`, `v2-contracts`, `secret-scan`) — **`enforce_admins`
-  is ON**, so this applies to every push, including agent/admin credentials.
-  There is no direct-push bypass anymore.
+  The target check set is versioned in
+  `.github/required-security-checks.json`. GitHub ruleset enforcement,
+  code-owner review, and admin-bypass state are currently
+  **`BLOCKED_EXTERNAL`** because repository content cannot prove them. Never
+  infer protection from this file; obtain independent GitHub evidence first.
 - Work happens on a short-lived branch off `main`, gets a PR, and merges once
   checks are green. Do not accumulate multiple long-lived parallel feature
   branches for the same piece of work — one active branch per workstream,
@@ -202,12 +203,10 @@ workflow engine requires a separate ADR and measured need.
 - Delete a branch immediately once it's merged (`git branch -d` /
   `git push origin --delete`) — a merged branch left lying around is exactly
   the kind of stale state that causes "wrong branch" mistakes later.
-- Production deploys are triggered ONLY via `ops/release-backend-v2.sh`
-  (backend) or `ops/release-frontend.sh` (marketing) — both are health-gated
-  with smoke tests and an automatic rollback tag. `frontend-v2`/dashboard
-  currently deploys via its live `dist/` bind-mount (`npm run build` = deploy).
-  This is a documented migration gap, not the target architecture; do not treat
-  it as an immutable release.
+- No repository-controlled production publisher/deployer is currently
+  authorized. Backend-v2/Keycloak workflows retain unprivileged OCI evidence
+  only; the deploy workflow and marketing publisher are `BLOCKED_EXTERNAL`.
+  Dashboard builds write a candidate directory and are not release evidence.
 
 ## Canonical Backend Entry Points (`backend/sealai_v2/`)
 

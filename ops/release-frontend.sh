@@ -11,6 +11,10 @@ production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
 source /usr/local/libexec/sealai/production-storage-lease.sh
 acquire_production_storage_lease
 
+echo "BLOCKED_EXTERNAL: frontend publication requires independently verified protected-main and environment approval evidence" >&2
+echo "No local image build, registry push, unsigned fallback or production mutation is permitted." >&2
+exit 2
+
 cd /home/thorsten/sealai
 
 COMPOSE_ARGS=(
@@ -105,25 +109,15 @@ if PUSH_OUTPUT="$(docker push "${FRONTEND_IMAGE_TAG}" 2>&1)"; then
   echo ">> New pinned image: ${FRONTEND_IMAGE_REF}"
 else
   echo "${PUSH_OUTPUT}" >&2
-  if [[ "${ALLOW_LOCAL_FRONTEND_IMAGE_FALLBACK:-0}" != "1" ]]; then
-    echo "!! GHCR push failed. Fix package write permissions or rerun with ALLOW_LOCAL_FRONTEND_IMAGE_FALLBACK=1 for this VPS-only deploy." >&2
-    exit 1
-  fi
-
-  FRONTEND_IMAGE_REF="${FRONTEND_IMAGE_TAG}"
-  FRONTEND_PULL_POLICY="never"
-  echo "!! GHCR push failed; using VPS-local frontend image fallback: ${FRONTEND_IMAGE_REF}" >&2
+  echo "!! GHCR push failed; unsigned local production fallbacks are forbidden" >&2
+  exit 1
 fi
 
 set_env_key FRONTEND_IMAGE "${FRONTEND_IMAGE_REF}"
 set_env_key FRONTEND_PULL_POLICY "${FRONTEND_PULL_POLICY}"
 
 echo ">> Validating pinned production refs"
-if [[ "${FRONTEND_PULL_POLICY}" == "always" ]]; then
-  /bin/bash -p ./ops/check-env-drift.sh prod
-else
-  echo "!! Skipping pinned-image drift gate for explicit local frontend fallback"
-fi
+/bin/bash -p ./ops/check-env-drift.sh prod
 
 echo ">> Recreating frontend only"
 compose_prod --profile frontend-container up -d --no-deps --force-recreate frontend

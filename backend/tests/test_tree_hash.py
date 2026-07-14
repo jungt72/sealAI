@@ -3,13 +3,14 @@
 Single source of truth shared by the eval manifest, the V2 deploy wrapper, and the kern-fix-01
 backfill (byte-identical). Scope = EVERY input that determines the image content:
 `backend/Dockerfile.v2` (the recipe) + everything it COPYs (`backend/sealai_v2` minus `eval/`+`tests/`,
-`backend/requirements-v2.txt`, `backend/docker-entrypoint-v2.sh`) plus `backend/.dockerignore`, which
+`backend/requirements-v2.txt`, `backend/requirements-v2.lock`, `backend/docker-entrypoint-v2.sh`)
+plus `backend/.dockerignore`, which
 controls those COPY inputs. Out stays only non-shipped dev
 infra (`eval/` — self-referential runs/, never imported by the served app; `tests/`). An image-content
 change → new hash → a fresh adjudicated eval is required; an eval/test change does not.
 
 Red-before-green: `test_image_inputs_move_the_hash` fails until the scope covers Dockerfile.v2 /
-requirements-v2.txt / docker-entrypoint-v2.sh.
+requirements-v2.txt / requirements-v2.lock / docker-entrypoint-v2.sh.
 """
 
 from __future__ import annotations
@@ -76,6 +77,7 @@ def test_image_inputs_move_the_hash():
         "backend/Dockerfile.v2",
         "backend/.dockerignore",
         "backend/requirements-v2.txt",
+        "backend/requirements-v2.lock",
         "backend/docker-entrypoint-v2.sh",
     ):
         with _perturb(f):

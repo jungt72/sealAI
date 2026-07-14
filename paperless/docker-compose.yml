@@ -1,7 +1,7 @@
 services:
   gotenberg:
     container_name: gotenberg
-    image: gotenberg/gotenberg:8.15.0
+    image: gotenberg/gotenberg:8.15.0@sha256:59eab80c51ad02b72eb1a972182bae71004b5522644b1f43dfdc48249e996acd
     restart: unless-stopped
     command:
       - "gotenberg"
@@ -11,14 +11,14 @@ services:
 
   tika:
     container_name: tika
-    image: apache/tika:2.9.2.1
+    image: apache/tika:2.9.2.1@sha256:2be134745fcb59826c54041489946c66218b948ea0c0be3a37cb7919ecc845ba
     restart: unless-stopped
     networks:
       - sealai_default
 
   paperless:
     container_name: paperless
-    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15@sha256:6c86cad803970ea782683a8e80e7403444c5bf3cf70de63b4d3c8e87500db92f
     restart: unless-stopped
     depends_on:
       - gotenberg

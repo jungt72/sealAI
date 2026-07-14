@@ -22,11 +22,11 @@ How changes move from audit to merge in the V2 runtime (`backend/sealai_v2/`,
 ## Branch & merge
 - `main` is the **single active line** for `sealai_v2` / `frontend-v2` work. Work
   on a **short-lived branch off `main`**, open a PR, merge once green.
-- Branch protection on `main` requires a PR with **3 green required checks**
-  (`backend-contracts`, `v2-contracts`, `secret-scan`) and **`enforce_admins` is
-  ON** — this applies to every push, including agent/admin credentials. There is
-  **no direct-push bypass** (direct pushes to `main` are also denied in
-  `.claude/settings.json`).
+- The target check set is versioned in
+  `.github/required-security-checks.json`, but its GitHub ruleset,
+  code-owner-review, and admin-bypass enforcement is **`BLOCKED_EXTERNAL`**
+  until independently verified. Local settings are defense in depth, not proof
+  of server-side branch protection.
 - One active branch per workstream — merged (or explicitly closed) before starting
   the next. **Delete a branch immediately once merged**
   (`git branch -d` / `git push origin --delete`); a stale merged branch causes
@@ -53,8 +53,9 @@ guard, grounding correction, tenant security, or a mutation path must get an
 **APPROVE from the read-only `.claude/agents/v2-doctrine-reviewer.md`** before
 merge. Surface eval divergences as owner-final candidates; **never self-tick
 verdicts or free-correct facts** (the TRAP-02 discipline; `eval/adjudicate.py`).
-Deploys go only via `ops/release-backend-v2.sh` (backend) / `ops/release-frontend.sh`
-(marketing); `frontend-v2` deploys via its live `dist/` bind-mount.
+No production deployment is currently authorized: backend/Keycloak publication,
+the deploy workflow, and the marketing publisher are `BLOCKED_EXTERNAL`.
+Dashboard builds produce a candidate and are not release evidence.
 
 ## Retired (historical only)
 The former V1 runtime targeted PRs at `demo/rwdr-limited-external`, gated on the

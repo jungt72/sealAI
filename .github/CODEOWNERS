@@ -1,0 +1,19 @@
+# Ownership is useful only when GitHub independently enforces code-owner review.
+# The canonical enforcement receipt remains BLOCKED_EXTERNAL until that proof exists.
+/.github/workflows/ @jungt72
+/.github/CODEOWNERS @jungt72
+/.github/dependabot.yml @jungt72
+/.github/required-security-checks.json @jungt72
+/security/ @jungt72
+/backend/requirements*.txt @jungt72
+/backend/requirements*.lock @jungt72
+/**/package.json @jungt72
+/**/package-lock.json @jungt72
+/Dockerfile* @jungt72
+/**/Dockerfile* @jungt72
+/docker-compose*.yml @jungt72
+/paperless/docker-compose.yml @jungt72
+/ops/staging/docker-compose.staging.yml @jungt72
+/ops/supply_chain_gate.py @jungt72
+/ops/update-python-locks.sh @jungt72
+/ops/verify-image-attestations.sh @jungt72

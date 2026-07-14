@@ -6,35 +6,33 @@ name: Backend Contracts
 # in CI. A regression could therefore merge green. This job runs them on every push and
 # pull_request so the contracts are mechanically enforced.
 #
-# Deliberately light: the architecture enforcers are pure-stdlib AST parsers, and the
-# doctrine/seam targets import only pydantic (backend/conftest.py stubs structlog,
-# asyncpg, jinja2, jose, langchain_core, multipart at collection time). So no ML /
-# runtime stack is installed — the suite runs in seconds. Imports resolve via
-# PYTHONPATH (the `app` package is not pip-installed), matching AGENTS.md's test form.
+# The contract environment uses the same complete hash-locked CI graph as the V2
+# workflow. This avoids a second, partially pinned resolver path. Imports resolve
+# via PYTHONPATH (the `app` package is not pip-installed), matching AGENTS.md's
+# test form.
 
 on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend-contracts:
     name: backend-contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
 
-      - name: Install contract-test deps (light — pinned to match backend/requirements*)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install \
-            "pytest~=8.4.2" \
-            "pytest-asyncio==0.23.7" \
-            "pydantic==2.12.5" \
-            "pydantic-settings==2.13.1"
+      - name: Install hash-locked contract-test dependencies
+        run: python -m pip install --require-hashes -r backend/requirements-ci.lock
 
       # The architecture enforcers are pure-stdlib AST parsers and import no `app`
       # code, so they run with --noconftest: that skips backend/tests/conftest.py

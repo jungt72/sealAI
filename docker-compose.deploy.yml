@@ -30,7 +30,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set pinned image ref in .env.prod}
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set tag@sha256 digest in .env.prod}
     pull_policy: ${FRONTEND_PULL_POLICY:-always}
     networks:
       default:
@@ -59,7 +59,7 @@ services:
     expose:
     - '8080'
     - '9000'
-    image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set pinned image ref in .env.prod}
+    image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set tag@sha256 digest in .env.prod}
     pull_policy: ${KEYCLOAK_PULL_POLICY:-always}
     healthcheck:
       test:
@@ -78,7 +78,7 @@ services:
         aliases:
         - sealai-keycloak
   nginx:
-    image: nginx:1.29.4
+    image: nginx:1.29.4@sha256:9dd288848f4495869f76676e419ae2d767ca99fece2ec37ec0261f9fdaab5204
     container_name: nginx
     depends_on:
       keycloak:
@@ -113,11 +113,8 @@ services:
     container_name: backend-v2
     profiles:
     - v2
-    image: ${BACKEND_V2_IMAGE:-sealai-backend-v2:local}
-    pull_policy: ${BACKEND_V2_PULL_POLICY:-missing}
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.v2
+    image: ${BACKEND_V2_IMAGE:?BACKEND_V2_IMAGE required — set attested tag@sha256 digest}
+    pull_policy: ${BACKEND_V2_PULL_POLICY:-always}
     user: 10001:10001
     restart: unless-stopped
     environment:

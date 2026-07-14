@@ -1,62 +1,236 @@
 name: Dependency Audit
 
-# Ops hardening (2026-07-03): the security sweep found ZERO dependency vulnerability scanning anywhere
-# in CI. Scoped to the three surfaces actually deployed to prod today (backend-v2's exact image pins,
-# the dashboard, and the marketing site) — mirrors v2-contracts.yml's "scan what's live" precedent, not
-# the retired V1 backend/requirements.txt. Every finding is blocking: a green workflow must mean the
-# deployed dependency surfaces were actually audited successfully.
-
 on:
   push:
   pull_request:
   schedule:
-    # Weekly, independent of any push — new CVEs land against unchanged code.
     - cron: "0 6 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
-  backend-v2-pip-audit:
-    name: backend-v2 (pip-audit)
-    runs-on: ubuntu-latest
+  supply-chain-policy:
+    name: supply-chain-policy
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
 
-      - name: pip-audit against the exact backend-v2 image pins
+      - name: Install hash-locked control tools
+        run: python -m pip install --require-hashes -r security/tools/requirements.lock
+
+      - name: Policy, drift, exception, and scanner contract tests
         run: |
-          python -m pip install --upgrade pip pip-audit
-          pip-audit -r backend/requirements-v2.txt
+          python -m pytest \
+            backend/tests/test_supply_chain_gate.py \
+            backend/tests/test_secret_hygiene_classifier.py \
+            --noconftest -q
+          python ops/supply_chain_gate.py verify
 
-  frontend-v2-npm-audit:
-    name: frontend-v2 / dashboard (npm audit)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend-v2
+      - name: Reuse P0 secret scanner on the exact tree
+        run: python ops/check-secret-hygiene.py --tree "$GITHUB_SHA"
+
+  python-audit:
+    name: python-audit (${{ matrix.scope }})
+    needs: supply-chain-policy
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: backend-v2-runtime
+            lock: backend/requirements-v2.lock
+          - scope: backend-v2-ci
+            lock: backend/requirements-ci.lock
+          - scope: security-control-tools
+            lock: security/tools/requirements.lock
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install hash-locked audit tool
+        run: python -m pip install --require-hashes -r security/tools/requirements.lock
+
+      - name: Audit the exact transitive lock
+        env:
+          LOCK_PATH: ${{ matrix.lock }}
+          PROJECT_SCOPE: ${{ matrix.scope }}
+        run: |
+          report="$RUNNER_TEMP/pip-audit.json"
+          audit_rc=0
+          pip-audit \
+            -r "$LOCK_PATH" \
+            --no-deps \
+            --disable-pip \
+            --strict \
+            --format=json \
+            --output="$report" \
+            || audit_rc=$?
+          [[ "$audit_rc" == 0 || "$audit_rc" == 1 ]]
+          test -s "$report"
+          python ops/supply_chain_gate.py evaluate-report \
+            --scanner pip-audit \
+            --scope "$PROJECT_SCOPE" \
+            --report "$report"
+
+  node-audit:
+    name: node-audit (${{ matrix.name }})
+    needs: supply-chain-policy
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: repository-tooling
+            path: .
+          - name: marketing-frontend
+            path: frontend
+          - name: dashboard
+            path: frontend-v2
+          - name: strapi
+            path: strapi-backend
+          - name: nginx-node-compat
+            path: nginx
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "20"
+          node-version: "20.20.2"
+          cache: npm
+          cache-dependency-path: ${{ matrix.path }}/package-lock.json
 
-      - name: npm audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=moderate
+      - name: Reproduce install without dependency lifecycle scripts
+        working-directory: ${{ matrix.path }}
+        run: npm ci --ignore-scripts
 
-  frontend-npm-audit:
-    name: frontend / marketing (npm audit)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
+      - name: Audit complete dependency graph
+        working-directory: ${{ matrix.path }}
+        env:
+          PROJECT_SCOPE: ${{ matrix.name }}
+        run: |
+          report="$RUNNER_TEMP/npm-audit.json"
+          npm audit --json > "$report" || true
+          test -s "$report"
+          python3 "$GITHUB_WORKSPACE/ops/supply_chain_gate.py" evaluate-report \
+            --scanner npm-audit \
+            --scope "$PROJECT_SCOPE" \
+            --report "$report"
+
+  node-application-validation:
+    name: node-app-validation (${{ matrix.name }})
+    needs: supply-chain-policy
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: marketing-frontend
+            path: frontend
+          - name: dashboard
+            path: frontend-v2
+          - name: strapi
+            path: strapi-backend
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: "20"
+          node-version: "20.20.2"
+          cache: npm
+          cache-dependency-path: ${{ matrix.path }}/package-lock.json
 
-      - name: npm audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=moderate
+      # Lifecycle scripts are permitted only in this credential-free job.
+      - name: Install and exercise the application
+        working-directory: ${{ matrix.path }}
+        env:
+          PROJECT_SCOPE: ${{ matrix.name }}
+        run: |
+          npm ci
+          case "$PROJECT_SCOPE" in
+            marketing-frontend)
+              npm run lint
+              npm run test:all
+              npm run build
+              ;;
+            dashboard)
+              npm run verify
+              ;;
+            strapi)
+              npm run build
+              ;;
+            *)
+              echo "unknown Node validation scope" >&2
+              exit 2
+              ;;
+          esac
+
+  repository-scan-and-sbom:
+    name: repository-vulnerability-license-sbom
+    needs: supply-chain-policy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # v0.35.0 / Trivy 0.69.3 are the post-incident immutable safe pins from
+      # GHSA-69fq-xp46-6x23. Never replace either with a moving tag/latest.
+      - name: Scan locked dependencies and licenses
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          version: v0.69.3
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,license
+          trivy-config: security/trivy.yaml
+          format: json
+          output: trivy-repository.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Apply blocking policy and bounded exceptions
+        run: |
+          test -s trivy-repository.json
+          python3 ops/supply_chain_gate.py evaluate-report \
+            --scanner trivy \
+            --scope repository \
+            --report trivy-repository.json
+
+      - name: Generate repository SPDX SBOM
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          version: v0.69.3
+          scan-type: fs
+          scan-ref: .
+          format: spdx-json
+          output: repository.spdx.json
+          exit-code: "0"
+
+      - name: Validate and retain SBOM
+        run: jq -e '.spdxVersion and .documentNamespace and ((.packages // []) | length > 0)' repository.spdx.json >/dev/null
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: repository-security-evidence-${{ github.sha }}
+          path: |
+            repository.spdx.json
+            trivy-repository.json
+          if-no-files-found: error
+          retention-days: 90

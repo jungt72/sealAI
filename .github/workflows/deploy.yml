@@ -1,111 +1,22 @@
-name: Deploy Backend V2
+name: Deploy Backend V2 (Blocked External)
 
 on:
   workflow_dispatch:
-    inputs:
-      source_sha:
-        description: "Exact dedicated Gate-10 control commit on main"
-        required: true
-        type: string
-      backend_image:
-        description: "Optional fully qualified image ref; otherwise GHCR commit tag"
-        required: false
-        type: string
 
-permissions:
-  contents: read
-  actions: read
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_BACKEND_V2: ${{ github.repository_owner }}/sealai-backend-v2
+# Production deployment is mechanically unavailable. The previous workflow
+# accepted arbitrary control commits and image repositories. Re-enabling it
+# requires independently verifiable protected-main, environment approval and
+# immutable producer-artifact evidence; repository assertions are insufficient.
+permissions: {}
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    environment:
-      name: production
+  deploy-blocked-external:
+    runs-on: ubuntu-24.04
+    permissions: {}
     steps:
-      - name: Resolve Gate-10 control commit
-        id: source
-        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        env:
-          INPUT_SHA: ${{ inputs.source_sha }}
-        run: |
-          set -euo pipefail
-          sha="${INPUT_SHA}"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid source SHA" >&2; exit 2; }
-          echo "control_sha=$sha" >> "$GITHUB_OUTPUT"
-
-      - name: Check out exact Gate-10 control commit
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ steps.source.outputs.control_sha }}
-          persist-credentials: false
-          fetch-depth: 2
-
-      - name: Enforce production release freeze
-        id: release_gate
+      - name: Refuse production mutation without external trust proof
         shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         run: |
-          set -euo pipefail
-          # shellcheck source=ops/production-release-gate-check.sh
-          source "$PWD/ops/production-release-gate-check.sh"
-          production_release_gate_check \
-            "$PWD/ops/production_release_gate.py" deploy
-          source_sha="${PRODUCTION_RELEASE_APPROVED_SOURCE_SHA}"
-          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "release gate did not return an approved source parent" >&2; exit 2; }
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve and pin backend-v2 image
-        id: image
-        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        env:
-          INPUT_IMAGE: ${{ inputs.backend_image }}
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE_BACKEND_V2: ${{ env.IMAGE_BACKEND_V2 }}
-          SOURCE_SHA: ${{ steps.release_gate.outputs.source_sha }}
-        run: |
-          set -euo pipefail
-          ref="${INPUT_IMAGE:-${REGISTRY}/${IMAGE_BACKEND_V2}:${SOURCE_SHA}}"
-          if [[ "$ref" == *@sha256:* ]]; then
-            pinned="$ref"
-          else
-            digest="$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')"
-            test -n "$digest"
-            pinned="${ref}@${digest}"
-          fi
-          [[ "$pinned" =~ ^[A-Za-z0-9._:/-]+@sha256:[0-9a-f]{64}$ ]] || {
-            echo "resolved image reference is not an exact safe digest reference" >&2
-            exit 2
-          }
-          echo "ref=$pinned" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy through the sanctioned V2 release gate
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        env:
-          EXPECTED_CONTROL_SHA: ${{ steps.source.outputs.control_sha }}
-          EXPECTED_SOURCE_SHA: ${{ steps.release_gate.outputs.source_sha }}
-          BACKEND_V2_IMAGE: ${{ steps.image.outputs.ref }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          envs: EXPECTED_CONTROL_SHA,EXPECTED_SOURCE_SHA,BACKEND_V2_IMAGE
-          script: |
-            set -euo pipefail
-            # The installed, root-owned boundary acquires and retains the
-            # global storage lease and runs its disk preflight. P0 then
-            # hard-denies without executing live-checkout code because the
-            # root-trusted Gate-10/artifact verifier is not implemented yet.
-            # This workflow never fetches or checks out code on the VPS.
-            /usr/bin/env -i \
-              HOME=/home/thorsten \
-              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-              LANG=C \
-              LC_ALL=C \
-              /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh \
-              --control-sha "$EXPECTED_CONTROL_SHA" \
-              --source-sha "$EXPECTED_SOURCE_SHA" \
-              --backend-image "$BACKEND_V2_IMAGE"
+          echo "BLOCKED_EXTERNAL: production publisher/deployer is disabled" >&2
+          echo "No checkout, registry credential, OIDC token, SSH secret or production command is reachable." >&2
+          exit 2
