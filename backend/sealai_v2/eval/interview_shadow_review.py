@@ -28,7 +28,7 @@ from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewService
 
 _EVAL_DIR = Path(__file__).resolve().parent
-DEFAULT_CORPUS_PATH = _EVAL_DIR / "seed_cases" / "rwdr_shadow_review_v1.json"
+DEFAULT_CORPUS_PATH = _EVAL_DIR / "seed_cases" / "rwdr_shadow_review_v2.json"
 _PACK_PATH = _EVAL_DIR.parent / "knowledge" / "domain_packs" / "rwdr.v1.json"
 
 WORKSHEET_FILENAME = "worksheet.csv"
@@ -36,6 +36,7 @@ BLINDING_KEY_FILENAME = "blinding_key.json"
 ATTESTATION_FILENAME = "review_attestation.json"
 MANIFEST_FILENAME = "manifest.json"
 ADJUDICATION_FILENAME = "adjudication.json"
+INSTRUCTIONS_FILENAME = "REVIEW_INSTRUCTIONS.md"
 
 _REVIEWABLE_DIVERGENCES = {
     "different_need",
@@ -45,7 +46,6 @@ _REVIEWABLE_DIVERGENCES = {
 }
 _IMMUTABLE_COLUMNS = (
     "case_id",
-    "scenario_group",
     "case_context_de",
     "question_a_de",
     "question_b_de",
@@ -70,6 +70,32 @@ _ATTESTATION_TEXT = (
     "Ich bestaetige, alle Zeilen verblindet und vor dem Oeffnen von "
     "blinding_key.json bewertet zu haben."
 )
+_INSTRUCTIONS_TEXT = """# RWDR A/B Review
+
+Review `worksheet.csv` before opening `blinding_key.json`.
+
+The case context contains only documented CaseState fields. It does not name
+the omitted field or the internal scenario group. Do not edit the case context,
+questions, row order, case IDs, or `review_unit_hash`.
+
+Complete all six rating columns for every row:
+
+- `preferred_next_action`: `A`, `B`, or `tie`.
+- `relevant_to_case`: which question is relevant: `A`, `B`, `both`, or `neither`.
+- `critical_gate_skipped`: which question skips a critical gate: `A`, `B`,
+  `both`, or `none`.
+- `asks_documented_information`: which question asks for information already
+  present in the CaseState: `A`, `B`, `both`, or `none`.
+- `answerable_or_handles_unknown`: which question is answerable or correctly
+  permits unknown/unobtainable: `A`, `B`, `both`, or `neither`.
+- `rationale`: a concise human explanation. It must not be empty.
+
+Boolean values such as `true` and `false` are invalid because the affected A/B
+side would be lost during unblinding.
+
+After completing the worksheet, fill `review_attestation.json` truthfully. The
+adjudicator validates and aggregates the review but never authorizes cutover.
+"""
 _FIELD_LABELS = {
     "dichtungstyp": "Dichtungstyp",
     "anwendungsziel": "Anwendungsziel",
@@ -203,20 +229,12 @@ def _case_state(case: dict[str, Any], profile: dict[str, Any]) -> CaseStateV2:
     )
 
 
-def _case_context(
-    case: dict[str, Any], profile: dict[str, Any], state: CaseStateV2
-) -> str:
+def _case_context(state: CaseStateV2) -> str:
     documented = "; ".join(
         f"{_FIELD_LABELS.get(field.key, field.key)}={field.value}"
         for field in state.fields
     )
-    missing = ", ".join(
-        _FIELD_LABELS.get(key, key) for key in case.get("omit_fields", ())
-    )
-    return (
-        f"Szenario: {profile['label_de']}. Dokumentiert: {documented}. "
-        f"Nicht dokumentiert: {missing}."
-    )
+    return f"Dokumentierter CaseState: {documented}."
 
 
 def _review_unit_hash(row: dict[str, str]) -> str:
@@ -278,6 +296,7 @@ def export_review_set(
         ATTESTATION_FILENAME,
         MANIFEST_FILENAME,
         ADJUDICATION_FILENAME,
+        INSTRUCTIONS_FILENAME,
     )
     existing = [name for name in protected_outputs if (output_dir / name).exists()]
     if existing:
@@ -338,8 +357,7 @@ def export_review_set(
         }
         row = {
             "case_id": case["case_id"],
-            "scenario_group": case["scenario_group"],
-            "case_context_de": _case_context(case, profile, state),
+            "case_context_de": _case_context(state),
             "question_a_de": questions["A"],
             "question_b_de": questions["B"],
             "review_unit_hash": "",
@@ -350,6 +368,7 @@ def export_review_set(
         key_entries.append(
             {
                 "case_id": case["case_id"],
+                "scenario_group": case["scenario_group"],
                 "question_a_source": (
                     "controller" if controller_side == "A" else "legacy"
                 ),
@@ -389,6 +408,7 @@ def export_review_set(
         "required_attestation_text": _ATTESTATION_TEXT,
     }
     attestation_bytes = _json_bytes(attestation)
+    instructions_bytes = _INSTRUCTIONS_TEXT.encode("utf-8")
     manifest = {
         "schema_version": "1.0",
         "review_set_id": corpus["review_set_id"],
@@ -407,6 +427,7 @@ def export_review_set(
         "worksheet_template_sha256": _sha256_bytes(worksheet_bytes),
         "blinding_key_sha256": _sha256_bytes(key_bytes),
         "attestation_template_sha256": _sha256_bytes(attestation_bytes),
+        "review_instructions_sha256": _sha256_bytes(instructions_bytes),
         "additional_llm_calls": 0,
         "network_calls": 0,
         "human_adjudication_required": True,
@@ -416,6 +437,7 @@ def export_review_set(
     _atomic_write(output_dir / WORKSHEET_FILENAME, worksheet_bytes)
     _atomic_write(output_dir / BLINDING_KEY_FILENAME, key_bytes)
     _atomic_write(output_dir / ATTESTATION_FILENAME, attestation_bytes)
+    _atomic_write(output_dir / INSTRUCTIONS_FILENAME, instructions_bytes)
     _atomic_write(output_dir / MANIFEST_FILENAME, _json_bytes(manifest))
     return manifest
 
@@ -527,6 +549,10 @@ def adjudicate_review_set(
         review_dir / BLINDING_KEY_FILENAME
     ):
         raise ReviewWorkflowError("blinding key changed after export")
+    if manifest.get("review_instructions_sha256") != _sha256_file(
+        review_dir / INSTRUCTIONS_FILENAME
+    ):
+        raise ReviewWorkflowError("review instructions changed after export")
     if manifest.get("automatic_activation_authorized") is not False:
         raise ReviewWorkflowError("manifest must not authorize activation")
 

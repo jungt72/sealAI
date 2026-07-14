@@ -25,7 +25,7 @@ def _record(
         case_reference=f"hmac-{record_id}",
         state_revision=1,
         pack_id="rwdr.v1",
-        pack_version="1.0.0",
+        pack_version="1.0.1",
         policy_version=POLICY_VERSION,
         legacy_question_present=True,
         legacy_question_fingerprint=f"fingerprint-{record_id}",
@@ -54,7 +54,7 @@ def _add(repo: InProcessInterviewRepository, record: InterviewShadowRecord) -> N
         session_id=f"session-{record.record_id}",
         state=InterviewRuntimeState(
             pack_id="rwdr.v1",
-            pack_version="1.0.0",
+            pack_version="1.0.1",
             policy_version=POLICY_VERSION,
             state_revision=1,
         ),

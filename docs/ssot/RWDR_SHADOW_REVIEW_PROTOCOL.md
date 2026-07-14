@@ -1,7 +1,7 @@
 # RWDR Shadow Review Protocol
 
 Status: `implemented_default_off`
-Pack: `rwdr.v1@1.0.0`
+Pack: `rwdr.v1@1.0.1`
 Updated: 2026-07-14
 
 This protocol governs evidence collection before any visible RWDR chat
@@ -86,13 +86,14 @@ call:
 
 ```text
 PYTHONPATH=backend python -m sealai_v2.eval.interview_shadow_review export \
-  --output-dir .runtime/rwdr-shadow-review/v1
+  --output-dir .runtime/rwdr-shadow-review/v2
 ```
 
 The export contains:
 
 - `worksheet.csv`: balanced, source-blinded A/B questions with empty human
   rating fields;
+- `REVIEW_INSTRUCTIONS.md`: self-contained rating semantics and allowed values;
 - `blinding_key.json`: source mapping, need IDs, divergence type, and rule
   references; the reviewer must not open it before completing the worksheet;
 - `review_attestation.json`: reviewer identity, timestamp, and blinded-review
@@ -111,12 +112,17 @@ answerable_or_handles_unknown: A | B | both | neither
 rationale: non-empty human explanation
 ```
 
+The worksheet exposes only documented CaseState fields. Internal scenario
+groups, profile labels that imply the application goal, and an explicit
+"missing field" label are confined to the separate key or corpus and are not
+shown to the blinded reviewer.
+
 After the worksheet and attestation are complete, the result can be validated
 and unblinded without an LLM call:
 
 ```text
 PYTHONPATH=backend python -m sealai_v2.eval.interview_shadow_review adjudicate \
-  --review-dir .runtime/rwdr-shadow-review/v1
+  --review-dir .runtime/rwdr-shadow-review/v2
 ```
 
 The command rejects changed case context, questions, row IDs, source mapping,
@@ -124,6 +130,10 @@ corpus, or domain pack. Its `adjudication.json` reports human preference and
 quality counts, but always carries `automatic_activation_authorized=false`.
 It does not issue a PASS/FAIL verdict and cannot replace the owner's cutover
 decision.
+
+Review set `rwdr-shadow-controlled-v1` is invalidated and must not be
+adjudicated. Its leak, schema mismatch, and corrective action are recorded in
+`review-invalidations/RWDR_SHADOW_CONTROLLED_V1_INVALIDATION.md`.
 
 Controlled cases are review evidence for question-selection quality, not
 production incidence evidence. Before a visible cutover, the release owner

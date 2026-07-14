@@ -1,10 +1,10 @@
 # RWDR Adaptive Interview Phase 0/1
 
 Status: `implemented_default_off`
-Pack: `rwdr.v1@1.0.0`
+Pack: `rwdr.v1@1.0.1`
 Policy: `adaptive-interview.lexicographic.1.0.0`
-Question catalog: `rwdr.questions.1.0.0`
-Updated: 2026-07-13
+Question catalog: `rwdr.questions.1.0.1`
+Updated: 2026-07-14
 
 This document records the implemented shadow slice. It does not activate a
 public interview and does not raise product maturity.
@@ -113,6 +113,19 @@ does not identify which parameter was entered.
 
 The complete register and every question schema live in the versioned pack
 JSON; this table is a navigation projection, not a second registry.
+
+Patch `1.0.1` expands the application-goal question and its answer schema from
+three to five represented goals: new design, replacement, retrofit,
+optimization, and failure analysis. This is a catalog correction discovered
+during the invalidated controlled review v1; it does not change policy order.
+
+Production remains on pack `1.0.0` while controlled review v2 is open. A later
+`1.0.1` deployment must use an explicit owner-approved state-transition plan:
+existing `1.0.0` interview states are pinned and intentionally produce
+`pinned_pack_version_unavailable` against another pack version. The transition
+must preserve append-only shadow decisions and either migrate or clear only the
+ephemeral pending interview state after its review population is closed. A
+normal container restart is not a pack migration.
 
 ## Policy tiers
 

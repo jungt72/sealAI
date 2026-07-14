@@ -67,7 +67,7 @@ def test_postgres_repository_persists_pending_and_privacy_safe_shadow(tmp_path) 
         tenant_id="tenant-a", session_id="rwdr-session", topic_id="rwdr.default"
     )
     assert stored.pack_id == "rwdr.v1"
-    assert stored.pack_version == "1.0.0"
+    assert stored.pack_version == "1.0.1"
     assert stored.state_revision == 1
     assert (
         len(
@@ -78,7 +78,7 @@ def test_postgres_repository_persists_pending_and_privacy_safe_shadow(tmp_path) 
     page = repo.list_shadow_records(
         tenant_id="tenant-a",
         pack_id="rwdr.v1",
-        pack_version="1.0.0",
+        pack_version="1.0.1",
         policy_version="adaptive-interview.lexicographic.1.0.0",
         since=None,
         until=None,
@@ -178,7 +178,7 @@ def test_out_of_scope_case_is_decided_but_not_persisted_as_rwdr_shadow() -> None
     page = repo.list_shadow_records(
         tenant_id="tenant-a",
         pack_id="rwdr.v1",
-        pack_version="1.0.0",
+        pack_version="1.0.1",
         policy_version="adaptive-interview.lexicographic.1.0.0",
         since=None,
         until=None,
