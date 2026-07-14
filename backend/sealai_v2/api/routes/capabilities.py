@@ -15,6 +15,7 @@ from sealai_v2.api.deps import (
     require_capability_reviewer,
     require_manufacturer,
 )
+from sealai_v2.api.errors import safe_http_error
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.knowledge.manufacturer_capability import (
@@ -153,7 +154,7 @@ def submit_own_capability(
     try:
         submitted = store.submit(profile, actor=identity.subject, now=now)
     except ManufacturerCapabilityError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "capability_submission_invalid") from exc
     return _profile_dict(submitted)
 
 
@@ -195,5 +196,5 @@ def review_capability(
             reviewer_manufacturer_id=identity.hersteller_id,
         )
     except ManufacturerCapabilityError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "capability_review_invalid") from exc
     return _profile_dict(reviewed)

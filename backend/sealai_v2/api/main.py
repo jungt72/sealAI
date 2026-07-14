@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from sealai_v2.api.errors import install_safe_exception_mapper
 from sealai_v2.api.routes import (
     adaptive_interview,
     anfrage,
@@ -36,6 +37,7 @@ from sealai_v2.pipeline.timing import configure_timing_logging
 configure_safe_logging()
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
+install_safe_exception_mapper(app)
 app.add_middleware(RequestIdMiddleware)
 app.include_router(chat.router)
 app.include_router(adaptive_interview.router)

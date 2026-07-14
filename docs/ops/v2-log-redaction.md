@@ -7,13 +7,15 @@ strings. Every dynamic logging argument is removed unless a reviewed call site e
 short operational code or creates a process-local opaque reference. Opaque references use a random
 per-process keyed digest, so small document or case identifiers cannot be enumerated from logs.
 
-The process-wide record factory in `backend/sealai_v2/obs/log_redaction.py` applies before API
-routers and timing logging are configured. It:
+The process-wide `Logger.makeRecord` boundary in
+`backend/sealai_v2/obs/log_redaction.py` applies after Python has merged `extra` fields and before
+API routers and timing logging are configured. It:
 
 - replaces unapproved strings, bytes, collections, and objects with type/length markers;
 - removes exception payloads, tracebacks, and stack dumps while retaining the exception class;
 - scrubs authorization values, bearer/JWT shapes, common secret assignments, credential-bearing
-  connection strings, and URLs with query strings as defense in depth;
+  connection strings, naked provider-key shapes, URLs with query strings, and structured `extra`
+  values as defense in depth;
 - rejects free text passed as a purported safe code;
 - leaves numeric counters and booleans available for operations.
 
@@ -30,8 +32,9 @@ Client-visible retry failures likewise use fixed codes rather than exception tex
 
 `SEALAI_V2_TELEMETRY_SAMPLE_RATE` controls only high-volume metadata log/trace copies. The accepted
 range is `0.0` through `1.0`; invalid values fail closed to zero informational telemetry. An unset
-value preserves the current `1.0` behavior for development and tests. The production profile must
-set an explicitly reviewed rate (initial target: `0.10`). LLM error events are always emitted and
+value preserves the current `1.0` behavior for development and tests. The production Compose
+profile explicitly defaults the reviewed deployment rate to `0.10` and the production env template
+pins it visibly. LLM error events are always emitted and
 are never sampled out. Prometheus counters, budget accounting, audit events, security denials, and
 backup/restore results must never use this sampler.
 

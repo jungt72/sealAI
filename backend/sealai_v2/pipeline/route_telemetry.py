@@ -40,6 +40,9 @@ _ROUTE_LATENCY = Histogram(
     buckets=(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5),
 )
 
+# Keep family-presence alerting meaningful before the first routed request.
+_ROUTE_DECISIONS.labels("none", "none", "false", "false").inc(0)
+
 
 def _record_metrics(event: "RouteTelemetry") -> None:
     route = safe_code_or_placeholder(event.route_name).value

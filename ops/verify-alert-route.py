@@ -130,11 +130,16 @@ def _runtime_config(source: Path, target: Path, webhook_file: Path) -> str:
     config = yaml.safe_load(source_bytes)
     config["route"]["group_wait"] = "1s"
     config["route"]["group_interval"] = "1s"
+    root_receiver_found = False
     for receiver in config["receivers"]:
         if receiver["name"] == config["route"]["receiver"]:
-            receiver["webhook_configs"][0]["url_file"] = str(webhook_file)
-            break
-    else:
+            root_receiver_found = True
+        # The rehearsal is hermetic: every configured webhook points at the
+        # private loopback receiver so added routes never require production
+        # secret files or contact external systems during config loading.
+        for webhook in receiver.get("webhook_configs", []):
+            webhook["url_file"] = str(webhook_file)
+    if not root_receiver_found:
         raise ValueError("root Alertmanager receiver is not configured")
     _write_private(target, yaml.safe_dump(config, sort_keys=False))
     return hashlib.sha256(source_bytes).hexdigest()

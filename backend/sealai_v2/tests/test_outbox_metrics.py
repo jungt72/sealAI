@@ -60,8 +60,8 @@ def test_outbox_metrics_are_aggregate_and_fail_closed(session_factory) -> None:
     assert (
         _sample("sealai_v2_outbox_oldest_pending_seconds", {"queue": "memory"}) == 600
     )
-    assert _sample("sealai_v2_qdrant_sync_drift", {"queue": "memory"}) == 1
-    assert _sample("sealai_v2_qdrant_sync_drift", {"queue": "knowledge"}) == 1
+    assert _sample("sealai_v2_projection_backlog_rows", {"queue": "memory"}) == 1
+    assert _sample("sealai_v2_projection_backlog_rows", {"queue": "knowledge"}) == 1
     assert (
         _sample("sealai_v2_outbox_metrics_collection_success", {"queue": "knowledge"})
         == 1

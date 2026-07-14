@@ -42,6 +42,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import current_identity, get_settings, require_admin
+from sealai_v2.api.errors import safe_http_error
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.memory_store import (
     InvalidMemoryTransition,
@@ -259,8 +260,8 @@ def _transition(
         )
     except MemoryItemNotFound:
         raise HTTPException(status_code=404, detail="memory item not found") from None
-    except InvalidMemoryTransition as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except InvalidMemoryTransition:
+        raise safe_http_error(409, "memory_transition_invalid") from None
     return _item_dict(updated)
 
 

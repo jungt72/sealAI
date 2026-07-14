@@ -13,6 +13,7 @@ from sealai_v2.api.deps import (
     get_settings,
     require_knowledge_reviewer,
 )
+from sealai_v2.api.errors import safe_http_error
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.knowledge.ledger import (
@@ -78,7 +79,7 @@ def list_claims(
             limit=limit,
         )
     except KnowledgeLedgerError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "knowledge_query_invalid") from exc
     return {"claims": list(claims), "status": status, "authoritative": True}
 
 
@@ -118,5 +119,5 @@ def review_claim(
     except KnowledgeClaimNotFound as exc:
         raise HTTPException(status_code=404, detail="claim not found") from exc
     except KnowledgeLedgerError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "knowledge_review_invalid") from exc
     return {"claim": claim, "knowledge_mode_activated": False}

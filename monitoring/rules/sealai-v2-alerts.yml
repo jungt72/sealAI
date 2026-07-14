@@ -46,15 +46,18 @@ groups:
     rules:
       - alert: SealAIRequiredScrapeTargetMissing
         expr: |
-          absent(up{job="sealai-backend-v2"})
-          or absent(up{job="sealai-backend-v2-worker"})
-          or absent(up{job="sealai-node"})
-          or absent(up{job="sealai-containers"})
-          or absent(up{job="sealai-postgres"})
-          or absent(up{job="sealai-redis"})
-          or absent(up{job="sealai-qdrant"})
-          or absent(up{job="sealai-blackbox-tls"})
-          or absent(up{job="sealai-alertmanager"})
+          (up{job="prometheus"} != 1) or absent(up{job="prometheus"})
+          or (up{job="sealai-backend-v2"} != 1) or absent(up{job="sealai-backend-v2"})
+          or (up{job="sealai-backend-v2-worker"} != 1) or absent(up{job="sealai-backend-v2-worker"})
+          or (up{job="sealai-keycloak"} != 1) or absent(up{job="sealai-keycloak"})
+          or (up{job="sealai-node"} != 1) or absent(up{job="sealai-node"})
+          or (up{job="sealai-containers"} != 1) or absent(up{job="sealai-containers"})
+          or (up{job="sealai-postgres"} != 1) or absent(up{job="sealai-postgres"})
+          or (up{job="sealai-redis"} != 1) or absent(up{job="sealai-redis"})
+          or (up{job="sealai-qdrant"} != 1) or absent(up{job="sealai-qdrant"})
+          or (up{job="sealai-dr-status"} != 1) or absent(up{job="sealai-dr-status"})
+          or (up{job="sealai-blackbox-tls"} != 1) or absent(up{job="sealai-blackbox-tls"})
+          or (up{job="sealai-alertmanager"} != 1) or absent(up{job="sealai-alertmanager"})
         for: 2m
         labels:
           severity: critical
@@ -64,29 +67,93 @@ groups:
       - alert: SealAIRequiredApplicationMetricMissing
         expr: |
           absent(sealai_v2_llm_calls_total)
+          or absent(sealai_v2_llm_failures_total)
           or absent(sealai_v2_route_decisions_total)
           or absent(sealai_v2_outbox_rows)
-          or absent(sealai_v2_qdrant_sync_drift)
+          or absent(sealai_v2_outbox_oldest_pending_seconds)
+          or absent(sealai_v2_outbox_metrics_collection_success)
+          or absent(sealai_v2_projection_backlog_rows)
           or absent(sealai_v2_provider_budget_limit_minor_units)
           or absent(sealai_v2_provider_spend_minor_units)
+          or absent(sealai_v2_quota_denials_total)
+          or absent(sealai_v2_auth_denials_total)
         for: 5m
         labels:
           severity: critical
           category: observability
         annotations:
           summary: "A mandatory V2 application metric is absent"
-      - alert: SealAIRequiredRecoveryMetricMissing
+      - alert: SealAIRequiredQueueMetricMissing
         expr: |
-          absent(sealai_backup_last_success_timestamp_seconds)
-          or absent(sealai_offsite_backup_last_success_timestamp_seconds)
-          or absent(sealai_restore_drill_last_success_timestamp_seconds)
-          or absent(sealai_backup_receipt_valid)
+          absent(sealai_v2_outbox_rows{queue="memory"})
+          or absent(sealai_v2_outbox_rows{queue="knowledge"})
+          or absent(sealai_v2_outbox_oldest_pending_seconds{queue="memory"})
+          or absent(sealai_v2_outbox_oldest_pending_seconds{queue="knowledge"})
+          or absent(sealai_v2_outbox_metrics_collection_success{queue="memory"})
+          or absent(sealai_v2_outbox_metrics_collection_success{queue="knowledge"})
+          or absent(sealai_v2_projection_backlog_rows{queue="memory"})
+          or absent(sealai_v2_projection_backlog_rows{queue="knowledge"})
         for: 5m
         labels:
           severity: critical
-          category: disaster_recovery
+          category: observability
         annotations:
-          summary: "A mandatory recovery evidence metric is absent"
+          summary: "A mandatory memory or knowledge queue metric is absent"
+      - alert: SealAIBackupSuccessComponentMissing
+        expr: |
+          absent(sealai_backup_last_success_timestamp_seconds{component="postgres"})
+          or absent(sealai_backup_last_success_timestamp_seconds{component="qdrant"})
+          or absent(sealai_backup_last_success_timestamp_seconds{component="uploads"})
+          or absent(sealai_backup_last_success_timestamp_seconds{component="documents"})
+          or absent(sealai_backup_last_success_timestamp_seconds{component="configuration"})
+        for: 5m
+        labels: {severity: critical, category: disaster_recovery}
+        annotations: {summary: "Backup-success evidence is incomplete across required components"}
+      - alert: SealAIBackupFailureComponentMissing
+        expr: |
+          absent(sealai_backup_last_failure_timestamp_seconds{component="postgres"})
+          or absent(sealai_backup_last_failure_timestamp_seconds{component="qdrant"})
+          or absent(sealai_backup_last_failure_timestamp_seconds{component="uploads"})
+          or absent(sealai_backup_last_failure_timestamp_seconds{component="documents"})
+          or absent(sealai_backup_last_failure_timestamp_seconds{component="configuration"})
+        for: 5m
+        labels: {severity: critical, category: disaster_recovery}
+        annotations: {summary: "Backup-failure evidence is incomplete across required components"}
+      - alert: SealAIOffsiteBackupComponentMissing
+        expr: |
+          absent(sealai_offsite_backup_last_success_timestamp_seconds{component="postgres"})
+          or absent(sealai_offsite_backup_last_success_timestamp_seconds{component="qdrant"})
+          or absent(sealai_offsite_backup_last_success_timestamp_seconds{component="uploads"})
+          or absent(sealai_offsite_backup_last_success_timestamp_seconds{component="documents"})
+          or absent(sealai_offsite_backup_last_success_timestamp_seconds{component="configuration"})
+        for: 5m
+        labels: {severity: critical, category: disaster_recovery}
+        annotations: {summary: "Offsite-backup evidence is incomplete across required components"}
+      - alert: SealAIRestoreDrillComponentMissing
+        expr: |
+          absent(sealai_restore_drill_last_success_timestamp_seconds{component="postgres"})
+          or absent(sealai_restore_drill_last_success_timestamp_seconds{component="qdrant"})
+          or absent(sealai_restore_drill_last_success_timestamp_seconds{component="uploads"})
+          or absent(sealai_restore_drill_last_success_timestamp_seconds{component="documents"})
+          or absent(sealai_restore_drill_last_success_timestamp_seconds{component="configuration"})
+        for: 5m
+        labels: {severity: critical, category: disaster_recovery}
+        annotations: {summary: "Restore-drill evidence is incomplete across required components"}
+      - alert: SealAIBackupReceiptComponentMissing
+        expr: |
+          absent(sealai_backup_receipt_valid{component="postgres"})
+          or absent(sealai_backup_receipt_valid{component="qdrant"})
+          or absent(sealai_backup_receipt_valid{component="uploads"})
+          or absent(sealai_backup_receipt_valid{component="documents"})
+          or absent(sealai_backup_receipt_valid{component="configuration"})
+        for: 5m
+        labels: {severity: critical, category: disaster_recovery}
+        annotations: {summary: "Backup-receipt evidence is incomplete across required components"}
+      - alert: SealAIAlertmanagerNotificationMetricMissing
+        expr: absent(alertmanager_notifications_total)
+        for: 5m
+        labels: {severity: critical, category: observability}
+        annotations: {summary: "Alertmanager notification delivery metrics are absent"}
 
   - name: sealai-v2-host-and-containers
     interval: 15s
@@ -113,26 +180,28 @@ groups:
         annotations: {summary: "Filesystem inode usage is at least 85 percent"}
       - alert: SealAIContainerRestarted
         expr: |
-          changes(container_start_time_seconds{name=~".*(backend-v2|worker-v2|postgres|qdrant|redis|nginx|keycloak).*"}[15m]) > 0
+          changes(container_start_time_seconds{name=~"^/?(backend-v2|backend-v2-worker|postgres|qdrant|redis|nginx|keycloak)$"}[15m]) > 0
+          or time() - container_start_time_seconds{name=~"^/?(backend-v2|backend-v2-worker|postgres|qdrant|redis|nginx|keycloak)$"} < 900
         labels: {severity: warning, category: runtime}
         annotations: {summary: "A sealingAI core container restarted"}
       - alert: SealAIContainerOOM
         expr: |
-          increase(container_oom_events_total{name=~".*(backend-v2|worker-v2|postgres|qdrant|redis|nginx|keycloak).*"}[5m]) > 0
+          increase(container_oom_events_total{name=~"^/?(backend-v2|backend-v2-worker|postgres|qdrant|redis|nginx|keycloak)$"}[5m]) > 0
         labels: {severity: critical, category: runtime}
         annotations: {summary: "A sealingAI core container had an OOM event"}
       - alert: SealAIContainerMissing
         expr: |
-          time() - container_last_seen{name=~".*(backend-v2|worker-v2|postgres|qdrant|redis|nginx|keycloak).*"} > 60
+          absent(container_last_seen{name=~"^/?backend-v2$"})
+          or absent(container_last_seen{name=~"^/?backend-v2-worker$"})
+          or absent(container_last_seen{name=~"^/?postgres$"})
+          or absent(container_last_seen{name=~"^/?qdrant$"})
+          or absent(container_last_seen{name=~"^/?redis$"})
+          or absent(container_last_seen{name=~"^/?nginx$"})
+          or absent(container_last_seen{name=~"^/?keycloak$"})
+          or time() - container_last_seen{name=~"^/?(backend-v2|backend-v2-worker|postgres|qdrant|redis|nginx|keycloak)$"} > 60
         for: 2m
         labels: {severity: critical, category: runtime}
         annotations: {summary: "A sealingAI core container disappeared from cAdvisor"}
-      - alert: SealAIContainerUnhealthy
-        expr: |
-          container_health_state{name=~".*(backend-v2|worker-v2|postgres|qdrant|redis|nginx|keycloak).*"} != 1
-        for: 2m
-        labels: {severity: critical, category: runtime}
-        annotations: {summary: "A sealingAI core container healthcheck is failing"}
 
   - name: sealai-v2-redis
     interval: 15s
@@ -249,11 +318,11 @@ groups:
         expr: sum(sealai_v2_outbox_rows{status="failed"}) > 0
         labels: {severity: critical, category: data_sync}
         annotations: {summary: "A V2 outbox row failed permanently"}
-      - alert: SealAIQdrantSyncDrift
-        expr: sum(sealai_v2_qdrant_sync_drift) > 0
+      - alert: SealAIProjectionBacklog
+        expr: sum(sealai_v2_projection_backlog_rows) > 0
         for: 5m
         labels: {severity: critical, category: data_sync}
-        annotations: {summary: "Postgres authority and Qdrant projection have drifted"}
+        annotations: {summary: "Postgres-authoritative rows remain unresolved in a projection queue"}
       - alert: SealAIOutboxMetricsCollectionFailed
         expr: sealai_v2_outbox_metrics_collection_success != 1
         for: 2m
@@ -268,6 +337,12 @@ groups:
   - name: sealai-v2-recovery-tls-delivery
     interval: 30s
     rules:
+      # The independent external receiver must alarm when this heartbeat stops.
+      # A local firing state alone does not close the external watchdog control.
+      - alert: SealAIWatchdog
+        expr: vector(1)
+        labels: {severity: warning, category: observability}
+        annotations: {summary: "Periodic heartbeat for the independent external dead-man receiver"}
       - alert: SealAIBackupFailed
         expr: |
           sealai_backup_last_failure_timestamp_seconds

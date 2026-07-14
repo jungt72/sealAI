@@ -49,6 +49,12 @@ _LLM_FAILURES = Counter(
     ("provider", "model", "stage", "category"),
 )
 
+# Publish zero-valued sentinels so an idle but correctly instrumented process
+# does not look the same as a process where the required metric families were
+# never registered. Real observations always use their bounded real labels.
+_LLM_CALLS.labels("none", "none", "none", "ok").inc(0)
+_LLM_FAILURES.labels("none", "none", "none", "provider").inc(0)
+
 
 def _metric_label(value: str | None) -> str:
     safe = safe_code_or_placeholder(value, placeholder="none").value

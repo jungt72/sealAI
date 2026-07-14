@@ -21,6 +21,14 @@ _PROCESS_REFERENCE_KEY = secrets.token_bytes(32)
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
+        re.compile(
+            r"\b(?:sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{12,}|"
+            r"github_pat_[A-Za-z0-9_]{20,}|gh[opurs]_[A-Za-z0-9]{20,}|"
+            r"xox[baprs]-[A-Za-z0-9-]{12,}|AIza[A-Za-z0-9_-]{20,})\b"
+        ),
+        "[REDACTED_API_KEY]",
+    ),
+    (
         re.compile(r"(?i)\b(authorization\s*[:=]\s*)(?:bearer|basic|token)\s+[^\s,;]+"),
         r"\1[REDACTED_CREDENTIAL]",
     ),
@@ -50,6 +58,18 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r"(?i)\bhttps?://[^\s?#]+\?[^\s]+"),
         "[REDACTED_URL_WITH_QUERY]",
     ),
+)
+
+_STANDARD_LOG_RECORD_FIELDS = frozenset(
+    logging.LogRecord(
+        name="sealai",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=0,
+        msg="",
+        args=(),
+        exc_info=None,
+    ).__dict__
 )
 
 
@@ -135,6 +155,13 @@ def _secure_record(record: logging.LogRecord) -> logging.LogRecord:
         record.exc_info = None
         record.exc_text = None
         record.stack_info = None
+
+    # ``extra=`` fields are merged by Logger.makeRecord *after* the configured
+    # LogRecord factory returns. Sanitize every non-standard field here, at the
+    # post-merge boundary, so structured formatters cannot bypass redaction.
+    for key, value in tuple(record.__dict__.items()):
+        if key not in _STANDARD_LOG_RECORD_FIELDS and key != "request_id":
+            record.__dict__[key] = _redact_dynamic(value)
     from sealai_v2.obs.request_context import current_request_id
 
     request_id = current_request_id()
@@ -145,13 +172,15 @@ def _secure_record(record: logging.LogRecord) -> logging.LogRecord:
 
 
 def configure_safe_logging() -> None:
-    """Install the idempotent V2 process-wide safe ``LogRecord`` factory."""
-    current = logging.getLogRecordFactory()
+    """Install the idempotent post-``extra`` V2 logging boundary."""
+    current = logging.Logger.makeRecord
     if getattr(current, "_sealai_safe_logging", False):
         return
 
-    def factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
-        return _secure_record(current(*args, **kwargs))
+    def make_record(
+        logger: logging.Logger, *args: Any, **kwargs: Any
+    ) -> logging.LogRecord:
+        return _secure_record(current(logger, *args, **kwargs))
 
-    factory._sealai_safe_logging = True  # type: ignore[attr-defined]
-    logging.setLogRecordFactory(factory)
+    make_record._sealai_safe_logging = True  # type: ignore[attr-defined]
+    logging.Logger.makeRecord = make_record

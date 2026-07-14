@@ -36,6 +36,11 @@ services:
       default:
         aliases:
         - sealai-frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: ${DOCKER_LOG_MAX_FILE:-3}
   keycloak:
     container_name: keycloak
     depends_on:
@@ -77,6 +82,12 @@ services:
       default:
         aliases:
         - sealai-keycloak
+      keycloak_metrics_network: {}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: ${DOCKER_LOG_MAX_FILE:-3}
   nginx:
     image: nginx:1.29.4
     container_name: nginx
@@ -105,6 +116,11 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: ${DOCKER_LOG_MAX_FILE:-3}
   # V2 green-field backend (cutover arc) — OFF by default behind the `v2` profile; defined HERE
   # (not only in an overlay) so `up -d --remove-orphans` with the standard file set never treats a
   # running backend-v2 as an orphan. Routed only after `ops/v2-flip.sh --apply` enables the nginx
@@ -292,6 +308,12 @@ services:
       PAPERLESS_URL: ${PAPERLESS_URL:-}
       PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:-}
       PAPERLESS_WEBHOOK_TOKEN: ${PAPERLESS_WEBHOOK_TOKEN:-}
+      # Production metadata telemetry is explicitly sampled; counters, cost,
+      # security, audit, and DR evidence remain unsampled.
+      SEALAI_V2_TELEMETRY_SAMPLE_RATE: ${SEALAI_V2_TELEMETRY_SAMPLE_RATE:-0.10}
+      # Qdrant's write credential. The service-side read-only credential is
+      # reserved for Prometheus and is never mounted into this container.
+      SEALAI_V2_QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY required}
     volumes:
     # Pre-staged e5-large ONNX cache (FastEmbed) — read-only; avoids a ~2GB cold download on the
     # health-gated recreate. uid 10001 reads via the bind mount (the cache contents are world-readable).
@@ -312,6 +334,12 @@ services:
       default:
         aliases:
         - sealai-backend-v2
+      backend_metrics_network: {}
+    logging:
+      driver: json-file
+      options:
+        max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: ${DOCKER_LOG_MAX_FILE:-3}
   # Durable queue consumer. It extends the exact backend-v2 image and allow-listed
   # environment, but has no HTTP port and no API responsibility. Keeping it as a
   # separate container makes outbox delivery restart-safe without adding a hidden
@@ -328,8 +356,9 @@ services:
     - sealai_v2.memory.outbox_daemon
     ports: !reset []
     expose: !reset []
-    networks: !reset
+    networks: !override
       default: {}
+      backend_metrics_network: {}
     healthcheck:
       test:
       - CMD

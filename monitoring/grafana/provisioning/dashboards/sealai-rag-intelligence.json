@@ -18,10 +18,10 @@
     },
     {
       "type": "stat",
-      "title": "Projection Drift Rows",
+      "title": "Projection Backlog Rows",
       "id": 2,
       "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
-      "targets": [{"expr": "sum(sealai_v2_qdrant_sync_drift)", "refId": "A"}]
+      "targets": [{"expr": "sum(sealai_v2_projection_backlog_rows)", "refId": "A"}]
     },
     {
       "type": "stat",

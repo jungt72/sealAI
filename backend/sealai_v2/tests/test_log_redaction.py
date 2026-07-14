@@ -102,6 +102,29 @@ def test_known_secret_patterns_are_scrubbed_even_in_a_message() -> None:
     assert "REDACTED" in rendered
 
 
+def test_naked_provider_key_in_static_message_is_scrubbed() -> None:
+    logger, stream = _capture_logger("sealai_v2.tests.redaction.naked_key")
+    logger.error("event=synthetic_canary credential=" + _CANARY_SECRET)
+    rendered = stream.getvalue()
+    assert _CANARY_SECRET not in rendered
+    assert "[REDACTED_API_KEY]" in rendered
+
+
+def test_structured_extra_fields_are_redacted_after_record_merge() -> None:
+    configure_safe_logging()
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s payload=%(payload)s"))
+    logger = logging.getLogger("sealai_v2.tests.redaction.extra")
+    logger.handlers = [handler]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+    logger.error("event=synthetic_extra", extra={"payload": _CANARY_SECRET})
+    rendered = stream.getvalue()
+    assert _CANARY_SECRET not in rendered
+    assert "[REDACTED_TEXT length=" in rendered
+
+
 def test_opaque_reference_is_stable_in_process_without_revealing_input() -> None:
     first = str(opaque_reference("paperless", "small-enumerable-id-7"))
     second = str(opaque_reference("paperless", "small-enumerable-id-7"))

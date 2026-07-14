@@ -27,9 +27,9 @@ _OUTBOX_OLDEST_PENDING_SECONDS = Gauge(
     "Age of the oldest unresolved V2 outbox row.",
     ("queue",),
 )
-_QDRANT_SYNC_DRIFT = Gauge(
-    "sealai_v2_qdrant_sync_drift",
-    "Rows proving the Qdrant projection is behind Postgres authority.",
+_PROJECTION_BACKLOG_ROWS = Gauge(
+    "sealai_v2_projection_backlog_rows",
+    "Unresolved Postgres-authoritative outbox rows awaiting projection handling.",
     ("queue",),
 )
 _COLLECTION_SUCCESS = Gauge(
@@ -99,7 +99,7 @@ def collect_outbox_metrics(
         for status in _STATUSES:
             _OUTBOX_ROWS.labels(queue, status).set(counts[status])
         _OUTBOX_OLDEST_PENDING_SECONDS.labels(queue).set(oldest_age)
-        _QDRANT_SYNC_DRIFT.labels(queue).set(
+        _PROJECTION_BACKLOG_ROWS.labels(queue).set(
             counts["pending"]
             + counts["processing"]
             + counts["failed"]

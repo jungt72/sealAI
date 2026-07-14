@@ -42,6 +42,10 @@ scrape_configs:
   - job_name: sealai-node
     static_configs:
       - targets: ["node-exporter:9100"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "sealai_(backup|offsite_backup|restore_drill)_.*"
+        action: drop
 
   - job_name: sealai-containers
     static_configs:
