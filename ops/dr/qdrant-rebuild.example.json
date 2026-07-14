@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "mode": "snapshot_and_rebuild",
+  "canonical_source": "postgres",
+  "require_empty_target": true,
+  "verify_no_orphans": true,
+  "verify_tenant_counts": true,
+  "collections": [
+    {
+      "logical_id": "knowledge",
+      "collection_name": "sealai_v2_knowledge_v1",
+      "ledger_database": "sealai_v2",
+      "tenant_scope": "shared_reviewed",
+      "authority_epoch_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rebuild_command_id": "rebuild_knowledge_v1",
+      "snapshot_path": "qdrant/sealai_v2_knowledge_v1-example.snapshot",
+      "snapshot_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "expected_points_count": 0,
+      "tenant_payload_key": "tenant_id",
+      "tenant_counts_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "logical_id": "memory",
+      "collection_name": "sealai_v2_memory",
+      "ledger_database": "sealai_v2",
+      "tenant_scope": "tenant_bound",
+      "authority_epoch_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rebuild_command_id": "rebuild_memory_v1",
+      "snapshot_path": "qdrant/sealai_v2_memory-example.snapshot",
+      "snapshot_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "expected_points_count": 0,
+      "tenant_payload_key": "tenant_id",
+      "tenant_counts_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ]
+}

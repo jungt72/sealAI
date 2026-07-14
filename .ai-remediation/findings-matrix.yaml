@@ -388,17 +388,26 @@ findings:
       - Added fail-closed target and capacity binding, no-clobber publication, checksums, fixed command timeouts, lifecycle locks, and safe local retention for Postgres and Qdrant backups.
       - Added a provider-neutral encrypted-offsite receipt contract binding local plaintext, downloaded ciphertext, decrypted plaintext, object identity, and versioned key identity.
       - Hardened Qdrant snapshot deletion and restore to preserve the verified local inode, wait for completion, and validate the exact success response.
+      - Added an immutable full-recovery-set manifest covering Postgres, Qdrant, uploads, documents, configuration, and secret-recovery identifiers without secret values.
+      - Added provider-neutral Restic transport with no inherited credential environment, short manifest-bound Gate-08 receipts, dry-run-only retention, and full-download receipt requirements.
+      - Added a dedicated internal-network restore runner for Postgres integrity, Qdrant checksum/point/tenant invariants, file verification, RPO/RTO receipts, and monthly scheduling.
     tests:
       - Capacity stop conditions, descriptor and inode binding, poisoned environment and shell functions, no-clobber publication, retention, checksum, offsite receipt, Qdrant deletion, and restore-response tests.
-      - Empty-host offsite restore covering Redis, uploads, auth, configuration, and artifact digests remains pending P2 and external infrastructure.
+      - Empty-host execution against real offsite data remains blocked on external storage, key custody, a dedicated runner, P1-D rebuild authority, and Gate-08.
+      - Adversarial manifest, receipt, secret-inventory, Qdrant-plan, metrics, and isolated-runner contract tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Add offsite copies without reducing local retention until two successful restore drills.
     evidence_after:
       - docs/runbooks/backup-storage-safety.md
       - ops/RESTORE.md
+      - ops/dr_recovery.py
+      - ops/dr_offsite.sh
+      - ops/dr_restore_drill.sh
+      - ops/dr/restore-compose.yml
+      - docs/runbooks/disaster-recovery.md
       - Local backup safety tests passed; no production backup, deletion, offsite transfer, or restore was executed.
-    residual_risk: Host or volume loss can destroy production and all local recovery material until external storage is configured and tested.
+    residual_risk: Host or volume loss can destroy production and all local recovery material until external storage/key custody and two isolated drills are configured under Gate-08; Postgres-only Qdrant rebuild remains blocked on P1-D.
 
   - finding_id: OBS-001
     title: Production monitoring is stopped, stale, and lacks alert routing

@@ -117,6 +117,12 @@
       "scope": "independent_local_review",
       "status": "PASSED",
       "summary": "Independent adversarial re-reviews reported no remaining findings in the Redis guard or the non-executable Gate-04 observer after all High, Medium, and Low review findings were corrected."
+    },
+    {
+      "check_id": "P2-DR-LOCAL-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Immutable DR manifests, P0 checksum binding, provider-neutral Restic preparation, upload/document/config and secret-recovery contracts, internal restore composition, fresh receipts, RPO/RTO, stable metrics, and monthly scheduling passed 22 adversarial DR tests plus the existing backup suite, Ruff, Bash syntax, Compose rendering, secret scanning, and diff checks. No Restic binary, systemd runtime, Docker daemon, external repository, real recovery material, Gate-08 receipt, or P1-D rebuild command was available, so no external or end-to-end drill claim is made."
     }
   ],
   "production_mutations_performed": false,

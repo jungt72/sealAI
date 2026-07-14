@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the sealingAI isolated DR drill monthly
+
+[Timer]
+OnCalendar=Sun *-*-01..07 04:00:00 UTC
+RandomizedDelaySec=30min
+AccuracySec=5min
+Persistent=true
+Unit=sealai-dr-restore-drill.service
+
+[Install]
+WantedBy=timers.target
