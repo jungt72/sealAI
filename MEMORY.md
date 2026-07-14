@@ -25,7 +25,7 @@
 
 ## Dashboard Cockpit / Right Rail
 
-- 2026-07-05: The active dashboard SSoT is `frontend-v2/` served from `frontend-v2/dist`; the cockpit is built in `frontend-v2/src/components/ChatPane.tsx`. Do not patch old scratch templates or `frontend-cockpit-deploy/`.
+- 2026-07-14: The active dashboard SSoT is `frontend-v2/`; production Nginx serves only the verified immutable `frontend-v2/dashboard-releases/current` target. Normal builds remain inert under `.build/dashboard-candidate`, and only GATE-08 may change `current`. The cockpit is built in `frontend-v2/src/components/ChatPane.tsx`; do not patch old scratch templates or `frontend-cockpit-deploy/`.
 - The cockpit Right Rail is an orientation surface, not a raw compute/debug panel: show solution direction, next step, missing human-readable inputs, computed values, one critical point, medium, and RFQ readiness. Do not expose internal keys such as `d1_mm`, `rpm`, `p_bar`, or `v_m_s` in the UI.
 - `/api/v2/compute` is case-aware via optional `case_id`; frontend `ApiClient.compute(caseId)` must pass the active case so the Right Rail uses the same case-state as chat, facts, and memory.
 - Live verification case `b6734cb0-c470-4222-ba1a-0d7e157617b2`: Hydrauliköl, 45 mm, 1500 U/min, 0,5 bar computes `3,53 m/s` and `1,77 bar·m/s` in the Right Rail; console had no CSP/font warnings after deploy.

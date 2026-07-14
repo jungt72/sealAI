@@ -50,26 +50,22 @@ shebang could select privileged mode. The legacy deploy-sentinel parser still
 recognizes direct execution, ordinary Bash, and explicit `/bin/bash -p` forms
 so an unsanctioned spelling cannot evade its deny decision.
 
-The deployment workflow no longer performs `git fetch`, `git checkout`, or a
-release command on the VPS. It can call only the root-owned installed
-`/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh` under an
-empty environment. That boundary validates its installed helper and lease,
-acquires the global storage lock, completes the canonical disk preflight, and
-then denies unconditionally with
-`p1_exact_artifact_promotion_not_implemented`; it has no fetch, checkout,
-Docker, release, or live-checkout execution path. In particular, it does not
-execute a gate program from the user-writable live checkout. P1 must implement
-and independently review a root-trusted, exact Gate-10 control and immutable
-artifact verifier behind that boundary before the denial can be replaced. This
-checked-in workflow therefore cannot currently deploy, even if upstream job
-state is forged.
+The deployment workflow performs no `git fetch`, checkout, gate execution or
+image resolution on the runner. It can call only the installed root-owned
+remote entrypoint. The P1 boundary accepts only an exact root-staged two-commit
+checkout, fixed root-owned evidence, a matching Gate-10 decision and a
+single-use private GATE-08 deployment receipt. It acquires the global storage
+lease and permanently drops privilege before the staged backend release runs;
+no code from `/home/thorsten/sealai` executes as root. The checked-in active
+freeze plus `GATE10_LIFT_IMPLEMENTED = False` still denies every release. See
+`docs/ops/PRODUCTION_PROMOTION_CONTROL.md`.
 
-Image publication is frozen as well. The backend-v2 and Keycloak publication
-jobs check the exact committed release state with operation `build` immediately
-after checkout and before registry login, Buildx setup, image build, or push.
-The active P0 state therefore stops automatic main-push and manual-dispatch
-publication. Keycloak pull requests may still run their isolated `push: false`
-compatibility build because it creates no production artifact.
+Backend-v2 RC publication is deliberately non-circular: its manual workflow
+builds and signs an immutable candidate before Gate 10, without a production
+environment, production secrets, SSH credential or production network path.
+Publication is not deployment and does not lift the freeze. Production pull,
+migration and activation remain denied by the two production gates. Keycloak
+publication remains separately gated.
 
 ## Narrow GATE-08 bootstrap exception
 
@@ -311,9 +307,10 @@ symlinks. It then runs that verified gate with isolated system Python. The gate
 verifies the exact complete artifact set, Git state, and every artifact hash.
 The installer repeats path/gate checks, copies all inputs to another
 root-private stage, and re-hashes that exact copy before installation. It also
-installs the fail-closed gate-invocation helper and the still-hard-denied remote
-deployment boundary as root-owned executables; GATE-08 does not authorize the
-boundary to release application artifacts.
+installs the fail-closed gate-invocation helper, root-staging control,
+dashboard verifier and remote deployment boundary as root-owned executables.
+Installing these inert controls does not authorize them to stage or release an
+application artifact; every later deployment needs its own GATE-08 receipt.
 An approved GATE-08 command set must include placement of the private receipt,
 this trust transition, exact retirement of the one destructive legacy cron
 line, and the verified installer transaction; the receipt never authorizes an
@@ -325,8 +322,9 @@ in code remains denied until a human provides that exact, short-lived approval.
 ## Gate-10 two-commit model
 
 The reserved future lift uses two commits so no document has to contain its own
-Git hash. This structure is validated now for tamper resistance, but it cannot
-lift the freeze until the exact-artifact P1 binding above is implemented:
+Git hash. The exact-artifact P1 binding is implemented and tested, but the
+checked-in lift constant remains false until the external evidence and human
+Gate-10 decision exist:
 
 1. The source commit contains the exact reviewed application and release code.
    Immutable images and all release-evidence hashes are produced for this

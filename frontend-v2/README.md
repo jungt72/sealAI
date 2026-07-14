@@ -33,11 +33,28 @@ Env (public, not secrets): `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID=sealai-v2`, 
 3. **`tenant_id` claim mapper** → the user's tenant into the `tenant_id` claim (`sid`/`sub` are standard).
    Without these the M6c validator fails closed (correct).
 
-## Serving / cutover (owner-gated, NOT applied to prod by M7)
-A normal build writes only to `.build/dashboard-candidate/`; it must never overwrite the live `dist/`
-bind mount. Only the separately gated publisher may promote a verified candidate into `dist/`, which
-nginx mounts at `/usr/share/nginx/v2-client`. The `sealingai.com` server block includes
-`snippets/v2_dashboard.conf` (serves `/dashboard` with strict CSP and enables `/api/v2 →
-backend-v2:8001`); bring `backend-v2` online (`v2` profile) with `auth_*` config. Verify with
-`nginx -t` plus a local/staging bring-up — **the production cutover remains a separate owner-gated
-deploy.**
+## Immutable release preparation (never activates production)
+
+Exact Node/npm versions are pinned in `.node-version` and `.npm-version`. From a clean committed
+frontend tree, the release wrapper runs
+`npm ci`, builds twice with a commit-derived `SOURCE_DATE_EPOCH`, byte-compares both canonical
+inspections, and materializes one read-only release:
+
+```bash
+cd frontend-v2
+npm run release:prepare
+```
+
+The only build target remains `.build/dashboard-candidate/`. Prepared output is stored under
+`dashboard-releases/artifacts/<source-git-sha>-<artifact-sha256>/`; `release.json` binds every file
+hash to the source commit, lockfile hash, source epoch, and exact Node/npm versions. Re-running the
+same release is idempotent; an existing conflicting path fails closed and is never overwritten.
+
+Preparation does **not** create or change `dashboard-releases/current` or `rollback`. Production
+Nginx mounts the release root read-only and resolves only `current`; a candidate therefore cannot be
+served before the separately approved GATE-08 deployment transaction atomically changes that
+relative symlink. The account menu displays the short commit and artifact digest, while
+`/dashboard/release.json` exposes the complete canonical identity with `Cache-Control: no-store`.
+
+See `docs/ops/IMMUTABLE_DASHBOARD_RELEASES.md` for verification, activation-plan, rollback, and
+failure-handling details. No production action is performed by these commands.
