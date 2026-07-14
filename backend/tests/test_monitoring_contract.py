@@ -18,6 +18,7 @@ ALERTMANAGER = ROOT / "monitoring" / "alertmanager.yml"
 DASHBOARDS = ROOT / "monitoring" / "grafana" / "provisioning" / "dashboards"
 COMPOSE = ROOT / "docker-compose.yml"
 COMPOSE_DEPLOY = ROOT / "docker-compose.deploy.yml"
+NGINX = ROOT / "nginx" / "default.conf"
 
 
 def _yaml(path: Path) -> dict:
@@ -114,7 +115,8 @@ def test_prometheus_scrapes_only_current_v2_and_required_exporters() -> None:
         "sealai-postgres",
         "sealai-redis",
         "sealai-dr-status",
-        "sealai-blackbox-tls",
+        "sealai-blackbox-tls-apex",
+        "sealai-blackbox-tls-www-redirect",
         "sealai-alertmanager",
     }
     assert required <= jobs.keys()
@@ -156,6 +158,8 @@ def test_alert_contract_covers_every_master_required_signal() -> None:
         "SealAIBackupFailed",
         "SealAIOffsiteBackupStale",
         "SealAIRestoreDrillOverdue",
+        "SealAITlsApexProbeFailed",
+        "SealAITlsWwwRedirectProbeFailed",
         "SealAITlsCertificateExpiring",
         "SealAIProviderBudgetWarning",
         "SealAIQuotaDenials",
@@ -204,7 +208,8 @@ def test_rules_fail_closed_when_required_metrics_are_missing() -> None:
         "sealai-redis",
         "sealai-qdrant",
         "sealai-dr-status",
-        "sealai-blackbox-tls",
+        "sealai-blackbox-tls-apex",
+        "sealai-blackbox-tls-www-redirect",
         "sealai-alertmanager",
     ):
         assert f'up{{job="{job}"}} != 1' in targets
@@ -312,13 +317,102 @@ def test_projection_metric_does_not_claim_unmeasured_qdrant_drift() -> None:
     assert "Projection Drift" not in combined
 
 
-def test_blackbox_tls_is_verified_and_redirects_do_not_mask_hostname_drift() -> None:
-    module = _yaml(BLACKBOX)["modules"]["https_2xx"]
-    http = module["http"]
-    assert http["fail_if_not_ssl"] is True
-    assert http["follow_redirects"] is False
-    assert http["tls_config"]["insecure_skip_verify"] is False
-    assert http["tls_config"]["min_version"] == "TLS12"
+def test_blackbox_tls_jobs_bind_each_origin_to_its_exact_policy() -> None:
+    jobs = {item["job_name"]: item for item in _yaml(PROMETHEUS)["scrape_configs"]}
+    expected = {
+        "sealai-blackbox-tls-apex": (
+            "https_apex_health_200",
+            "https://sealingai.com/api/health",
+        ),
+        "sealai-blackbox-tls-www-redirect": (
+            "https_www_health_308_to_apex",
+            "https://www.sealingai.com/api/health",
+        ),
+    }
+    for job_name, (module, target) in expected.items():
+        job = jobs[job_name]
+        assert job["params"] == {"module": [module]}
+        assert job["static_configs"] == [{"targets": [target]}]
+        assert job["relabel_configs"][0] == {
+            "source_labels": ["__address__"],
+            "target_label": "__param_target",
+        }
+        assert job["relabel_configs"][1] == {
+            "source_labels": ["__param_target"],
+            "target_label": "instance",
+        }
+    assert "sealai-blackbox-tls" not in jobs
+
+
+def test_blackbox_tls_modules_do_not_follow_or_hide_redirects() -> None:
+    modules = _yaml(BLACKBOX)["modules"]
+    apex = modules["https_apex_health_200"]["http"]
+    www = modules["https_www_health_308_to_apex"]["http"]
+
+    for http in (apex, www):
+        assert http["fail_if_not_ssl"] is True
+        assert http["follow_redirects"] is False
+        assert http["tls_config"]["insecure_skip_verify"] is False
+        assert http["tls_config"]["min_version"] == "TLS12"
+
+    assert apex["valid_status_codes"] == [200]
+    assert "fail_if_header_not_matches" not in apex
+    assert www["valid_status_codes"] == [308]
+    assert www["fail_if_header_not_matches"] == [
+        {
+            "header": "Location",
+            "regexp": r"^https://sealingai[.]com/api/health$",
+            "allow_missing": False,
+        }
+    ]
+
+
+def test_blackbox_contract_matches_the_committed_nginx_health_and_www_policy() -> None:
+    source = NGINX.read_text(encoding="utf-8")
+
+    def server_block(server_name: str) -> str:
+        marker = f"server_name {server_name};"
+        before, after = source.split(marker, 1)
+        start = before.rfind("\nserver {")
+        assert start >= 0
+        return before[start:] + marker + after.split("\nserver {", 1)[0]
+
+    www = server_block("www.sealingai.com")
+    apex = server_block("sealingai.com")
+
+    assert "listen 443 ssl;" in www
+    assert "ssl_certificate " in www
+    assert "return 308 https://sealingai.com$request_uri;" in www
+    assert "\n    location " not in www
+    assert "listen 443 ssl;" in apex
+    assert "location = /api/health {" in apex
+    assert "proxy_pass http://sealai-frontend:3000/api/health;" in apex
+
+
+def test_tls_probe_alerts_are_separate_and_fail_closed_per_exact_target() -> None:
+    rules = [
+        rule
+        for group in _yaml(ALERTS)["groups"]
+        for rule in group["rules"]
+        if "alert" in rule
+    ]
+    expressions = {rule["alert"]: str(rule["expr"]) for rule in rules}
+    expected = {
+        "SealAITlsApexProbeFailed": (
+            "sealai-blackbox-tls-apex",
+            "https://sealingai.com/api/health",
+        ),
+        "SealAITlsWwwRedirectProbeFailed": (
+            "sealai-blackbox-tls-www-redirect",
+            "https://www.sealingai.com/api/health",
+        ),
+    }
+    for alert, (job, instance) in expected.items():
+        expression = expressions[alert]
+        selector = f'probe_success{{job="{job}",instance="{instance}"}}'
+        assert f"({selector} != 1)" in expression
+        assert f"absent({selector})" in expression
+    assert "SealAITlsProbeFailed" not in expressions
 
 
 def test_alertmanager_receiver_is_external_file_backed_and_sends_resolution() -> None:

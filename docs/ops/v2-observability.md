@@ -6,6 +6,15 @@ Grafana dashboards. The retired V1 backend job and V1 metric families are reject
 tests. Required V2, worker, host, container, Postgres, Redis, Qdrant, TLS, recovery, and
 notification-delivery signals fail closed through explicit missing-signal alerts.
 
+The external TLS contract deliberately uses two Blackbox jobs and two modules. The canonical apex
+job requests exactly `https://sealingai.com/api/health` and accepts only HTTP 200. The `www` job
+requests exactly `https://www.sealingai.com/api/health` and accepts only HTTP 308 with the exact
+`Location: https://sealingai.com/api/health`. Neither module follows redirects. Both require HTTPS,
+TLS 1.2 or newer, the system trust chain, and hostname/SAN verification. Separate fail-closed alerts
+cover a failed or absent probe for each exact target; certificate-expiry rules cover both jobs. This
+prevents the intentional `www` redirect from becoming a permanent false alarm while also preventing
+a followed redirect from hiding a broken `www` certificate, hostname, status, or destination.
+
 The configuration uses only aggregate, low-cardinality data. Qdrant scraping reads a dedicated
 read-only Docker secret and uses the `api-key` header. Redis and Postgres exporters receive separate
 monitoring identities through Docker secrets; they must not reuse application or owner roles.
@@ -63,14 +72,16 @@ for a different component cannot mask a missing required component.
 
 Before GATE-08, run the repository contract tests, `promtool check config`, `promtool check rules`,
 `amtool check-config`, a complete Compose render, and an isolated alert-route rehearsal. After the
-approved deployment, verify every `up` series, inject each safe synthetic signal, receive it through
-the external channel, resolve it, and retain only the redacted receipt. No production failure is
+approved deployment, verify every `up` series and both exact Blackbox probe targets, inject each safe
+synthetic signal, receive it through the external channel, resolve it, and retain only the redacted
+receipt. Do not replace the split probes with a redirect-following check. No production failure is
 induced merely to test an alert.
 
-This remediation environment had neither pinned `promtool` nor `amtool`, and the task prohibited
-network downloads, daemon use, and remote deployment. Native parser checks and the loopback
-firing/resolution rehearsal are therefore `BLOCKED_EXTERNAL`, not reported as completed. Repository
-tests still parse the YAML, inspect semantic fail-closed cases, and render the actual two-file
-Compose model without starting containers. GATE-08 must provision checksum-verified versions that
-match the pinned Prometheus/Alertmanager images, then run `promtool check config`, `promtool check
-rules`, `amtool check-config`, and the full synthetic Prometheus-to-external-receiver path.
+This remediation environment had neither pinned `promtool`, `amtool`, nor `blackbox_exporter`, and
+the task prohibited network downloads, daemon use, and remote deployment. Native binary config
+loads and the loopback firing/resolution rehearsal are therefore `BLOCKED_EXTERNAL`, not reported as
+completed. Repository tests still parse the YAML, inspect semantic fail-closed cases, and render the
+actual two-file Compose model without starting containers. GATE-08 must provision
+checksum-verified versions that match the pinned Prometheus, Alertmanager, and Blackbox Exporter
+images, then run `promtool check config`, `promtool check rules`, `amtool check-config`, a native
+Blackbox config load, and the full synthetic Prometheus-to-external-receiver path.

@@ -56,7 +56,8 @@ groups:
           or (up{job="sealai-redis"} != 1) or absent(up{job="sealai-redis"})
           or (up{job="sealai-qdrant"} != 1) or absent(up{job="sealai-qdrant"})
           or (up{job="sealai-dr-status"} != 1) or absent(up{job="sealai-dr-status"})
-          or (up{job="sealai-blackbox-tls"} != 1) or absent(up{job="sealai-blackbox-tls"})
+          or (up{job="sealai-blackbox-tls-apex"} != 1) or absent(up{job="sealai-blackbox-tls-apex"})
+          or (up{job="sealai-blackbox-tls-www-redirect"} != 1) or absent(up{job="sealai-blackbox-tls-www-redirect"})
           or (up{job="sealai-alertmanager"} != 1) or absent(up{job="sealai-alertmanager"})
         for: 2m
         labels:
@@ -370,18 +371,27 @@ groups:
         for: 5m
         labels: {severity: critical, category: disaster_recovery}
         annotations: {summary: "A backup receipt failed integrity validation"}
-      - alert: SealAITlsProbeFailed
-        expr: probe_success{job="sealai-blackbox-tls"} != 1
+      - alert: SealAITlsApexProbeFailed
+        expr: |
+          (probe_success{job="sealai-blackbox-tls-apex",instance="https://sealingai.com/api/health"} != 1)
+          or absent(probe_success{job="sealai-blackbox-tls-apex",instance="https://sealingai.com/api/health"})
         for: 5m
         labels: {severity: critical, category: tls}
-        annotations: {summary: "External TLS/HTTP probe failed"}
+        annotations: {summary: "Canonical apex TLS or exact health 200 contract failed"}
+      - alert: SealAITlsWwwRedirectProbeFailed
+        expr: |
+          (probe_success{job="sealai-blackbox-tls-www-redirect",instance="https://www.sealingai.com/api/health"} != 1)
+          or absent(probe_success{job="sealai-blackbox-tls-www-redirect",instance="https://www.sealingai.com/api/health"})
+        for: 5m
+        labels: {severity: critical, category: tls}
+        annotations: {summary: "www TLS or exact HTTPS 308-to-apex contract failed"}
       - alert: SealAITlsCertificateExpiring
-        expr: probe_ssl_earliest_cert_expiry{job="sealai-blackbox-tls"} - time() < 2592000
+        expr: probe_ssl_earliest_cert_expiry{job=~"sealai-blackbox-tls-(apex|www-redirect)"} - time() < 2592000
         for: 30m
         labels: {severity: warning, category: tls}
         annotations: {summary: "TLS certificate expires within 30 days"}
       - alert: SealAITlsCertificateExpiringSoon
-        expr: probe_ssl_earliest_cert_expiry{job="sealai-blackbox-tls"} - time() < 1209600
+        expr: probe_ssl_earliest_cert_expiry{job=~"sealai-blackbox-tls-(apex|www-redirect)"} - time() < 1209600
         for: 5m
         labels: {severity: critical, category: tls}
         annotations: {summary: "TLS certificate expires within 14 days"}

@@ -122,25 +122,25 @@
       "check_id": "P2-OBSERVABILITY-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "A complete isolated V2 scrape/exporter/Alertmanager graph, fail-closed required-signal rules, external dead-man route, bounded retention, safe exception mapping, sampled metadata telemetry, and process-wide log redaction are implemented. Production remains unchanged and external alert ownership/runtime evidence is blocked."
+      "summary": "A complete isolated V2 scrape/exporter/Alertmanager graph, fail-closed required-signal rules, external dead-man route, bounded retention, safe exception mapping, sampled metadata telemetry, and process-wide log redaction are implemented. Apex health 200 and www-to-apex 308 are now separate exact, non-following TLS probes and alerts, so the intentional redirect neither fires permanently nor hides www TLS or Location drift. Production remains unchanged and external alert ownership/runtime evidence is blocked."
     },
     {
       "check_id": "P2-OBSERVABILITY-TESTS-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "The complete 2427-test backend/V2 collection passed with 2426 successes and one pre-existing skip, together with pinned Ruff, real daemon-free Compose rendering, YAML semantics, loopback route rehearsal, secret scan, and diff checks. Native promtool/amtool, real exporter digests/identities, cAdvisor host compatibility, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
+      "summary": "The complete 2427-test backend/V2 collection previously passed with 2426 successes and one pre-existing skip. After splitting the apex and www TLS policies, 39 focused monitoring, TLS, and remediation-control tests passed, including exact target, module, status, Location, Nginx policy, no-follow, and fail-closed alert assertions. Pinned Ruff, real daemon-free Compose rendering, YAML semantics, secret scan, and diff checks are retained; native promtool/amtool/blackbox_exporter config loads, loopback route rehearsal, real exporter digests/identities, cAdvisor host compatibility, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
     },
     {
       "check_id": "P2-TLS-CONTRACT-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "All five previously bypass-capable operational TLS smokes now share a fail-closed HTTPS, trust-store, TLS-version, hostname, SAN, and security-header contract without an insecure transport path. The canonical www policy is explicit. Production DNS, certificate, headers, and redirect remain unchanged and require GATE-08."
+      "summary": "All five previously bypass-capable operational TLS smokes share a fail-closed HTTPS, trust-store, TLS-version, hostname, SAN, and security-header contract without an insecure transport path. Monitoring now enforces apex /api/health as exact 200 and www /api/health as exact 308 to the apex over separate verified TLS connections without following the redirect. Production DNS, certificate, headers, redirect, and monitoring remain unchanged and require GATE-08."
     },
     {
       "check_id": "P2-TLS-TESTS-001",
       "scope": "local_worktree",
       "status": "PASSED",
-      "summary": "Twenty focused TLS and remediation-control tests and the complete 2427-test backend/V2 collection passed with one pre-existing skip, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks. Negative URL, CA-file, missing-header, bypass, and Nginx inheritance fixtures fail closed; no external endpoint was contacted."
+      "summary": "Thirty-nine focused monitoring, TLS, and remediation-control tests passed after the split-probe correction; the complete 2427-test backend/V2 collection had previously passed with 2426 successes and one pre-existing skip. Exact target/module/status/Location/Nginx policy, negative URL, CA-file, missing-header, redirect-follow, bypass, fail-closed alert, and Nginx inheritance cases are covered, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks. Native blackbox_exporter config loading remains BLOCKED_EXTERNAL; no external endpoint was contacted."
     }
   ],
   "production_mutations_performed": false,

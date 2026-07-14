@@ -67,14 +67,28 @@ scrape_configs:
         regex: "sealai_(backup|offsite_backup|restore_drill)_.*"
         action: keep
 
-  - job_name: sealai-blackbox-tls
+  - job_name: sealai-blackbox-tls-apex
     metrics_path: /probe
     params:
-      module: [https_2xx]
+      module: [https_apex_health_200]
     static_configs:
       - targets:
-          - https://sealingai.com/health
-          - https://www.sealingai.com/health
+          - https://sealingai.com/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: sealai-blackbox-tls-www-redirect
+    metrics_path: /probe
+    params:
+      module: [https_www_health_308_to_apex]
+    static_configs:
+      - targets:
+          - https://www.sealingai.com/api/health
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
