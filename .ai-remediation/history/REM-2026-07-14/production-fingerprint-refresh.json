@@ -1,0 +1,49 @@
+{
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "source_repository_commit": "35690352c68750c7fbbcbbd6ea46b13571c43f08",
+  "production_commit_at_capture": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "superseded": true,
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "captured_at": "2026-07-14T14:35:28Z",
+  "reason": "Read-only refresh after an independently initiated production deployment was observed during remediation.",
+  "repository": {
+    "path": "/home/thorsten/sealai",
+    "path_classification": "PRODUCTION_HOST_PATH",
+    "branch": "DETACHED",
+    "commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+    "working_tree_clean": true,
+    "changed_from_initial_fingerprint": true,
+    "change_was_performed_by_this_remediation": false
+  },
+  "runtime": {
+    "backend_image_digest": "sha256:9375e66e3a3528eaededf7b4efcf29051f778bdd8bfbe886eefb0cce78a26195",
+    "backend_and_worker_digest_match": true,
+    "backend_created_at": "2026-07-14T13:38:05.065243679Z",
+    "worker_created_at": "2026-07-14T13:38:07.772896005Z",
+    "core_services_healthy": true,
+    "parallel_deployment_observed_during_run": true
+  },
+  "dashboard": {
+    "regular_file_count": 80,
+    "bytes": 2753287,
+    "tree_sha256": "f28b3082d243e776a6ad34d51041799e4283541e168b8bfb17e33d114e2fa6a6"
+  },
+  "capacity": {
+    "root_filesystem_percent_used": 82,
+    "root_filesystem_bytes_available": 14145245184,
+    "data_filesystem_percent_used": 95,
+    "data_filesystem_bytes_available": 5286551552,
+    "redis_used_memory_bytes": 1040855672,
+    "redis_maxmemory_bytes": 1073741824,
+    "redis_keys": 193992,
+    "redis_keys_with_expiry": 2,
+    "redis_policy": "noeviction",
+    "redis_evicted_keys": 0,
+    "redis_aof_last_write_status": "ok",
+    "redis_rdb_last_bgsave_status": "ok"
+  },
+  "production_mutation_performed_by_remediation": false,
+  "contains_secret_values": false
+}

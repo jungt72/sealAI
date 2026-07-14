@@ -144,8 +144,6 @@ def test_every_historical_file_is_explicitly_superseded() -> None:
     required = {
         "evidence_class": "HISTORICAL_SNAPSHOT",
         "authoritative_current_state": False,
-        "source_repository_commit": "dcb19015adacdc790dd1b25cc430333691c43626",
-        "production_commit_at_capture": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
         "superseded": True,
     }
     for path in HISTORY_ROOT.rglob("*"):
@@ -166,6 +164,8 @@ def test_every_historical_file_is_explicitly_superseded() -> None:
         for key, value in required.items():
             assert document[key] == value
         assert "captured_at" in document
+        assert len(document["source_repository_commit"]) == 40
+        assert len(document["production_commit_at_capture"]) == 40
         assert "/Users/" not in path.read_text(encoding="utf-8")
 
 

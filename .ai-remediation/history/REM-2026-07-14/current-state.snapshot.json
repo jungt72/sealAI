@@ -1,41 +1,49 @@
 {
   "evidence_class": "HISTORICAL_SNAPSHOT",
   "authoritative_current_state": false,
-  "captured_at": "2026-07-14T11:35:38Z",
-  "source_repository_commit": "dcb19015adacdc790dd1b25cc430333691c43626",
-  "production_commit_at_capture": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
+  "captured_at": "2026-07-14T14:35:28Z",
+  "source_repository_commit": "35690352c68750c7fbbcbbd6ea46b13571c43f08",
+  "production_commit_at_capture": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
   "superseded": true,
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "recorded_at": "2026-07-14T11:29:48Z",
+  "recorded_at": "2026-07-14T14:35:28Z",
   "release_freeze": {
     "status": "ACTIVE",
+    "deployment_status": "IMPLEMENTED_NOT_DEPLOYED",
     "lift_gate": "GATE-10",
+    "lift_implemented": false,
     "required_conditions": [
       "P0_SECRETS_CONTAINED",
       "P0_STORAGE_STABLE",
       "P0_REDIS_STABLE",
       "RELEASE_GATE_FAIL_CLOSED"
     ],
-    "satisfied_conditions": []
+    "satisfied_conditions": [],
+    "local_gate_status": "FAIL_CLOSED_TESTED",
+    "production_gate_status": "UNCHANGED"
   },
   "repository": {
-    "remediation_branch": "remediation/p0-secret-hygiene",
-    "origin_main_commit": "ede1d80108e3c6e04f7dd467cd2f3fc2e79c7a17",
-    "production_commit": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
-    "primary_checkout_has_user_changes": true,
+    "remediation_branch": "remediation/p0-storage-safety",
+    "implementation_parent_commit": "b870a27f30ce22ec0d55559b18001ce4350ea5de",
+    "integrated_p0a_commit": "9d822aca296d3dc79349a538aa8e4ecb3f0a9b97",
+    "origin_main_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+    "production_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+    "primary_checkout_has_user_changes": false,
     "primary_checkout_preserved": true
   },
   "production": {
     "repository_path": "/home/thorsten/sealai",
     "repository_path_classification": "PRODUCTION_HOST_PATH",
-    "branch": "main",
+    "branch": "DETACHED",
     "working_tree_clean": true,
-    "unexpected_parallel_deployment": false,
+    "parallel_deployment_observed_during_run": true,
+    "parallel_deployment_performed_by_remediation": false,
     "core_containers_healthy": true,
+    "backend_image_digest": "sha256:9375e66e3a3528eaededf7b4efcf29051f778bdd8bfbe886eefb0cce78a26195",
     "data_filesystem_percent_used": 95,
-    "data_filesystem_bytes_available": 5331283968,
-    "redis_used_memory_bytes": 1040559912,
+    "data_filesystem_bytes_available": 5286551552,
+    "redis_used_memory_bytes": 1040855672,
     "redis_maxmemory_bytes": 1073741824,
     "redis_key_count": 193992,
     "redis_expiring_key_count": 2,
@@ -46,7 +54,9 @@
     "confirmed": 22,
     "partially_confirmed": 1,
     "remediation_verified_in_production": 0,
-    "implemented_not_deployed": 1,
+    "implemented_not_deployed": 3,
+    "implementation_in_progress": 4,
+    "implementation_confirmed_unstarted": 16,
     "closed": 0
   },
   "packages": {
@@ -56,9 +66,26 @@
       "tests_status": "PASSED",
       "required_gates": ["GATE-01", "GATE-02", "GATE-09"]
     },
-    "p0-storage-safety": {"local_status": "PLANNED"},
-    "p0-redis-stability": {"local_status": "PLANNED"}
+    "p0-storage-safety": {
+      "local_status": "IMPLEMENTED_NOT_DEPLOYED",
+      "production_status": "UNCHANGED_AT_95_PERCENT",
+      "tests_status": "PASSED",
+      "external_dependencies": [
+        "alert receiver",
+        "encrypted offsite object storage and key lifecycle",
+        "two isolated restore drills"
+      ],
+      "required_gates": ["GATE-03", "GATE-08"]
+    },
+    "p0-redis-stability": {
+      "local_status": "IN_PROGRESS",
+      "discovery_status": "READ_ONLY_COMPLETE",
+      "production_status": "UNCHANGED_NEAR_MAXMEMORY",
+      "required_gate": "GATE-04"
+    }
   },
-  "next_production_gate": "GATE-01",
-  "production_mutations_authorized": false
+  "next_local_package": "p0-redis-stability",
+  "next_production_gate": null,
+  "production_mutations_authorized": false,
+  "production_mutations_performed_by_remediation": false
 }
