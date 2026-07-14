@@ -79,7 +79,7 @@ cleanup() {
   [[ -z "${EPHEMERAL_ENV:-}" ]] || rm -f -- "${EPHEMERAL_ENV}"
   [[ -z "${RESTIC_LOG:-}" ]] || rm -f -- "${RESTIC_LOG}"
   [[ -z "${CONFIG_JSON:-}" ]] || rm -f -- "${CONFIG_JSON}"
-  if [[ "${rc}" -ne 0 ]]; then
+  if [[ "${rc}" -ne 0 && "${EXPECTED_EXTERNAL_BLOCK:-0}" != 1 ]]; then
     event error drill_failed || true
   fi
 }
@@ -200,23 +200,25 @@ print(value)
 KEY_ID_SHA=$(tr -d '\n' <"${KEY_ID_FILE}")
 [[ "${KEY_ID_SHA}" =~ ${HEX_RE} ]] || fail key_id_invalid
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-OFFSITE_RECEIPT="${RECEIPT_DIR}/offsite-${STAMP}.json"
-DRILL_RECEIPT="${RECEIPT_DIR}/restore-${STAMP}.json"
+OFFSITE_EVIDENCE="${RECEIPT_DIR}/offsite-local-evidence-${STAMP}.json"
+DRILL_EVIDENCE="${RECEIPT_DIR}/restore-local-evidence-${STAMP}.json"
 /usr/bin/python3 -I "${DR_HELPER}" write-offsite-receipt \
-  --root "${RESTORED_SET}" --output "${OFFSITE_RECEIPT}" \
+  --root "${RESTORED_SET}" --output "${OFFSITE_EVIDENCE}" \
   --repository-id "${REPOSITORY_ID}" --snapshot-id "${SNAPSHOT_ID}" \
-  --encryption-key-id-sha256 "${KEY_ID_SHA}" >/dev/null || fail offsite_receipt_failed
+  --encryption-key-id-sha256 "${KEY_ID_SHA}" \
+  --gate-receipt "${GATE08_RECEIPT}" >/dev/null || fail offsite_evidence_failed
 ELAPSED=$(( $(date +%s) - STARTED_AT ))
 [[ "${ELAPSED}" -gt 0 ]] || ELAPSED=1
 /usr/bin/python3 -I "${DR_HELPER}" write-drill-receipt \
-  --root "${RESTORED_SET}" --output "${DRILL_RECEIPT}" \
-  --elapsed-seconds "${ELAPSED}" >/dev/null || fail restore_receipt_failed
-/usr/bin/python3 -I "${DR_HELPER}" verify-offsite-receipt \
-  --root "${RESTORED_SET}" --receipt "${OFFSITE_RECEIPT}" >/dev/null \
-  || fail offsite_receipt_invalid
-/usr/bin/python3 -I "${DR_HELPER}" verify-drill-receipt \
-  --root "${RESTORED_SET}" --receipt "${DRILL_RECEIPT}" >/dev/null \
-  || fail restore_receipt_invalid
+  --root "${RESTORED_SET}" --output "${DRILL_EVIDENCE}" \
+  --elapsed-seconds "${ELAPSED}" --snapshot-id "${SNAPSHOT_ID}" \
+  --gate-receipt "${GATE08_RECEIPT}" >/dev/null || fail restore_evidence_failed
 
-event ok restore_drill_completed
-printf '%s\n%s\n' "${OFFSITE_RECEIPT}" "${DRILL_RECEIPT}"
+# These files are deliberately non-authoritative LOCAL_EVIDENCE_ONLY records.
+# A verified receipt requires a separately approved cryptographic trust root,
+# an independent external attestor, and an importer that does not exist in
+# this repository.  Never promote these observations by renaming or editing.
+EXPECTED_EXTERNAL_BLOCK=1
+event blocked external_attestation_required
+printf '%s\n%s\n' "${OFFSITE_EVIDENCE}" "${DRILL_EVIDENCE}"
+exit 2

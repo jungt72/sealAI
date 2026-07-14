@@ -177,6 +177,35 @@ def _manifest_set(tmp_path: Path) -> Path:
     return root
 
 
+def _restore_gate(
+    root: Path,
+    path: Path,
+    *,
+    now: dt.datetime,
+    snapshot_id: str,
+) -> Path:
+    manifest = dr.verify_manifest(root)
+    _json(
+        path,
+        {
+            "schema_version": 1,
+            "gate_id": "GATE-08",
+            "action": "dr_restore_drill",
+            "manifest_sha256": dr._manifest_digest(root),
+            "set_id_sha256": manifest["set_id_sha256"],
+            "snapshot_id_sha256": hashlib.sha256(
+                snapshot_id.encode("ascii")
+            ).hexdigest(),
+            "approval_id_sha256": "4" * 64,
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + dt.timedelta(minutes=10)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        },
+    )
+    return path
+
+
 def test_manifest_round_trip_binds_every_required_component(tmp_path: Path) -> None:
     root = _manifest_set(tmp_path)
     manifest = dr.verify_manifest(root)
@@ -186,6 +215,37 @@ def test_manifest_round_trip_binds_every_required_component(tmp_path: Path) -> N
     }
     assert dr.postgres_backup_path(root).name.endswith(".sql.gz")
     assert len(manifest["set_id_sha256"]) == 64
+    assert manifest["schema_version"] == dr.MANIFEST_SCHEMA_VERSION
+    assert all(
+        isinstance(entry["mtime_ns"], int) and entry["mtime_ns"] > 0
+        for entry in manifest["files"]
+    )
+
+
+def test_manifest_rejects_stale_payload_despite_fresh_self_attestation(
+    tmp_path: Path,
+) -> None:
+    root = _recovery_set(tmp_path)
+    postgres = next((root / "postgres").glob("*.sql.gz"))
+    stale = dt.datetime(2020, 1, 1, tzinfo=dt.timezone.utc)
+    stale_ns = int(stale.timestamp() * 1_000_000_000)
+    os.utime(postgres, ns=(stale_ns, stale_ns))
+
+    # recovery-point.json still claims a fresh captured_at and source hash.
+    with pytest.raises(dr.DrError, match="payload_mtime_stale"):
+        dr.create_manifest(root)
+
+
+def test_manifest_detects_bound_mtime_change(tmp_path: Path) -> None:
+    root = _manifest_set(tmp_path)
+    postgres = next((root / "postgres").glob("*.sql.gz"))
+    metadata = postgres.stat()
+    os.utime(
+        postgres,
+        ns=(metadata.st_atime_ns, metadata.st_mtime_ns - 1_000_000_000),
+    )
+    with pytest.raises(dr.DrError, match="manifest_file_mismatch"):
+        dr.verify_manifest(root)
 
 
 @pytest.mark.parametrize("attack", ["tamper", "mode", "symlink", "hardlink"])
@@ -283,33 +343,130 @@ def test_recovery_point_enforces_rpo_and_qdrant_authority(tmp_path: Path) -> Non
         dr.create_manifest(root)
 
 
-def test_receipts_require_full_download_isolation_and_freshness(tmp_path: Path) -> None:
+def test_local_evidence_can_never_elevate_to_verified_receipt(tmp_path: Path) -> None:
     root = _manifest_set(tmp_path)
     receipt_dir = tmp_path / "receipts"
     receipt_dir.mkdir(mode=0o700)
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    snapshot_id = "2" * 64
+    gate = _restore_gate(
+        root,
+        tmp_path / "restore-gate.json",
+        now=now,
+        snapshot_id=snapshot_id,
+    )
     offsite = receipt_dir / "offsite.json"
     drill = receipt_dir / "drill.json"
-    dr.write_offsite_receipt(
+    offsite_value = dr.write_offsite_receipt(
         root,
         offsite,
         repository_id="1" * 64,
-        snapshot_id="2" * 64,
+        snapshot_id=snapshot_id,
         encryption_key_id_sha256="3" * 64,
+        gate_receipt_path=gate,
         now=now,
+        required_uid=os.geteuid(),
     )
-    dr.write_drill_receipt(root, drill, elapsed_seconds=60, now=now)
-    dr.verify_offsite_receipt(root, offsite, now=now)
-    dr.verify_drill_receipt(root, drill, now=now)
+    drill_value = dr.write_drill_receipt(
+        root,
+        drill,
+        elapsed_seconds=60,
+        snapshot_id=snapshot_id,
+        gate_receipt_path=gate,
+        now=now,
+        required_uid=os.geteuid(),
+    )
+    for value in (offsite_value, drill_value):
+        assert value["status"] == "LOCAL_EVIDENCE_ONLY"
+        assert value["authoritative"] is False
+        assert value["provenance"]["kind"] == "LOCAL_UNATTESTED"
+        assert value["provenance"]["gate_receipt_sha256"] == dr._sha256(gate)
+
+    with pytest.raises(dr.DrError, match="external_receipt_required"):
+        dr.verify_offsite_receipt(
+            root,
+            offsite,
+            gate,
+            now=now,
+            required_uid=os.geteuid(),
+        )
+    with pytest.raises(dr.DrError, match="external_receipt_required"):
+        dr.verify_drill_receipt(
+            root,
+            drill,
+            gate,
+            now=now,
+            required_uid=os.geteuid(),
+        )
 
     value = json.loads(offsite.read_text())
-    value["full_download_verified"] = False
+    value["status"] = "OFFSITE_VERIFIED"
     replacement = receipt_dir / "forged.json"
     _json(replacement, value)
-    with pytest.raises(dr.DrError, match="offsite_verification_incomplete"):
-        dr.verify_offsite_receipt(root, replacement, now=now)
-    with pytest.raises(dr.DrError, match="receipt_stale"):
-        dr.verify_offsite_receipt(root, offsite, now=now + dt.timedelta(days=2))
+    with pytest.raises(dr.DrError, match="invalid_local_evidence_status"):
+        dr.verify_offsite_receipt(
+            root,
+            replacement,
+            gate,
+            now=now,
+            required_uid=os.geteuid(),
+        )
+    forged_drill_value = json.loads(drill.read_text())
+    forged_drill_value["status"] = "RESTORE_VERIFIED"
+    forged_drill = receipt_dir / "forged-drill.json"
+    _json(forged_drill, forged_drill_value)
+    with pytest.raises(dr.DrError, match="invalid_local_evidence_status"):
+        dr.verify_drill_receipt(
+            root,
+            forged_drill,
+            gate,
+            now=now,
+            required_uid=os.geteuid(),
+        )
+    with pytest.raises(dr.DrError, match="local_evidence_stale"):
+        dr.verify_offsite_receipt(
+            root,
+            offsite,
+            gate,
+            now=now + dt.timedelta(days=2),
+            required_uid=os.geteuid(),
+        )
+
+
+def test_local_evidence_rejects_forged_gate_provenance(tmp_path: Path) -> None:
+    root = _manifest_set(tmp_path)
+    receipt_dir = tmp_path / "receipts"
+    receipt_dir.mkdir(mode=0o700)
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    snapshot_id = "2" * 64
+    gate = _restore_gate(
+        root,
+        tmp_path / "restore-gate.json",
+        now=now,
+        snapshot_id=snapshot_id,
+    )
+    offsite = receipt_dir / "offsite.json"
+    value = dr.write_offsite_receipt(
+        root,
+        offsite,
+        repository_id="1" * 64,
+        snapshot_id=snapshot_id,
+        encryption_key_id_sha256="3" * 64,
+        gate_receipt_path=gate,
+        now=now,
+        required_uid=os.geteuid(),
+    )
+    value["provenance"]["gate_receipt_sha256"] = "f" * 64
+    forged = receipt_dir / "forged-provenance.json"
+    _json(forged, value)
+    with pytest.raises(dr.DrError, match="local_evidence_provenance_mismatch"):
+        dr.verify_offsite_receipt(
+            root,
+            forged,
+            gate,
+            now=now,
+            required_uid=os.geteuid(),
+        )
 
 
 def test_receipt_writers_refuse_stale_recovery_points(tmp_path: Path) -> None:
@@ -319,6 +476,7 @@ def test_receipt_writers_refuse_stale_recovery_points(tmp_path: Path) -> None:
     stale_now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0) + dt.timedelta(
         days=2
     )
+    gate = tmp_path / "unused-gate.json"
 
     with pytest.raises(dr.DrError, match="rpo_target_missed"):
         dr.write_offsite_receipt(
@@ -327,11 +485,19 @@ def test_receipt_writers_refuse_stale_recovery_points(tmp_path: Path) -> None:
             repository_id="1" * 64,
             snapshot_id="2" * 64,
             encryption_key_id_sha256="3" * 64,
+            gate_receipt_path=gate,
             now=stale_now,
+            required_uid=os.geteuid(),
         )
     with pytest.raises(dr.DrError, match="rpo_target_missed"):
         dr.write_drill_receipt(
-            root, receipt_dir / "drill.json", elapsed_seconds=60, now=stale_now
+            root,
+            receipt_dir / "drill.json",
+            elapsed_seconds=60,
+            snapshot_id="2" * 64,
+            gate_receipt_path=gate,
+            now=stale_now,
+            required_uid=os.geteuid(),
         )
 
 
@@ -340,7 +506,13 @@ def test_drill_writer_refuses_missed_rto(tmp_path: Path) -> None:
     receipts = tmp_path / "receipts"
     receipts.mkdir(mode=0o700)
     with pytest.raises(dr.DrError, match="rto_target_missed"):
-        dr.write_drill_receipt(root, receipts / "late.json", elapsed_seconds=28801)
+        dr.write_drill_receipt(
+            root,
+            receipts / "late.json",
+            elapsed_seconds=28801,
+            snapshot_id="2" * 64,
+            gate_receipt_path=tmp_path / "unused-gate.json",
+        )
 
 
 def test_gate_08_is_short_lived_action_and_manifest_bound(tmp_path: Path) -> None:
@@ -610,12 +782,15 @@ def test_offsite_and_restore_scripts_preserve_security_boundaries() -> None:
         "unset DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG",
         "--host=unix:///var/run/docker.sock",
         "docker_socket_unsafe",
+        "LOCAL_EVIDENCE_ONLY",
+        "external_attestation_required",
     ):
         assert contract in restore
     assert restore.index("verify-gate-08-selection") < restore.index(
         "\nrestic check --read-data"
     )
     assert '--snapshot-id "${SNAPSHOT_ID}"' in restore
+    assert "restore_drill_completed" not in restore
 
 
 def test_restore_compose_is_internal_unpublished_and_pinned() -> None:
@@ -639,6 +814,9 @@ def test_runbook_is_honest_about_external_and_p1d_blockers() -> None:
         "two successful isolated full restores",
         "sealai_restore_drill_last_success_timestamp_seconds{component}",
         "never values",
+        "mtime_ns",
+        "LOCAL_EVIDENCE_ONLY",
+        "external_receipt_required",
     ):
         assert contract in runbook
 

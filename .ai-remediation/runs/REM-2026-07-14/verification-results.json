@@ -122,7 +122,7 @@
       "check_id": "P2-DR-LOCAL-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "Immutable DR manifests, P0 checksum binding, provider-neutral Restic preparation, pre-download snapshot-bound Gate-08 enforcement, receipt-time RPO enforcement, complete-component metrics, and monthly scheduling passed 24 adversarial DR tests plus 68 existing backup tests, Ruff, Bash syntax, Compose rendering, secret scanning, and diff checks. No Restic binary, systemd runtime, Docker daemon, external repository, real recovery material, Gate-08 receipt, or P1-D rebuild command was available, so no external or end-to-end drill claim is made."
+      "summary": "Manifest v2 now binds actual file mtime_ns and rejects stale payload even behind freshly self-declared recovery timestamps; Gate-08-bound writers emit only non-authoritative LOCAL_EVIDENCE_ONLY and local verifiers cannot elevate OFFSITE_VERIFIED or RESTORE_VERIFIED without a future trusted external importer. Twenty-seven adversarial DR tests plus 68 existing backup tests, Ruff, Bash syntax, secret scanning, structured-file parsing, and diff checks passed locally. No Restic binary, systemd runtime, Docker daemon, external repository, real recovery material, Gate-08 receipt, cryptographic receipt trust root/importer, or P1-D rebuild command was available; no external check, restore, or authoritative receipt is claimed."
     }
   ],
   "production_mutations_performed": false,

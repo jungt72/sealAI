@@ -388,16 +388,16 @@ findings:
       - Added fail-closed target and capacity binding, no-clobber publication, checksums, fixed command timeouts, lifecycle locks, and safe local retention for Postgres and Qdrant backups.
       - Added a provider-neutral encrypted-offsite receipt contract binding local plaintext, downloaded ciphertext, decrypted plaintext, object identity, and versioned key identity.
       - Hardened Qdrant snapshot deletion and restore to preserve the verified local inode, wait for completion, and validate the exact success response.
-      - Added an immutable full-recovery-set manifest covering Postgres, Qdrant, uploads, documents, configuration, and secret-recovery identifiers without secret values.
-      - Added provider-neutral Restic transport with no inherited credential environment, short manifest-bound Gate-08 receipts, dry-run-only retention, and full-download receipt requirements.
-      - Added a dedicated internal-network restore runner for Postgres integrity, Qdrant checksum/point/tenant invariants, file verification, RPO/RTO receipts, and monthly scheduling.
-      - Receipt creation now rejects recovery points that are stale at verification time, and metric rendering rejects omission of any required recovery component.
+      - Added an immutable manifest-v2 full-recovery set covering Postgres, Qdrant, uploads, documents, configuration, and secret-recovery identifiers without secret values; every file binds its actual mtime_ns alongside path, size, mode, and digest.
+      - Added provider-neutral Restic transport with no inherited credential environment, short manifest-bound Gate-08 approvals, dry-run-only retention, non-authoritative local observations, and externally attested full-download receipt requirements.
+      - Added a dedicated internal-network restore runner for Postgres integrity, Qdrant checksum/point/tenant invariants, file verification, fail-closed local RPO/RTO observations, and monthly scheduling.
+      - Manifest and local-evidence creation reject actual payload mtimes outside RPO even when recovery-point timestamps are freshly self-declared; local writers can emit only LOCAL_EVIDENCE_ONLY and local verifiers always require a future trusted external receipt importer.
       - The restore runner verifies a short-lived Gate-08 receipt bound to the exact set and snapshot identifier before any full-data read, then rebinds it to the restored manifest before containers start.
     tests:
       - Capacity stop conditions, descriptor and inode binding, poisoned environment and shell functions, no-clobber publication, retention, checksum, offsite receipt, Qdrant deletion, and restore-response tests.
       - Empty-host execution against real offsite data remains blocked on external storage, key custody, a dedicated runner, P1-D rebuild authority, and Gate-08.
-      - Adversarial manifest, receipt, secret-inventory, Qdrant-plan, metrics, and isolated-runner contract tests.
-      - Stale recovery-point receipt, missing-component metric, pre-download gate-order, set/snapshot mismatch, and missing-snapshot-binding regressions; 92 combined backup/DR tests passed.
+      - Adversarial manifest-mtime, non-elevating local evidence, secret-inventory, Qdrant-plan, metrics, and isolated-runner contract tests.
+      - Stale payload/recovery-point evidence, forged VERIFIED status/provenance, missing-component metric, pre-download gate-order, set/snapshot mismatch, and missing-snapshot-binding regressions; 95 combined backup/DR tests passed.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Add offsite copies without reducing local retention until two successful restore drills.

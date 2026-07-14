@@ -17,6 +17,7 @@ from typing import Any, NoReturn
 
 
 SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 2
 MAX_JSON_BYTES = 256 * 1024
 MAX_MANIFEST_BYTES = 128 * 1024 * 1024
 MAX_FILES = 250_000
@@ -27,6 +28,7 @@ MAX_CLOCK_SKEW_SECONDS = 300
 MAX_RECEIPT_AGE_SECONDS = 24 * 60 * 60
 MAX_DRILL_AGE_SECONDS = 35 * 24 * 60 * 60
 MAX_GATE_VALIDITY_SECONDS = 15 * 60
+NANOSECONDS_PER_SECOND = 1_000_000_000
 TOKEN_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -712,6 +714,11 @@ def _walk_stage(root: Path) -> list[dict[str, Any]]:
                 ):
                     _fail("configuration_secret_file_forbidden")
             digest = _sha256(path)
+            observed_metadata = _regular_file(
+                path, private=True, reason="unsafe_stage_file"
+            )
+            if not _same_file_state(metadata, observed_metadata):
+                _fail("stage_file_changed")
             if relative.startswith("postgres/") and path.name.endswith(
                 (".sql.gz", ".dump")
             ):
@@ -724,6 +731,7 @@ def _walk_stage(root: Path) -> list[dict[str, Any]]:
                     "size": metadata.st_size,
                     "sha256": digest,
                     "mode": f"{stat.S_IMODE(metadata.st_mode):04o}",
+                    "mtime_ns": metadata.st_mtime_ns,
                 }
             )
     if not entries:
@@ -731,8 +739,67 @@ def _walk_stage(root: Path) -> list[dict[str, Any]]:
     return entries
 
 
+def _validate_payload_metadata(
+    entries: list[dict[str, Any]],
+    recovery_point: dict[str, Any],
+    *,
+    now: dt.datetime | None,
+    require_fresh: bool,
+) -> None:
+    """Bind declared capture times to observed payload metadata.
+
+    A recovery-point timestamp is not freshness evidence by itself.  Every
+    component therefore binds the real nanosecond mtime of every staged file,
+    and the newest component file must agree with the declared capture time.
+    Freshness checks additionally reject any individual payload older than the
+    component RPO.  Restored sets retain the bound mtimes and can be checked
+    without pretending that the restore time is a new capture time.
+    """
+
+    observed_now = _utc_now() if now is None else now
+    observed_now_ns = int(observed_now.timestamp() * NANOSECONDS_PER_SECOND)
+    maximum_skew_ns = MAX_CLOCK_SKEW_SECONDS * NANOSECONDS_PER_SECOND
+    for component in REQUIRED_COMPONENTS:
+        component_entries = [
+            entry
+            for entry in entries
+            if PurePosixPath(entry["path"]).parts[0] == component
+        ]
+        if not component_entries:
+            _fail("required_component_missing")
+        mtimes: list[int] = []
+        for entry in component_entries:
+            mtime_ns = entry.get("mtime_ns")
+            if (
+                not isinstance(mtime_ns, int)
+                or isinstance(mtime_ns, bool)
+                or mtime_ns <= 0
+            ):
+                _fail("invalid_payload_mtime")
+            if mtime_ns > observed_now_ns + maximum_skew_ns:
+                _fail("payload_mtime_from_future")
+            mtimes.append(mtime_ns)
+
+        capture = recovery_point["components"][component]
+        captured_at = _parse_timestamp(
+            capture["captured_at"], reason="invalid_component_capture_time"
+        )
+        captured_at_seconds = int(captured_at.timestamp())
+        latest_mtime_seconds = max(mtimes) // NANOSECONDS_PER_SECOND
+        if abs(latest_mtime_seconds - captured_at_seconds) > MAX_CLOCK_SKEW_SECONDS:
+            _fail("payload_capture_mismatch")
+        if require_fresh:
+            maximum_age_ns = capture["rpo_target_seconds"] * NANOSECONDS_PER_SECOND
+            if any(observed_now_ns - mtime_ns > maximum_age_ns for mtime_ns in mtimes):
+                _fail("payload_mtime_stale")
+
+
 def _validate_set_contract(
-    root: Path, entries: list[dict[str, Any]], *, require_fresh: bool
+    root: Path,
+    entries: list[dict[str, Any]],
+    *,
+    require_fresh: bool,
+    now: dt.datetime | None = None,
 ) -> None:
     paths = {entry["path"] for entry in entries}
     if not REQUIRED_RECOVERY_FILES.issubset(paths):
@@ -773,7 +840,11 @@ def _validate_set_contract(
     validate_secret_recovery(_read_json(root / "recovery" / "secret-recovery.json"))
     recovery_point = validate_recovery_point(
         _read_json(root / "recovery" / "recovery-point.json"),
+        now=now,
         require_fresh=require_fresh,
+    )
+    _validate_payload_metadata(
+        entries, recovery_point, now=now, require_fresh=require_fresh
     )
     if qdrant_plan["collections"] and any(
         item["authority_epoch_sha256"] != recovery_point["authority_epoch_sha256"]
@@ -853,18 +924,21 @@ def _atomic_write(path: Path, payload: bytes, *, replace: bool = False) -> None:
                 pass
 
 
-def create_manifest(root: Path) -> dict[str, Any]:
+def create_manifest(root: Path, *, now: dt.datetime | None = None) -> dict[str, Any]:
     _private_directory(root)
     manifest_path = root / "dr-manifest.json"
     if manifest_path.exists() or manifest_path.is_symlink():
         _fail("manifest_already_exists")
     entries = _walk_stage(root)
-    _validate_set_contract(root, entries, require_fresh=True)
+    observed_now = _utc_now() if now is None else now
+    _validate_set_contract(root, entries, require_fresh=True, now=observed_now)
     recovery_point = validate_recovery_point(
-        _read_json(root / "recovery" / "recovery-point.json"), require_fresh=True
+        _read_json(root / "recovery" / "recovery-point.json"),
+        now=observed_now,
+        require_fresh=True,
     )
     core = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "created_at": recovery_point["created_at"],
         "recovery_point_id": recovery_point["recovery_point_id"],
         "source_git_commit": recovery_point["source_git_commit"],
@@ -892,7 +966,7 @@ def verify_manifest(root: Path) -> dict[str, Any]:
         },
         reason="invalid_manifest_schema",
     )
-    if manifest["schema_version"] != SCHEMA_VERSION:
+    if manifest["schema_version"] != MANIFEST_SCHEMA_VERSION:
         _fail("invalid_manifest_version")
     _require_sha256(manifest["set_id_sha256"], reason="invalid_set_id")
     observed_entries = _walk_stage(root)
@@ -936,118 +1010,229 @@ def _manifest_digest(root: Path) -> str:
     return _sha256(manifest_path)
 
 
-def _verify_receipt_common(
+def _local_gate_provenance(
     root: Path,
-    receipt_path: Path,
+    gate_receipt_path: Path,
     *,
-    status_value: str,
+    snapshot_id: str,
+    now: dt.datetime | None = None,
+    required_uid: int = 0,
+) -> dict[str, str]:
+    manifest = verify_manifest(root)
+    _require_sha256(snapshot_id, reason="invalid_snapshot_id")
+    gate = verify_gate08_receipt(
+        root,
+        gate_receipt_path,
+        "dr_restore_drill",
+        snapshot_id=snapshot_id,
+        now=now,
+        required_uid=required_uid,
+    )
+    return {
+        "kind": "LOCAL_UNATTESTED",
+        "gate_id": "GATE-08",
+        "gate_action": "dr_restore_drill",
+        "gate_receipt_sha256": _sha256(gate_receipt_path),
+        "gate_approval_id_sha256": gate["approval_id_sha256"],
+        "snapshot_id_sha256": gate["snapshot_id_sha256"],
+        "manifest_sha256": _manifest_digest(root),
+        "set_id_sha256": manifest["set_id_sha256"],
+    }
+
+
+def _validate_local_evidence_common(
+    root: Path,
+    evidence_path: Path,
+    gate_receipt_path: Path,
+    *,
+    scope: str,
     extra_keys: set[str],
     maximum_age_seconds: int,
     now: dt.datetime | None = None,
+    required_uid: int = 0,
 ) -> dict[str, Any]:
     manifest = verify_manifest(root)
     common = {
         "schema_version",
         "status",
+        "evidence_scope",
+        "authoritative",
         "manifest_sha256",
         "set_id_sha256",
-        "verified_at",
+        "observed_at",
+        "provenance",
     }
-    receipt = _require_object(
-        _read_json(receipt_path), common | extra_keys, reason="invalid_receipt_schema"
+    evidence = _require_object(
+        _read_json(evidence_path),
+        common | extra_keys,
+        reason="invalid_local_evidence_schema",
     )
-    if receipt["schema_version"] != SCHEMA_VERSION or receipt["status"] != status_value:
-        _fail("invalid_receipt_status")
-    if receipt["manifest_sha256"] != _manifest_digest(root):
-        _fail("receipt_manifest_mismatch")
-    if receipt["set_id_sha256"] != manifest["set_id_sha256"]:
-        _fail("receipt_set_mismatch")
-    verified_at = _parse_timestamp(receipt["verified_at"], reason="invalid_verified_at")
+    if (
+        evidence["schema_version"] != SCHEMA_VERSION
+        or evidence["status"] != "LOCAL_EVIDENCE_ONLY"
+        or evidence["evidence_scope"] != scope
+        or evidence["authoritative"] is not False
+    ):
+        _fail("invalid_local_evidence_status")
+    if evidence["manifest_sha256"] != _manifest_digest(root):
+        _fail("local_evidence_manifest_mismatch")
+    if evidence["set_id_sha256"] != manifest["set_id_sha256"]:
+        _fail("local_evidence_set_mismatch")
+    observed_at = _parse_timestamp(
+        evidence["observed_at"], reason="invalid_observed_at"
+    )
     observed_now = _utc_now() if now is None else now
-    age = (observed_now - verified_at).total_seconds()
+    age = (observed_now - observed_at).total_seconds()
     if age < -MAX_CLOCK_SKEW_SECONDS or age > maximum_age_seconds:
-        _fail("receipt_stale")
-    return receipt
+        _fail("local_evidence_stale")
+
+    provenance = _require_object(
+        evidence["provenance"],
+        {
+            "kind",
+            "gate_id",
+            "gate_action",
+            "gate_receipt_sha256",
+            "gate_approval_id_sha256",
+            "snapshot_id_sha256",
+            "manifest_sha256",
+            "set_id_sha256",
+        },
+        reason="invalid_local_evidence_provenance",
+    )
+    if (
+        provenance["kind"] != "LOCAL_UNATTESTED"
+        or provenance["gate_id"] != "GATE-08"
+        or provenance["gate_action"] != "dr_restore_drill"
+    ):
+        _fail("invalid_local_evidence_provenance")
+    for key in (
+        "gate_receipt_sha256",
+        "gate_approval_id_sha256",
+        "snapshot_id_sha256",
+        "manifest_sha256",
+        "set_id_sha256",
+    ):
+        _require_sha256(provenance[key], reason="invalid_local_evidence_provenance")
+    gate = _read_gate08_receipt(
+        gate_receipt_path,
+        "dr_restore_drill",
+        now=observed_at,
+        required_uid=required_uid,
+    )
+    if (
+        provenance["gate_receipt_sha256"] != _sha256(gate_receipt_path)
+        or provenance["gate_approval_id_sha256"] != gate["approval_id_sha256"]
+        or provenance["snapshot_id_sha256"] != gate["snapshot_id_sha256"]
+        or provenance["manifest_sha256"] != evidence["manifest_sha256"]
+        or provenance["set_id_sha256"] != evidence["set_id_sha256"]
+        or gate["manifest_sha256"] != evidence["manifest_sha256"]
+        or gate["set_id_sha256"] != evidence["set_id_sha256"]
+    ):
+        _fail("local_evidence_provenance_mismatch")
+    return evidence
 
 
 def verify_offsite_receipt(
-    root: Path, receipt_path: Path, *, now: dt.datetime | None = None
-) -> dict[str, Any]:
-    receipt = _verify_receipt_common(
+    root: Path,
+    receipt_path: Path,
+    gate_receipt_path: Path,
+    *,
+    now: dt.datetime | None = None,
+    required_uid: int = 0,
+) -> NoReturn:
+    """Validate local observations, then block without an external importer."""
+
+    evidence = _validate_local_evidence_common(
         root,
         receipt_path,
-        status_value="OFFSITE_VERIFIED",
+        gate_receipt_path,
+        scope="offsite",
         extra_keys={
             "repository_id_sha256",
             "snapshot_id_sha256",
             "encryption_key_id_sha256",
-            "full_download_verified",
-            "authenticated_decryption_verified",
-            "restic_read_data_verified",
+            "full_download_observed",
+            "authenticated_decryption_observed",
+            "restic_read_data_observed",
         },
         maximum_age_seconds=MAX_RECEIPT_AGE_SECONDS,
         now=now,
+        required_uid=required_uid,
     )
     for key in (
         "repository_id_sha256",
         "snapshot_id_sha256",
         "encryption_key_id_sha256",
     ):
-        _require_sha256(receipt[key], reason="invalid_offsite_identifier")
+        _require_sha256(evidence[key], reason="invalid_offsite_identifier")
+    if evidence["snapshot_id_sha256"] != evidence["provenance"]["snapshot_id_sha256"]:
+        _fail("local_evidence_provenance_mismatch")
     for key in (
-        "full_download_verified",
-        "authenticated_decryption_verified",
-        "restic_read_data_verified",
+        "full_download_observed",
+        "authenticated_decryption_observed",
+        "restic_read_data_observed",
     ):
-        if receipt[key] is not True:
-            _fail("offsite_verification_incomplete")
-    return receipt
+        if evidence[key] is not True:
+            _fail("offsite_observation_incomplete")
+    _fail("external_receipt_required")
 
 
 def verify_drill_receipt(
-    root: Path, receipt_path: Path, *, now: dt.datetime | None = None
-) -> dict[str, Any]:
-    receipt = _verify_receipt_common(
+    root: Path,
+    receipt_path: Path,
+    gate_receipt_path: Path,
+    *,
+    now: dt.datetime | None = None,
+    required_uid: int = 0,
+) -> NoReturn:
+    """Validate local observations, then block without an external importer."""
+
+    evidence = _validate_local_evidence_common(
         root,
         receipt_path,
-        status_value="RESTORE_VERIFIED",
+        gate_receipt_path,
+        scope="restore_drill",
         extra_keys={
-            "isolated_runner",
-            "production_endpoint_accessed",
-            "postgres_restored",
-            "qdrant_recovered",
-            "uploads_verified",
-            "documents_verified",
-            "configuration_verified",
-            "secret_procedure_verified",
-            "rpo_met",
-            "rto_met",
+            "isolated_runner_observed",
+            "production_endpoint_access_observed",
+            "postgres_restore_observed",
+            "qdrant_recovery_observed",
+            "uploads_check_observed",
+            "documents_check_observed",
+            "configuration_check_observed",
+            "secret_procedure_check_observed",
+            "rpo_observed",
+            "rto_observed",
             "elapsed_seconds",
         },
         maximum_age_seconds=MAX_DRILL_AGE_SECONDS,
         now=now,
+        required_uid=required_uid,
     )
     if (
-        receipt["isolated_runner"] is not True
-        or receipt["production_endpoint_accessed"] is not False
+        evidence["isolated_runner_observed"] is not True
+        or evidence["production_endpoint_access_observed"] is not False
     ):
         _fail("restore_not_isolated")
     for key in (
-        "postgres_restored",
-        "qdrant_recovered",
-        "uploads_verified",
-        "documents_verified",
-        "configuration_verified",
-        "secret_procedure_verified",
-        "rpo_met",
-        "rto_met",
+        "postgres_restore_observed",
+        "qdrant_recovery_observed",
+        "uploads_check_observed",
+        "documents_check_observed",
+        "configuration_check_observed",
+        "secret_procedure_check_observed",
+        "rpo_observed",
+        "rto_observed",
     ):
-        if receipt[key] is not True:
+        if evidence[key] is not True:
             _fail("restore_verification_incomplete")
     _positive_int(
-        receipt["elapsed_seconds"], reason="invalid_restore_elapsed", maximum=7 * 86400
+        evidence["elapsed_seconds"],
+        reason="invalid_restore_elapsed",
+        maximum=7 * 86400,
     )
-    return receipt
+    _fail("external_receipt_required")
 
 
 def write_offsite_receipt(
@@ -1057,34 +1242,52 @@ def write_offsite_receipt(
     repository_id: str,
     snapshot_id: str,
     encryption_key_id_sha256: str,
+    gate_receipt_path: Path,
     now: dt.datetime | None = None,
+    required_uid: int = 0,
 ) -> dict[str, Any]:
+    """Write non-authoritative local observations, never a verified receipt."""
+
     manifest = verify_manifest(root)
+    observed_now = _utc_now() if now is None else now
     recovery_point = validate_recovery_point(
-        _read_json(root / "recovery" / "recovery-point.json")
+        _read_json(root / "recovery" / "recovery-point.json"), now=observed_now
     )
-    require_recovery_point_within_rpo(recovery_point, now=now)
+    require_recovery_point_within_rpo(recovery_point, now=observed_now)
+    _validate_payload_metadata(
+        manifest["files"], recovery_point, now=observed_now, require_fresh=True
+    )
     if not SHA256_RE.fullmatch(repository_id) or not SHA256_RE.fullmatch(snapshot_id):
         _fail("invalid_offsite_source_identifier")
     _require_sha256(encryption_key_id_sha256, reason="invalid_offsite_key_id")
-    verified_at = (_utc_now() if now is None else now).strftime("%Y-%m-%dT%H:%M:%SZ")
-    receipt = {
+    provenance = _local_gate_provenance(
+        root,
+        gate_receipt_path,
+        snapshot_id=snapshot_id,
+        now=observed_now,
+        required_uid=required_uid,
+    )
+    observed_at = observed_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    evidence = {
         "schema_version": SCHEMA_VERSION,
-        "status": "OFFSITE_VERIFIED",
+        "status": "LOCAL_EVIDENCE_ONLY",
+        "evidence_scope": "offsite",
+        "authoritative": False,
         "manifest_sha256": _manifest_digest(root),
         "set_id_sha256": manifest["set_id_sha256"],
-        "verified_at": verified_at,
+        "observed_at": observed_at,
+        "provenance": provenance,
         "repository_id_sha256": hashlib.sha256(
             repository_id.encode("ascii")
         ).hexdigest(),
         "snapshot_id_sha256": hashlib.sha256(snapshot_id.encode("ascii")).hexdigest(),
         "encryption_key_id_sha256": encryption_key_id_sha256,
-        "full_download_verified": True,
-        "authenticated_decryption_verified": True,
-        "restic_read_data_verified": True,
+        "full_download_observed": True,
+        "authenticated_decryption_observed": True,
+        "restic_read_data_observed": True,
     }
-    _atomic_write(output, _canonical_json(receipt))
-    return receipt
+    _atomic_write(output, _canonical_json(evidence))
+    return evidence
 
 
 def write_drill_receipt(
@@ -1092,43 +1295,62 @@ def write_drill_receipt(
     output: Path,
     *,
     elapsed_seconds: int,
+    snapshot_id: str,
+    gate_receipt_path: Path,
     now: dt.datetime | None = None,
+    required_uid: int = 0,
 ) -> dict[str, Any]:
+    """Write non-authoritative local observations, never a verified receipt."""
+
     manifest = verify_manifest(root)
     elapsed = _positive_int(
         elapsed_seconds, reason="invalid_restore_elapsed", maximum=7 * 86400
     )
+    observed_now = _utc_now() if now is None else now
     recovery_point = validate_recovery_point(
-        _read_json(root / "recovery" / "recovery-point.json")
+        _read_json(root / "recovery" / "recovery-point.json"), now=observed_now
     )
-    require_recovery_point_within_rpo(recovery_point, now=now)
+    require_recovery_point_within_rpo(recovery_point, now=observed_now)
+    _validate_payload_metadata(
+        manifest["files"], recovery_point, now=observed_now, require_fresh=True
+    )
     full_restore_rto = max(
         component["rto_target_seconds"]
         for component in recovery_point["components"].values()
     )
     if elapsed > full_restore_rto:
         _fail("rto_target_missed")
-    verified_at = (_utc_now() if now is None else now).strftime("%Y-%m-%dT%H:%M:%SZ")
-    receipt = {
+    provenance = _local_gate_provenance(
+        root,
+        gate_receipt_path,
+        snapshot_id=snapshot_id,
+        now=observed_now,
+        required_uid=required_uid,
+    )
+    observed_at = observed_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    evidence = {
         "schema_version": SCHEMA_VERSION,
-        "status": "RESTORE_VERIFIED",
+        "status": "LOCAL_EVIDENCE_ONLY",
+        "evidence_scope": "restore_drill",
+        "authoritative": False,
         "manifest_sha256": _manifest_digest(root),
         "set_id_sha256": manifest["set_id_sha256"],
-        "verified_at": verified_at,
-        "isolated_runner": True,
-        "production_endpoint_accessed": False,
-        "postgres_restored": True,
-        "qdrant_recovered": True,
-        "uploads_verified": True,
-        "documents_verified": True,
-        "configuration_verified": True,
-        "secret_procedure_verified": True,
-        "rpo_met": True,
-        "rto_met": True,
+        "observed_at": observed_at,
+        "provenance": provenance,
+        "isolated_runner_observed": True,
+        "production_endpoint_access_observed": False,
+        "postgres_restore_observed": True,
+        "qdrant_recovery_observed": True,
+        "uploads_check_observed": True,
+        "documents_check_observed": True,
+        "configuration_check_observed": True,
+        "secret_procedure_check_observed": True,
+        "rpo_observed": True,
+        "rto_observed": True,
         "elapsed_seconds": elapsed,
     }
-    _atomic_write(output, _canonical_json(receipt))
-    return receipt
+    _atomic_write(output, _canonical_json(evidence))
+    return evidence
 
 
 def _read_gate08_receipt(
@@ -1366,10 +1588,12 @@ def build_parser() -> argparse.ArgumentParser:
     offsite = commands.add_parser("verify-offsite-receipt")
     offsite.add_argument("--root", required=True, type=_path)
     offsite.add_argument("--receipt", required=True, type=_path)
+    offsite.add_argument("--gate-receipt", required=True, type=_path)
 
     drill = commands.add_parser("verify-drill-receipt")
     drill.add_argument("--root", required=True, type=_path)
     drill.add_argument("--receipt", required=True, type=_path)
+    drill.add_argument("--gate-receipt", required=True, type=_path)
 
     write_offsite = commands.add_parser("write-offsite-receipt")
     write_offsite.add_argument("--root", required=True, type=_path)
@@ -1377,11 +1601,14 @@ def build_parser() -> argparse.ArgumentParser:
     write_offsite.add_argument("--repository-id", required=True)
     write_offsite.add_argument("--snapshot-id", required=True)
     write_offsite.add_argument("--encryption-key-id-sha256", required=True)
+    write_offsite.add_argument("--gate-receipt", required=True, type=_path)
 
     write_drill = commands.add_parser("write-drill-receipt")
     write_drill.add_argument("--root", required=True, type=_path)
     write_drill.add_argument("--output", required=True, type=_path)
     write_drill.add_argument("--elapsed-seconds", required=True, type=int)
+    write_drill.add_argument("--snapshot-id", required=True)
+    write_drill.add_argument("--gate-receipt", required=True, type=_path)
 
     gate = commands.add_parser("verify-gate-08")
     gate.add_argument("--root", required=True, type=_path)
@@ -1433,11 +1660,9 @@ def main(argv: list[str] | None = None) -> int:
             validate_data_inventory(_read_json(args.file), component=args.component)
             _emit("ok", "data_inventory_valid")
         elif args.command == "verify-offsite-receipt":
-            verify_offsite_receipt(args.root, args.receipt)
-            _emit("ok", "offsite_receipt_verified")
+            verify_offsite_receipt(args.root, args.receipt, args.gate_receipt)
         elif args.command == "verify-drill-receipt":
-            verify_drill_receipt(args.root, args.receipt)
-            _emit("ok", "restore_drill_verified")
+            verify_drill_receipt(args.root, args.receipt, args.gate_receipt)
         elif args.command == "write-offsite-receipt":
             write_offsite_receipt(
                 args.root,
@@ -1445,13 +1670,18 @@ def main(argv: list[str] | None = None) -> int:
                 repository_id=args.repository_id,
                 snapshot_id=args.snapshot_id,
                 encryption_key_id_sha256=args.encryption_key_id_sha256,
+                gate_receipt_path=args.gate_receipt,
             )
-            _emit("ok", "offsite_receipt_written")
+            _emit("ok", "local_offsite_evidence_written")
         elif args.command == "write-drill-receipt":
             write_drill_receipt(
-                args.root, args.output, elapsed_seconds=args.elapsed_seconds
+                args.root,
+                args.output,
+                elapsed_seconds=args.elapsed_seconds,
+                snapshot_id=args.snapshot_id,
+                gate_receipt_path=args.gate_receipt,
             )
-            _emit("ok", "restore_drill_receipt_written")
+            _emit("ok", "local_restore_evidence_written")
         elif args.command == "verify-gate-08":
             verify_gate08_receipt(
                 args.root,

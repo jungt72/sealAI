@@ -28,8 +28,8 @@ risks:
     blocked_by: [GATE-08, GATE-10]
   - risk_id: RISK-DR-OFFSITE
     severity: HIGH
-    summary: Local immutable recovery sets, provider-neutral encrypted transport, isolated restore automation, receipts, retention planning, RPO/RTO, and monitoring contracts are implemented and tested, but no external repository, managed key lifecycle, dedicated runner, real full restore, or canonical Postgres-to-Qdrant rebuild is available yet.
-    blocked_by: [external alert receiver, external encrypted object storage, offline key custody, dedicated recovery runner, two isolated restore drills, P1-D Qdrant rebuild command, GATE-08]
+    summary: Local immutable manifest-v2 recovery sets, provider-neutral encrypted transport, fail-closed local-only evidence, retention planning, RPO/RTO, and monitoring contracts are implemented and tested. Local evidence can never become OFFSITE_VERIFIED or RESTORE_VERIFIED; no external repository, cryptographic receipt trust root/importer, managed key lifecycle, dedicated runner, real full restore, or canonical Postgres-to-Qdrant rebuild is available yet.
+    blocked_by: [external alert receiver, external encrypted object storage, offline key custody, dedicated recovery runner, Gate-08-approved cryptographic receipt trust root and independent attestor/importer, two isolated restore drills, P1-D Qdrant rebuild command, GATE-08]
   - risk_id: RISK-P1-RELEASE
     severity: HIGH
     summary: The final gate does not yet prove the exact production retrieval path and immutable artifacts.

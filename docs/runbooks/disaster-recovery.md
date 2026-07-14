@@ -7,9 +7,9 @@ network change. No production or external system was touched while implementing 
 ## Current status
 
 The repository now defines a fail-closed recovery-set manifest, encrypted provider-neutral offsite
-transport through Restic, a dedicated isolated restore runner, fresh offsite and restore receipts,
-monthly systemd scheduling, and stable monitoring metrics. The following items remain
-`BLOCKED_EXTERNAL`:
+transport through Restic, a dedicated isolated restore runner, non-authoritative local evidence,
+monthly systemd scheduling, and stable monitoring metrics. It deliberately cannot create or accept
+an `OFFSITE_VERIFIED` or `RESTORE_VERIFIED` receipt. The following items remain `BLOCKED_EXTERNAL`:
 
 - a dedicated encrypted recovery runner and its Docker daemon;
 - an approved versioned/immutable Restic repository, verified TLS, least-privilege access, and the
@@ -17,6 +17,8 @@ monthly systemd scheduling, and stable monitoring metrics. The following items r
 - offline escrow for the repository password/key version and actual secret-recovery authorities;
 - sanitized real Postgres/Qdrant/upload/document recovery material;
 - immutable digest-pinned Postgres, Qdrant, and verifier images preloaded on the recovery runner;
+- a Gate-08-approved cryptographic receipt trust root, independent external attestor, and exact
+  manifest/payload/run-bound receipt importer;
 - two successful isolated full restores and import of their receipts;
 - installation/activation under an exact `GATE-08` approval; and
 - the P1-D canonical Postgres-to-Qdrant rebuild command and tenant-count inventory. Until P1-D
@@ -61,9 +63,13 @@ dr-manifest.json
 
 `ops/dr_recovery.py create-manifest` rejects relative/ambiguous roots, non-private directories,
 symlinks, hardlinks, writable-by-group/other files, duplicate JSON keys, missing components,
-oversized sets, forbidden configuration-secret filenames, invalid P0 sidecars, stale component
-captures, Qdrant snapshot/hash drift, and authority-epoch drift. Its manifest never records source
-host paths or secret values. After creation, rename the directory to the emitted
+oversized sets, forbidden configuration-secret filenames, invalid P0 sidecars, stale payload
+mtimes, Qdrant snapshot/hash drift, and authority-epoch drift. Manifest version 2 binds each file's
+actual `mtime_ns` together with path, size, mode, and content hash. A freshly written
+`recovery-point.json` is not freshness proof: the newest real file in each component must agree
+with `captured_at` within the bounded clock skew, and every component file must still be inside its
+RPO when the manifest or local observation is created. Its manifest never records source host paths
+or secret values. After creation, rename the directory to the emitted
 `set_id_sha256`; `ops/dr_offsite.sh` refuses any other basename. Never edit a completed set—capture
 a new set.
 
@@ -116,11 +122,17 @@ With a fresh manifest-bound root-owned Gate-08 receipt at
 ```
 
 Upload success is deliberately reported as `backup_uploaded_unverified`. It is not retention
-evidence. A valid `OFFSITE_VERIFIED` receipt exists only after the dedicated runner executes
-`restic check --read-data`, restores the exact snapshot completely, authenticates/decrypts it, and
-re-verifies every manifest byte. Receipt creation also compares every component capture timestamp
-with the current verification time and refuses a recovery point outside its declared RPO. Upload
-responses, object existence, ETags, partial reads, and provider dashboards are insufficient.
+evidence. The repository writer can record only `LOCAL_EVIDENCE_ONLY` with
+`authoritative=false` and provenance `LOCAL_UNATTESTED`. That record binds the manifest, set,
+snapshot, actual payload mtimes, and exact Gate-08 receipt/approval hashes, but it cannot be renamed,
+edited, or revalidated into an authoritative receipt. Both repository receipt-verifier commands
+terminate with `external_receipt_required` after validating local structure.
+
+A future valid `OFFSITE_VERIFIED` receipt requires a separately Gate-08-approved cryptographic trust
+root, an independent external attestor that observed `restic check --read-data`, full restore,
+authenticated decryption, and byte-for-byte manifest verification, plus an exact
+manifest/payload/run-bound importer. None exists or ran in this remediation. Upload responses,
+object existence, ETags, partial reads, local JSON, and provider dashboards are insufficient.
 
 The offsite policy is 14 daily, 8 weekly, 12 monthly, and 7 yearly snapshots, while preserving at
 least two independently verified snapshots. `dr_offsite.sh retention-plan` is dry-run only. There
@@ -156,7 +168,8 @@ non-production Postgres/Qdrant credentials and removes their private env file on
 5. Qdrant snapshot recovery with checksum, exact point count, duplicate-ID detection, and exact
    tenant-count digest;
 6. a second whole-set verification; and
-7. canonical offsite and restore receipts bound to the manifest and set ID.
+7. Gate-08-bound `LOCAL_EVIDENCE_ONLY` records, followed by a fail-closed
+   `external_attestation_required` result.
 
 The short-lived `dr_restore_drill` gate receipt must contain `snapshot_id_sha256`, the SHA-256 of
 the 64-hex Restic snapshot ID. This value is an identifier binding, not backup content. A receipt
@@ -169,11 +182,12 @@ Run an explicitly selected set/snapshot with:
 ```
 
 The monthly timer selects the newest snapshot having exactly one `set-<set-id>` tag and delegates to
-that command. It still fails closed without a fresh matching Gate-08 receipt. Installation and timer
-activation are external and gated; repository presence is not proof that a drill ran. Restored
-plaintext under `/var/lib/sealai-dr/drills/` must be retained only until receipts are exported, then
-deleted as the exact drill directory under a separately reviewed runner-local retention job. Never
-run the drill on the VPS.
+that command. It still fails closed without a fresh matching Gate-08 receipt and, even after all
+local checks, exits blocked because the independent signed receipt path is not implemented.
+Installation and timer activation are external and gated; repository presence and local evidence
+are not proof that a verified drill ran. Restored plaintext under `/var/lib/sealai-dr/drills/` must
+be retained only until an external evidence workflow is reviewed, then deleted as the exact drill
+directory under a separately reviewed runner-local retention job. Never run the drill on the VPS.
 
 For `mode=postgres_rebuild`, stop after Postgres verification until P1-D supplies the canonical
 command registry. Do not replace it with ad-hoc ingestion, a guessed collection name, or an
@@ -208,7 +222,8 @@ sealai_backup_receipt_valid{component}
 
 Alert on a missed RPO, failed backup, invalid/stale receipt, no successful monthly drill within 35
 days, or any timer failure. The renderer rejects a status document that omits any required recovery
-component, so partial exporter state cannot look healthy. External alert delivery remains
+component, so partial exporter state cannot look healthy. `LOCAL_EVIDENCE_ONLY` must leave
+`sealai_backup_receipt_valid` at `0`. External alert delivery and authoritative receipt import remain
 `BLOCKED_EXTERNAL`.
 
 ## Gate-08 request
