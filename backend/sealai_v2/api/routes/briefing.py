@@ -1,45 +1,43 @@
-"""POST /api/v2/briefing — the M4b deterministic render projected over a pipeline run. Tenant +
-session from the verified token only (P0). The render never touches L1/L3 (no behavior change)."""
+"""POST /api/v2/briefing — read-only projection of one explicit authorized case revision."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.api.deps import (
-    flags_from_settings,
     get_pipeline,
-    get_settings,
-    require_provider_admission,
+    require_legal_acceptance,
 )
-from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
+from sealai_v2.api.case_artifacts import project_briefing
+from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
-from sealai_v2.render.renderer import ArtifactRenderer, snapshot_from_result
-from sealai_v2.security.tenant import TenantContext
+from sealai_v2.render.renderer import ArtifactRenderer
 
 router = APIRouter(prefix="/api/v2", tags=["briefing"])
 _renderer = ArtifactRenderer()
 
 
 class BriefingRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8000)
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9._~-]+$")
+    case_revision: int = Field(ge=0)
 
 
 @router.post("/briefing")
 async def briefing(
     req: BriefingRequest,
-    identity: VerifiedIdentity = Depends(require_provider_admission, scope="request"),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
-    settings: Settings = Depends(get_settings),
 ) -> dict:
-    result = await pipeline.run(
-        req.message,
-        tenant=TenantContext(identity.tenant_id),
-        session=SessionContext(session_id=identity.session_id),
-        flags=flags_from_settings(settings),
+    snapshot, art = await project_briefing(
+        pipeline=pipeline,
+        identity=identity,
+        case_id=req.case_id,
+        case_revision=req.case_revision,
+        renderer=_renderer,
     )
-    art = _renderer.briefing(snapshot_from_result(req.message, result))
     return {
         "kind": art.kind,
         "title": art.title,
@@ -49,4 +47,8 @@ async def briefing(
         # Legal-by-Design Phase D (Goal 6/9): drives the PDF export's warning badge
         # (frontend-v2/src/lib/pdf.ts) — same signal as the chat response's risk_flags.
         "risk_flags": list(art.risk_flags),
+        "case_id": snapshot.case_id,
+        "case_revision": snapshot.case_revision,
+        "message_index": snapshot.message_index,
+        "read_only": True,
     }

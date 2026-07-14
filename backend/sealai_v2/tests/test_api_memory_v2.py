@@ -17,7 +17,9 @@ IDS = {
     "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
     "tok-A2": VerifiedIdentity("tenant-A", "sess-A2", "user-A2"),
     "tok-B": VerifiedIdentity("tenant-B", "sess-B", "user-B"),
-    "tok-admin": VerifiedIdentity("tenant-A", "sess-A", "owner", roles=("admin",)),
+    "tok-admin": VerifiedIdentity(
+        "tenant-A", "sess-A", "operator", roles=("system_operator",)
+    ),
 }
 
 

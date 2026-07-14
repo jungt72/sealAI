@@ -113,8 +113,8 @@ def test_namespace_rejects_noncanonical_authority_epoch(epoch: str) -> None:
         namespace(epoch)
 
 
-def test_settings_fail_closed_when_cache_has_no_authority_epoch() -> None:
-    with pytest.raises(ValidationError, match="knowledge_authority_epoch"):
+def test_settings_fail_closed_when_cache_has_no_postgres_authority() -> None:
+    with pytest.raises(ValidationError, match="Postgres knowledge authority"):
         Settings(execution_policy_enabled=True, exact_answer_cache_enabled=True)
 
 
@@ -126,10 +126,38 @@ def test_settings_reject_cache_without_execution_policy() -> None:
         )
 
 
-def test_real_pipeline_refuses_even_a_well_formed_static_epoch() -> None:
-    with pytest.raises(ValidationError, match="atomically coupled"):
+def test_static_epoch_cannot_replace_postgres_authority() -> None:
+    with pytest.raises(ValidationError, match="Postgres knowledge authority"):
         Settings(
             execution_policy_enabled=True,
             exact_answer_cache_enabled=True,
             knowledge_authority_epoch=EPOCH_A,
         )
+
+
+def test_cache_rejects_non_revalidated_retrieval_path() -> None:
+    with pytest.raises(ValidationError, match="Postgres-revalidated Qdrant"):
+        Settings(
+            execution_policy_enabled=True,
+            exact_answer_cache_enabled=True,
+            database_url="postgresql+psycopg://test@localhost/sealai_test",
+        )
+
+
+def test_cache_activation_uses_mutable_postgres_authority_not_static_digest() -> None:
+    settings = Settings(
+        execution_policy_enabled=True,
+        exact_answer_cache_enabled=True,
+        database_url="postgresql+psycopg://test@localhost/sealai_test",
+        retriever_backend="qdrant",
+        qdrant_url="http://qdrant.test:6333",
+    )
+
+    assert settings.knowledge_authority_epoch is None
+
+
+def test_privileged_role_names_are_mechanically_disjoint() -> None:
+    with pytest.raises(ValidationError, match="pairwise distinct"):
+        Settings(auth_knowledge_approver_role="knowledge_reviewer")
+    with pytest.raises(ValidationError, match="legacy admin"):
+        Settings(auth_platform_owner_role="admin")

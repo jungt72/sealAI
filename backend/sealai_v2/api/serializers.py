@@ -269,6 +269,9 @@ def chat_response(result: PipelineResult) -> dict:
         # P3 (audit §4.3 Versionierung): the knowledge-catalog state this answer was grounded
         # against, or "" when no catalogs were wired. Passed through verbatim.
         "wissensstand": result.wissensstand,
+        # Mutable Postgres authority that passed the request's final just-before-serve recheck.
+        # Empty only for hermetic/offline pipelines that have no database authority.
+        "authority_epoch": result.authority_epoch,
         # Legal-by-Design Phase D (Goal 6): deterministic risk-flag terms matched in the question
         # ((), or e.g. ["ATEX", "Sauerstoff"]) — drives the SPA's warning badge. Always present
         # (never flag-gated — see PipelineResult.risk_flags's docstring).

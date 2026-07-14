@@ -97,12 +97,9 @@ class PostgresLegalAcceptanceStore:
 
 def build_legal_acceptance_store(settings) -> LegalAcceptanceStore:
     if getattr(settings, "database_url", None):
-        try:
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
 
-            return PostgresLegalAcceptanceStore(
-                make_sessionmaker(make_engine(settings.database_url))
-            )
-        except Exception:  # noqa: BLE001 — fail safe to in-process; never crash on startup
-            pass
+        return PostgresLegalAcceptanceStore(
+            make_sessionmaker(make_engine(settings.database_url))
+        )
     return InProcessLegalAcceptanceStore()

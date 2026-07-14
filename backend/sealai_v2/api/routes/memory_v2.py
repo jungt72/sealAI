@@ -19,7 +19,7 @@ status (``memory.curated.is_valid_transition`` — e.g. a REJECTED item can't be
 Patch 9c reconciliation (against "sealingAI Memory Architecture V1.0 — Finales Konzept", §12): adds
 ``GET /items/{id}`` and a proper ``DELETE /items/{id}`` verb (additive — the existing
 ``POST .../delete`` stays, since nothing has ever depended on only one of the two existing), plus an
-admin-gated ``GET /outbox-health`` wrapping the already-built ``outbox_worker.outbox_health()``.
+system-operator-gated ``GET /outbox-health`` wrapping the existing outbox health calculation.
 Deliberately NOT built here: ``GET /context-sources?message_id=...`` — the final doc's §11 Right Rail
 wants to look up which memory items were used for a SPECIFIC PAST turn, but nothing today persists a
 message_id -> memory_context mapping (Patch 8's ``MemoryContextBundle`` is computed per-request and
@@ -42,7 +42,7 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_settings, require_admin
+from sealai_v2.api.deps import current_identity, get_settings, require_system_operator
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.memory_store import (
     InvalidMemoryTransition,
@@ -346,9 +346,9 @@ def delete_item_verb(
 
 @router.get("/outbox-health")
 def outbox_health_endpoint(
-    _identity: VerifiedIdentity = Depends(require_admin),
+    _identity: VerifiedIdentity = Depends(require_system_operator),
 ) -> dict:
-    """Admin-only (Patch 9c): wraps the already-built ``outbox_worker.outbox_health()``. Global
+    """System-operator-only outbox health. Global
     across all tenants by design — this is Qdrant-sync-pipeline observability, not user data."""
     from sealai_v2.memory.outbox_worker import outbox_health
 

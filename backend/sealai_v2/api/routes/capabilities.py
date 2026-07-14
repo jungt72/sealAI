@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sealai_v2.api.deps import (
     get_capability_store,
     get_settings,
-    require_admin,
+    require_platform_owner,
     require_capability_reviewer,
     require_manufacturer,
 )
@@ -159,7 +159,7 @@ def submit_own_capability(
 
 @router.get("/admin/manufacturer-capabilities")
 def list_capabilities(
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     store=Depends(get_capability_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:

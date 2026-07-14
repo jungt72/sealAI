@@ -1084,7 +1084,7 @@ ul.alt-panel-list { padding-left: 0; gap: 6px; }
 }
 .alt-anfrage-error { margin: 4px 0 0; font-size: 11px; color: #b4232a; }
 
-/* Owner/admin dashboard (Hersteller-Partner CRUD + leads). Role-gated; plain, dense, functional. */
+/* Platform-owner dashboard (Hersteller-Partner CRUD + leads). Role-gated, dense, functional. */
 .admin-pane { display: flex; flex-direction: column; gap: 14px; max-width: 760px; margin: 0 auto; padding: 24px 20px; width: 100%; }
 .admin-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .admin-title { margin: 0; font-size: 18px; font-weight: 600; }

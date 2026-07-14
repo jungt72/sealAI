@@ -63,6 +63,9 @@ describe("AlternativenPanel", () => {
     const res: AnfrageResponse = {
       status: "captured",
       lead_id: 1,
+      case_id: "case-a",
+      case_revision: 7,
+      read_only: true,
       partner: { hersteller: "acme", firmenname: "ACME Dichtungen GmbH" },
       briefing: {
         title: "Technische Orientierung (Screening)",

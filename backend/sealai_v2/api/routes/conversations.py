@@ -107,17 +107,22 @@ async def view_memory(
     # P2: a background distill may still be in flight — flush first, so the chips re-fetch
     # right after /chat already sees the fresh case-state (and the history shows the turn).
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    cs = mem.case_state(
+    view = mem.recall(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
     )
+    cs = view.case_state
     hist = mem.history(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
     )
     return {
+        "case_id": session_id,
+        "case_revision": (
+            view.case_state_v2.revision if view.case_state_v2 is not None else 0
+        ),
         "case_state": [
             {"feld": f.feld, "wert": f.wert, "provenance": f.provenance} for f in cs
         ],

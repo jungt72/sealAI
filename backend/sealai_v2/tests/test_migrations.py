@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
 import pytest
 from sqlalchemy import inspect, select
@@ -12,6 +13,7 @@ from sealai_v2.db.models import (
     V2HerstellerPartner,
     V2InterviewShadowDecision,
     V2InterviewState,
+    V2KnowledgeAuthorityEpoch,
     V2ManufacturerCapabilityProfile,
     V2ManufacturerCapabilityReview,
     V2ProviderQuotaWindow,
@@ -26,13 +28,42 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260714_0011"
+    assert current == head == "20260715_0013"
     indexes = {
         item["name"]
         for item in inspect(engine).get_indexes("v2_interview_shadow_decisions")
     }
     assert "ix_v2_interview_shadow_scope_created" in indexes
+    assert {
+        "owner_subject",
+        "case_id",
+        "case_revision",
+        "ownership_state",
+    } <= {item["name"] for item in inspect(engine).get_columns("v2_leads")}
+    assert "v2_ownership_quarantine" in tables
+    assert "v2_knowledge_authority_epochs" in tables
+    sf = make_sessionmaker(engine)
+    with sf() as session:
+        epoch = session.get(V2KnowledgeAuthorityEpoch, "knowledge")
+        assert epoch is not None
+        assert epoch.sequence == 0
     validate_schema(engine)
+
+
+def test_shadow_constraint_migration_is_gate07_safe_contract() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "db/migrations/versions/20260715_0013_shadow_data_constraints.py"
+    ).read_text(encoding="utf-8")
+    upgrade_source = source.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+
+    assert 'dialect.name != "postgresql"' in upgrade_source
+    assert "NOT VALID" in upgrade_source
+    assert "VALIDATE CONSTRAINT" not in upgrade_source
+    assert "ROW LEVEL SECURITY" not in upgrade_source
+    assert "FORCE ROW LEVEL SECURITY" not in upgrade_source
 
 
 def test_rwdr_pack_cutover_clears_only_1_0_0_ephemeral_state(tmp_path) -> None:

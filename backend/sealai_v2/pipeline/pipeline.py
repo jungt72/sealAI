@@ -91,6 +91,10 @@ from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContex
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
 from sealai_v2.knowledge.archetypes import load_archetypes
+from sealai_v2.knowledge.authority import (
+    PostgresKnowledgeAuthority,
+    RequestAuthorityGuard,
+)
 from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
@@ -180,11 +184,10 @@ def _build_retriever(settings: Settings) -> Retriever:
 def _build_memory_context_service(settings: Settings):
     """sealingAI Memory Architecture V1.0 (Patch 8): the Postgres store + Qdrant client + embedder
     a ``MemoryContextService`` needs. Fail-safe, same discipline as ``_build_retriever`` above: an
-    unset ``database_url``/``qdrant_url``, a missing optional dep, or an unreachable DB/Qdrant
-    returns None rather than crashing startup — the caller (``build_pipeline``) only invokes this
-    when ``memory_context_enabled`` is set, mirroring the ``retriever``/``ground_enabled`` pattern."""
+    unset ``database_url``/``qdrant_url``, a missing optional dependency, or an unreachable service
+    fails closed when the feature is enabled; no in-process production authority exists."""
     if not settings.database_url or not settings.qdrant_url:
-        return None
+        raise RuntimeError("memory context requires Postgres and Qdrant")
     try:
         from sealai_v2.db.memory_store import build_memory_store
         from sealai_v2.knowledge.qdrant_retrieval import _make_client, _make_embedder
@@ -199,33 +202,27 @@ def _build_memory_context_service(settings: Settings):
             embedder=embedder,
             collection=settings.memory_qdrant_collection,
         )
-    except Exception as exc:  # noqa: BLE001 — fail safe to None; never crash startup
-        _log.warning(
-            "memory context service unavailable (%s) → memory context inert", exc
-        )
-        return None
+    except Exception:  # noqa: BLE001 — normalize adapter/optional-dependency failures
+        raise RuntimeError("memory context service is unavailable") from None
 
 
 def _build_partner_registry(settings: Settings):
     """Build the technical-fit pool from verified capabilities, never billing."""
-    if settings.manufacturer_fit_enabled and settings.database_url:
-        try:
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
-            from sealai_v2.db.manufacturer_capability import (
-                PostgresManufacturerCapabilityStore,
-            )
-            from sealai_v2.knowledge.verified_partner_registry import (
-                VerifiedCapabilityPartnerRegistry,
-            )
+    if settings.manufacturer_fit_enabled:
+        if not settings.database_url:
+            raise RuntimeError("manufacturer fit requires Postgres authority")
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.manufacturer_capability import (
+            PostgresManufacturerCapabilityStore,
+        )
+        from sealai_v2.knowledge.verified_partner_registry import (
+            VerifiedCapabilityPartnerRegistry,
+        )
 
-            session_factory = make_sessionmaker(make_engine(settings.database_url))
-            return VerifiedCapabilityPartnerRegistry(
-                PostgresManufacturerCapabilityStore(session_factory)
-            )
-        except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on startup
-            _log.warning(
-                "verified capability registry unavailable (%s) → empty pool", exc
-            )
+        session_factory = make_sessionmaker(make_engine(settings.database_url))
+        return VerifiedCapabilityPartnerRegistry(
+            PostgresManufacturerCapabilityStore(session_factory)
+        )
     return InProcessPartnerRegistry()
 
 
@@ -520,6 +517,10 @@ class Pipeline:
     execution_policy_enabled: bool = False
     answer_cache: InProcessExactAnswerCache | None = None
     answer_cache_namespace: str = ""
+    # Production namespaces are derived per request from Postgres authority. The static namespace
+    # remains only for hermetic unit fixtures that do not claim production authority.
+    answer_cache_namespace_for_epoch: Callable[[str], str] | None = None
+    knowledge_authority: PostgresKnowledgeAuthority | None = None
     # Material subject lexicon derived once from the versioned Fachkarten catalog. Routing can
     # therefore recognise every material the knowledge layer actually serves without a second,
     # drifting hard-coded allowlist.
@@ -682,6 +683,16 @@ class Pipeline:
         token_sink: TokenSink | None = None,
     ) -> PipelineResult:
         scope = require_tenant(tenant)  # P0 — fail-closed if tenant missing/empty
+        authority_guard = (
+            RequestAuthorityGuard.bind(
+                self.knowledge_authority, tenant_id=scope.tenant_id
+            )
+            if self.knowledge_authority is not None
+            else None
+        )
+        authority_epoch = (
+            authority_guard.captured.value if authority_guard is not None else ""
+        )
         flags = flags or Flags()
         timer = TurnTimer()  # per-stage timing; pure bookkeeping, never alters results
         # Legal-by-Design Phase D: deterministic, ALWAYS-on detection (no LLM, cannot be perturbed
@@ -900,10 +911,15 @@ class Pipeline:
             and not untrusted
         )
         if cache_eligible:
+            cache_namespace = (
+                self.answer_cache_namespace_for_epoch(authority_epoch)
+                if self.answer_cache_namespace_for_epoch is not None and authority_epoch
+                else self.answer_cache_namespace
+            )
             cache_key = exact_answer_key(
                 tenant_id=scope.tenant_id,
                 question=question,
-                namespace=self.answer_cache_namespace,
+                namespace=cache_namespace,
             )
             cached_answer = self.answer_cache.get(
                 tenant_id=scope.tenant_id, key=cache_key
@@ -1652,17 +1668,6 @@ class Pipeline:
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
 
-            if (
-                cache_key is not None
-                and cached_answer is None
-                and self.answer_cache is not None
-                and execution_decision is not None
-                and execution_decision.execution_class is ExecutionClass.S0
-            ):
-                self.answer_cache.put(
-                    tenant_id=scope.tenant_id, key=cache_key, answer=answer
-                )
-
             # Persist the authoritative turn BEFORE it can be returned. Only LLM distillation stays
             # asynchronous. The optimistic revision check prevents an answer generated against an
             # old case snapshot from being committed after a concurrent user edit.
@@ -1769,7 +1774,7 @@ class Pipeline:
         timer.finish()
         if not scheduled_background:
             timer.emit()
-        return PipelineResult(
+        result = PipelineResult(
             question=question,
             tenant_id=scope.tenant_id,
             flags=flags,
@@ -1832,6 +1837,7 @@ class Pipeline:
             memory_context=memory_context,
             kandidaten_spec=kandidaten_spec,
             wissensstand=self.wissensstand,
+            authority_epoch=authority_epoch,
             risk_flags=risk_flags,
             # Phase 2B routing → render contract: attach the classified route's value ONLY when
             # route optimization actually ran and produced a decision (route_decision is None
@@ -1843,6 +1849,22 @@ class Pipeline:
             ),
             next_question=adaptive_next_question,
         )
+        # The second authority read is deliberately the final potentially failing operation before
+        # cache publication and response. A quarantine/revoke/update/expiry that committed while
+        # this request ran therefore serves neither a stale answer nor a cache entry.
+        if authority_guard is not None:
+            authority_guard.recheck_before_serve()
+        if (
+            cache_key is not None
+            and cached_answer is None
+            and self.answer_cache is not None
+            and execution_decision is not None
+            and execution_decision.execution_class is ExecutionClass.S0
+        ):
+            self.answer_cache.put(
+                tenant_id=scope.tenant_id, key=cache_key, answer=answer
+            )
+        return result
 
     async def _l1_generate(
         self,
@@ -2350,6 +2372,15 @@ def build_pipeline(
                 ),
             )
 
+    knowledge_authority = None
+    if settings.database_url:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+
+        authority_session_factory = session_factory or make_sessionmaker(
+            make_engine(settings.database_url)
+        )
+        knowledge_authority = PostgresKnowledgeAuthority(authority_session_factory)
+
     adaptive_interview_service: AdaptiveInterviewService | None = None
     if (
         memory is not None
@@ -2470,20 +2501,19 @@ def build_pipeline(
             if settings.execution_policy_enabled and settings.exact_answer_cache_enabled
             else None
         ),
-        answer_cache_namespace=(
-            build_answer_cache_namespace(
-                authority_epoch=settings.knowledge_authority_epoch or "",
+        answer_cache_namespace_for_epoch=(
+            lambda epoch: build_answer_cache_namespace(
+                authority_epoch=epoch,
                 knowledge_version=wissensstand,
                 policy_version="execution-policy.v1:parameters.v2",
                 answer_contract_version="engineering-answer.v2",
-                model_identity=(
-                    f"{settings.standard_provider}/{settings.standard_model}"
-                ),
+                model_identity=f"{settings.standard_provider}/{settings.standard_model}",
                 structured_answers=settings.structured_answer_enabled,
             )
             if settings.execution_policy_enabled and settings.exact_answer_cache_enabled
-            else ""
+            else None
         ),
+        knowledge_authority=knowledge_authority,
         knowledge_material_terms=knowledge_material_terms,
         understand_prompt_assembler=UnderstandPromptAssembler(),
         understand_enabled=settings.understand_enabled,

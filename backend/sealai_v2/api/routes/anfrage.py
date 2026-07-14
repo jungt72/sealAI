@@ -1,8 +1,8 @@
 """POST /api/v2/anfrage — the lead-generation action (owner business model). The user picks a partner
-from the Modus-F pool and triggers a structured RFQ: the backend re-renders the M4b briefing from the
-SESSION case-state (server-authoritative, tamper-proof — the client cannot inject briefing text),
-captures it as a durable lead routed to the partner's ``lead_email``, and returns the briefing preview
-so the user transparently sees what is sent.
+from the Modus-F pool and triggers a structured RFQ: the backend projects the exact authorized
+``case_id``/``case_revision`` from durable conversation state (the client cannot inject briefing
+text), captures that immutable preview as a durable lead routed to the partner's ``lead_email``, and
+returns the same preview so the user transparently sees what is sent.
 
 The final clarification + offer happen between the manufacturer and the user OUTSIDE sealingAI; this
 endpoint only hands the worked-out situation to a PAYING (``aktiv``) partner. ``lead_email`` is an
@@ -16,37 +16,39 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.api.deps import (
-    flags_from_settings,
     get_capability_store,
     get_lead_store,
     get_partner_registry,
     get_pipeline,
     get_settings,
-    require_provider_admission,
+    require_legal_acceptance,
 )
+from sealai_v2.api.case_artifacts import project_briefing
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import SessionContext, VerifiedIdentity
+from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.leads import Lead, LeadStore
 from sealai_v2.pipeline.pipeline import Pipeline
-from sealai_v2.render.renderer import ArtifactRenderer, snapshot_from_result
-from sealai_v2.security.tenant import TenantContext
+from sealai_v2.render.renderer import ArtifactRenderer
 
 router = APIRouter(prefix="/api/v2", tags=["anfrage"])
 _renderer = ArtifactRenderer()
 
 
 class AnfrageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     partner_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._~-]+$")
-    message: str = Field(min_length=1, max_length=8000)
+    case_id: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9._~-]+$")
+    case_revision: int = Field(ge=0)
 
 
 @router.post("/anfrage")
 async def anfrage(
     req: AnfrageRequest,
-    identity: VerifiedIdentity = Depends(require_provider_admission, scope="request"),
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     leads: LeadStore = Depends(get_lead_store),
     capabilities=Depends(get_capability_store),
@@ -87,15 +89,15 @@ async def anfrage(
     ):
         raise HTTPException(status_code=404, detail="partner nicht verfügbar")
 
-    # Re-render the briefing from the SESSION case-state (P0: tenant/session from the verified token
-    # only). Server-authoritative — the briefing reflects the worked-out situation, not client input.
-    result = await pipeline.run(
-        req.message,
-        tenant=TenantContext(identity.tenant_id),
-        session=SessionContext(session_id=identity.session_id),
-        flags=flags_from_settings(settings),
+    # Read one immutable owner-bound projection. No request text can alter the artifact and this
+    # endpoint never records a turn.
+    snapshot, art = await project_briefing(
+        pipeline=pipeline,
+        identity=identity,
+        case_id=req.case_id,
+        case_revision=req.case_revision,
+        renderer=_renderer,
     )
-    art = _renderer.briefing(snapshot_from_result(req.message, result))
 
     lead_id = leads.store(
         Lead(
@@ -103,7 +105,10 @@ async def anfrage(
             firmenname=technical_partner.firmenname,
             lead_email=commercial.lead_email,  # internal routing — NEVER returned to the user
             tenant_id=identity.tenant_id,
-            session_id=identity.session_id,
+            session_id=snapshot.case_id,
+            owner_subject=identity.subject,
+            case_id=snapshot.case_id,
+            case_revision=snapshot.case_revision,
             briefing_title=art.title,
             briefing_body=art.body,
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -124,6 +129,9 @@ async def anfrage(
             "wissensstand": art.wissensstand,
             "risk_flags": list(art.risk_flags),
         },
+        "case_id": snapshot.case_id,
+        "case_revision": snapshot.case_revision,
+        "read_only": True,
         "hinweis": (
             "Ihre Anfrage mit dem technischen Briefing wurde an den Hersteller übermittelt. "
             "Der Hersteller kann direkt mit Ihnen in Kontakt treten; die finale Klärung und "

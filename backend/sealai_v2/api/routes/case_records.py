@@ -75,7 +75,10 @@ def _require_case_access(
     bundle: dict, identity: VerifiedIdentity, settings: Settings
 ) -> None:
     owner_subject = bundle["case"].owner_subject
-    reviewer_roles = {settings.auth_admin_role, settings.auth_decision_reviewer_role}
+    reviewer_roles = {
+        settings.auth_tenant_admin_role,
+        settings.auth_decision_reviewer_role,
+    }
     if identity.subject != owner_subject and reviewer_roles.isdisjoint(identity.roles):
         raise HTTPException(status_code=404, detail="case not found")
 

@@ -1,8 +1,12 @@
-"""Admin-only, aggregate provider quota and budget posture (no raw subject/tenant identifiers)."""
+"""System-operator-only aggregate quota/budget posture (no raw subject/tenant identifiers)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from sealai_v2.api.deps import get_cost_control_store, get_settings, require_admin
+from sealai_v2.api.deps import (
+    get_cost_control_store,
+    get_settings,
+    require_system_operator,
+)
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 
@@ -11,7 +15,7 @@ router = APIRouter(prefix="/api/v2/admin", tags=["admin", "provider-cost-control
 
 @router.get("/provider-costs")
 def provider_costs(
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_system_operator),
     settings: Settings = Depends(get_settings),
     store=Depends(get_cost_control_store),
 ) -> dict:

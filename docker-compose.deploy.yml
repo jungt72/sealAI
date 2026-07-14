@@ -376,15 +376,16 @@ services:
       SEALAI_V2_PROVIDER_MONTHLY_BUDGET_MICROS: ${SEALAI_V2_PROVIDER_MONTHLY_BUDGET_MICROS:-100000000}
       SEALAI_V2_PROVIDER_BUDGET_CONTRACT_SHA256: ${SEALAI_V2_PROVIDER_BUDGET_CONTRACT_SHA256:-}
       SEALAI_V2_API_MAX_REQUEST_BODY_BYTES: ${SEALAI_V2_API_MAX_REQUEST_BODY_BYTES:-131072}
-      # Ops hardening (2026-07-03 deep-dive re-audit, §3): these two gate real runtime access
-      # (api/deps.py — the Hersteller-Partner admin/manufacturer surface) but had no compose
-      # passthrough, so a `.env.prod` override would have silently done nothing. Defaults match
-      # settings.py's own defaults, so this is a pure no-op today — additive-only, zero behavior
-      # change until someone actually needs to override a Keycloak role name.
-      SEALAI_V2_AUTH_ADMIN_ROLE: ${SEALAI_V2_AUTH_ADMIN_ROLE:-admin}
+      # AUTH-003/GOV-001: role names are deliberately disjoint. Mapping these realm roles and
+      # changing production authorization is a separately approved GATE-06/GATE-07 cutover.
+      SEALAI_V2_AUTH_TENANT_ADMIN_ROLE: ${SEALAI_V2_AUTH_TENANT_ADMIN_ROLE:-tenant_admin}
+      SEALAI_V2_AUTH_PLATFORM_OWNER_ROLE: ${SEALAI_V2_AUTH_PLATFORM_OWNER_ROLE:-platform_owner}
+      SEALAI_V2_AUTH_SYSTEM_OPERATOR_ROLE: ${SEALAI_V2_AUTH_SYSTEM_OPERATOR_ROLE:-system_operator}
+      SEALAI_V2_AUTH_KNOWLEDGE_CONTRIBUTOR_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_CONTRIBUTOR_ROLE:-knowledge_contributor}
       SEALAI_V2_AUTH_MANUFACTURER_ROLE: ${SEALAI_V2_AUTH_MANUFACTURER_ROLE:-manufacturer}
       SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE: ${SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE:-capability_reviewer}
       SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE:-knowledge_reviewer}
+      SEALAI_V2_AUTH_KNOWLEDGE_APPROVER_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_APPROVER_ROLE:-knowledge_approver}
       SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE: ${SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE:-decision_reviewer}
       # Ops hardening (2026-07-03): the 6 documented "incident-only kill-switches" (their own
       # settings.py docstrings say they're meant to be env-flippable in an emergency) had no

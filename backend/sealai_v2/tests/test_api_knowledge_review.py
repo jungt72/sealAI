@@ -64,6 +64,18 @@ def _client(tmp_path, *, review_enabled: bool = True):
             "human-reviewer",
             roles=("knowledge_reviewer",),
         ),
+        "approver": VerifiedIdentity(
+            "review-tenant",
+            "approval-session",
+            "human-approver",
+            roles=("knowledge_approver",),
+        ),
+        "dual": VerifiedIdentity(
+            "review-tenant",
+            "dual-session",
+            "human-reviewer",
+            roles=("knowledge_reviewer", "knowledge_approver"),
+        ),
         "user": VerifiedIdentity("tenant-a", "session-a", "user-a"),
     }
     app.dependency_overrides.clear()
@@ -79,7 +91,7 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_review_queue_requires_role_and_independent_attestation(tmp_path) -> None:
+def test_review_queue_requires_two_roles_and_two_human_actors(tmp_path) -> None:
     client = _client(tmp_path)
     denied = client.get(
         "/api/v2/admin/knowledge/claims?status=draft", headers=_auth("user")
@@ -92,19 +104,26 @@ def test_review_queue_requires_role_and_independent_attestation(tmp_path) -> Non
     assert listed.status_code == 200
     claim_id = listed.json()["claims"][0]["claim_id"]
 
-    missing_attestation = client.post(
+    reviewer_cannot_approve = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("reviewer"),
-        json={"to_status": "approved"},
+        json={"to_status": "approved", "independent_review_attested": True},
     )
-    assert missing_attestation.status_code == 400
+    assert reviewer_cannot_approve.status_code == 403
 
-    approved = client.post(
+    approver_cannot_skip_review = client.post(
+        f"/api/v2/admin/knowledge/claims/{claim_id}/review",
+        headers=_auth("approver"),
+        json={"to_status": "approved", "independent_review_attested": True},
+    )
+    assert approver_cannot_skip_review.status_code == 400
+    assert "completed independent review" in approver_cannot_skip_review.text
+
+    reviewed = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("reviewer"),
         json={
-            "to_status": "approved",
-            "independent_review_attested": True,
+            "to_status": "reviewed",
             "evidence": [{"citation": "ISO test reference", "document_id": "doc-1"}],
             "applicability": {"material": ["PTFE"]},
             "uncertainty": "conditional",
@@ -112,6 +131,35 @@ def test_review_queue_requires_role_and_independent_attestation(tmp_path) -> Non
             "review_expires_at": "2099-07-11T10:00:00Z",
             "change_reason": "Independent domain review",
         },
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json()["claim"]["review_status"] == "reviewed"
+
+    same_actor = client.post(
+        f"/api/v2/admin/knowledge/claims/{claim_id}/review",
+        headers=_auth("dual"),
+        json={"to_status": "approved", "independent_review_attested": True},
+    )
+    assert same_actor.status_code == 403
+    assert "separate identities" in same_actor.text
+
+    reviewed_queue = client.get(
+        "/api/v2/admin/knowledge/claims?status=reviewed", headers=_auth("approver")
+    )
+    assert reviewed_queue.status_code == 200
+    assert reviewed_queue.json()["claims"][0]["claim_id"] == claim_id
+
+    missing_attestation = client.post(
+        f"/api/v2/admin/knowledge/claims/{claim_id}/review",
+        headers=_auth("approver"),
+        json={"to_status": "approved"},
+    )
+    assert missing_attestation.status_code == 400
+
+    approved = client.post(
+        f"/api/v2/admin/knowledge/claims/{claim_id}/review",
+        headers=_auth("approver"),
+        json={"to_status": "approved", "independent_review_attested": True},
     )
     assert approved.status_code == 200
     assert approved.json()["claim"]["review_status"] == "approved"

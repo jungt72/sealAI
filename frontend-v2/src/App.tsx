@@ -38,8 +38,8 @@ import {
 } from "./lib/caseId";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
-// Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
-const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
+// Realm role that unlocks the owner dashboard (matches auth_platform_owner_role).
+const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "platform_owner";
 // Realm role for the manufacturer self-service dashboard (matches auth_manufacturer_role default).
 const MANUFACTURER_ROLE = env.VITE_MANUFACTURER_ROLE ?? "manufacturer";
 // Legal-by-Design (Phase B): mirrors the backend's SEALAI_V2_LEGAL_GATE_ENABLED — both default OFF
@@ -111,7 +111,7 @@ export function App() {
   const api = useMemo(() => new ApiClient(getAccessToken, onUnauthenticated), [onUnauthenticated]);
   // greeting name from the session token's given_name claim — display-only, never logged (PII)
   const greetingName = useMemo(() => (authed ? givenNameFromToken(getAccessToken()) : null), [authed]);
-  // owner/admin gate — display-only (the backend re-checks the role on every /admin call). When false
+  // platform-owner gate — display-only (the backend re-checks every /admin call). When false
   // the dashboard is never rendered AND never offered in the nav.
   const isAdmin = useMemo(
     () => (authed ? rolesFromToken(getAccessToken()).includes(ADMIN_ROLE) : false),
@@ -361,8 +361,11 @@ export function App() {
 
   const makeBriefing = useCallback(() => {
     if (!lastMessage) return;
-    api.briefing(lastMessage).then(setBriefing).catch(() => setError("Briefing fehlgeschlagen."));
-  }, [api, lastMessage]);
+    api
+      .briefing(caseId, memory.case_revision ?? 0)
+      .then(setBriefing)
+      .catch(() => setError("Briefing fehlgeschlagen."));
+  }, [api, caseId, lastMessage, memory.case_revision]);
 
   // R2 live preview: the read-only backend kern over the form DRAFT (no settle, no persist). Returns
   // null on failure (the form keeps its values; never a stale number); a working preview clears a
@@ -526,10 +529,12 @@ export function App() {
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}
           compute={compute}
-          onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
-          onDownloadPdf={async (message) => {
+          onAnfrage={(partnerId) =>
+            api.anfrage(partnerId, caseId, memory.case_revision ?? 0)
+          }
+          onDownloadPdf={async () => {
             const [result, pdf] = await Promise.all([
-              api.briefing(message),
+              api.briefing(caseId, memory.case_revision ?? 0),
               import("./lib/pdf"),
             ]);
             pdf.downloadBriefingPdf(result);

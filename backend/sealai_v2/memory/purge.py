@@ -54,6 +54,7 @@ def reap_purge_pending(
         rows = s.scalars(
             select(V2MemoryItem)
             .where(V2MemoryItem.status == "deleted_pending_purge")
+            .where(V2MemoryItem.ownership_state == "owned")
             .where(V2MemoryItem.purge_after.is_not(None))
             .where(V2MemoryItem.purge_after <= now)
             .order_by(V2MemoryItem.id)
