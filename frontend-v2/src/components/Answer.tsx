@@ -81,6 +81,20 @@ function VerificationBadge({ res }: { res: ChatResponse }) {
   return null; // no verification block on this payload at all (older/hand-built response)
 }
 
+function NextQuestion({ res }: { res: ChatResponse }) {
+  const question = res.next_question;
+  if (!question) return null;
+  return (
+    <section className="next-question" data-testid="next-question" aria-label="Nächste fachliche Klärung">
+      <span className="next-question-label">Nächste fachliche Klärung</span>
+      <p>{question.question_text}</p>
+      {(question.allowed_unknown || question.allowed_unobtainable) && (
+        <small>„Unbekannt“ oder „nicht ermittelbar“ kann ausdrücklich angegeben werden.</small>
+      )}
+    </section>
+  );
+}
+
 /** An assistant answer + its honesty framing: a `vorläufig` badge when NOT grounded, a candidate
  * label (orientation, not a final decision), the L3 trust status, primary-source citations, and —
  * outside the collapsed meta — a Gegencheck note when Modus E found an incompatibility or condition. */
@@ -114,6 +128,7 @@ export function Answer({ res }: { res: ChatResponse }) {
       {/* Belege: `show_evidence` is threaded as an INDEPENDENT guard, ANDed with Citations' own
           empty-citations check (so it can only hide, never invent citations). */}
       <Citations cites={res.citations} showEvidence={res.show_evidence} />
+      <NextQuestion res={res} />
     </div>
   );
 }

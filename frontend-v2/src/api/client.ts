@@ -15,6 +15,7 @@ import type {
   ConfirmationResponse,
   ContributePayload,
   ConversationMemory,
+  InterviewRefreshResponse,
   LegalAcceptancePayload,
   LegalAcceptanceStatus,
   ParamItem,
@@ -150,6 +151,13 @@ export class ApiClient {
   }
   memory(caseId?: string): Promise<ConversationMemory> {
     return this.req(this.withCase("/conversations/current/memory", caseId));
+  }
+  /** Reconciles persisted case facts with the active adaptive-interview controller. Shadow-only and
+   * disabled deployments return `next_question: null`; the client never infers controller state. */
+  refreshInterview(caseId?: string): Promise<InterviewRefreshResponse> {
+    return this.req(this.withCase("/conversations/current/interview/refresh", caseId), {
+      method: "POST",
+    });
   }
   /** M8 kernel channel: the deterministic compute for the current session (the Berechnungen panel's
    * source). Backend-only numbers — the client never computes. */
