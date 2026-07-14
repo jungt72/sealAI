@@ -1,6 +1,7 @@
 # Runtime deps for the green-field sealai_v2 image (Dockerfile.v2) — the FULL /api/v2 app, nothing
 # from the V1 runtime. Pinned to the backend's versions (requirements.txt) where shared; PyJWT is
-# pinned to the version the offline suite runs against. The V1 image is untouched.
+# pinned to the version the offline suite runs against. Redis/Celery/Kombu are intentionally absent:
+# V2 state and its durable outbox are Postgres-backed. The V1 image is untouched.
 fastapi==0.139.0
 starlette==1.3.1
 uvicorn[standard]==0.43.0

@@ -265,7 +265,7 @@ def test_second_identical_low_risk_turn_is_tenant_scoped_d0_cache_hit():
 
     first = asyncio.run(pipeline.run("Was ist PTFE?", tenant=TenantContext("tenant-1")))
     second = asyncio.run(
-        pipeline.run("  was   ist PTFE? ", tenant=TenantContext("tenant-1"))
+        pipeline.run("  Was   ist PTFE? ", tenant=TenantContext("tenant-1"))
     )
     third = asyncio.run(pipeline.run("Was ist PTFE?", tenant=TenantContext("tenant-2")))
 

@@ -7,8 +7,16 @@ when ``SEALAI_V2_OPENAI_API_KEY`` is unset (see ``llm.factory``).
 
 from __future__ import annotations
 
+import re
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# A config-provided digest cannot observe mutable ledger transitions. Keep the
+# serving cache unreachable until an atomic ledger epoch is checked on every
+# get/put and covered by lifecycle integration tests.
+EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED = False
 
 
 class Settings(BaseSettings):
@@ -207,7 +215,12 @@ class Settings(BaseSettings):
     structured_answer_enabled: bool = False
     exact_answer_cache_enabled: bool = False
     exact_answer_cache_max_entries: int = 512
+    exact_answer_cache_max_entries_per_tenant: int = 64
     exact_answer_cache_ttl_s: float = 3600.0
+    # Canonical digest of the complete active claim-authority set. Any approval,
+    # quarantine, revocation, expiry, or authority-relevant edit must roll it.
+    # Exact-answer caching fails closed unless this release-bound digest exists.
+    knowledge_authority_epoch: str | None = None
     # SSoT M15/G8: general sealing knowledge, material knowledge, and material
     # comparison are a separately activated product mode. The mode remains
     # fail-closed until its complete reference set and exact final replay have
@@ -230,6 +243,29 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_product_mode_dependencies(self) -> "Settings":
+        if self.exact_answer_cache_enabled:
+            if not self.execution_policy_enabled:
+                raise ValueError("exact answer cache requires execution_policy_enabled")
+            if self.knowledge_authority_epoch is None or not re.fullmatch(
+                r"sha256:[0-9a-f]{64}", self.knowledge_authority_epoch
+            ):
+                raise ValueError(
+                    "exact answer cache requires a canonical knowledge_authority_epoch"
+                )
+            if not EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED:
+                raise ValueError(
+                    "exact answer cache activation is unavailable until the mutable "
+                    "ledger epoch is atomically coupled"
+                )
+        if (
+            self.exact_answer_cache_max_entries <= 0
+            or self.exact_answer_cache_max_entries_per_tenant <= 0
+            or self.exact_answer_cache_max_entries_per_tenant
+            > self.exact_answer_cache_max_entries
+        ):
+            raise ValueError("exact answer cache cardinality bounds are invalid")
+        if not 0 < self.exact_answer_cache_ttl_s <= 86400:
+            raise ValueError("exact answer cache TTL must be at most 24 hours")
         if (
             self.adaptive_interview_enabled or self.adaptive_interview_shadow_enabled
         ) and not self.adaptive_interview_pack_rwdr_enabled:

@@ -39,6 +39,7 @@ from sealai_v2.orchestration.execution_policy import (
 )
 from sealai_v2.orchestration.answer_cache import (
     InProcessExactAnswerCache,
+    build_answer_cache_namespace,
     exact_answer_key,
 )
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
@@ -907,7 +908,9 @@ class Pipeline:
                 question=question,
                 namespace=self.answer_cache_namespace,
             )
-            cached_answer = self.answer_cache.get(cache_key)
+            cached_answer = self.answer_cache.get(
+                tenant_id=scope.tenant_id, key=cache_key
+            )
 
         # P1: soft understand is annotate-only (Intent NEVER gates/routes; it feeds only the
         # API intent field via PipelineResult.understanding) — so it runs CONCURRENT with the
@@ -1659,7 +1662,9 @@ class Pipeline:
                 and execution_decision is not None
                 and execution_decision.execution_class is ExecutionClass.S0
             ):
-                self.answer_cache.put(cache_key, answer)
+                self.answer_cache.put(
+                    tenant_id=scope.tenant_id, key=cache_key, answer=answer
+                )
 
             # Persist the authoritative turn BEFORE it can be returned. Only LLM distillation stays
             # asynchronous. The optimistic revision check prevents an answer generated against an
@@ -2462,15 +2467,25 @@ def build_pipeline(
         answer_cache=(
             InProcessExactAnswerCache(
                 max_entries=settings.exact_answer_cache_max_entries,
+                max_entries_per_tenant=settings.exact_answer_cache_max_entries_per_tenant,
                 ttl_s=settings.exact_answer_cache_ttl_s,
             )
             if settings.execution_policy_enabled and settings.exact_answer_cache_enabled
             else None
         ),
         answer_cache_namespace=(
-            f"{wissensstand}:execution-policy.v1:engineering-answer.v2:parameters.v2:"
-            f"{settings.standard_provider}/{settings.standard_model}:"
-            f"structured={settings.structured_answer_enabled}"
+            build_answer_cache_namespace(
+                authority_epoch=settings.knowledge_authority_epoch or "",
+                knowledge_version=wissensstand,
+                policy_version="execution-policy.v1:parameters.v2",
+                answer_contract_version="engineering-answer.v2",
+                model_identity=(
+                    f"{settings.standard_provider}/{settings.standard_model}"
+                ),
+                structured_answers=settings.structured_answer_enabled,
+            )
+            if settings.execution_policy_enabled and settings.exact_answer_cache_enabled
+            else ""
         ),
         knowledge_material_terms=knowledge_material_terms,
         understand_prompt_assembler=UnderstandPromptAssembler(),

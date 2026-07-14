@@ -53,6 +53,7 @@ _NON_BEHAVIOR_FIELDS = frozenset(
         "mistral_max_concurrency",
         "mistral_min_interval_s",
         "exact_answer_cache_max_entries",
+        "exact_answer_cache_max_entries_per_tenant",
         "exact_answer_cache_ttl_s",
         "eval_subject_concurrency",
         "eval_subject_min_interval_s",
