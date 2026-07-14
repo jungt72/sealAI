@@ -156,13 +156,13 @@ class ProductModeUnavailable(RuntimeError):
 def _build_retriever(settings: Settings) -> Retriever:
     """L2 retriever selection (build-spec §3): the in-process keyword matcher (default — the hermetic
     CI/eval measurement instrument) OR the Qdrant production adapter (``retriever_backend=qdrant`` +
-    a set ``qdrant_url``). Fail-safe: an unset url, a missing optional dep (fastembed/qdrant-client),
-    or an unreachable Qdrant falls back to in-process rather than crashing startup."""
-    if (
-        settings.retriever_backend == "qdrant"
-        and settings.qdrant_url
-        and settings.database_url
-    ):
+    a set ``qdrant_url`` and Postgres ledger). An explicit Qdrant selection is fail-closed: silently
+    changing the retrieval implementation would make release evidence describe a different runtime."""
+    if settings.retriever_backend == "qdrant":
+        if not settings.qdrant_url or not settings.database_url:
+            raise RuntimeError(
+                "configured qdrant retriever requires both Qdrant and Postgres ledger"
+            )
         try:
             from sealai_v2.knowledge.ledger import build_knowledge_ledger
             from sealai_v2.knowledge.qdrant_retrieval import QdrantFachkartenRetriever
@@ -170,14 +170,11 @@ def _build_retriever(settings: Settings) -> Retriever:
             return QdrantFachkartenRetriever(
                 settings, knowledge_ledger=build_knowledge_ledger(settings)
             )
-        except Exception as exc:  # noqa: BLE001 — fail safe to in-process; never crash on retrieval
-            _log.warning("qdrant retriever unavailable (%s) → in-process fallback", exc)
-    elif settings.retriever_backend == "qdrant":
-        _log.warning(
-            "qdrant retriever requires both Qdrant and Postgres ledger; "
-            "using in-process reviewed seed"
-        )
-    return InProcessRetriever()
+        except Exception:  # noqa: BLE001 — normalize optional-dependency/adapter failures
+            raise RuntimeError("configured qdrant retriever is unavailable") from None
+    if settings.retriever_backend == "in_process":
+        return InProcessRetriever()
+    raise RuntimeError("unsupported retriever backend")
 
 
 def _build_memory_context_service(settings: Settings):

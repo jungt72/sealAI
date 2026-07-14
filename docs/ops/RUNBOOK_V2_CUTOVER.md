@@ -13,8 +13,9 @@
 The live nginx bind-mounts the worktree file `nginx/default.conf`. The flip is ONE include line
 (`include snippets/v2_dashboard.conf;` after `server_name sealingai.com;`), inserted/removed by
 `ops/v2-flip.sh` (in-place edit — the file is a single-file bind mount, the inode must survive;
-the script handles this and `nginx -t`-gates every reload). The snippet serves the static SPA
-(`frontend-v2/dist`, mounted at `/usr/share/nginx/v2-client`) under `/dashboard/` with strict CSP,
+the script handles this and `nginx -t`-gates every reload). The snippet serves the static SPA from
+the verified `frontend-v2/dashboard-releases/current` target (the release root is mounted read-only
+at `/usr/share/nginx/dashboard-releases`) under `/dashboard/` with strict CSP,
 and proxies `/api/v2/` to `backend-v2:8001` (variable proxy_pass — an absent backend-v2 never
 breaks nginx). V1's post-login redirect (`/login` → `/dashboard/new`) lands on the SPA via
 `try_files`; the SPA normalizes the URL and logs in via Keycloak SSO (client `sealai-v2`, PKCE,
@@ -31,7 +32,7 @@ in-memory token) — zero V1 code changes.
 - `backend/Dockerfile.v2` ships the FULL /api/v2 app (pins: `backend/requirements-v2.txt`,
   build-time import keystone); `GET /api/v2/health` alias added (the proxy preserves paths).
 - `docker-compose.deploy.yml`: nginx gains two INERT ro mounts (`./nginx/snippets`,
-  `./frontend-v2/dist`); `backend-v2` defined behind `profiles: [v2]` (orphan-proof vs
+  `./frontend-v2/dashboard-releases`); `backend-v2` defined behind `profiles: [v2]` (orphan-proof vs
   `up -d --remove-orphans`), auth env preset, secrets via `--env-file` interpolation only.
 - `ops/v2-flip.sh` (the switch + rollback), `ops/smoke-v2.sh` (unauthed + authed legs),
   `ops/guard-nginx-reload.sh` wired into both release scripts (blocks a reload that would
@@ -42,27 +43,17 @@ Validation: V2 offline suite + import-boundary keystone + `frontend-v2 npm run v
 
 ## Phase 2 — staging validation (no prod mutation)
 
-**Owner (additive to live Keycloak — V1's `nextauth` client untouched):** ✅ **DONE 2026-06-10** —
-client `sealai-v2` created (uuid `b7a2dd0a-fd95-4e3c-af3d-f7e04997ae85`) via the owner's
-interactively-authenticated kcadm session (no credentials handled by the agent). Verified by
-read-back + example-token: public, PKCE S256, standard flow only, both redirect URIs/web origins,
-`aud=sealai-v2`, `tenant_id=sealai`, `sid`/`sub` present, lifespan 1800 s. Rollback anchor:
-`kcadm delete clients/b7a2dd0a-fd95-4e3c-af3d-f7e04997ae85 -r sealAI`. Spec was:
-- Standard Flow ON, PKCE S256 required, no client secret.
-- Redirect URIs: `https://sealingai.com/dashboard/*` AND `https://sealingai.com:8443/dashboard/*`.
-- Web Origins: `https://sealingai.com` AND `https://sealingai.com:8443` (CORS for the staging
-  cross-port token POST; remove both `:8443` entries after cutover).
-- Audience mapper → tokens carry `aud=sealai-v2`; `tenant_id` claim mapper
-  (precedent: `docs/ops/KEYCLOAK_TENANT_ID_MAPPER.md`).
-- Recommended: access-token lifespan 15–30 min on this client (no silent renew in the SPA yet —
-  one-click SSO re-login until the pilot-gate renewal work).
+The former staging design reused the production Docker network, live identity provider, provider
+key, and certificate path. It is no longer sanctioned. Phase 2 now uses the isolated RC contract
+in [`RC_EVALUATION_ISOLATION.md`](RC_EVALUATION_ISOLATION.md): separate internal edge/data
+networks, RC-only hash-derived snapshot volumes, deterministic local provider/auth/frontend stubs,
+and a loopback-only Nginx listener. Production secrets, network aliases, data volumes, and host
+certificate paths are outside this boundary.
 
-**CC:** staging stack under `ops/staging/` — `nginx-staging` on `0.0.0.0:8443:443` (real cert;
-generated copy of `default.conf` with the include applied; snippets copy with the documented
-staging-only CSP delta for the cross-port token POST; the isolated
-`frontend-v2/.build/dashboard-candidate` artifact) +
-`backend-v2-staging` (alias `sealai-backend-v2` on the staging network ONLY — prod nginx can
-never resolve it). Optional hardening: firewall :8443 to the owner IP for the window.
+**Current state: `BLOCKED_EXTERNAL`.** An independent process must first supply and attest the
+sanitized non-empty Postgres/Qdrant snapshots, immutable local stub images, and non-production TLS
+fixtures. The repository intentionally contains no runnable defaults and never treats stub output
+as production-eligibility evidence.
 
 The staging compose build/up has exactly one entrypoint:
 
@@ -72,29 +63,14 @@ The staging compose build/up has exactly one entrypoint:
 ```
 
 The wrapper checks the production release gate for operation `build`, then acquires the installed
-global storage lease before Docker starts. The active production freeze therefore denies staging
-builds on the production VPS too; use a separately controlled staging host or wait for the gated
-freeze-lift workflow. A raw compose build/up is not an alternative.
+global storage lease before Docker starts. Before that boundary it validates the owner-only RC file,
+local TLS fixtures, exact tree/commit, and the production freeze; after the lease it read-only checks
+the hash-bound snapshot-volume attestations. Compose receives a clean environment and the RC file,
+never an implicit project environment. A raw Compose build/start is not an alternative.
 
-**E2e checklist (all green, dated):** browser login → callback → URL normalizes; chat with
-citations + vorläufig/candidate badges; memory view→edit→forget-one→forget-all; briefing with
-Geltungsrahmen + provenance; banner text == `/api/v2/framing`; authed
-`GET /api/v2/conversations/current/memory` → 200 (proves aud/iss/exp/tenant_id/sid/sub alignment);
-`nginx -t`; `BASE_URL=https://sealingai.com:8443 ops/smoke-v2.sh` green; observe token-expiry UX.
-*(Owner decision 2026-06-10: the devtools RUNTIME checks — no token in local/sessionStorage,
-zero CSP violations — moved to pilot tracker item 5 as a HARD pilot gate; XSS-token-theft is a
-multi-user threat model, low-impact owner-only, and the CSP header itself is machine-verified in
-smoke. They no longer block the owner-only flip.)*
-
-**Rollback dry-run (mandatory, rehearses the prod commands):**
-1. `ops/v2-flip.sh --revert --file ops/staging/conf/default.conf --container nginx-staging`
-   → `/dashboard/` serves the V1 response again, `/api/v2/*` 404s into the V1 catch-all
-   (== current prod behavior). Re-apply.
-2. `docker stop backend-v2-staging` → `/api/v2/*` 502, static SPA + V1 paths unaffected;
-   restart recovers ≤ ~10 s WITHOUT reload (resolver `valid=10s`).
-3. Orphan probe: `up -d --remove-orphans` with/without `--profile v2` — backend-v2 survives.
-
-**HALT** with the dated validation report → owner gate before Phase 3.
+After all external blockers are independently closed, date and retain the RC contract hashes,
+candidate image ID, preflight result, E2E results, and rollback rehearsal. **HALT** for owner review;
+the `RC_STUB_NON_ELIGIBLE` lane alone can never authorize Phase 3.
 
 ## Phase 3 — the prod flip (OWNER, low-traffic window)
 
@@ -110,10 +86,10 @@ smoke. They no longer block the owner-only flip.)*
   'v2-client|snippets|backend-v2'` → **0** (the flip ref has these mounts; V1_ANCHOR must NOT).
   At flip time the prod worktree state moves from that V1 ref to the flip ref — rollbacks
   check out FROM `$V1_ANCHOR`.
-- The immutable dashboard artifact must be built outside the live bind mount,
-  content-addressed, and bound to the exact GATE-10 manifest. This P1 contract
-  is not implemented yet; a local `npm run verify` is evidence for candidate
-  bytes only and cannot make them production-eligible.
+- The dashboard release must have been prepared by `npm run release:prepare`, independently
+  verified by release ID, source commit, and artifact SHA-256, and named in the exact GATE-08
+  deployment approval. Preparation is inert and cannot make a candidate live. GATE-10 must still
+  authorize lifting the active release freeze; neither gate implies the other.
 - `docker exec nginx nginx -T | grep -cE '^\s*include snippets/v2_dashboard'` → 0, and the loaded
   config matches the worktree file.
 
@@ -122,23 +98,29 @@ smoke. They no longer block the owner-only flip.)*
 There is currently no sanctioned production entrypoint for this recreate. A
 raw Compose command would bypass both the release gate and the global storage
 lease, so it is forbidden even if the mounts appear inert. P1 must provide an
-exact-artifact, GATE-10-bound entrypoint with an attested rollback manifest and
+exact-artifact, GATE-08-bound entrypoint with an attested rollback manifest and
 lease acquisition before this step can be scheduled. The active freeze denies
 this step; do not recreate Nginx manually.
 
-**Step 2 — Gate-10-bound backend-v2 artifact promotion (BLOCKED).**
+**Step 2 — Gate-10/GATE-08-bound immutable release promotion (BLOCKED_EXTERNAL).**
 
-The old raw compose build/up path is retired. Production promotion is permitted only through the
-Gate-10 workflow and the sanctioned release entrypoint:
+The old raw compose build/up path is retired. Production promotion is permitted
+only through the installed root-trusted entrypoint described in
+`docs/ops/PRODUCTION_PROMOTION_CONTROL.md`. The manual workflow supplies only
+the exact control SHA, source SHA and digest-pinned backend RC; the VPS boundary
+independently verifies both gates and every exposure hash.
 
 ```bash
-BACKEND_V2_IMAGE='ghcr.io/jungt72/sealai-backend-v2@sha256:<approved-digest>' \
-  ./ops/release-backend-v2.sh --final
+/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh \
+  --control-sha '<approved-control-sha>' \
+  --source-sha '<approved-source-sha>' \
+  --backend-image 'ghcr.io/jungt72/sealai-backend-v2:<tag>@sha256:<approved-digest>'
 ```
 
-While the production freeze is active—and until the P1 release-integrity work binds the exact
-selected artifact digest—this step stays deliberately blocked. Do not replace the denied
-entrypoint with a direct Docker or compose command.
+The command is illustrative, not an authorization. Installation/staging,
+external RC evidence, Gate 10 and the per-deployment GATE-08 receipt are all
+still required. While the checked-in freeze is active this remains blocked. Do
+not replace the entrypoint with a direct Docker, Compose, Git or symlink command.
 
 Verify: `curl -fsS --max-time 10 http://127.0.0.1:8001/health`; then
 `curl -s --max-time 10 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8001/api/v2/chat -H 'Content-Type: application/json' -d '{"message":"x"}'` → **401** (503 = auth env missing → STOP, fix env).
@@ -219,7 +201,8 @@ in-process (restart wipes conversations — pilot prerequisite below).
 - [ ] Staging e2e checklist green (dated report) + all 3 rollback dry-run legs done.
 - [ ] Keycloak `sealai-v2` client live (mappers + prod redirect URIs); step-3 probe green.
 - [ ] Legal: owner-only users today → lawyer review gates the FIRST PILOT, not this flip (recorded).
-- [ ] dist built at flip ref + sha256 recorded; worktree clean; anchors read from the daemon.
+- [ ] immutable dashboard release prepared twice-identically; release ID, commit, full manifest,
+      and SHA-256 recorded in GATE-08 evidence; worktree clean; anchors read from the daemon.
 - [ ] Low-traffic window scheduled; GOVERNANCE_LOG entry drafted.
 
 ## Pilot-prerequisite tracker (gates the FIRST PILOT, not the flip)
@@ -289,9 +272,9 @@ the rollback target — do NOT stop/tear down V1 during or right after the flip.
   — gate-locked runtime ref `6322eb9c` (re-validated 2026-06-11; runtime byte-identical to the
   REPLAY-validated `3c598542`; later docs-only commits may ride on top without re-validation).
 - **backend-v2 image:** ⟨docker inspect backend-v2 --format '{{.Image}}'⟩
-- **immutable dashboard artifact:** ⟨content-addressed artifact ID and complete SHA-256 manifest
-  from the exact GATE-10 approval⟩. Candidate bytes under `.build/dashboard-candidate` are not
-  production evidence until P1 packages, attests, and independently reproduces them.
+- **immutable dashboard artifact:** ⟨content-addressed release ID and complete SHA-256 manifest
+  from the exact GATE-08 deployment approval; GATE-10 freeze-lift evidence cross-reference⟩.
+  Candidate bytes under `.build/dashboard-candidate` are never production evidence.
 - **Rollback anchors (from the daemon at flip time):**
   - routing: `ops/v2-flip.sh --revert` (dry-run-proven on staging 2026-06-10)
   - V1 backend: ⟨docker inspect backend --format '{{.Config.Image}}'⟩ (status/health: ⟨…⟩)

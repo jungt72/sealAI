@@ -291,10 +291,11 @@ services:
     - /etc/letsencrypt:/etc/letsencrypt:ro
     - ./nginx/certs/config:/etc/letsencrypt-analytics:ro
     # V2 cutover mounts — INERT until `include snippets/v2_dashboard.conf;` exists in
-    # default.conf. Living here (not in an overlay) so every routine nginx recreate keeps
-    # them and config/mount drift is impossible (ops/v2-flip.sh is the only on/off switch).
+    # default.conf. Nginx mounts the release ROOT (not a mutable dist tree and not the
+    # source-side symlink itself), so an approved atomic `current` replacement is visible
+    # inside the existing container and rollback remains digest-addressed.
     - ./nginx/snippets:/etc/nginx/snippets:ro
-    - ./frontend-v2/dist:/usr/share/nginx/v2-client:ro
+    - /var/lib/sealai/dashboard-releases:/usr/share/nginx/dashboard-releases:ro
     healthcheck:
       test:
       - CMD-SHELL

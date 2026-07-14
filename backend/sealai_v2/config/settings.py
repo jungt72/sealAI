@@ -402,11 +402,9 @@ class Settings(BaseSettings):
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —
     # deterministic, hermetic, no network) and the QdrantFachkartenRetriever (semantic, production).
     # This flips between them as pure config. Default "in_process" keeps offline eval/CI byte-stable;
-    # "qdrant" requires ``qdrant_url`` set, else the factory fails safe back to in-process.
+    # an explicit "qdrant" selection requires both data services and fails closed if unavailable.
     retriever_backend: str = "in_process"  # "in_process" | "qdrant"
-    qdrant_url: str | None = (
-        None  # e.g. http://qdrant:6333; UNSET → in-process forced (fail-safe)
-    )
+    qdrant_url: str | None = None  # e.g. http://qdrant:6333; required for explicit Qdrant
     qdrant_collection: str = "sealai_v2_knowledge_v1"  # ledger-derived index; legacy direct-write collection stays rollback-only
     # Memory uses the same embedding provider but a physically separate, tenant-scoped index. Keep
     # the name configurable so an embedding-model/dimension migration can create a new collection
@@ -430,8 +428,8 @@ class Settings(BaseSettings):
     )
     # Embedding provider: "openai" (API text-embedding-3 — the RAM-safe PROD default) | "fastembed"
     # (local ONNX e5-large — offline, but OOM'd this host). Defaulting to openai makes _make_embedder
-    # raise without OPENAI_API_KEY; on serve _build_retriever fail-safes to the in-process keyword
-    # retriever, and the ingestion CLI requires the key explicitly.
+    # raise without OPENAI_API_KEY; an explicit Qdrant runtime fails closed rather than silently
+    # changing retrieval implementations, and the ingestion CLI requires the key explicitly.
     embed_provider: str = "openai"
     # e5 needs the "query:"/"passage:" asymmetry; openai/jina/MiniLM use "" (raw text). Empty by default
     # (the openai prod path); set the e5 prefixes only when switching to the fastembed offline option.

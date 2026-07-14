@@ -339,6 +339,9 @@ def test_all_sanctioned_production_compose_paths_call_security_guard() -> None:
     assert "compose_security_guard.py" in validator
     assert "--profile observability" in validator
     assert "docker compose" in validator
+    assert "LIVE_PRODUCTION_ENV=/home/thorsten/sealai/.env.prod" in validator
+    assert "STAGED_RELEASE_ROOT=/var/lib/sealai/release-control/releases" in validator
+    assert "[0-9a-f]{40}" in validator
     for relative in (
         "ops/up-prod.sh",
         "ops/release-backend-v2.sh",
