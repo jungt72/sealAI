@@ -1,5 +1,5 @@
 schema_version: 1
-run_id: REM-2026-07-14
+document_class: DURABLE_POLICY
 principle: safe_local_and_read_only_remote_actions_are_autonomous
 allowed_without_additional_approval:
   - local repository inspection

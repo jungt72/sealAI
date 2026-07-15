@@ -1,8 +1,10 @@
 schema_version: 1
-run_id: REM-2026-07-14
-approval_source: ../approvals.yaml
+document_class: DURABLE_POLICY
+approval_template: ../templates/approvals.template.yaml
+approval_template_authorizes_actions: false
+historical_evidence_authorizes_actions: false
 release_freeze:
-  status: ACTIVE
+  default_status: ACTIVE
   lift_gate: GATE-10
   prerequisites:
     - P0_SECRETS_CONTAINED

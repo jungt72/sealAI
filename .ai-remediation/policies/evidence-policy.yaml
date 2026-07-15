@@ -1,13 +1,14 @@
 schema_version: 1
-run_id: REM-2026-07-14
+document_class: DURABLE_POLICY
 classification:
   committed:
-    - sanitized fingerprints
-    - aggregate counts
-    - checksums of non-secret artifacts
-    - test summaries
-    - plans, policies, and status records
+    - durable policies and schemas
+    - non-authorizing templates without runtime values
+    - explicitly superseded historical snapshots under .ai-remediation/history
   local_untracked:
+    - generated current-state snapshots
+    - current repository and production fingerprints
+    - current test and verification results
     - raw command output
     - host-specific object inventories
     - security scan reports requiring manual redaction
@@ -23,6 +24,8 @@ rules:
   - prefer counts, types, modes, paths, and hashes over contents
   - run redaction checks before commit, push, or report publication
   - never mark a finding VERIFIED from local code changes alone
+  - never accept .ai-remediation/history or .ai-remediation/templates as current gate evidence
+  - keep generated runtime state under the ignored .ai-remediation/runtime directory
 retention:
-  sanitized_manifests: versioned
+  superseded_historical_snapshots: versioned
   raw_local_evidence: delete only under an approved retention procedure

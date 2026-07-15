@@ -1,3 +1,9 @@
+evidence_class: HISTORICAL_SNAPSHOT
+authoritative_current_state: false
+captured_at: "2026-07-14T11:35:38Z"
+source_repository_commit: dcb19015adacdc790dd1b25cc430333691c43626
+production_commit_at_capture: ab91faf4f3d3ed8fe61dbc9aedab02e966f40856
+superseded: true
 schema_version: 1
 run_id: REM-2026-07-14
 status: FROZEN_NOT_AUTHORIZED

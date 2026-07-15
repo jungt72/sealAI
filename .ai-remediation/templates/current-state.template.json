@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "document_class": "NON_AUTHORITATIVE_TEMPLATE",
+  "authoritative_current_state": false,
+  "generated_runtime_path": ".ai-remediation/runtime/current-state.json",
+  "required_runtime_sections": [
+    "captured_at",
+    "source_repository_commit",
+    "origin_main_commit",
+    "production_commit",
+    "production_fingerprint",
+    "verification_results"
+  ],
+  "prohibited_uses": [
+    "production_release_approval",
+    "cleanup_approval",
+    "deployment_approval"
+  ]
+}

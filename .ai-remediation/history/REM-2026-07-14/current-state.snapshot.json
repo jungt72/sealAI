@@ -1,4 +1,10 @@
 {
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "captured_at": "2026-07-14T11:35:38Z",
+  "source_repository_commit": "dcb19015adacdc790dd1b25cc430333691c43626",
+  "production_commit_at_capture": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
+  "superseded": true,
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
   "recorded_at": "2026-07-14T11:29:48Z",
@@ -14,8 +20,6 @@
     "satisfied_conditions": []
   },
   "repository": {
-    "authoritative_path": "/Users/thorstenjung/Documents/New project/sealai-reconcile",
-    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p0-secret",
     "remediation_branch": "remediation/p0-secret-hygiene",
     "origin_main_commit": "ede1d80108e3c6e04f7dd467cd2f3fc2e79c7a17",
     "production_commit": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
@@ -23,8 +27,8 @@
     "primary_checkout_preserved": true
   },
   "production": {
-    "ssh_alias": "sealai-vps",
     "repository_path": "/home/thorsten/sealai",
+    "repository_path_classification": "PRODUCTION_HOST_PATH",
     "branch": "main",
     "working_tree_clean": true,
     "unexpected_parallel_deployment": false,

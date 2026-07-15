@@ -195,5 +195,4 @@ id_ed25519*
 
 # Remediation evidence may contain host-specific inventories and command output.
 # Commit only the sanitized evidence policy/README, never raw run evidence.
-.ai-remediation/runs/*/evidence/*
-!.ai-remediation/runs/*/evidence/README.md
+.ai-remediation/runtime/

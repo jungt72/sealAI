@@ -1,5 +1,7 @@
 schema_version: 1
-run_id: REM-2026-07-14
+document_class: NON_AUTHORIZING_TEMPLATE
+authoritative_approval: false
+runtime_approval_source: external_explicit_gate_record
 policy: explicit_single_gate_only
 default_status: PENDING
 approvals:
