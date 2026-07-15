@@ -79,12 +79,19 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=26.7.0
 
+      - name: Materialize exact Keycloak OCI layout for daemon-free scanning
+        run: |
+          test -s keycloak.oci.tar
+          mkdir keycloak.oci
+          tar -xf keycloak.oci.tar -C keycloak.oci
+          test -s keycloak.oci/index.json
+
       - name: Scan exact Keycloak archive
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           version: v0.69.3
           scan-type: image
-          input: keycloak.oci.tar
+          input: keycloak.oci
           scanners: vuln,license
           trivy-config: security/trivy.yaml
           format: json
@@ -112,7 +119,7 @@ jobs:
         with:
           version: v0.69.3
           scan-type: image
-          input: keycloak.oci.tar
+          input: keycloak.oci
           format: spdx-json
           output: keycloak.spdx.json
           exit-code: "0"
