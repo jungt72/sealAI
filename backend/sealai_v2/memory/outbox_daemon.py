@@ -17,7 +17,7 @@ from threading import Event
 from sqlalchemy import text
 
 from sealai_v2.config.settings import Settings
-from sealai_v2.db.engine import make_engine, make_sessionmaker
+from sealai_v2.db.engine import make_engine, make_worker_sessionmaker
 from sealai_v2.knowledge.qdrant_retrieval import _make_client, _make_sparse_embedder
 from sealai_v2.knowledge.outbox_worker import (
     drain_knowledge_outbox,
@@ -55,7 +55,7 @@ def healthcheck(
     now: float | None = None,
 ) -> dict[str, str]:
     """Prove that the daemon loop is fresh and both durable dependencies answer."""
-    if not settings.database_url or not settings.qdrant_url:
+    if not settings.worker_database_url or not settings.qdrant_url:
         raise RuntimeError("worker database and Qdrant configuration are required")
     heartbeat = float(heartbeat_path.read_text(encoding="ascii"))
     max_age = max(60.0, float(settings.outbox_poll_interval_s) * 3.0)
@@ -63,12 +63,19 @@ def healthcheck(
     if age < 0 or age > max_age:
         raise RuntimeError(f"worker heartbeat is stale ({age:.1f}s > {max_age:.1f}s)")
 
-    engine = make_engine(settings.database_url)
-    try:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-    finally:
-        engine.dispose()
+    if settings.database_rls_scope_enabled:
+        # Exercise SET LOCAL ROLE + role membership as part of health, not merely TCP/login reach.
+        factory = make_worker_sessionmaker(settings)
+        with factory() as session:
+            session.execute(text("SELECT 1"))
+        factory.kw["bind"].dispose()
+    else:
+        engine = make_engine(settings.worker_database_url)
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        finally:
+            engine.dispose()
     client = _make_client(settings)
     client.get_collection(settings.memory_qdrant_collection)
     client.get_collection(settings.qdrant_collection)
@@ -77,13 +84,15 @@ def healthcheck(
 
 def run(settings: Settings, *, stop: Event | None = None) -> None:
     """Run until SIGTERM/SIGINT or ``stop`` is set. Raises configuration errors early."""
-    if not settings.database_url:
-        raise RuntimeError("SEALAI_V2_DATABASE_URL is required for the outbox worker")
+    if not settings.worker_database_url:
+        raise RuntimeError(
+            "SEALAI_V2_WORKER_DATABASE_URL is required for the outbox worker"
+        )
     if not settings.qdrant_url:
         raise RuntimeError("SEALAI_V2_QDRANT_URL is required for the outbox worker")
 
     stop_event = stop or Event()
-    session_factory = make_sessionmaker(make_engine(settings.database_url))
+    session_factory = make_worker_sessionmaker(settings)
     remote = remote_embedding_enabled(settings)
     validate_embedding_worker_limits(
         settings.outbox_batch_size,

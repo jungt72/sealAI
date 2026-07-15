@@ -79,9 +79,9 @@ def get_memory_outbox_session_factory():
     if not getattr(settings, "database_url", None):
         return None
     try:
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return make_sessionmaker(make_engine(settings.database_url))
+        return make_api_sessionmaker(settings)
     except Exception:  # noqa: BLE001 — fail safe; never crash the endpoint on startup
         return None
 

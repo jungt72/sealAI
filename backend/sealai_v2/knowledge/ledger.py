@@ -1034,11 +1034,9 @@ def build_knowledge_ledger(settings) -> PostgresKnowledgeLedger:
             "technical knowledge requires SEALAI_V2_DATABASE_URL; "
             "Qdrant is not a source of truth"
         )
-    from sealai_v2.db.engine import make_engine, make_sessionmaker
+    from sealai_v2.db.engine import make_api_sessionmaker
 
-    return PostgresKnowledgeLedger(
-        make_sessionmaker(make_engine(settings.database_url))
-    )
+    return PostgresKnowledgeLedger(make_api_sessionmaker(settings))
 
 
 def payload_fingerprint(payload: dict) -> str:

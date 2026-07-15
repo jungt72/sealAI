@@ -91,7 +91,17 @@ class ProviderCostCollector:
             store = supplier()
             if store is None:
                 return
-            summary = store.summary()
+            from sealai_v2.db.engine import (
+                DatabaseRuntimeRole,
+                bind_database_scope,
+            )
+
+            with bind_database_scope(
+                tenant_id="service:metrics",
+                subject_id="service:prometheus-collector",
+                role=DatabaseRuntimeRole.SYSTEM_OPERATOR,
+            ):
+                summary = store.summary()
             reserved = {
                 "daily": int(summary["day"]["reserved_cost_micros"]),
                 "monthly": int(summary["month"]["reserved_cost_micros"]),

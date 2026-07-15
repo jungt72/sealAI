@@ -97,9 +97,7 @@ class PostgresLegalAcceptanceStore:
 
 def build_legal_acceptance_store(settings) -> LegalAcceptanceStore:
     if getattr(settings, "database_url", None):
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return PostgresLegalAcceptanceStore(
-            make_sessionmaker(make_engine(settings.database_url))
-        )
+        return PostgresLegalAcceptanceStore(make_api_sessionmaker(settings))
     return InProcessLegalAcceptanceStore()

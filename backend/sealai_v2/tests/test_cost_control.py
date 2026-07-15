@@ -265,6 +265,29 @@ def test_remote_worker_limits_and_kill_switch_are_fail_closed():
             object(),
             service="memory_outbox",
         )
+    worker_policy = policy()
+    worker_gate = build_embedding_service_admission(
+        SimpleNamespace(
+            embed_provider="openai",
+            provider_requests_enabled=True,
+            database_url="",
+            worker_database_url="postgresql://worker@localhost/test",
+            provider_subject_requests_per_minute=worker_policy.subject_per_minute,
+            provider_tenant_requests_per_minute=worker_policy.tenant_per_minute,
+            provider_subject_requests_per_day=worker_policy.subject_per_day,
+            provider_tenant_requests_per_day=worker_policy.tenant_per_day,
+            provider_tenant_requests_per_month=worker_policy.tenant_per_month,
+            provider_subject_max_concurrent=worker_policy.subject_max_concurrent,
+            provider_tenant_max_concurrent=worker_policy.tenant_max_concurrent,
+            provider_request_lease_s=worker_policy.lease_s,
+            provider_request_reservation_micros=worker_policy.reservation_micros,
+            provider_daily_budget_micros=worker_policy.daily_budget_micros,
+            provider_monthly_budget_micros=worker_policy.monthly_budget_micros,
+        ),
+        object(),
+        service="memory_outbox",
+    )
+    assert isinstance(worker_gate, EmbeddingServiceAdmission)
     with pytest.raises(ProviderServiceUnavailable, match="unsupported"):
         build_embedding_service_admission(
             SimpleNamespace(embed_provider="unknown"),

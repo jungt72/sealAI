@@ -352,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     import sys
 
     from sealai_v2.config.settings import Settings
-    from sealai_v2.db.engine import make_engine, make_sessionmaker
+    from sealai_v2.db.engine import make_worker_sessionmaker
 
     parser = argparse.ArgumentParser(prog="sealai_v2.memory.outbox_worker")
     parser.add_argument("command", choices=["drain", "health"])
@@ -360,11 +360,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings()
-    if not settings.database_url:
+    if not settings.worker_database_url:
         sys.exit(
-            "SEALAI_V2_DATABASE_URL not set — the outbox worker needs durable storage"
+            "SEALAI_V2_WORKER_DATABASE_URL not set — the outbox worker needs durable storage"
         )
-    sm = make_sessionmaker(make_engine(settings.database_url))
+    sm = make_worker_sessionmaker(settings)
 
     if args.command == "health":
         print(outbox_health(sm))

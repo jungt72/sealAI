@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from sealai_v2.config.settings import Settings
+from sealai_v2.db.engine import bind_database_scope
 from sealai_v2.knowledge.fachkarten import _DEFAULT_FILE, load_fachkarten
 from sealai_v2.knowledge.ledger import (
     GLOBAL_KNOWLEDGE_TENANT,
@@ -48,7 +49,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sealai_v2.knowledge.bootstrap")
     parser.add_argument("--seed", type=Path, default=_DEFAULT_FILE)
     args = parser.parse_args(argv)
-    result = bootstrap_seed(build_knowledge_ledger(Settings()), seed_path=args.seed)
+    with bind_database_scope(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        subject_id="service:release-bootstrap",
+        case_id="knowledge-bootstrap",
+    ):
+        result = bootstrap_seed(build_knowledge_ledger(Settings()), seed_path=args.seed)
     print(result)
     return 0
 

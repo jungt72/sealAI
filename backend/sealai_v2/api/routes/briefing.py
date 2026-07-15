@@ -11,6 +11,7 @@ from sealai_v2.api.deps import (
 )
 from sealai_v2.api.case_artifacts import project_briefing
 from sealai_v2.core.contracts import VerifiedIdentity
+from sealai_v2.db.engine import bind_database_case
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.render.renderer import ArtifactRenderer
 
@@ -31,13 +32,14 @@ async def briefing(
     identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
 ) -> dict:
-    snapshot, art = await project_briefing(
-        pipeline=pipeline,
-        identity=identity,
-        case_id=req.case_id,
-        case_revision=req.case_revision,
-        renderer=_renderer,
-    )
+    with bind_database_case(req.case_id):
+        snapshot, art = await project_briefing(
+            pipeline=pipeline,
+            identity=identity,
+            case_id=req.case_id,
+            case_revision=req.case_revision,
+            renderer=_renderer,
+        )
     return {
         "kind": art.kind,
         "title": art.title,

@@ -34,6 +34,7 @@ from sealai_v2.core.contracts import (
     SessionContext,
     VerifiedIdentity,
 )
+from sealai_v2.db.engine import bind_database_case
 from sealai_v2.pipeline.pipeline import (
     Pipeline,
     ProductModeUnavailable,
@@ -85,17 +86,19 @@ async def _run_pipeline(
 ):
     # Production flag baseline from settings (tunable, not hardcoded). Eval columns stay
     # harness-constructed; the pipeline `or Flags()` fallback (flags_off) is untouched.
-    return await pipeline.run(
-        req.message,
-        tenant=TenantContext(identity.tenant_id),
-        session=SessionContext(
-            session_id=req.case_id or identity.session_id,
-            owner_subject=identity.subject,
-        ),
-        flags=flags_from_settings(settings),
-        progress=progress,
-        token_sink=token_sink,
-    )
+    case_id = req.case_id or identity.session_id
+    with bind_database_case(case_id):
+        return await pipeline.run(
+            req.message,
+            tenant=TenantContext(identity.tenant_id),
+            session=SessionContext(
+                session_id=case_id,
+                owner_subject=identity.subject,
+            ),
+            flags=flags_from_settings(settings),
+            progress=progress,
+            token_sink=token_sink,
+        )
 
 
 @router.post("/chat")

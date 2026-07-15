@@ -119,9 +119,7 @@ class PostgresContributionStore:
 
 def build_contribution_store(settings) -> ContributionStore:
     if getattr(settings, "database_url", None):
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return PostgresContributionStore(
-            make_sessionmaker(make_engine(settings.database_url))
-        )
+        return PostgresContributionStore(make_api_sessionmaker(settings))
     return InProcessContributionStore()

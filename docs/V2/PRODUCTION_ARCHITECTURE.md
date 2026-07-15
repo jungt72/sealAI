@@ -106,6 +106,11 @@ veraltete Revision liefert einen Konflikt statt eines anderen Snapshots.
 Die Migrationen `20260715_0012` und `20260715_0013` sind absichtlich additiv: nullable Grenzen,
 fingerprint-basierte Quarantaene und PostgreSQL-`NOT VALID`-Constraints. Profiling, Backfill,
 Constraint-Validierung, DB-Rollenwechsel sowie RLS/FORCE RLS gehoeren zu GATE-07 und sind nicht Teil
-des automatischen Deploys. Bis ein transaction-scoped Rollen-/GUC-Adapter, echte PostgreSQL-
-Rollentests, Produktionsprofil und Restore-Beleg vorliegen, bleibt RLS-Cutover blockiert; API und
-Worker duerfen niemals Tabellenowner oder `BYPASSRLS` besitzen.
+des automatischen Deploys. Der lokal implementierte Adapter setzt pro Root-Transaktion eine Rolle
+aus einer fest kompilierten Enum und bindet Tenant, Subject und Case mit
+`set_config(..., true)`-Parametern; fehlender Scope bricht vor Application-SQL ab. API und Worker
+nutzen getrennte URL-/Credential-Konfigurationen, und der Worker kann nur seine feste NOLOGIN-Rolle
+waehlen. Der Aktivierungsschalter bleibt default-off. Bis echte ephemere PostgreSQL-Laufevidenz,
+Produktionsprofil, Restore-Beleg, geprueftes Mapping, Rollen/Grants und Exact-Image-Deploy vorliegen,
+bleibt RLS-Cutover GATE-07/GATE-08-blockiert; API und Worker duerfen niemals Tabellenowner oder
+`BYPASSRLS` besitzen.

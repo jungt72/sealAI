@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException
@@ -69,19 +70,38 @@ def get_pipeline() -> Pipeline:
     return build_pipeline(s, client_for=build_client_factory(s))
 
 
-def current_identity(
+async def current_identity(
     authorization: str | None = Header(default=None),
+    database_case_id: str | None = Header(
+        default=None,
+        alias="X-SealAI-Case-Id",
+        max_length=255,
+        pattern=r"^[A-Za-z0-9._~-]+$",
+    ),
     validator: AuthValidator = Depends(get_validator),
-) -> VerifiedIdentity:
+) -> AsyncIterator[VerifiedIdentity]:
     """P0: identity from the VERIFIED token only — never a client header/param."""
     if not authorization or not authorization.startswith("Bearer "):
         record_auth_denial("missing_bearer")
         raise HTTPException(status_code=401, detail="missing bearer token")
     try:
-        return validator.validate(authorization[len("Bearer ") :])
+        identity = await run_in_threadpool(
+            validator.validate, authorization[len("Bearer ") :]
+        )
     except AuthError:
         record_auth_denial("invalid_token")
         raise HTTPException(status_code=401, detail="invalid token") from None
+    from sealai_v2.db.engine import bind_database_scope
+
+    # Async dependency context is inherited by run_in_threadpool and request-created tasks. The
+    # verified token remains the sole tenant/subject authority. The optional case header is only
+    # bounded transaction context; authorization still comes from owner-scoped repository checks.
+    with bind_database_scope(
+        tenant_id=identity.tenant_id,
+        subject_id=identity.subject,
+        case_id=database_case_id or identity.session_id,
+    ):
+        yield identity
 
 
 @lru_cache(maxsize=1)
@@ -102,10 +122,10 @@ def get_partner_registry():
     failure propagates instead of silently creating a process-local registry."""
     s = get_settings()
     if s.database_url:
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
         from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
 
-        return PostgresPartnerRegistry(make_sessionmaker(make_engine(s.database_url)))
+        return PostgresPartnerRegistry(make_api_sessionmaker(s))
     from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 
     return InProcessPartnerRegistry()
@@ -116,14 +136,12 @@ def get_capability_store():
     """Technical manufacturer capabilities, separate from commercial partners."""
     s = get_settings()
     if s.database_url:
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
         from sealai_v2.db.manufacturer_capability import (
             PostgresManufacturerCapabilityStore,
         )
 
-        return PostgresManufacturerCapabilityStore(
-            make_sessionmaker(make_engine(s.database_url))
-        )
+        return PostgresManufacturerCapabilityStore(make_api_sessionmaker(s))
     from sealai_v2.knowledge.manufacturer_capability import (
         InProcessManufacturerCapabilityStore,
     )
@@ -137,9 +155,9 @@ def get_case_decision_store():
     s = get_settings()
     if s.database_url:
         from sealai_v2.db.case_decisions import PostgresCaseDecisionStore
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return PostgresCaseDecisionStore(make_sessionmaker(make_engine(s.database_url)))
+        return PostgresCaseDecisionStore(make_api_sessionmaker(s))
     from sealai_v2.core.decision_records import InProcessCaseDecisionStore
 
     return InProcessCaseDecisionStore()
@@ -159,12 +177,10 @@ def get_interview_shadow_store():
             },
         )
     if settings.database_url:
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
         from sealai_v2.db.interview import PostgresInterviewRepository
 
-        return PostgresInterviewRepository(
-            make_sessionmaker(make_engine(settings.database_url))
-        )
+        return PostgresInterviewRepository(make_api_sessionmaker(settings))
     pipeline = get_pipeline()
     service = pipeline.adaptive_interview_service
     if service is not None:
@@ -188,24 +204,36 @@ def get_knowledge_ledger():
     return build_knowledge_ledger(settings)
 
 
-def require_platform_owner(
+async def require_platform_owner(
     identity: VerifiedIdentity = Depends(current_identity),
     settings: Settings = Depends(get_settings),
-) -> VerifiedIdentity:
+) -> AsyncIterator[VerifiedIdentity]:
     """Global business-owner authority; tenant admins and legacy ``admin`` are insufficient."""
     if settings.auth_platform_owner_role not in identity.roles:
         raise HTTPException(status_code=403, detail="platform owner role required")
-    return identity
+    if not settings.database_rls_scope_enabled:
+        yield identity
+        return
+    from sealai_v2.db.engine import DatabaseRuntimeRole, elevate_database_role
+
+    with elevate_database_role(DatabaseRuntimeRole.PLATFORM_OWNER):
+        yield identity
 
 
-def require_system_operator(
+async def require_system_operator(
     identity: VerifiedIdentity = Depends(current_identity),
     settings: Settings = Depends(get_settings),
-) -> VerifiedIdentity:
+) -> AsyncIterator[VerifiedIdentity]:
     """Operational telemetry/control role, separate from business and review authority."""
     if settings.auth_system_operator_role not in identity.roles:
         raise HTTPException(status_code=403, detail="system operator role required")
-    return identity
+    if not settings.database_rls_scope_enabled:
+        yield identity
+        return
+    from sealai_v2.db.engine import DatabaseRuntimeRole, elevate_database_role
+
+    with elevate_database_role(DatabaseRuntimeRole.SYSTEM_OPERATOR):
+        yield identity
 
 
 def require_manufacturer(
@@ -309,11 +337,9 @@ def get_cost_control_store():
     if not settings.database_url:
         return None
     try:
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return PostgresCostControlStore(
-            make_sessionmaker(make_engine(settings.database_url))
-        )
+        return PostgresCostControlStore(make_api_sessionmaker(settings))
     except Exception:
         raise HTTPException(
             status_code=503, detail="provider cost control unavailable"

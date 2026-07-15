@@ -140,7 +140,7 @@ def build_lead_store(settings) -> LeadStore:
     else the in-process store (eval/CI hermetic). A configured database is authoritative: adapter
     construction failures propagate and can never create a process-local production fork."""
     if getattr(settings, "database_url", None):
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return PostgresLeadStore(make_sessionmaker(make_engine(settings.database_url)))
+        return PostgresLeadStore(make_api_sessionmaker(settings))
     return InProcessLeadStore()

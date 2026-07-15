@@ -12,8 +12,9 @@ objective: >-
   nicht-bypassenden Datenbankrollen sowie FORCE RLS beweisen.
 current_state: >-
   Code und additive Migrationen sind vorbereitet. Produktionsprofil, Backup, Mapping,
-  Constraint-Validierung, Runtime-GUC/Role-Adapter, echte PostgreSQL-Rollentests und produktive
-  Rollenbelegung sind nicht belegt. GATE-07 bleibt geschlossen.
+  Constraint-Validierung, echte PostgreSQL-Laufevidenz und produktive Rollenbelegung sind nicht
+  belegt. Der transaction-scoped Runtime-GUC/Role-Adapter und getrennte API-/Worker-DSNs sind lokal
+  implementiert, default-off und nicht deployt. GATE-07 bleibt geschlossen.
 exact_actions:
   - 0012/0013 in einer isolierten, produktionsähnlichen PostgreSQL-Kopie migrieren
   - ausschließlich aggregiertes Profiling erzeugen und peer-reviewen
@@ -26,7 +27,7 @@ exact_actions:
   - API-, Worker-, Tenant-Admin-, Platform-Owner- und Negativtests ausführen
 exact_commands_sanitized:
   - "psql '<TEST_DSN>' -v ON_ERROR_STOP=1 -f ops/postgres/gate07-data-authority-profile.sql"
-  - "SEALAI_TEST_POSTGRES_DSN='<EPHEMERAL_TEST_DSN>' SEALAI_TEST_POSTGRES_CONFIRM=EPHEMERAL_ONLY pytest -q backend/sealai_v2/tests/test_postgres_gate07_integration.py"
+  - "SEALAI_TEST_POSTGRES_DSN='<EPHEMERAL_TEST_DSN>' SEALAI_TEST_POSTGRES_CONFIRM=EPHEMERAL_ONLY pytest -q backend/sealai_v2/tests/test_postgres_gate07_integration.py backend/sealai_v2/tests/test_postgres_runtime_scope_integration.py"
   - "pg_dump '<PRODUCTION_DSN>' --format=custom --file='<IMMUTABLE_BACKUP_PATH>'"
   - "psql '<PRODUCTION_DSN>' -v gate07_approved=true -v target_database='<EXPECTED_DB>' -f ops/postgres/gate07-quarantine-ambiguous.sql"
   - "psql '<PRODUCTION_DSN>' -v ON_ERROR_STOP=1 -c 'ALTER TABLE <TABLE> VALIDATE CONSTRAINT <REVIEWED_CONSTRAINT>'"
@@ -103,18 +104,37 @@ stop_conditions:
    setzt und Connection-Pool-Resettests bestanden hat. FORCE RLS verhindert den Tabellenowner-
    Bypass; API und Worker dürfen niemals Tabellenowner sein.
 
+## Lokal implementierter Runtime-Vertrag
+
+- `db/engine.py` akzeptiert ausschließlich die fest kompilierte Rollenmenge `sealai_api`,
+  `sealai_worker`, `sealai_tenant_admin`, `sealai_platform_owner` und `sealai_system_operator`.
+  Rollenbezeichner stammen nie aus JWT, Request oder Environment.
+- Jede PostgreSQL-Root-Transaktion setzt die Rolle per statischem `SET LOCAL ROLE` und bindet
+  `app.tenant_id`, `app.subject_id` und `app.case_id` ausschließlich als Parameter an
+  `set_config(..., true)`. Fehlender Scope, fremde Prozessrolle oder Rollenaktivierungsfehler brechen
+  vor Application-SQL ab. Commit/Rollback entfernt Rolle und GUCs vor Pool-Reuse.
+- API und Worker haben getrennte Konfigurationswerte und Credentials. Der Worker-Container
+  überschreibt den geerbten API-DSN mit leerem Wert und erhält nur
+  `SEALAI_V2_WORKER_DATABASE_URL`; die Worker-Fabrik kann ausschließlich `sealai_worker` wählen.
+- `SEALAI_V2_DATABASE_RLS_SCOPE_ENABLED` bleibt default `false`. Eine Aktivierung ist eine
+  GATE-07/GATE-08-Mutation und darf erst nach Restore-, Rollen-, Grant-, Policy- und Exact-Image-
+  Prüfung erfolgen.
+- Der opt-in Integrationstest migriert eine nach Name und Bestätigung geschützte, leere ephemere
+  PostgreSQL-Datenbank mit den echten Alembic-Revisionen, validiert die Shadow-Constraints, führt
+  den exakten Transaktionskörper des Cutover-Skripts aus und prüft Cross-Tenant/Cross-Owner sowie
+  Pool-Reuse. Ohne expliziten Test-DSN wird er sichtbar übersprungen; SQLite oder Mocks zählen nie
+  als RLS-Beleg.
+
 ## Derzeitige harte Blocker
 
 - Kein aktuelles aggregiertes Produktionsprofil und kein Restore-getestetes immutable Backup.
 - Kein menschlich doppelt geprüftes Legacy-Ownership-Mapping.
-- Der transaction-scoped PostgreSQL-Rollen-/GUC-Adapter ist noch nicht implementiert; eine
-  RLS-Aktivierung würde die laufenden Repository-Pfade blockieren oder zu unsicherem Shared-Role-
-  Betrieb führen.
-- Der opt-in echte PostgreSQL-Test ist vorbereitet, aber in diesem Arbeitslauf nicht ausgeführt.
+- Der Adapter ist lokal implementiert, aber weder gegen eine explizit bereitgestellte ephemere
+  PostgreSQL-Engine ausgeführt noch als exaktes Produktionsartefakt deployt.
 - Produktive Keycloak-/DB-Rollenbelegung und Platform-Owner-Datenschutzzweck sind nicht freigegeben.
 - Service- und beide Outbox-Worker sind noch nicht mit getrennten produktionsgleichen DB-Rollen
   gegen FORCE RLS verifiziert.
 
-Deshalb lautet der zulässige DATA-001-Status: **IN_PROGRESS / GATE-07 BLOCKED**, nicht
-`IMPLEMENTED_NOT_DEPLOYED` oder `VERIFIED`. Die lokalen Fail-closed-Anwendungspfade und
-Cutover-Artefakte ersetzen weder den noch fehlenden Runtime-Adapter noch einen RLS-Nachweis.
+Deshalb lautet der zulässige DATA-001-Status: **IMPLEMENTED_NOT_DEPLOYED / GATE-07 BLOCKED**, niemals
+`VERIFIED`. Der lokale Adapter und die Cutover-Artefakte ersetzen weder Produktionsprofil, Backup,
+Restore, menschlich geprüftes Mapping, echte PostgreSQL-Laufevidenz noch einen Deploy-/RLS-Nachweis.

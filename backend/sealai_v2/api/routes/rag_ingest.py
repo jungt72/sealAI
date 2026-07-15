@@ -47,6 +47,7 @@ from sealai_v2.api.deps import get_cost_control_store, get_settings
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import ModelConfig, VerifiedIdentity
 from sealai_v2.core.fachkarte_extract import FachkarteExtractor
+from sealai_v2.db.engine import bind_database_scope
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, _card
 from sealai_v2.knowledge.ledger import (
     GLOBAL_KNOWLEDGE_TENANT,
@@ -156,21 +157,26 @@ async def _attempt(
 
     catalog = FachkartenCatalog(cards=(card,))
     try:
-        result = build_knowledge_ledger(settings).replace_catalog(
-            KnowledgeDocumentInput(
-                tenant_id=GLOBAL_KNOWLEDGE_TENANT,
-                source_type="paperless",
-                source_id=document_id,
-                source_uri=source,
-                object_key=source,
-                title=source.partition(":")[2] or source,
-                content=text.encode("utf-8"),
-                authority="external_unreviewed",
-            ),
-            catalog,
-            now=_utc_now(),
-            actor="paperless-webhook",
-        )
+        with bind_database_scope(
+            tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+            subject_id="service:paperless-webhook",
+            case_id="paperless-rag-ingest",
+        ):
+            result = build_knowledge_ledger(settings).replace_catalog(
+                KnowledgeDocumentInput(
+                    tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+                    source_type="paperless",
+                    source_id=document_id,
+                    source_uri=source,
+                    object_key=source,
+                    title=source.partition(":")[2] or source,
+                    content=text.encode("utf-8"),
+                    authority="external_unreviewed",
+                ),
+                catalog,
+                now=_utc_now(),
+                actor="paperless-webhook",
+            )
     except Exception:  # noqa: BLE001 - a transient DB failure is retryable
         return None, "knowledge_ledger_commit_failed"
 
@@ -248,11 +254,16 @@ async def ingest(
         email_verified=True,
     )
     try:
-        decision = await run_in_threadpool(
-            cost_store.admit,
-            service_identity,
-            CostControlPolicy.from_settings(settings),
-        )
+        with bind_database_scope(
+            tenant_id=service_identity.tenant_id,
+            subject_id=service_identity.subject,
+            case_id=service_identity.session_id,
+        ):
+            decision = await run_in_threadpool(
+                cost_store.admit,
+                service_identity,
+                CostControlPolicy.from_settings(settings),
+            )
     except Exception:
         raise HTTPException(
             status_code=503, detail="provider cost control unavailable"
@@ -315,9 +326,16 @@ async def ingest(
         raise
     finally:
         try:
-            await run_in_threadpool(
-                cost_store.release, decision.admission.request_id, outcome=outcome
-            )
+            with bind_database_scope(
+                tenant_id=service_identity.tenant_id,
+                subject_id=service_identity.subject,
+                case_id=service_identity.session_id,
+            ):
+                await run_in_threadpool(
+                    cost_store.release,
+                    decision.admission.request_id,
+                    outcome=outcome,
+                )
         except Exception as exc:
             _log.error(
                 "event=rag_ingest_admission_release_failed request_ref=%s error_class=%s",

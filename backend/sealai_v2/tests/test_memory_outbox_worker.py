@@ -350,7 +350,7 @@ def test_memory_cli_empty_queue_keeps_paid_gate_and_embedder_lazy(db_url, monkey
         settings_module,
         "Settings",
         lambda: SimpleNamespace(
-            database_url=db_url,
+            worker_database_url=db_url,
             qdrant_url="http://qdrant",
             embed_provider="openai",
             provider_requests_enabled=False,
@@ -384,7 +384,7 @@ def test_memory_cli_upsert_checks_kill_switch_before_remote_embedder(
         settings_module,
         "Settings",
         lambda: SimpleNamespace(
-            database_url=db_url,
+            worker_database_url=db_url,
             qdrant_url="http://qdrant",
             embed_provider="openai",
             provider_requests_enabled=False,

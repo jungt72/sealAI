@@ -92,11 +92,46 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   v2_sessions, v2_messages, v2_facts, v2_derived, v2_interview_state,
   v2_durable_facts, v2_memory_items, v2_leads
 TO sealai_api;
+-- SET LOCAL ROLE drops the login role's incidental privileges. Keep the application grant
+-- explicit so enabling the adapter cannot break an unrelated V2 repository or rely on table
+-- ownership. RLS remains the second boundary on the protected tables below.
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  v2_case_records, v2_case_snapshots, v2_contributions, v2_decision_approvals,
+  v2_decision_records, v2_hersteller_partner, v2_interview_shadow_decisions,
+  v2_knowledge_authority_epochs, v2_knowledge_claims, v2_knowledge_documents,
+  v2_knowledge_outbox, v2_knowledge_reviews, v2_legal_acceptance,
+  v2_manufacturer_capability_profiles, v2_manufacturer_capability_reviews,
+  v2_memory_events, v2_memory_outbox, v2_memory_sources,
+  v2_provider_admissions, v2_provider_quota_windows
+TO sealai_api;
+GRANT SELECT, UPDATE ON v2_knowledge_claims, v2_knowledge_outbox TO sealai_worker;
+GRANT SELECT, DELETE ON v2_memory_items, v2_memory_sources TO sealai_worker;
+GRANT SELECT, INSERT ON v2_memory_events TO sealai_worker;
+GRANT SELECT, INSERT, UPDATE ON
+  v2_memory_outbox, v2_provider_admissions, v2_provider_quota_windows
+TO sealai_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   v2_sessions, v2_messages, v2_facts, v2_derived, v2_interview_state,
   v2_durable_facts, v2_memory_items, v2_leads
 TO sealai_tenant_admin;
 GRANT SELECT ON v2_leads TO sealai_platform_owner;
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  v2_contributions, v2_hersteller_partner, v2_manufacturer_capability_profiles,
+  v2_manufacturer_capability_reviews
+TO sealai_platform_owner;
+GRANT SELECT ON
+  v2_interview_shadow_decisions, v2_memory_outbox, v2_knowledge_outbox,
+  v2_provider_admissions, v2_provider_quota_windows
+TO sealai_system_operator;
+DO $sequence_grants$
+BEGIN
+  EXECUTE format(
+    'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO '
+    'sealai_api, sealai_worker, sealai_platform_owner',
+    current_schema()
+  );
+END
+$sequence_grants$;
 
 ALTER TABLE v2_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE v2_messages ENABLE ROW LEVEL SECURITY;
@@ -185,6 +220,14 @@ BEGIN
   END LOOP;
 END
 $direct_owner_tables$;
+
+-- The worker may purge only the tenant currently bound by its transaction-scoped adapter. Queue
+-- tables remain non-RLS control planes; they contain the trusted tenant key used to open a bounded
+-- worker scope. No worker policy exists on sessions, messages, facts, derived state, or leads.
+DROP POLICY IF EXISTS worker_tenant ON v2_memory_items;
+CREATE POLICY worker_tenant ON v2_memory_items TO sealai_worker
+  USING (tenant_id = current_setting('app.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true));
 
 DROP POLICY IF EXISTS api_owner ON v2_leads;
 CREATE POLICY api_owner ON v2_leads TO sealai_api

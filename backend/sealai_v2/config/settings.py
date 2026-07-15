@@ -11,6 +11,7 @@ import re
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 # Cache activation is implemented only through the request-bound Postgres authority store. The
@@ -359,6 +360,26 @@ class Settings(BaseSettings):
             raise ValueError("daily provider budget cannot exceed monthly budget")
         if not 1024 <= self.api_max_request_body_bytes <= 1_048_576:
             raise ValueError("API request-body bound must be between 1 KiB and 1 MiB")
+        configured_database_urls = tuple(
+            value for value in (self.database_url, self.worker_database_url) if value
+        )
+        if self.database_rls_scope_enabled:
+            if not configured_database_urls:
+                raise ValueError(
+                    "database RLS scoping requires an API or worker PostgreSQL URL"
+                )
+            if any(
+                not make_url(value).drivername.startswith("postgresql")
+                for value in configured_database_urls
+            ):
+                raise ValueError("database RLS scoping requires PostgreSQL URLs")
+        if self.database_url and self.worker_database_url:
+            api_url = make_url(self.database_url)
+            worker_url = make_url(self.worker_database_url)
+            if not api_url.username or not worker_url.username:
+                raise ValueError("API and worker database URLs require explicit users")
+            if api_url.username == worker_url.username:
+                raise ValueError("API and worker database users must be distinct")
         if self.provider_requests_enabled:
             if not self.database_url:
                 raise ValueError(
@@ -497,6 +518,13 @@ class Settings(BaseSettings):
     # swap behind the same Protocols (M3 lazy-adapter pattern); value is never logged.
     # Env: SEALAI_V2_DATABASE_URL (e.g. postgresql+psycopg2://…@postgres:5432/sealai_v2).
     database_url: str | None = None
+    # GATE-07 runtime cutover. The adapter is implemented but deliberately default-OFF until the
+    # roles, grants, RLS policies, restore evidence, and exact artifact are authorized. When enabled,
+    # every API transaction requires a verified request scope and uses SET LOCAL ROLE plus
+    # transaction-local GUCs. The outbox process receives a separate URL/credential through its
+    # service-only environment and can select only the fixed worker role.
+    database_rls_scope_enabled: bool = False
+    worker_database_url: str | None = None
     # AUTH-003/GOV-001: disjoint role names. No legacy ``admin`` alias is accepted at runtime;
     # production mapping/cutover remains an explicit GATE-06/GATE-07 operation.
     auth_tenant_admin_role: str = "tenant_admin"

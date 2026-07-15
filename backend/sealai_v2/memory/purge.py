@@ -44,14 +44,18 @@ class PurgeResult:
 
 
 def reap_purge_pending(
-    session_factory: sessionmaker, *, now: str, batch_size: int = 100
+    session_factory: sessionmaker,
+    *,
+    now: str,
+    batch_size: int = 100,
+    tenant_id: str | None = None,
 ) -> PurgeResult:
     """One reap pass: hard-delete every ``deleted_pending_purge`` item whose ``purge_after`` has
     elapsed. Safe to call repeatedly (periodic CLI invocation — same convention as
     ``outbox_worker.drain_outbox``; this codebase has no always-on task scheduler)."""
     reaped = 0
     with session_factory() as s:
-        rows = s.scalars(
+        statement = (
             select(V2MemoryItem)
             .where(V2MemoryItem.status == "deleted_pending_purge")
             .where(V2MemoryItem.ownership_state == "owned")
@@ -59,7 +63,10 @@ def reap_purge_pending(
             .where(V2MemoryItem.purge_after <= now)
             .order_by(V2MemoryItem.id)
             .limit(batch_size)
-        ).all()
+        )
+        if tenant_id is not None:
+            statement = statement.where(V2MemoryItem.tenant_id == tenant_id)
+        rows = s.scalars(statement).all()
         for row in rows:
             item_id = row.id
             tenant_id = row.tenant_id
@@ -99,7 +106,11 @@ def main(argv: list[str] | None = None) -> int:
     from datetime import datetime, timezone
 
     from sealai_v2.config.settings import Settings
-    from sealai_v2.db.engine import make_engine, make_sessionmaker
+    from sealai_v2.db.engine import (
+        DatabaseRuntimeRole,
+        bind_database_scope,
+        make_worker_sessionmaker,
+    )
 
     parser = argparse.ArgumentParser(prog="sealai_v2.memory.purge")
     parser.add_argument("command", choices=["reap"])
@@ -107,15 +118,43 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = Settings()
-    if not settings.database_url:
+    if not settings.worker_database_url:
         sys.exit(
-            "SEALAI_V2_DATABASE_URL not set — the purge reaper needs durable storage"
+            "SEALAI_V2_WORKER_DATABASE_URL not set — the purge reaper needs durable storage"
         )
-    sm = make_sessionmaker(make_engine(settings.database_url))
-
-    result = reap_purge_pending(
-        sm, now=datetime.now(timezone.utc).isoformat(), batch_size=args.batch_size
-    )
+    sm = make_worker_sessionmaker(settings)
+    now = datetime.now(timezone.utc).isoformat()
+    if settings.database_rls_scope_enabled:
+        # The unprotected append-only event queue is the trusted tenant inventory. Each destructive
+        # item scan then runs under a separate worker RLS scope; one transaction can never span
+        # tenants, and the global batch bound is retained.
+        with sm() as session:
+            tenants = tuple(
+                session.scalars(
+                    select(V2MemoryEvent.tenant_id)
+                    .distinct()
+                    .order_by(V2MemoryEvent.tenant_id)
+                ).all()
+            )
+        reaped = 0
+        for tenant_id in tenants:
+            remaining = args.batch_size - reaped
+            if remaining <= 0:
+                break
+            with bind_database_scope(
+                tenant_id=tenant_id,
+                subject_id=_PURGE_ACTOR,
+                role=DatabaseRuntimeRole.WORKER,
+            ):
+                reaped += reap_purge_pending(
+                    sm,
+                    now=now,
+                    batch_size=remaining,
+                    tenant_id=tenant_id,
+                ).reaped
+        result = PurgeResult(reaped=reaped)
+    else:
+        result = reap_purge_pending(sm, now=now, batch_size=args.batch_size)
     print(result)
     return 0
 

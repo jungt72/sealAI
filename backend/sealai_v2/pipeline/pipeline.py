@@ -211,7 +211,7 @@ def _build_partner_registry(settings: Settings):
     if settings.manufacturer_fit_enabled:
         if not settings.database_url:
             raise RuntimeError("manufacturer fit requires Postgres authority")
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
         from sealai_v2.db.manufacturer_capability import (
             PostgresManufacturerCapabilityStore,
         )
@@ -219,7 +219,7 @@ def _build_partner_registry(settings: Settings):
             VerifiedCapabilityPartnerRegistry,
         )
 
-        session_factory = make_sessionmaker(make_engine(settings.database_url))
+        session_factory = make_api_sessionmaker(settings)
         return VerifiedCapabilityPartnerRegistry(
             PostgresManufacturerCapabilityStore(session_factory)
         )
@@ -2351,9 +2351,9 @@ def build_pipeline(
             # Lazy import: the offline path never touches SQLAlchemy.
             from sealai_v2.db.conversation_memory import PostgresConversationMemory
             from sealai_v2.db.cross_session_memory import PostgresCrossSessionMemory
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
+            from sealai_v2.db.engine import make_api_sessionmaker
 
-            session_factory = make_sessionmaker(make_engine(settings.database_url))
+            session_factory = make_api_sessionmaker(settings)
             memory = PostgresConversationMemory(
                 session_factory, window_turns=settings.memory_window_turns
             )
@@ -2374,11 +2374,9 @@ def build_pipeline(
 
     knowledge_authority = None
     if settings.database_url:
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        authority_session_factory = session_factory or make_sessionmaker(
-            make_engine(settings.database_url)
-        )
+        authority_session_factory = session_factory or make_api_sessionmaker(settings)
         knowledge_authority = PostgresKnowledgeAuthority(authority_session_factory)
 
     adaptive_interview_service: AdaptiveInterviewService | None = None

@@ -478,9 +478,7 @@ def build_memory_store(settings) -> MemoryStore:
     in-process store (eval/CI hermetic). Once a database URL is configured, adapter failure
     propagates; production can never fork authority into process memory."""
     if getattr(settings, "database_url", None):
-        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_api_sessionmaker
 
-        return PostgresMemoryStore(
-            make_sessionmaker(make_engine(settings.database_url))
-        )
+        return PostgresMemoryStore(make_api_sessionmaker(settings))
     return InProcessMemoryStore()

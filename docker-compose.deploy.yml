@@ -524,6 +524,9 @@ services:
       # postgres instance (own tables, own snapshot/restore unit; the V1 `sealai` DB is never
       # touched). Unset → the in-process store (offline). Values are never logged.
       SEALAI_V2_DATABASE_URL: postgresql+psycopg2://${SEALAI_V2_DB_USER:?SEALAI_V2_DB_USER required - use the dedicated V2 database role}:${SEALAI_V2_DB_PASSWORD:?SEALAI_V2_DB_PASSWORD required - provision only through GATE-02/GATE-07}@postgres:5432/sealai_v2
+      # Implemented locally, intentionally OFF until the separately approved GATE-07 role/grant/RLS
+      # cutover and GATE-08 exact-artifact deployment. ON makes missing request scope fail closed.
+      SEALAI_V2_DATABASE_RLS_SCOPE_ENABLED: ${SEALAI_V2_DATABASE_RLS_SCOPE_ENABLED:-false}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
       SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge_v1}
       SEALAI_V2_MEMORY_QDRANT_COLLECTION: ${SEALAI_V2_MEMORY_QDRANT_COLLECTION:-sealai_v2_memory}
@@ -672,6 +675,11 @@ services:
     - v2
     extends:
       service: backend-v2
+    environment:
+      # Do not retain the API credential in the worker process. Compose service inheritance is
+      # explicitly overwritten; only the distinct worker login is passed to worker code.
+      SEALAI_V2_DATABASE_URL: ""
+      SEALAI_V2_WORKER_DATABASE_URL: postgresql+psycopg2://${SEALAI_V2_WORKER_DB_USER:?SEALAI_V2_WORKER_DB_USER required - provision only through GATE-02/GATE-07}:${SEALAI_V2_WORKER_DB_PASSWORD:?SEALAI_V2_WORKER_DB_PASSWORD required - provision only through GATE-02/GATE-07}@postgres:5432/sealai_v2
     command:
     - python
     - -m

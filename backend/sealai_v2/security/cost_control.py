@@ -352,7 +352,13 @@ def build_embedding_service_admission(
         return None
     if not bool(getattr(settings, "provider_requests_enabled", False)):
         raise ProviderServiceUnavailable("provider requests are disabled")
-    database_url = str(getattr(settings, "database_url", "") or "")
+    # Worker containers deliberately erase the inherited API credential. Their separately scoped
+    # URL is still the same shared Postgres cost authority, reached through the fixed worker role.
+    database_url = str(
+        getattr(settings, "worker_database_url", None)
+        or getattr(settings, "database_url", "")
+        or ""
+    )
     if not database_url.startswith(("postgresql://", "postgresql+")):
         raise ProviderServiceUnavailable(
             "remote embeddings require the shared Postgres admission authority"

@@ -329,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     from sealai_v2.config.settings import Settings
-    from sealai_v2.db.engine import make_engine, make_sessionmaker
+    from sealai_v2.db.engine import make_worker_sessionmaker
     from sealai_v2.knowledge.qdrant_retrieval import (
         _make_client,
         _make_embedder,
@@ -341,9 +341,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=50)
     args = parser.parse_args(argv)
     settings = Settings()
-    if not settings.database_url or not settings.qdrant_url:
+    if not settings.worker_database_url or not settings.qdrant_url:
         raise SystemExit("knowledge outbox requires Postgres and Qdrant")
-    session_factory = make_sessionmaker(make_engine(settings.database_url))
+    session_factory = make_worker_sessionmaker(settings)
     remote = remote_embedding_enabled(settings)
     validate_embedding_worker_limits(
         args.batch_size, settings.outbox_max_attempts, remote=False
