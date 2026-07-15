@@ -31,6 +31,7 @@ _NON_BEHAVIOR_FIELDS = frozenset(
         "l1_provider",
         "verifier_provider",
         "helper_provider",
+        "router_provider",
         "judge_provider",
         "judge_model",
         "judge_temperature",
@@ -89,6 +90,7 @@ def runtime_profile(settings: Settings) -> dict[str, Any]:
     behavior["role_providers"] = {
         "helper": _effective_provider(settings, "helper"),
         "l1": _effective_provider(settings, "l1"),
+        "router": settings.router_provider,
         "verifier": _effective_provider(settings, "verifier"),
     }
     return {"schema_version": PROFILE_SCHEMA_VERSION, "behavior": behavior}

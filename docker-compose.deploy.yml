@@ -165,6 +165,12 @@ services:
       SEALAI_V2_VERIFIER_MODEL: ${SEALAI_V2_VERIFIER_MODEL:-mistral-small-2603}
       SEALAI_V2_HELPER_PROVIDER: ${SEALAI_V2_HELPER_PROVIDER:-mistral}
       SEALAI_V2_HELPER_MODEL: ${SEALAI_V2_HELPER_MODEL:-mistral-small-2603}
+      SEALAI_V2_ROUTER_PROVIDER: ${SEALAI_V2_ROUTER_PROVIDER:-mistral}
+      SEALAI_V2_ROUTER_MODEL: ${SEALAI_V2_ROUTER_MODEL:-ministral-8b-2512}
+      SEALAI_V2_ROUTER_TEMPERATURE: ${SEALAI_V2_ROUTER_TEMPERATURE:-0.0}
+      SEALAI_V2_ROUTER_MAX_OUTPUT_TOKENS: ${SEALAI_V2_ROUTER_MAX_OUTPUT_TOKENS:-96}
+      SEALAI_V2_ROUTER_CONFIDENCE_THRESHOLD: ${SEALAI_V2_ROUTER_CONFIDENCE_THRESHOLD:-0.9}
+      SEALAI_V2_ROUTER_TIMEOUT_S: ${SEALAI_V2_ROUTER_TIMEOUT_S:-4.0}
       SEALAI_V2_JUDGE_PROVIDER: ${SEALAI_V2_JUDGE_PROVIDER:-openai}
       SEALAI_V2_JUDGE_MODEL: ${SEALAI_V2_JUDGE_MODEL:-gpt-5.4-mini-2026-03-17}
       SEALAI_V2_EVAL_JUDGE_REASONING_EFFORT: ${SEALAI_V2_EVAL_JUDGE_REASONING_EFFORT:-low}
@@ -271,6 +277,7 @@ services:
       # here. Defaults match settings.py's own defaults, so this is additive-only, zero behavior
       # change until the owner explicitly sets both true in .env.prod.
       SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED: ${SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED:-false}
+      SEALAI_V2_SEMANTIC_ROUTER_ENABLED: ${SEALAI_V2_SEMANTIC_ROUTER_ENABLED:-false}
       SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED: ${SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED:-false}
       # Phase 3A (PR #202): smalltalk-only live token streaming. Same compose-passthrough gap as
       # the two flags directly above -- settings.py defaults False, but a .env.prod override would

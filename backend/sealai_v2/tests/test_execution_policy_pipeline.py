@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from sealai_v2.core.contracts import (
     GroundingFact,
@@ -14,6 +15,7 @@ from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.semantic_router import SemanticRouter
 from sealai_v2.orchestration.answer_cache import InProcessExactAnswerCache
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.tenant import TenantContext
@@ -130,6 +132,36 @@ def test_low_risk_knowledge_is_one_standard_call_without_helper():
     assert result.turn_state.verification_mode == "deterministic"
     assert "# Fachantwort-Profil" in standard.systems[0]
     assert "Einordnung und Werkstoffstruktur" in standard.systems[0]
+
+
+def test_unclassified_regional_greeting_uses_bounded_semantic_router():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
+    router_client = _RecordingClient(
+        json.dumps(
+            {
+                "primary_route": "smalltalk_navigation",
+                "speech_act": "social",
+                "conversation_relation": "new_topic",
+                "case_bound": False,
+                "contains_technical_request": False,
+                "confidence": 0.99,
+            }
+        )
+    )
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+
+    result = asyncio.run(pipeline.run("Moin", tenant=TenantContext("tenant-1")))
+
+    assert result.route_name == "smalltalk_navigation"
+    assert len(router_client.calls) == 1
+    assert router_client.calls[0].model == "ministral-8b-2512"
+    assert helper.calls == []
+    assert frontier.calls == []
+    assert len(standard.calls) == 1
 
 
 def test_deep_well_sourced_knowledge_stays_one_standard_call():
