@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -104,6 +105,8 @@ METRIC_NAMES = {
     ),
     "backup_receipt_valid": "sealai_backup_receipt_valid",
 }
+DR_RECEIPT_HELPER = Path(__file__).resolve().with_name("dr_receipts.py")
+_DR_RECEIPTS_MODULE = None
 
 
 class DrError(RuntimeError):
@@ -1133,15 +1136,74 @@ def _validate_local_evidence_common(
     return evidence
 
 
+def _dr_receipts_module():
+    global _DR_RECEIPTS_MODULE
+    if _DR_RECEIPTS_MODULE is not None:
+        return _DR_RECEIPTS_MODULE
+    try:
+        metadata = DR_RECEIPT_HELPER.lstat()
+    except OSError as exc:
+        raise DrError("receipt_verifier_unavailable") from exc
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_nlink != 1
+        or metadata.st_uid not in {0, os.geteuid()}
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        _fail("receipt_verifier_unsafe")
+    spec = importlib.util.spec_from_file_location(
+        "sealai_dr_recovery_receipts", DR_RECEIPT_HELPER
+    )
+    if spec is None or spec.loader is None:
+        _fail("receipt_verifier_unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # noqa: BLE001 - an unusable verifier must fail closed
+        raise DrError("receipt_verifier_unavailable") from exc
+    _DR_RECEIPTS_MODULE = module
+    return module
+
+
+def _verify_imported_external_receipt(
+    imported_receipt_path: Path | None,
+    trust_policy_path: Path | None,
+    *,
+    kind: str,
+    expected_subject: dict[str, Any],
+    now: dt.datetime | None,
+) -> dict[str, Any]:
+    if imported_receipt_path is None and trust_policy_path is None:
+        _fail("external_receipt_required")
+    if imported_receipt_path is None or trust_policy_path is None:
+        _fail("external_receipt_configuration_incomplete")
+    receipts = _dr_receipts_module()
+    try:
+        verified = receipts.verify_imported_receipt(
+            imported_receipt_path,
+            trust_policy_path,
+            expected_kind=kind,
+            now=now,
+        )
+    except receipts.ReceiptError as exc:
+        raise DrError("external_receipt_invalid") from exc
+    if verified.payload["subject"] != expected_subject:
+        _fail("external_receipt_subject_mismatch")
+    return verified.payload
+
+
 def verify_offsite_receipt(
     root: Path,
     receipt_path: Path,
     gate_receipt_path: Path,
     *,
+    imported_receipt_path: Path | None = None,
+    trust_policy_path: Path | None = None,
     now: dt.datetime | None = None,
     required_uid: int = 0,
-) -> NoReturn:
-    """Validate local observations, then block without an external importer."""
+) -> dict[str, Any]:
+    """Validate local observations and consume only a trusted imported DSSE receipt."""
 
     evidence = _validate_local_evidence_common(
         root,
@@ -1175,7 +1237,25 @@ def verify_offsite_receipt(
     ):
         if evidence[key] is not True:
             _fail("offsite_observation_incomplete")
-    _fail("external_receipt_required")
+    provenance = evidence["provenance"]
+    return _verify_imported_external_receipt(
+        imported_receipt_path,
+        trust_policy_path,
+        kind="dr_offsite_set",
+        expected_subject={
+            "manifest_sha256": evidence["manifest_sha256"],
+            "set_id_sha256": evidence["set_id_sha256"],
+            "snapshot_id_sha256": evidence["snapshot_id_sha256"],
+            "gate_approval_id_sha256": provenance["gate_approval_id_sha256"],
+            "local_evidence_sha256": _sha256(receipt_path),
+            "repository_id_sha256": evidence["repository_id_sha256"],
+            "encryption_key_id_sha256": evidence["encryption_key_id_sha256"],
+            "full_download_verified": True,
+            "authenticated_decryption_verified": True,
+            "restic_read_data_verified": True,
+        },
+        now=now,
+    )
 
 
 def verify_drill_receipt(
@@ -1183,10 +1263,12 @@ def verify_drill_receipt(
     receipt_path: Path,
     gate_receipt_path: Path,
     *,
+    imported_receipt_path: Path | None = None,
+    trust_policy_path: Path | None = None,
     now: dt.datetime | None = None,
     required_uid: int = 0,
-) -> NoReturn:
-    """Validate local observations, then block without an external importer."""
+) -> dict[str, Any]:
+    """Validate local observations and consume only a trusted imported DSSE receipt."""
 
     evidence = _validate_local_evidence_common(
         root,
@@ -1232,7 +1314,31 @@ def verify_drill_receipt(
         reason="invalid_restore_elapsed",
         maximum=7 * 86400,
     )
-    _fail("external_receipt_required")
+    provenance = evidence["provenance"]
+    return _verify_imported_external_receipt(
+        imported_receipt_path,
+        trust_policy_path,
+        kind="restore_drill",
+        expected_subject={
+            "manifest_sha256": evidence["manifest_sha256"],
+            "set_id_sha256": evidence["set_id_sha256"],
+            "snapshot_id_sha256": provenance["snapshot_id_sha256"],
+            "gate_approval_id_sha256": provenance["gate_approval_id_sha256"],
+            "local_evidence_sha256": _sha256(receipt_path),
+            "components": [
+                "configuration",
+                "documents",
+                "postgres",
+                "qdrant",
+                "uploads",
+            ],
+            "isolated_runner_verified": True,
+            "production_endpoint_accessed": False,
+            "rpo_verified": True,
+            "rto_verified": True,
+        },
+        now=now,
+    )
 
 
 def write_offsite_receipt(
@@ -1589,11 +1695,15 @@ def build_parser() -> argparse.ArgumentParser:
     offsite.add_argument("--root", required=True, type=_path)
     offsite.add_argument("--receipt", required=True, type=_path)
     offsite.add_argument("--gate-receipt", required=True, type=_path)
+    offsite.add_argument("--imported-receipt", type=_path)
+    offsite.add_argument("--trust-policy", type=_path)
 
     drill = commands.add_parser("verify-drill-receipt")
     drill.add_argument("--root", required=True, type=_path)
     drill.add_argument("--receipt", required=True, type=_path)
     drill.add_argument("--gate-receipt", required=True, type=_path)
+    drill.add_argument("--imported-receipt", type=_path)
+    drill.add_argument("--trust-policy", type=_path)
 
     write_offsite = commands.add_parser("write-offsite-receipt")
     write_offsite.add_argument("--root", required=True, type=_path)
@@ -1660,9 +1770,25 @@ def main(argv: list[str] | None = None) -> int:
             validate_data_inventory(_read_json(args.file), component=args.component)
             _emit("ok", "data_inventory_valid")
         elif args.command == "verify-offsite-receipt":
-            verify_offsite_receipt(args.root, args.receipt, args.gate_receipt)
+            verify_offsite_receipt(
+                args.root,
+                args.receipt,
+                args.gate_receipt,
+                imported_receipt_path=args.imported_receipt,
+                trust_policy_path=args.trust_policy,
+                required_uid=os.geteuid(),
+            )
+            _emit("ok", "external_offsite_receipt_verified")
         elif args.command == "verify-drill-receipt":
-            verify_drill_receipt(args.root, args.receipt, args.gate_receipt)
+            verify_drill_receipt(
+                args.root,
+                args.receipt,
+                args.gate_receipt,
+                imported_receipt_path=args.imported_receipt,
+                trust_policy_path=args.trust_policy,
+                required_uid=os.geteuid(),
+            )
+            _emit("ok", "external_restore_receipt_verified")
         elif args.command == "write-offsite-receipt":
             write_offsite_receipt(
                 args.root,

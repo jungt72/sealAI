@@ -216,8 +216,8 @@ ELAPSED=$(( $(date +%s) - STARTED_AT ))
 
 # These files are deliberately non-authoritative LOCAL_EVIDENCE_ONLY records.
 # A verified receipt requires a separately approved cryptographic trust root,
-# an independent external attestor, and an importer that does not exist in
-# this repository.  Never promote these observations by renaming or editing.
+# an independent external attestor, and later import/consumption through
+# dr_receipts.py plus dr_recovery.py. Never promote observations by renaming.
 EXPECTED_EXTERNAL_BLOCK=1
 event blocked external_attestation_required
 printf '%s\n%s\n' "${OFFSITE_EVIDENCE}" "${DRILL_EVIDENCE}"

@@ -11,6 +11,7 @@ import fcntl
 import fnmatch
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -26,14 +27,16 @@ CRITICAL_PERCENT = 85.0
 RECOVERY_PERCENT = 80.0
 MINIMUM_FREE_BYTES = 3 * 1024 * 1024 * 1024
 MIN_BACKUP_BYTES = 1024
-MAX_RECEIPT_BYTES = 64 * 1024
-MAX_RECEIPT_AGE_SECONDS = 24 * 60 * 60
 MAX_ENV_BYTES = 256 * 1024
+MAX_IMPORTED_RECEIPTS = 1024
 TOKEN_RE = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 CHECKSUM_RE = re.compile(r"^([0-9a-f]{64})  ([^/\r\n]+)\n?$")
 ENV_ASSIGNMENT_RE = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
 PRODUCTION_ENV_FILE = Path("/home/thorsten/sealai/.env.prod")
+OFFSITE_TRUST_POLICY_FILE = Path("/etc/sealai/dr/offsite-trust-policy.json")
+OFFSITE_RECEIPT_STORE = Path("/var/lib/sealai/dr-receipts")
+DR_RECEIPT_HELPER = Path(__file__).resolve().with_name("dr_receipts.py")
 ENV_PROFILES: dict[str, tuple[tuple[str, str | None], ...]] = {
     "postgres": (
         ("POSTGRES_USER", "sealai"),
@@ -85,19 +88,7 @@ ORCHESTRATOR_SETTINGS = (
     "QDRANT_OFFSITE_RECEIPT",
 )
 ORCHESTRATOR_LOG = Path("/home/thorsten/sealai-backups/backup.log")
-RECEIPT_KEYS = {
-    "schema_version",
-    "backup_name",
-    "local_plaintext_sha256",
-    "downloaded_ciphertext_sha256",
-    "decrypted_plaintext_sha256",
-    "offsite_verified",
-    "offsite_ciphertext_object_id_sha256",
-    "encryption_key_id_sha256",
-    "verified_at",
-    "verification_method",
-}
-RECEIPT_METHODS = {"full-download-decrypt-sha256"}
+_DR_RECEIPTS_MODULE = None
 
 
 class SafetyError(RuntimeError):
@@ -908,6 +899,10 @@ def receipt_path(backup: Path) -> Path:
     return backup.with_name(f"{backup.name}.offsite-receipt.json")
 
 
+def local_observation_path(backup: Path) -> Path:
+    return backup.with_name(f"{backup.name}.local-offsite-observation.json")
+
+
 def write_checksum(backup: Path) -> str:
     digest, metadata = _durably_hash_backup(backup)
     if metadata.st_size < MIN_BACKUP_BYTES:
@@ -1035,81 +1030,98 @@ def verify_local_backup(backup: Path) -> str:
     return actual
 
 
-def _verified_at(value: Any) -> dt.datetime:
-    if not isinstance(value, str) or not value.endswith("Z"):
-        raise SafetyError("receipt_invalid")
+def _dr_receipts_module():
+    global _DR_RECEIPTS_MODULE
+    if _DR_RECEIPTS_MODULE is not None:
+        return _DR_RECEIPTS_MODULE
     try:
-        parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00")
-    except ValueError as exc:
-        raise SafetyError("receipt_invalid") from exc
-    now = _utc_now()
-    if parsed > now + dt.timedelta(minutes=5):
-        raise SafetyError("receipt_invalid")
-    if parsed < now - dt.timedelta(seconds=MAX_RECEIPT_AGE_SECONDS):
-        raise SafetyError("receipt_stale")
-    return parsed
-
-
-def _strict_json_object(text: str, *, reason: str) -> Any:
-    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise SafetyError(reason)
-            result[key] = value
-        return result
-
-    try:
-        return json.loads(text, object_pairs_hook=reject_duplicates)
-    except json.JSONDecodeError as exc:
-        raise SafetyError(reason) from exc
-
-
-def verify_offsite_receipt(backup: Path, receipt: Path | None = None) -> str:
-    local_digest = verify_local_backup(backup)
-    proof = receipt or receipt_path(backup)
-    metadata = _private_regular_file(proof, reason="receipt_not_private")
-    if metadata.st_nlink != 1 or metadata.st_size > MAX_RECEIPT_BYTES:
-        raise SafetyError("receipt_invalid")
-    try:
-        data = _strict_json_object(
-            proof.read_text(encoding="utf-8"), reason="receipt_invalid"
-        )
-    except (OSError, UnicodeError) as exc:
-        raise SafetyError("receipt_invalid") from exc
-    if not isinstance(data, dict) or set(data) != RECEIPT_KEYS:
-        raise SafetyError("receipt_invalid")
+        metadata = DR_RECEIPT_HELPER.lstat()
+    except OSError as exc:
+        raise SafetyError("receipt_verifier_unavailable") from exc
     if (
-        type(data["schema_version"]) is not int
-        or data["schema_version"] != 2
-        or data["backup_name"] != backup.name
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_nlink != 1
+        or metadata.st_uid not in {0, os.geteuid()}
+        or stat.S_IMODE(metadata.st_mode) & 0o022
     ):
-        raise SafetyError("receipt_invalid")
-    if data["offsite_verified"] is not True:
-        raise SafetyError("receipt_unverified")
-    if data["verification_method"] not in RECEIPT_METHODS:
-        raise SafetyError("receipt_invalid")
-    for identifier_key in (
-        "offsite_ciphertext_object_id_sha256",
-        "encryption_key_id_sha256",
-    ):
-        identifier = data[identifier_key]
-        if not isinstance(identifier, str) or not SHA256_RE.fullmatch(identifier):
-            raise SafetyError("receipt_invalid")
-    _verified_at(data["verified_at"])
-    local_claim = data["local_plaintext_sha256"]
-    decrypted_claim = data["decrypted_plaintext_sha256"]
-    ciphertext_claim = data["downloaded_ciphertext_sha256"]
-    for claim in (local_claim, decrypted_claim, ciphertext_claim):
-        if not isinstance(claim, str) or not SHA256_RE.fullmatch(claim):
-            raise SafetyError("receipt_invalid")
-    if not (
-        hmac.compare_digest(local_claim, local_digest)
-        and hmac.compare_digest(decrypted_claim, local_digest)
-    ):
-        raise SafetyError("receipt_checksum_mismatch")
-    if hmac.compare_digest(ciphertext_claim, local_digest):
-        raise SafetyError("receipt_ciphertext_invalid")
+        raise SafetyError("receipt_verifier_unsafe")
+    spec = importlib.util.spec_from_file_location(
+        "sealai_dr_receipts", DR_RECEIPT_HELPER
+    )
+    if spec is None or spec.loader is None:
+        raise SafetyError("receipt_verifier_unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except (OSError, ImportError) as exc:
+        raise SafetyError("receipt_verifier_unavailable") from exc
+    _DR_RECEIPTS_MODULE = module
+    return module
+
+
+def _receipt_candidates() -> tuple[Path, ...]:
+    _secure_private_directory(OFFSITE_RECEIPT_STORE, create=False)
+    try:
+        candidates = tuple(
+            sorted(
+                (
+                    path
+                    for path in OFFSITE_RECEIPT_STORE.iterdir()
+                    if path.name.endswith(".dsse.json")
+                ),
+                key=lambda path: path.name,
+            )
+        )
+    except OSError as exc:
+        raise SafetyError("receipt_store_unavailable") from exc
+    if len(candidates) > MAX_IMPORTED_RECEIPTS:
+        raise SafetyError("receipt_store_unbounded")
+    return candidates
+
+
+def _verify_imported_candidate(
+    backup: Path, local_digest: str, proof: Path, policy: Path
+) -> bool:
+    module = _dr_receipts_module()
+    try:
+        verified = module.verify_imported_receipt(
+            proof, policy, expected_kind="offsite_backup"
+        )
+    except module.ReceiptError:
+        return False
+    subject = verified.payload["subject"]
+    return bool(
+        subject["backup_name"] == backup.name
+        and hmac.compare_digest(subject["local_plaintext_sha256"], local_digest)
+    )
+
+
+def verify_offsite_receipt(
+    backup: Path,
+    receipt: Path | None = None,
+    trust_policy: Path | None = None,
+) -> str:
+    """Require a currently valid imported threshold-signed DSSE receipt.
+
+    Legacy adjacent JSON and local observation files are intentionally never accepted.
+    """
+
+    local_digest = verify_local_backup(backup)
+    policy = trust_policy or OFFSITE_TRUST_POLICY_FILE
+    if receipt is not None:
+        if not _verify_imported_candidate(backup, local_digest, receipt, policy):
+            raise SafetyError("receipt_untrusted")
+        return local_digest
+    matches = [
+        candidate
+        for candidate in _receipt_candidates()
+        if _verify_imported_candidate(backup, local_digest, candidate, policy)
+    ]
+    if not matches:
+        raise SafetyError("external_receipt_required")
+    if len(matches) != 1:
+        raise SafetyError("receipt_ambiguous")
     return local_digest
 
 
@@ -1120,7 +1132,7 @@ def write_offsite_receipt(
     offsite_object_id_sha256: str,
     encryption_key_id_sha256: str,
 ) -> Path:
-    """Bind a full ciphertext download and its decrypted plaintext to a backup."""
+    """Record local observations without creating deletion authority."""
 
     local_digest = verify_local_backup(backup)
     local_metadata = _private_regular_file(backup, reason="backup_not_private")
@@ -1157,23 +1169,24 @@ def write_offsite_receipt(
     if hmac.compare_digest(local_digest, ciphertext_digest):
         raise SafetyError("offsite_ciphertext_unencrypted")
 
-    proof = receipt_path(backup)
+    proof = local_observation_path(backup)
     _atomic_json(
         proof,
         {
-            "schema_version": 2,
+            "schema_version": 3,
+            "status": "LOCAL_EVIDENCE_ONLY",
+            "authoritative": False,
             "backup_name": backup.name,
             "local_plaintext_sha256": local_digest,
             "downloaded_ciphertext_sha256": ciphertext_digest,
             "decrypted_plaintext_sha256": decrypted_digest,
-            "offsite_verified": True,
             "offsite_ciphertext_object_id_sha256": offsite_object_id_sha256,
             "encryption_key_id_sha256": encryption_key_id_sha256,
-            "verified_at": _utc_now()
+            "observed_at": _utc_now()
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z"),
-            "verification_method": "full-download-decrypt-sha256",
+            "verification_method": "local-full-download-decrypt-sha256",
         },
     )
     return proof
@@ -1203,7 +1216,8 @@ def run_verify_expected(args: argparse.Namespace) -> int:
 
 def run_verify_receipt(args: argparse.Namespace) -> int:
     receipt = Path(args.receipt) if args.receipt else None
-    verify_offsite_receipt(Path(args.backup), receipt)
+    policy = Path(args.trust_policy) if args.trust_policy else None
+    verify_offsite_receipt(Path(args.backup), receipt, policy)
     emit_event(args.component, "offsite_verification", "ok", "receipt_verified")
     return 0
 
@@ -1216,7 +1230,12 @@ def run_write_receipt(args: argparse.Namespace) -> int:
         args.offsite_object_id_sha256,
         args.encryption_key_id_sha256,
     )
-    emit_event(args.component, "offsite_verification", "ok", "receipt_written")
+    emit_event(
+        args.component,
+        "offsite_verification",
+        "warn",
+        "local_evidence_written",
+    )
     return 0
 
 
@@ -1225,7 +1244,8 @@ def run_remote_delete_eligible(args: argparse.Namespace) -> int:
     receipt_digest = verify_local_backup(backup)
     if args.policy == "verified-offsite":
         receipt = Path(args.receipt) if args.receipt else None
-        receipt_digest = verify_offsite_receipt(backup, receipt)
+        policy = Path(args.trust_policy) if args.trust_policy else None
+        receipt_digest = verify_offsite_receipt(backup, receipt, policy)
         reason = "verified_offsite_policy"
     else:
         reason = "verified_local_policy"
@@ -1829,6 +1849,7 @@ def build_parser() -> argparse.ArgumentParser:
     component_argument(verify_receipt)
     verify_receipt.add_argument("--backup", required=True)
     verify_receipt.add_argument("--receipt")
+    verify_receipt.add_argument("--trust-policy")
     verify_receipt.set_defaults(
         handler=run_verify_receipt, event_name="offsite_verification"
     )
@@ -1851,6 +1872,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--policy", choices=("verified-local", "verified-offsite"), required=True
     )
     remote_gate.add_argument("--receipt")
+    remote_gate.add_argument("--trust-policy")
     remote_gate.add_argument("--backup-fd", required=True)
     remote_gate.add_argument("--expected-bytes", required=True)
     remote_gate.add_argument("--expected-sha256", required=True)

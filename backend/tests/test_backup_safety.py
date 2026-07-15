@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import datetime as dt
+import hashlib
 import importlib.util
 import json
 import os
@@ -12,6 +15,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -36,6 +41,7 @@ def _backup(module, directory: Path, name: str, byte: bytes = b"x") -> Path:
 
 
 def _receipt(module, backup: Path, *, digest: str | None = None) -> Path:
+    """Create the retired self-attested v2 format for negative compatibility tests."""
     actual = module.verify_local_backup(backup)
     claimed = actual if digest is None else digest
     receipt = module.receipt_path(backup)
@@ -61,6 +67,116 @@ def _receipt(module, backup: Path, *, digest: str | None = None) -> Path:
     )
     os.chmod(receipt, 0o600)
     return receipt
+
+
+def _install_receipt_authority(module, directory: Path):
+    existing = getattr(module, "_TEST_RECEIPT_AUTHORITY", None)
+    if existing is not None:
+        return existing
+    central = module._dr_receipts_module()
+    now = module._utc_now().replace(microsecond=0)
+    signers = []
+    public_entries = []
+    for _ in range(2):
+        private = Ed25519PrivateKey.generate()
+        public = private.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        keyid = hashlib.sha256(public).hexdigest()
+        signers.append((keyid, private, public))
+        public_entries.append(
+            {
+                "keyid": keyid,
+                "algorithm": "ed25519",
+                "public_key_base64": base64.b64encode(public).decode("ascii"),
+                "not_before": (now - dt.timedelta(days=1)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+                "not_after": (now + dt.timedelta(days=30)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+            }
+        )
+    keyids = [keyid for keyid, _, _ in signers]
+    policy = {
+        "schema_version": 1,
+        "policy_id": hashlib.sha256(b"backup-consumer-test-policy").hexdigest(),
+        "valid_from": (now - dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (now + dt.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "max_receipt_age_seconds": 86400,
+        "max_receipt_validity_seconds": 86400,
+        "keys": public_entries,
+        "roles": {
+            "offsite_attestor": {"threshold": 2, "keyids": keyids},
+        },
+    }
+    policy_path = directory / "offsite-trust-policy.json"
+    policy_path.write_bytes(central._canonical_json(policy))
+    os.chmod(policy_path, 0o600)
+    store = directory / "receipt-store"
+    store.mkdir(mode=0o700)
+    module.OFFSITE_TRUST_POLICY_FILE = policy_path
+    module.OFFSITE_RECEIPT_STORE = store
+    authority = (central, now, signers, policy_path, store)
+    module._TEST_RECEIPT_AUTHORITY = authority
+    return authority
+
+
+def _imported_receipt(
+    module,
+    backup: Path,
+    directory: Path,
+    *,
+    digest: str | None = None,
+    issued_delta: dt.timedelta = dt.timedelta(minutes=-5),
+) -> Path:
+    central, now, signers, policy_path, store = _install_receipt_authority(
+        module, directory
+    )
+    local_digest = module.verify_local_backup(backup)
+    payload = {
+        "schema_version": 1,
+        "kind": "offsite_backup",
+        "role": "offsite_attestor",
+        "status": "OFFSITE_VERIFIED",
+        "issued_at": (now + issued_delta).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (now + issued_delta + dt.timedelta(hours=12)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        ),
+        "subject": {
+            "backup_name": backup.name,
+            "local_plaintext_sha256": digest or local_digest,
+            "downloaded_ciphertext_sha256": "2" * 64,
+            "offsite_object_id_sha256": "1" * 64,
+            "encryption_key_id_sha256": "3" * 64,
+            "full_download_verified": True,
+            "authenticated_decryption_verified": True,
+        },
+    }
+    payload["receipt_id"] = hashlib.sha256(central._canonical_json(payload)).hexdigest()
+    raw = central._canonical_json(payload)
+    pae = central._pae(central.PAYLOAD_TYPE.encode("ascii"), raw)
+    envelope = {
+        "payloadType": central.PAYLOAD_TYPE,
+        "payload": base64.b64encode(raw).decode("ascii"),
+        "signatures": [
+            {
+                "keyid": keyid,
+                "sig": base64.b64encode(private.sign(pae)).decode("ascii"),
+            }
+            for keyid, private, _ in signers
+        ],
+    }
+    incoming = directory / f"incoming-{payload['receipt_id']}.json"
+    incoming.write_bytes(central._canonical_json(envelope))
+    os.chmod(incoming, 0o600)
+    return central.import_receipt(
+        incoming,
+        policy_path,
+        store,
+        expected_kind="offsite_backup",
+        now=now,
+    )
 
 
 def test_thresholds_are_fixed_at_critical_85_and_recovery_80() -> None:
@@ -310,6 +426,7 @@ def test_remote_delete_gate_binds_receipt_digest_to_open_inode(
     args = argparse.Namespace(
         backup=str(tmp_path / "qdrant.snapshot"),
         receipt=str(tmp_path / "receipt.json"),
+        trust_policy=None,
         policy="verified-offsite",
         backup_fd="9",
         expected_bytes="2048",
@@ -318,7 +435,9 @@ def test_remote_delete_gate_binds_receipt_digest_to_open_inode(
     )
     monkeypatch.setattr(module, "verify_local_backup", lambda _backup: "a" * 64)
     monkeypatch.setattr(
-        module, "verify_offsite_receipt", lambda _backup, _receipt: "b" * 64
+        module,
+        "verify_offsite_receipt",
+        lambda _backup, _receipt, _policy: "b" * 64,
     )
     monkeypatch.setattr(
         module,
@@ -429,28 +548,29 @@ def test_expected_source_size_and_checksum_must_both_match(tmp_path: Path) -> No
 def test_offsite_receipt_requires_matching_verified_sha256(tmp_path: Path) -> None:
     module = _module()
     backup = _backup(module, tmp_path, "postgres-all-old.sql.gz")
-    _receipt(module, backup)
-    module.verify_offsite_receipt(backup)
+    imported = _imported_receipt(module, backup, tmp_path)
+    assert module.verify_offsite_receipt(
+        backup, imported
+    ) == module.verify_local_backup(backup)
+    assert module.verify_offsite_receipt(backup) == module.verify_local_backup(backup)
 
-    _receipt(module, backup, digest="0" * 64)
-    with pytest.raises(module.SafetyError, match="receipt_checksum_mismatch"):
-        module.verify_offsite_receipt(backup)
+    mismatch = _imported_receipt(module, backup, tmp_path, digest="0" * 64)
+    with pytest.raises(module.SafetyError, match="receipt_untrusted"):
+        module.verify_offsite_receipt(backup, mismatch)
 
 
 def test_offsite_receipt_expires_after_24_hours(tmp_path: Path) -> None:
     module = _module()
     backup = _backup(module, tmp_path, "postgres-all-old.sql.gz")
-    receipt = _receipt(module, backup)
-    data = json.loads(receipt.read_text(encoding="utf-8"))
-    stale_time = module._utc_now().replace(microsecond=0) - module.dt.timedelta(
-        hours=25
-    )
-    data["verified_at"] = stale_time.isoformat().replace("+00:00", "Z")
-    receipt.write_text(json.dumps(data), encoding="utf-8")
-    os.chmod(receipt, 0o600)
-
-    with pytest.raises(module.SafetyError, match="receipt_stale"):
-        module.verify_offsite_receipt(backup)
+    central, now, _, policy_path, _ = _install_receipt_authority(module, tmp_path)
+    receipt = _imported_receipt(module, backup, tmp_path)
+    with pytest.raises(central.ReceiptError, match="receipt_expired"):
+        central.verify_imported_receipt(
+            receipt,
+            policy_path,
+            expected_kind="offsite_backup",
+            now=now + dt.timedelta(hours=13),
+        )
 
 
 def test_offsite_receipt_rejects_boolean_version_and_duplicate_keys(
@@ -463,8 +583,8 @@ def test_offsite_receipt_rejects_boolean_version_and_duplicate_keys(
     data["schema_version"] = True
     receipt.write_text(json.dumps(data), encoding="utf-8")
     os.chmod(receipt, 0o600)
-    with pytest.raises(module.SafetyError, match="receipt_invalid"):
-        module.verify_offsite_receipt(backup)
+    with pytest.raises(module.SafetyError, match="receipt_untrusted"):
+        module.verify_offsite_receipt(backup, receipt)
 
     _receipt(module, backup)
     content = receipt.read_text(encoding="utf-8")
@@ -473,8 +593,8 @@ def test_offsite_receipt_rejects_boolean_version_and_duplicate_keys(
     )
     receipt.write_text(duplicate, encoding="utf-8")
     os.chmod(receipt, 0o600)
-    with pytest.raises(module.SafetyError, match="receipt_invalid"):
-        module.verify_offsite_receipt(backup)
+    with pytest.raises(module.SafetyError, match="receipt_untrusted"):
+        module.verify_offsite_receipt(backup, receipt)
 
 
 def test_receipt_writer_binds_ciphertext_and_decrypted_plaintext_atomically(
@@ -494,11 +614,15 @@ def test_receipt_writer_binds_ciphertext_and_decrypted_plaintext_atomically(
     )
     assert receipt.stat().st_mode & 0o777 == 0o600
     data = json.loads(receipt.read_text(encoding="utf-8"))
-    assert data["verification_method"] == "full-download-decrypt-sha256"
+    assert data["verification_method"] == "local-full-download-decrypt-sha256"
+    assert data["status"] == "LOCAL_EVIDENCE_ONLY"
+    assert data["authoritative"] is False
+    assert "offsite_verified" not in data
     assert data["downloaded_ciphertext_sha256"] != data["local_plaintext_sha256"]
     assert data["decrypted_plaintext_sha256"] == data["local_plaintext_sha256"]
     assert data["encryption_key_id_sha256"] == "3" * 64
-    module.verify_offsite_receipt(backup, receipt)
+    with pytest.raises(module.SafetyError, match="receipt_untrusted"):
+        module.verify_offsite_receipt(backup, receipt)
 
 
 def test_receipt_writer_rejects_reused_inode_and_bad_decryption(
@@ -530,8 +654,8 @@ def test_receipt_rejects_plaintext_claimed_as_ciphertext(tmp_path: Path) -> None
     receipt.write_text(json.dumps(data), encoding="utf-8")
     os.chmod(receipt, 0o600)
 
-    with pytest.raises(module.SafetyError, match="receipt_ciphertext_invalid"):
-        module.verify_offsite_receipt(backup)
+    with pytest.raises(module.SafetyError, match="receipt_untrusted"):
+        module.verify_offsite_receipt(backup, receipt)
 
 
 def test_age_without_verified_offsite_receipt_never_deletes(tmp_path: Path) -> None:
@@ -558,7 +682,7 @@ def test_retention_preserves_minimum_good_local_copies(tmp_path: Path) -> None:
     backups: list[Path] = []
     for index, age_days in enumerate((40, 35, 30), start=1):
         backup = _backup(module, tmp_path, f"postgres-all-{index}.sql.gz")
-        _receipt(module, backup)
+        _imported_receipt(module, backup, tmp_path)
         old = now - (age_days * 86400)
         os.utime(backup, (old, old))
         backups.append(backup)
@@ -588,7 +712,7 @@ def test_retention_preserves_minimum_good_local_copies(tmp_path: Path) -> None:
 def test_retention_never_removes_only_good_local_copy(tmp_path: Path) -> None:
     module = _module()
     backup = _backup(module, tmp_path, "qdrant-old.snapshot")
-    _receipt(module, backup)
+    _imported_receipt(module, backup, tmp_path)
     old = time.time() - (40 * 86400)
     os.utime(backup, (old, old))
 
@@ -666,7 +790,7 @@ def test_retention_reverifies_remaining_copies_before_unlink(
     backups: list[Path] = []
     for index in range(3):
         backup = _backup(module, tmp_path, f"postgres-all-{index}.sql.gz")
-        _receipt(module, backup)
+        _imported_receipt(module, backup, tmp_path)
         old = now - ((40 - index) * 86400)
         os.utime(backup, (old, old))
         backups.append(backup)

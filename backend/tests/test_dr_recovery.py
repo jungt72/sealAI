@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import hashlib
 import importlib.util
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -204,6 +207,88 @@ def _restore_gate(
         },
     )
     return path
+
+
+def _import_external_receipt(
+    directory: Path,
+    *,
+    kind: str,
+    subject: dict[str, Any],
+    now: dt.datetime,
+) -> tuple[Path, Path]:
+    receipts = dr._dr_receipts_module()
+    directory.mkdir(mode=0o700)
+    role = receipts.ROLE_BY_KIND[kind]
+    keys = []
+    signers = []
+    for _ in range(2):
+        private = Ed25519PrivateKey.generate()
+        public = private.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        )
+        keyid = hashlib.sha256(public).hexdigest()
+        signers.append((keyid, private))
+        keys.append(
+            {
+                "keyid": keyid,
+                "algorithm": "ed25519",
+                "public_key_base64": base64.b64encode(public).decode("ascii"),
+                "not_before": (now - dt.timedelta(days=1)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+                "not_after": (now + dt.timedelta(days=30)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+            }
+        )
+    keyids = [item["keyid"] for item in keys]
+    policy = {
+        "schema_version": 1,
+        "policy_id": hashlib.sha256(f"{kind}-test-policy".encode()).hexdigest(),
+        "valid_from": (now - dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (now + dt.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "max_receipt_age_seconds": 86400,
+        "max_receipt_validity_seconds": 3600,
+        "keys": keys,
+        "roles": {role: {"threshold": 2, "keyids": keyids}},
+    }
+    payload = {
+        "schema_version": 1,
+        "kind": kind,
+        "role": role,
+        "status": receipts.STATUS_BY_KIND[kind],
+        "issued_at": (now - dt.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "expires_at": (now + dt.timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "subject": subject,
+    }
+    payload["receipt_id"] = hashlib.sha256(
+        receipts._canonical_json(payload)
+    ).hexdigest()
+    raw = receipts._canonical_json(payload)
+    pae = receipts._pae(receipts.PAYLOAD_TYPE.encode("ascii"), raw)
+    envelope = {
+        "payloadType": receipts.PAYLOAD_TYPE,
+        "payload": base64.b64encode(raw).decode("ascii"),
+        "signatures": [
+            {
+                "keyid": keyid,
+                "sig": base64.b64encode(private.sign(pae)).decode("ascii"),
+            }
+            for keyid, private in signers
+        ],
+    }
+    policy_path = directory / "policy.json"
+    envelope_path = directory / "envelope.json"
+    _json(policy_path, policy)
+    _json(envelope_path, envelope)
+    imported = receipts.import_receipt(
+        envelope_path,
+        policy_path,
+        directory / "imported",
+        expected_kind=kind,
+        now=now,
+    )
+    return imported, policy_path
 
 
 def test_manifest_round_trip_binds_every_required_component(tmp_path: Path) -> None:
@@ -429,6 +514,166 @@ def test_local_evidence_can_never_elevate_to_verified_receipt(tmp_path: Path) ->
             offsite,
             gate,
             now=now + dt.timedelta(days=2),
+            required_uid=os.geteuid(),
+        )
+
+
+def test_imported_threshold_receipts_unlock_only_the_exact_dr_evidence(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _manifest_set(tmp_path / "recovery")
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir(mode=0o700)
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    snapshot_id = "2" * 64
+    gate = _restore_gate(
+        root,
+        tmp_path / "restore-gate.json",
+        now=now,
+        snapshot_id=snapshot_id,
+    )
+    offsite_path = evidence_dir / "offsite.json"
+    drill_path = evidence_dir / "drill.json"
+    offsite = dr.write_offsite_receipt(
+        root,
+        offsite_path,
+        repository_id="1" * 64,
+        snapshot_id=snapshot_id,
+        encryption_key_id_sha256="3" * 64,
+        gate_receipt_path=gate,
+        now=now,
+        required_uid=os.geteuid(),
+    )
+    drill = dr.write_drill_receipt(
+        root,
+        drill_path,
+        elapsed_seconds=60,
+        snapshot_id=snapshot_id,
+        gate_receipt_path=gate,
+        now=now,
+        required_uid=os.geteuid(),
+    )
+    offsite_subject = {
+        "manifest_sha256": offsite["manifest_sha256"],
+        "set_id_sha256": offsite["set_id_sha256"],
+        "snapshot_id_sha256": offsite["snapshot_id_sha256"],
+        "gate_approval_id_sha256": offsite["provenance"]["gate_approval_id_sha256"],
+        "local_evidence_sha256": dr._sha256(offsite_path),
+        "repository_id_sha256": offsite["repository_id_sha256"],
+        "encryption_key_id_sha256": offsite["encryption_key_id_sha256"],
+        "full_download_verified": True,
+        "authenticated_decryption_verified": True,
+        "restic_read_data_verified": True,
+    }
+    drill_subject = {
+        "manifest_sha256": drill["manifest_sha256"],
+        "set_id_sha256": drill["set_id_sha256"],
+        "snapshot_id_sha256": drill["provenance"]["snapshot_id_sha256"],
+        "gate_approval_id_sha256": drill["provenance"]["gate_approval_id_sha256"],
+        "local_evidence_sha256": dr._sha256(drill_path),
+        "components": [
+            "configuration",
+            "documents",
+            "postgres",
+            "qdrant",
+            "uploads",
+        ],
+        "isolated_runner_verified": True,
+        "production_endpoint_accessed": False,
+        "rpo_verified": True,
+        "rto_verified": True,
+    }
+    imported_offsite, offsite_policy = _import_external_receipt(
+        tmp_path / "offsite-authority",
+        kind="dr_offsite_set",
+        subject=offsite_subject,
+        now=now,
+    )
+    imported_drill, drill_policy = _import_external_receipt(
+        tmp_path / "drill-authority",
+        kind="restore_drill",
+        subject=drill_subject,
+        now=now,
+    )
+
+    assert (
+        dr.verify_offsite_receipt(
+            root,
+            offsite_path,
+            gate,
+            imported_receipt_path=imported_offsite,
+            trust_policy_path=offsite_policy,
+            now=now,
+            required_uid=os.geteuid(),
+        )["status"]
+        == "OFFSITE_VERIFIED"
+    )
+    assert (
+        dr.verify_drill_receipt(
+            root,
+            drill_path,
+            gate,
+            imported_receipt_path=imported_drill,
+            trust_policy_path=drill_policy,
+            now=now,
+            required_uid=os.geteuid(),
+        )["status"]
+        == "RESTORE_VERIFIED"
+    )
+    assert (
+        dr.main(
+            [
+                "verify-drill-receipt",
+                "--root",
+                str(root),
+                "--receipt",
+                str(drill_path),
+                "--gate-receipt",
+                str(gate),
+                "--imported-receipt",
+                str(imported_drill),
+                "--trust-policy",
+                str(drill_policy),
+            ]
+        )
+        == 0
+    )
+    assert "external_restore_receipt_verified" in capsys.readouterr().out
+
+    wrong_subject = {**drill_subject, "local_evidence_sha256": "f" * 64}
+    wrong_receipt, wrong_policy = _import_external_receipt(
+        tmp_path / "wrong-authority",
+        kind="restore_drill",
+        subject=wrong_subject,
+        now=now,
+    )
+    with pytest.raises(dr.DrError, match="external_receipt_subject_mismatch"):
+        dr.verify_drill_receipt(
+            root,
+            drill_path,
+            gate,
+            imported_receipt_path=wrong_receipt,
+            trust_policy_path=wrong_policy,
+            now=now,
+            required_uid=os.geteuid(),
+        )
+    with pytest.raises(dr.DrError, match="external_receipt_invalid"):
+        dr.verify_drill_receipt(
+            root,
+            drill_path,
+            gate,
+            imported_receipt_path=drill_path,
+            trust_policy_path=drill_policy,
+            now=now,
+            required_uid=os.geteuid(),
+        )
+    with pytest.raises(dr.DrError, match="external_receipt_configuration_incomplete"):
+        dr.verify_drill_receipt(
+            root,
+            drill_path,
+            gate,
+            imported_receipt_path=imported_drill,
+            now=now,
             required_uid=os.geteuid(),
         )
 
@@ -803,11 +1048,12 @@ def test_restore_compose_is_internal_unpublished_and_pinned() -> None:
     assert "/var/run/docker.sock" not in compose
 
 
-def test_runbook_is_honest_about_external_and_p1d_blockers() -> None:
+def test_runbook_is_honest_about_external_and_candidate_only_boundaries() -> None:
     runbook = (REPO_ROOT / "docs" / "runbooks" / "disaster-recovery.md").read_text()
     for contract in (
         "BLOCKED_EXTERNAL",
-        "P1-D",
+        "Canonical Postgres-to-Qdrant candidate rebuild",
+        "CANDIDATES_VERIFIED_NO_CUTOVER",
         "GATE-08",
         "Postgres is canonical application truth",
         "Qdrant is a derived index",

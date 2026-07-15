@@ -139,22 +139,19 @@ wrapper binds that artifact; all of its JSON events go to stderr.
 Age alone never authorizes deletion. Writers and retention share an exclusive, non-blocking fcntl
 lock in `TARGET_DIR/.backup-lifecycle.lock`. Before every individual unlink, retention opens and
 checksum-pins every remaining local candidate with no-follow descriptors, re-hashes those open
-descriptors, re-verifies the selected receipt, and uses a directory descriptor plus inode checks for
-unlink. This closes races between cooperating repository entrypoints. The target directory is
-non-symlink, owned by the backup user, and exactly mode `0700`; root or a deliberately
-non-cooperating process running as that same owner remains outside the cooperative-lock guarantee.
-Only files with link count one qualify, so multiple hardlink names for one inode can never inflate
-the minimum-independent-copy count.
-A local file is retention-eligible only if all of the following are true:
+descriptors, cryptographically re-verifies the imported receipt against the current trust policy,
+and uses a directory descriptor plus inode checks for unlink. Only single-link files qualify.
 
-1. the local backup and its `.sha256` sidecar verify;
-2. the file is older than `RETENTION_DAYS`;
-3. an adjacent `<backup>.offsite-receipt.json` is a regular file and strictly validates; and
-4. deleting it leaves at least `BACKUP_MIN_LOCAL_COPIES` verified local backups (default: two).
+A local file is retention-eligible only when its backup and sidecar verify, it is older than
+`RETENTION_DAYS`, exactly one currently valid imported receipt binds its filename and plaintext
+SHA-256, and deletion leaves at least `BACKUP_MIN_LOCAL_COPIES` verified local backups (default:
+two). Missing, ambiguous, expired, policy-invalid, malformed, or legacy evidence always retains the
+data.
 
-The repository receipt writer accepts distinct ciphertext-download and post-decryption files. It
-hashes the complete local backup and both supplied files, rejects hard links and digest mismatches,
-then writes the receipt atomically with mode `0600`:
+`ops/backup_safety.py write-receipt` is now deliberately only a local observation writer. It hashes
+the complete local backup, a distinct downloaded ciphertext, and a distinct post-decryption copy,
+then writes `<backup>.local-offsite-observation.json` with `status=LOCAL_EVIDENCE_ONLY` and
+`authoritative=false`:
 
 ```bash
 /usr/bin/env -i HOME=/home/thorsten PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C \
@@ -167,64 +164,84 @@ then writes the receipt atomically with mode `0600`:
   --encryption-key-id-sha256 '<sha256-of-versioned-kms-or-client-key-id>'
 ```
 
-The caller must create both supplied files as fresh, distinct, single-link regular files owned by
-the backup user with mode `0600`. The writer hashes the complete downloaded ciphertext, requires it
-to differ from the local plaintext, then hashes the complete post-decryption plaintext and requires
-that digest to equal the local backup and sidecar. Passing the local backup, a hard link, plaintext
-masquerading as ciphertext, or output from a failed decrypt is rejected. The writer cannot by itself
-prove that the ciphertext originated off-host; that provenance must come from the approved external
-download workflow. An upload response, multipart ETag, object existence check, or unverified copy
-command is not sufficient.
+This observation can never gain deletion authority by being renamed, copied, edited, or
+grandfathered.
+The former adjacent schema-v2 `<backup>.offsite-receipt.json` is never accepted. The caller must
+still supply fresh, distinct, private, single-link files; ciphertext equal to plaintext, hardlinks,
+or a decryption mismatch fail closed.
 
-Offsite storage provisioning, network transport, endpoint selection, credentials, and the download
-job are currently **`BLOCKED_EXTERNAL`**. No such secret or transport configuration is committed by
-this remediation. Therefore content verification is implemented locally, but automatic production
-retention, offsite DR, and origin provenance remain externally blocked until an approved storage
-target produces the download and an isolated restore test succeeds.
-
-Approval of that external workflow requires all of the following, none of which is implied by this
-repository change:
-
-- TLS with certificate verification for every upload/download and no public bucket or anonymous
-  access;
-- a private storage identity with least-privilege IAM limited to the exact backup prefix, separate
-  read/write roles where supported, and no broad account administration permission;
-- encrypted objects using a customer-controlled KMS key or reviewed client-side authenticated
-  encryption before upload (provider-default transport encryption alone is insufficient);
-- documented key creation, rotation, revocation, escrow/recovery, retention, and destruction
-  lifecycle, with versioned key identifiers but no key material in receipts or logs; and
-- a periodic isolated restore-key test that downloads ciphertext, retrieves the exact historical
-  key version, authenticates/decrypts the object, verifies the plaintext digest, and restores into
-  disposable Postgres/Qdrant services. Losing the historical key is treated exactly like losing the
-  backup.
-
-The strict schema is:
+Deletion authority is a canonical DSSE envelope with payload type
+`application/vnd.sealai.dr-receipt.v1+json`. The repository contains verification and import only;
+it contains no signing or private-key path. The canonical payload is:
 
 ```json
 {
-  "schema_version": 2,
-  "backup_name": "postgres-all-YYYY-MM-DD_HH-MM-SS-RANDOM.sql.gz",
-  "local_plaintext_sha256": "<64 lowercase hex characters>",
-  "downloaded_ciphertext_sha256": "<SHA-256 of the complete encrypted object>",
-  "decrypted_plaintext_sha256": "<same digest as local_plaintext_sha256>",
-  "offsite_verified": true,
-  "offsite_ciphertext_object_id_sha256": "<SHA-256 of provider/bucket/object/version>",
-  "encryption_key_id_sha256": "<SHA-256 of the versioned KMS or client key identifier>",
-  "verified_at": "YYYY-MM-DDTHH:MM:SSZ",
-  "verification_method": "full-download-decrypt-sha256"
+  "schema_version": 1,
+  "receipt_id": "<sha256 of canonical payload without receipt_id>",
+  "kind": "offsite_backup",
+  "role": "offsite_attestor",
+  "status": "OFFSITE_VERIFIED",
+  "issued_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "expires_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "subject": {
+    "backup_name": "postgres-all-YYYY-MM-DD_HH-MM-SS-RANDOM.sql.gz",
+    "local_plaintext_sha256": "<sha256>",
+    "downloaded_ciphertext_sha256": "<different sha256>",
+    "offsite_object_id_sha256": "<sha256 of provider/bucket/object/version>",
+    "encryption_key_id_sha256": "<sha256 of versioned key identifier>",
+    "full_download_verified": true,
+    "authenticated_decryption_verified": true
+  }
 }
 ```
 
-The object identifier is hashed so the log and receipt need not expose an internal bucket or
-endpoint while still binding the proof to one canonical ciphertext object/version. The hashed key
-identifier binds the evidence to the exact decryption-key version without exposing key material.
-The helper accepts only `full-download-decrypt-sha256` and rejects extra fields, a future timestamp,
-filename mismatch, non-private file modes, malformed digests, plaintext presented as ciphertext, or
-any disagreement between local, sidecar, and post-decryption plaintext checksums.
-Existing backups without sidecars or receipts are retained, not grandfathered. Receipts remain as
-audit evidence after a local payload ages out. A receipt is deletion-authoritative for at most 24
-hours. Before an old local backup may be removed, the external workflow must perform a new complete
-download and atomically refresh the receipt; stale proof fails closed.
+The active policy is `/etc/sealai/dr/offsite-trust-policy.json`. It contains public Ed25519 keys
+only, their validity intervals, role membership, expiry, maximum receipt age/validity, and a
+threshold of at least two distinct role keys. Key IDs are the SHA-256 of the raw public key. Custody
+must keep those signer keys independent; placing two keys in one process or one operator account
+does not satisfy the operational two-party requirement.
+
+After the independent attestors have observed a complete off-host download, authenticated
+decryption, and digest match, transfer the canonical envelope through the approved evidence channel
+and import it once as the backup runtime user into the private receipt store:
+
+```bash
+/usr/bin/python3 -I /home/thorsten/sealai/ops/dr_receipts.py verify \
+  --envelope /secure/incoming/<receipt>.dsse.json \
+  --policy /etc/sealai/dr/offsite-trust-policy.json --kind offsite_backup
+/usr/bin/python3 -I /home/thorsten/sealai/ops/dr_receipts.py import \
+  --envelope /secure/incoming/<receipt>.dsse.json \
+  --policy /etc/sealai/dr/offsite-trust-policy.json \
+  --kind offsite_backup --store /var/lib/sealai/dr-receipts
+```
+
+The store must be owned by the backup runtime user and be owner-only mode `0700`; imported records
+are exclusive mode `0600` files named by receipt ID. The public policy may instead be root-owned and
+non-writable by group/other. Replay fails. Every retention or Qdrant-deletion decision verifies the
+embedded DSSE again against the current policy and key validity; import metadata is never trusted
+on its own.
+Revoking/removing a key or policy invalidates receipts that no longer meet the active threshold.
+
+Offsite storage, attestor execution, signer custody, transport credentials, trust-root provisioning,
+production import, and two successful isolated restore drills remain **`BLOCKED_EXTERNAL`** and
+Gate-08 controlled. Approval requires all of the following:
+
+- a private storage identity with least-privilege IAM limited to the exact immutable/versioned
+  backup prefix and separate read/write roles;
+- encrypted objects using a customer-controlled KMS key or reviewed client-side authenticated
+  encryption before upload;
+- documented key creation, rotation, revocation, escrow/recovery, retention, and destruction; and
+- a periodic isolated restore-key test covering the exact historical key version, full download,
+  authenticated decryption, digest verification, and isolated restore.
+
+The local observation records `downloaded_ciphertext_sha256`, `decrypted_plaintext_sha256`, and
+`encryption_key_id_sha256`, but those fields remain non-authoritative without the imported DSSE
+receipt. An upload response, ETag, provider dashboard, local JSON, or object-existence check is never
+sufficient.
+Existing backups without imported receipts are retained, not grandfathered.
+
+TLS with certificate verification is mandatory for every upload, attestation download, and restore;
+no public bucket, anonymous access, or transport-verification bypass is acceptable.
 
 ## Qdrant remote snapshot deletion
 
@@ -232,9 +249,10 @@ download and atomically refresh the receipt; stale proof fails closed.
 
 - `verified-local` (default): delete the server-side snapshot only after the finalized local file
   and its checksum sidecar verify.
-- `verified-offsite`: additionally require a valid receipt supplied in
-  `QDRANT_OFFSITE_RECEIPT`; otherwise retain the server-side snapshot and fail the run so monitoring
-  cannot mistake incomplete cleanup for success.
+- `verified-offsite`: additionally require an imported DSSE record supplied in
+  `QDRANT_OFFSITE_RECEIPT` and valid under the current fixed trust policy; otherwise retain the
+  server-side snapshot and fail the run so monitoring cannot mistake incomplete cleanup for
+  success.
 
 The default deliberately favors service capacity: Qdrant's server-side snapshot is on the live
 data filesystem, so keeping a new duplicate after every nightly run can itself cause an outage.
