@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "captured_at": "2026-07-14T11:35:38Z",
+  "source_repository_commit": "dcb19015adacdc790dd1b25cc430333691c43626",
+  "production_commit_at_capture": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
+  "superseded": true,
+  "historical_gate_eligible": false,
+  "historical_artifacts": [
+    {"path": "current-state.snapshot.json", "sha256": "025d693cbc42db4afd04db816d114a8a9f2c0b77b3e54aa9b063a8a14d538573"},
+    {"path": "deployment-plan.yaml", "sha256": "16c51b2735164bcb33ecc39e2a8336144b4d0478225128e93a3acc75419ed118"},
+    {"path": "evidence/README.md", "sha256": "d9236a4104c7a9d88e37a5b5f79256703054fdd020b31ec056b203bffc86ea1f"},
+    {"path": "findings-matrix.yaml", "sha256": "d7b00539531008a5944b8538721ce8da459d53bdd990f18a0f646f8f2f207da0"},
+    {"path": "production-fingerprint.json", "sha256": "757dc8d3e9405330d03eb56b8c472034aaf0d88ec15cebfcbd21f76e7cedbf89"},
+    {"path": "remediation-plan.yaml", "sha256": "a8c1ec99048c43d2e61801149428ce5ca467bcdc3735c06331410c6fa76d4eeb"},
+    {"path": "repository-fingerprint.json", "sha256": "ad3abd8c0ec9db5f875a29e667563e9e2283c5781ecd8f13d2aaf4aafb17175e"},
+    {"path": "residual-risks.yaml", "sha256": "54067d602bddbd5883f45e4dbc9e90ec0ff5c7f1a52833a0ca4ca48c6e417073"},
+    {"path": "rollback-plan.yaml", "sha256": "00b2201ef250138f7dc91c1626ec859f50c490c27ed5e3a590dd121a510044cf"},
+    {"path": "test-plan.yaml", "sha256": "665f89b75a4785412533dacb54a71d841659ffd23ebff03c40b9bc2c95cb32e5"},
+    {"path": "verification-results.json", "sha256": "7c9aa99991ef454f880a321dc65c98186d450034415858343cf4197ad3f10f75"}
+  ],
+  "operative_gate_inputs": [
+    {"path": "ops/check-secret-hygiene.py", "purpose": "secret scanner"},
+    {"path": ".github/workflows/secret-scan.yml", "purpose": "CI enforcement"},
+    {"path": ".githooks/pre-commit", "purpose": "local index enforcement"},
+    {"path": ".githooks/pre-push", "purpose": "local introduced-commit enforcement"}
+  ],
+  "durable_non_authorizing_control_documents": [
+    ".ai-remediation/policies/",
+    ".ai-remediation/schemas/",
+    ".ai-remediation/templates/"
+  ],
+  "local_generated_untracked": [
+    ".ai-remediation/runtime/current-state.json",
+    ".ai-remediation/runtime/REM-2026-07-14/evidence/production-sensitive-file-metadata.jsonl",
+    ".ai-remediation/runtime/REM-2026-07-14/evidence/docker-unreferenced-images.jsonl"
+  ],
+  "never_valid_for_production_release": [
+    ".ai-remediation/history/**",
+    ".ai-remediation/templates/**",
+    ".ai-remediation/runtime/**"
+  ]
+}

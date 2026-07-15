@@ -12,16 +12,16 @@ from sealai_v2.config.settings import Settings
 
 def test_profile_is_stable_and_secret_free():
     settings = Settings(
-        openai_api_key="do-not-leak",
-        database_url="postgresql://user:password@db/name",
-        qdrant_api_key="also-secret",
-        legal_ip_hash_pepper="private-pepper",
+        openai_api_key="DUMMY_OPENAI_KEY",
+        database_url="postgresql://user:DUMMY_DATABASE_PASSWORD@db/name",
+        qdrant_api_key="DUMMY_QDRANT_KEY",
+        legal_ip_hash_pepper="DUMMY_LEGAL_PEPPER",
     )
     rendered = canonical_profile_json(settings)
-    assert "do-not-leak" not in rendered
-    assert "password" not in rendered
-    assert "also-secret" not in rendered
-    assert "private-pepper" not in rendered
+    assert "DUMMY_OPENAI_KEY" not in rendered
+    assert "DUMMY_DATABASE_PASSWORD" not in rendered
+    assert "DUMMY_QDRANT_KEY" not in rendered
+    assert "DUMMY_LEGAL_PEPPER" not in rendered
     assert json.loads(rendered) == runtime_profile(settings)
     assert runtime_profile_hash(settings) == runtime_profile_hash(settings)
 

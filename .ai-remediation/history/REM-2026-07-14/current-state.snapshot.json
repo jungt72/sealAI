@@ -1,0 +1,64 @@
+{
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "captured_at": "2026-07-14T11:35:38Z",
+  "source_repository_commit": "dcb19015adacdc790dd1b25cc430333691c43626",
+  "production_commit_at_capture": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
+  "superseded": true,
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "recorded_at": "2026-07-14T11:29:48Z",
+  "release_freeze": {
+    "status": "ACTIVE",
+    "lift_gate": "GATE-10",
+    "required_conditions": [
+      "P0_SECRETS_CONTAINED",
+      "P0_STORAGE_STABLE",
+      "P0_REDIS_STABLE",
+      "RELEASE_GATE_FAIL_CLOSED"
+    ],
+    "satisfied_conditions": []
+  },
+  "repository": {
+    "remediation_branch": "remediation/p0-secret-hygiene",
+    "origin_main_commit": "ede1d80108e3c6e04f7dd467cd2f3fc2e79c7a17",
+    "production_commit": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
+    "primary_checkout_has_user_changes": true,
+    "primary_checkout_preserved": true
+  },
+  "production": {
+    "repository_path": "/home/thorsten/sealai",
+    "repository_path_classification": "PRODUCTION_HOST_PATH",
+    "branch": "main",
+    "working_tree_clean": true,
+    "unexpected_parallel_deployment": false,
+    "core_containers_healthy": true,
+    "data_filesystem_percent_used": 95,
+    "data_filesystem_bytes_available": 5331283968,
+    "redis_used_memory_bytes": 1040559912,
+    "redis_maxmemory_bytes": 1073741824,
+    "redis_key_count": 193992,
+    "redis_expiring_key_count": 2,
+    "redis_maxmemory_policy": "noeviction"
+  },
+  "findings": {
+    "total": 23,
+    "confirmed": 22,
+    "partially_confirmed": 1,
+    "remediation_verified_in_production": 0,
+    "implemented_not_deployed": 1,
+    "closed": 0
+  },
+  "packages": {
+    "p0-secret-hygiene": {
+      "local_status": "IMPLEMENTED_NOT_DEPLOYED",
+      "production_status": "UNCHANGED",
+      "tests_status": "PASSED",
+      "required_gates": ["GATE-01", "GATE-02", "GATE-09"]
+    },
+    "p0-storage-safety": {"local_status": "PLANNED"},
+    "p0-redis-stability": {"local_status": "PLANNED"}
+  },
+  "next_production_gate": "GATE-01",
+  "production_mutations_authorized": false
+}
