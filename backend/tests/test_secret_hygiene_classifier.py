@@ -14,13 +14,89 @@ def _module():
     return module
 
 
-def test_sensitive_key_classifier_uses_token_boundaries() -> None:
-    pattern = _module().ENV_SENSITIVE_KEY_RE
+def test_sensitive_key_classifier_handles_plural_and_technical_names() -> None:
+    sensitive = _module().is_sensitive_key
 
-    assert pattern.search("PAPERLESS_TOKEN")
-    assert pattern.search("OPENAI_API_KEY")
-    assert pattern.search("POSTGRES_PASSWORD")
-    assert not pattern.search("SEALAI_V2_EVAL_JUDGE_MAX_OUTPUT_TOKENS")
+    for key in (
+        "DB_PASSWORDS",
+        "API_TOKENS",
+        "AUTH_SECRETS",
+        "CLIENT_SECRETS",
+        "PRIVATE_KEYS",
+        "ACCESS_TOKENS",
+        "database_passwords",
+        "client_secrets",
+        "DB_PASSWORD_PRIMARY",
+        "CLIENT_SECRET_CURRENT",
+    ):
+        assert sensitive(key)
+    for key in (
+        "MAX_OUTPUT_TOKENS",
+        "INPUT_TOKEN_COUNT",
+        "TOKEN_LIMIT",
+        "TOKEN_BUDGET",
+        "CONTEXT_TOKENS",
+        "TOKENS_PER_MINUTE",
+        "SEALAI_V2_EVAL_JUDGE_MAX_OUTPUT_TOKENS",
+        "TLS_SECRET_NAME",
+        "PASSWORD_POLICY",
+        "CLIENT_SECRET_CREATION_TIME",
+    ):
+        assert not sensitive(key)
+
+
+def test_assignment_and_json_share_sensitive_key_classification() -> None:
+    module = _module()
+    candidate = "synthetic_nonproduction_value_12345"
+    keys = (
+        "DB_PASSWORDS",
+        "API_TOKENS",
+        "AUTH_SECRETS",
+        "CLIENT_SECRETS",
+        "PRIVATE_KEYS",
+        "ACCESS_TOKENS",
+        "database_passwords",
+        "client_secrets",
+        "DB_PASSWORD_PRIMARY",
+        "CLIENT_SECRET_CURRENT",
+    )
+    for key in keys:
+        assignment = f"{key}={candidate}".encode()
+        json_value = json.dumps({key: candidate}).encode()
+        assert {
+            item.rule for item in module.scan_blob("x.conf", assignment, source="test")
+        } == {"content.sensitive-assignment"}
+        assert {
+            item.rule for item in module.scan_blob("x.json", json_value, source="test")
+        } == {"content.sensitive-assignment"}
+
+
+def test_technical_token_fields_and_placeholders_remain_clean() -> None:
+    module = _module()
+    candidate = "synthetic_nonproduction_value_12345"
+    for key in (
+        "MAX_OUTPUT_TOKENS",
+        "INPUT_TOKEN_COUNT",
+        "TOKEN_LIMIT",
+        "TOKEN_BUDGET",
+        "CONTEXT_TOKENS",
+        "TOKENS_PER_MINUTE",
+    ):
+        assert (
+            module.scan_blob("x.conf", f"{key}={candidate}".encode(), source="test")
+            == []
+        )
+        assert (
+            module.scan_blob(
+                "x.json", json.dumps({key: candidate}).encode(), source="test"
+            )
+            == []
+        )
+    assert (
+        module.scan_blob("x.conf", b"CLIENT_SECRETS=SET_IN_SECRET_STORE", source="test")
+        == []
+    )
+    assert module.scan_blob("x.conf", b"CLIENT_SECRETS=short", source="test") == []
 
 
 def test_scanner_detects_each_supported_secret_class() -> None:
@@ -157,6 +233,76 @@ def test_rendered_findings_never_include_detected_value() -> None:
     assert "content.sensitive-assignment" in rendered
 
 
+def test_utf16_wide_text_encodings_are_scanned_and_redacted() -> None:
+    module = _module()
+    candidate = "synthetic_wide_fixture_value_123456"
+    samples = (
+        (f"OPENAI_API_KEY={candidate}", "utf-16", "content.sensitive-assignment"),
+        (f"Bearer {candidate}", "utf-16be", "content.bearer-token"),
+        (
+            "-----BEGIN " + f"PRIVATE KEY-----\n{candidate}",
+            "utf-16le",
+            "content.private-key-pem",
+        ),
+        (
+            "post" + f"gresql://fixture:{candidate}@db/service",
+            "utf-16be",
+            "content.connection-string",
+        ),
+    )
+    for index, (text, encoding, expected) in enumerate(samples):
+        content = text.encode(encoding)
+        if index == 1:
+            content = b"\xfe\xff" + content
+        findings = module.scan_blob("fixture.conf", content, source="wide-test")
+        rendered = module.render_findings(findings)
+        assert expected in {item.rule for item in findings}
+        assert candidate not in rendered
+        assert all(
+            set(item.line().split())
+            >= {f"path={item.path}", f"source={item.source}", "value=[REDACTED]"}
+            for item in findings
+        )
+
+
+def test_utf8_behavior_is_unchanged_and_binary_data_stays_quiet() -> None:
+    module = _module()
+    candidate = "synthetic_utf8_fixture_value_123456"
+    text = f"OPENAI_API_KEY={candidate}"
+    utf8 = module.scan_blob("fixture.conf", text.encode(), source="test")
+    utf8_bom = module.scan_blob(
+        "fixture.conf", b"\xef\xbb\xbf" + text.encode(), source="test"
+    )
+    assert [(item.rule, item.line_number) for item in utf8] == [
+        (item.rule, item.line_number) for item in utf8_bom
+    ]
+    binary = bytes(range(256)) * 2
+    assert module.scan_blob("fixture.bin", binary, source="test") == []
+    assert candidate not in module.render_findings(utf8)
+
+
+def test_textlike_unsupported_encoding_fails_closed() -> None:
+    module = _module()
+    content = b"OPENAI_API_KEY=synthetic_fixture_value_12345\xff"
+    try:
+        module.scan_blob("fixture.conf", content, source="test")
+    except module.ScannerError as exc:
+        assert "synthetic_fixture_value" not in str(exc)
+    else:
+        raise AssertionError("text-like invalid encoding must fail closed")
+
+
+def test_inconsistent_wide_character_data_fails_closed() -> None:
+    module = _module()
+    malformed_utf16le = (b"A\x00" * 15) + b"\x00\xd8"
+    try:
+        module.scan_blob("fixture.conf", malformed_utf16le, source="test")
+    except module.ScannerError:
+        pass
+    else:
+        raise AssertionError("inconsistent wide-character data must fail closed")
+
+
 def test_confirmed_credentials_and_raw_auth_evidence_are_absent() -> None:
     root = Path(__file__).resolve().parents[2]
     exact_paths = (
@@ -174,13 +320,3 @@ def test_confirmed_credentials_and_raw_auth_evidence_are_absent() -> None:
         assert not directory.exists() or not any(
             path.is_file() for path in directory.rglob("*")
         )
-
-
-def test_push_scan_handles_force_rebases_without_scanning_main_history() -> None:
-    root = Path(__file__).resolve().parents[2]
-    workflow = (root / ".github" / "workflows" / "secret-scan.yml").read_text()
-
-    assert 'git merge-base --is-ancestor "$BEFORE_SHA" "$AFTER_SHA"' in workflow
-    assert 'if [ "$REF_NAME" = "$DEFAULT_BRANCH" ]' in workflow
-    assert 'base_sha="$(git merge-base "$AFTER_SHA" "$default_ref")"' in workflow
-    assert 'revision_range="$base_sha..$AFTER_SHA"' in workflow

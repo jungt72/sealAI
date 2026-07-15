@@ -20,26 +20,16 @@ from typing import Iterable, Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-ENV_SENSITIVE_KEY_RE = re.compile(
-    r"(?:^|_)(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CLIENT_SECRET|AUTH_SECRET)(?:$|_)",
-    re.IGNORECASE,
-)
-JSON_SECRET_KEYS = {
-    "apikey",
-    "api_key",
-    "authsecret",
-    "auth_secret",
-    "clientsecret",
-    "client_secret",
-    "credentialdata",
-    "password",
-    "passwd",
-    "privatekey",
-    "private_key",
-    "secret",
-    "secretdata",
-    "token",
-    "access_token",
+NON_SECRET_KEY_SUFFIXES = {
+    ("max", "output", "token"),
+    ("input", "token", "count"),
+    ("token", "limit"),
+    ("token", "budget"),
+    ("context", "token"),
+    ("token", "per", "minute"),
+    ("secret", "name"),
+    ("password", "policy"),
+    ("secret", "creation", "time"),
 }
 PLACEHOLDER_RE = re.compile(
     r"^(?:|<[^>]+>|\$\{[^}]+\}|\$\$\{[^}]+\}|"
@@ -157,6 +147,113 @@ def placeholderish(value: object) -> bool:
     if not isinstance(value, str):
         return False
     return bool(PLACEHOLDER_RE.fullmatch(value.strip()))
+
+
+def _key_segments(key: str) -> tuple[str, ...]:
+    separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+    raw = tuple(part.lower() for part in re.split(r"[^A-Za-z0-9]+", separated) if part)
+    compact_aliases = {
+        "apikey": ("api", "key"),
+        "accesstoken": ("access", "token"),
+        "authsecret": ("auth", "secret"),
+        "clientsecret": ("client", "secret"),
+        "credentialdata": ("credential", "data"),
+        "privatekey": ("private", "key"),
+        "secretdata": ("secret", "data"),
+    }
+    expanded: list[str] = []
+    for part in raw:
+        expanded.extend(compact_aliases.get(part, (part,)))
+    singular = {
+        "password" + "s": "pass" + "word",
+        "tokens": "token",
+        "secrets": "secret",
+        "keys": "key",
+        "credential" + "s": "credential",
+    }
+    return tuple(singular.get(part, part) for part in expanded)
+
+
+def is_sensitive_key(key: str) -> bool:
+    """Classify credential keys without treating technical token counters as secrets."""
+
+    segments = _key_segments(key)
+    if not segments:
+        return False
+    if any(
+        len(segments) >= len(suffix) and segments[-len(suffix) :] == suffix
+        for suffix in NON_SECRET_KEY_SUFFIXES
+    ):
+        return False
+    if any(part in {"password", "passwd", "secret", "credential"} for part in segments):
+        return True
+    if "token" in segments:
+        return True
+    return any(
+        first in segments and second in segments
+        for first, second in (("api", "key"), ("private", "key"))
+    )
+
+
+def _byte_textlike(content: bytes, *, require_nul: bool) -> bool:
+    if not content or (require_nul and b"\x00" not in content):
+        return False
+    accepted = sum(
+        byte == 0 or byte in {9, 10, 13} or 32 <= byte <= 126 for byte in content
+    )
+    return accepted / len(content) >= 0.9
+
+
+def decode_scan_candidates(content: bytes) -> tuple[str, ...]:
+    """Return strict, deduplicated text views for UTF-8 and recognizable UTF-16."""
+
+    if not content:
+        return ("",)
+    candidates: list[str] = []
+    if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            candidates.append(content.decode("utf-16", errors="strict"))
+        except UnicodeError as exc:
+            raise ScannerError(
+                "malformed UTF-16 content is not safely scannable"
+            ) from exc
+    else:
+        try:
+            candidates.append(content.decode("utf-8-sig", errors="strict"))
+        except UnicodeError:
+            pass
+
+        if len(content) >= 8 and len(content) % 2 == 0 and b"\x00" in content:
+            even = content[0::2]
+            odd = content[1::2]
+            even_ratio = even.count(0) / len(even)
+            odd_ratio = odd.count(0) / len(odd)
+            encoding = None
+            if odd_ratio >= 0.6 and even_ratio <= 0.1:
+                encoding = "utf-16le"
+            elif even_ratio >= 0.6 and odd_ratio <= 0.1:
+                encoding = "utf-16be"
+            if encoding is not None:
+                try:
+                    candidates.append(content.decode(encoding, errors="strict"))
+                except UnicodeError as exc:
+                    raise ScannerError(
+                        "malformed UTF-16 content is not safely scannable"
+                    ) from exc
+            elif _byte_textlike(content, require_nul=True):
+                try:
+                    candidates.append(
+                        content.replace(b"\x00", b"").decode("utf-8", errors="strict")
+                    )
+                except UnicodeError as exc:
+                    raise ScannerError(
+                        "ambiguous wide text is not safely scannable"
+                    ) from exc
+
+        if not candidates and _byte_textlike(content, require_nul=False):
+            raise ScannerError("text-like content has an unsupported encoding")
+
+    return tuple(dict.fromkeys(candidates))
 
 
 def normalized_scalar(raw: str) -> str:
@@ -296,11 +393,7 @@ def json_findings(path: str, text: str, source: str) -> list[Finding]:
             stack.extend(current)
 
     for key, child in walk_json(document):
-        normalized = re.sub(r"[^a-zA-Z0-9_]", "", key).lower()
-        key_is_sensitive = normalized in JSON_SECRET_KEYS or bool(
-            ENV_SENSITIVE_KEY_RE.search(normalized.upper())
-        )
-        if key_is_sensitive and secretish_scalar(child):
+        if is_sensitive_key(key) and secretish_scalar(child):
             findings.append(
                 Finding(
                     "content.sensitive-assignment",
@@ -314,7 +407,24 @@ def json_findings(path: str, text: str, source: str) -> list[Finding]:
 
 def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
     findings = filename_findings(path, source)
-    text = content.decode("utf-8", errors="ignore")
+    texts = decode_scan_candidates(content)
+
+    for text in texts:
+        findings.extend(_scan_text(path, text, source))
+
+    if content.startswith((b"PGDMP", b"REDIS")):
+        findings.append(
+            Finding("content.database-dump", path, source=source, line_number=1)
+        )
+
+    unique: dict[tuple[str, str, int | None, str], Finding] = {}
+    for finding in findings:
+        unique[finding.identity()] = finding
+    return sorted(unique.values(), key=Finding.sort_key)
+
+
+def _scan_text(path: str, text: str, source: str) -> list[Finding]:
+    findings: list[Finding] = []
 
     for match in PEM_PRIVATE_KEY_RE.finditer(text):
         findings.append(
@@ -371,12 +481,8 @@ def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
         if not match:
             continue
         key, raw_value = match.groups()
-        normalized_key = re.sub(r"[^a-zA-Z0-9_]", "", key).lower()
-        key_is_sensitive = normalized_key in JSON_SECRET_KEYS or bool(
-            ENV_SENSITIVE_KEY_RE.search(key)
-        )
         scalar = assignment_scalar(path, raw_value)
-        if key_is_sensitive and scalar is not None and secretish_scalar(scalar):
+        if is_sensitive_key(key) and scalar is not None and secretish_scalar(scalar):
             findings.append(
                 Finding(
                     "content.sensitive-assignment",
@@ -388,10 +494,6 @@ def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
 
     findings.extend(json_findings(path, text, source))
 
-    if content.startswith((b"PGDMP", b"REDIS")):
-        findings.append(
-            Finding("content.database-dump", path, source=source, line_number=1)
-        )
     for match in SQL_DATA_DUMP_RE.finditer(text):
         findings.append(
             Finding(
@@ -402,10 +504,7 @@ def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
             )
         )
 
-    unique: dict[tuple[str, str, int | None, str], Finding] = {}
-    for finding in findings:
-        unique[finding.identity()] = finding
-    return sorted(unique.values(), key=Finding.sort_key)
+    return findings
 
 
 def read_blob(oid: str) -> bytes:

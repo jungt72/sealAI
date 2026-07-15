@@ -3,6 +3,7 @@ set -eu
 
 repo_root="$(git rev-parse --show-toplevel)"
 scanner="$repo_root/ops/check-secret-hygiene.py"
+resolver="$repo_root/ops/resolve-secret-scan-range.py"
 zero=0000000000000000000000000000000000000000
 saw_ref=false
 
@@ -16,28 +17,19 @@ while read -r local_ref local_oid remote_ref remote_oid; do
 
   python3 "$scanner" --tree "$local_oid"
 
-  if [ "$remote_oid" != "$zero" ]; then
-    git cat-file -e "$remote_oid^{commit}" 2>/dev/null || {
-      echo "FATAL: remote base is unavailable; secret scan fails closed." >&2
-      exit 2
-    }
-    revision_range="$remote_oid..$local_oid"
-  else
-    default_ref="$(git symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
-    if [ -z "$default_ref" ]; then
-      default_ref=refs/heads/main
-    fi
-    git cat-file -e "$default_ref^{commit}" 2>/dev/null || {
-      echo "FATAL: default branch is unavailable; secret scan fails closed." >&2
-      exit 2
-    }
-    base_oid="$(git merge-base "$local_oid" "$default_ref")"
-    test -n "$base_oid" || {
-      echo "FATAL: no merge base; secret scan fails closed." >&2
-      exit 2
-    }
-    revision_range="$base_oid..$local_oid"
+  default_ref="$(git symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [ -z "$default_ref" ]; then
+    default_ref=refs/heads/main
   fi
+  default_branch="${default_ref##*/}"
+  ref_name="${remote_ref#refs/heads/}"
+  revision_range="$(python3 "$resolver" \
+    --event push \
+    --before "$remote_oid" \
+    --after "$local_oid" \
+    --default-ref "$default_ref" \
+    --ref-name "$ref_name" \
+    --default-branch "$default_branch")"
 
   python3 "$scanner" --range "$revision_range"
 done

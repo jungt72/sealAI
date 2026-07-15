@@ -13,6 +13,12 @@ private JWK fields, JWTs, Bearer headers, provider/API tokens, sensitive
 assignments, credentialed connection strings, env files, and database/cache
 dumps.
 
+Text scanning uses strict UTF-8/UTF-8-BOM decoding plus BOM-bound or
+structure-confirmed UTF-16LE/BE decoding. Clearly text-like ambiguous NUL-wide
+content receives an additional bounded byte-normalized view; arbitrary binary
+payloads are not treated as text. Assignment and JSON keys share one
+plural-aware classifier with narrow exclusions for technical token counters.
+
 The scanner has two output invariants:
 
 1. It reports only a rule ID, file path, optional line number, and scan source.
@@ -35,6 +41,10 @@ python3 ops/check-secret-hygiene.py --range <base-sha>..<head-sha>
 ```
 
 CI runs the immutable-tree and introduced-commit scans with full Git history.
+`ops/resolve-secret-scan-range.py` is the shared fail-closed range resolver for
+CI and pre-push: fast-forwards use the exact remote range, new or force-rebased
+feature branches use the authoritative default-branch merge base, and a
+non-fast-forward default-branch push is rejected.
 It does not exempt Markdown, examples, diagnostics, or generated-looking files.
 Placeholder examples are allowed by value, not by a broad path exclusion.
 
