@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
+import re
+import stat
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.eval.harness import COLUMNS, run_eval
@@ -21,6 +25,42 @@ from sealai_v2.pipeline.timing import configure_timing_logging
 _RUNS_DIR = Path(__file__).resolve().parent / "runs"
 
 _ROLES = ("l1", "verifier", "helper", "judge")
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_RC_BINDING_KEYS = frozenset(
+    {
+        "schema_version",
+        "evidence_type",
+        "evidence_sha256",
+        "payload_sha256",
+        "candidate_image_config_digest",
+        "candidate_image_digest",
+        "candidate_image_digest_source",
+        "served_tree_sha256",
+        "database_migration_sha256",
+        "authority_epoch",
+        "runtime_profile_sha256",
+        "retriever_backend",
+        "retriever_fallback_allowed",
+        "postgres_database",
+        "postgres_snapshot_sha256",
+        "qdrant_collection",
+        "qdrant_authentication",
+        "qdrant_snapshot_sha256",
+        "source_git_sha",
+    }
+)
+_RC_ENV_BINDINGS = {
+    "evidence_sha256": "SEALAI_EVAL_RC_DESCRIPTOR_SHA256",
+    "candidate_image_digest": "SEALAI_EVAL_IMAGE_DIGEST",
+    "candidate_image_config_digest": "SEALAI_EVAL_IMAGE_CONFIG_DIGEST",
+    "served_tree_sha256": "SEALAI_EVAL_SERVED_TREE_SHA256",
+    "database_migration_sha256": "SEALAI_EVAL_DATABASE_MIGRATION_SHA256",
+    "postgres_snapshot_sha256": "SEALAI_RC_POSTGRES_SNAPSHOT_SHA256",
+    "qdrant_snapshot_sha256": "SEALAI_RC_QDRANT_SNAPSHOT_SHA256",
+    "source_git_sha": "SEALAI_EVAL_GIT_SHA",
+}
 
 
 def _parse_role_overrides(model_args, provider_args) -> dict:
@@ -108,6 +148,193 @@ def _tree_binding() -> tuple[str, bool]:
     return tree_hash, dirty
 
 
+def _no_duplicate_json_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _read_rc_binding(path: Path) -> dict:
+    """Read the small canonical descriptor emitted by ``v2_rc_evidence.py verify``.
+
+    Full evidence validation and Gate-10 hash approval remain in the ops-side
+    gate.  The eval process independently checks this descriptor against its
+    actual Settings and runner-supplied immutable inputs before recording it.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise SystemExit("RC evidence binding is unavailable") from exc
+    try:
+        metadata = os.fstat(fd)
+        if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 16384:
+            raise SystemExit("RC evidence binding must be a bounded regular file")
+        chunks = []
+        remaining = 16385
+        while remaining:
+            chunk = os.read(fd, min(4096, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        if len(raw) != metadata.st_size or len(raw) > 16384:
+            raise SystemExit("RC evidence binding size changed while reading")
+    except OSError as exc:
+        raise SystemExit("RC evidence binding cannot be read") from exc
+    finally:
+        os.close(fd)
+    try:
+        binding = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_no_duplicate_json_keys
+        )
+        canonical = (
+            json.dumps(
+                binding,
+                allow_nan=False,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("ascii")
+            + b"\n"
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise SystemExit("RC evidence binding is not canonical JSON") from exc
+    if raw != canonical or not isinstance(binding, dict):
+        raise SystemExit("RC evidence binding is not in canonical byte form")
+    if set(binding) != _RC_BINDING_KEYS:
+        raise SystemExit("RC evidence binding schema is invalid")
+    if (
+        type(binding.get("schema_version")) is not int
+        or binding.get("schema_version") != 1
+        or binding.get("evidence_type") != "sealai_v2_production_rc"
+    ):
+        raise SystemExit("RC evidence binding type is invalid")
+    if (
+        binding.get("candidate_image_digest_source")
+        != "gate10_backend_registry_manifest"
+    ):
+        raise SystemExit("RC evidence candidate digest is not sourced from Gate 10")
+    for key in (
+        "evidence_sha256",
+        "payload_sha256",
+        "served_tree_sha256",
+        "database_migration_sha256",
+        "runtime_profile_sha256",
+        "postgres_snapshot_sha256",
+        "qdrant_snapshot_sha256",
+    ):
+        if (
+            not isinstance(binding.get(key), str)
+            or _SHA256.fullmatch(binding[key]) is None
+        ):
+            raise SystemExit(f"RC evidence binding {key} is invalid")
+    for key in (
+        "candidate_image_digest",
+        "candidate_image_config_digest",
+        "authority_epoch",
+    ):
+        if (
+            not isinstance(binding.get(key), str)
+            or _DIGEST.fullmatch(binding[key]) is None
+        ):
+            raise SystemExit(f"RC evidence binding {key} is invalid")
+    if (
+        binding.get("retriever_backend") != "qdrant"
+        or binding.get("retriever_fallback_allowed") is not False
+    ):
+        raise SystemExit(
+            "RC evidence binding does not prove fail-closed Qdrant retrieval"
+        )
+    if binding.get("qdrant_authentication") != "api_key":
+        raise SystemExit("RC evidence binding does not require Qdrant authentication")
+    for key in ("postgres_database", "qdrant_collection"):
+        if not isinstance(binding.get(key), str) or not binding[key]:
+            raise SystemExit(f"RC evidence binding {key} is invalid")
+    if (
+        not isinstance(binding.get("source_git_sha"), str)
+        or re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", binding["source_git_sha"])
+        is None
+    ):
+        raise SystemExit("RC evidence binding source_git_sha is invalid")
+    return binding
+
+
+def _release_candidate_binding(
+    path: str | None,
+    settings: Settings,
+    *,
+    git_sha: str,
+    dirty: bool,
+) -> dict | None:
+    """Bind eligible eval evidence to the exact runtime that is executing it."""
+    if path is None:
+        return None
+    if os.getenv("SEALAI_EVAL_EVIDENCE_CLASS") != "PRODUCTION_RC_ELIGIBLE":
+        raise SystemExit(
+            "RC evidence binding is forbidden outside the production-eligible lane"
+        )
+    binding = _read_rc_binding(Path(path))
+
+    for field, env_name in _RC_ENV_BINDINGS.items():
+        if os.getenv(env_name) != binding[field]:
+            raise SystemExit(f"RC evidence binding does not match {env_name}")
+    if git_sha != binding["source_git_sha"] or dirty is not False:
+        raise SystemExit(
+            "production-eligible RC evaluation requires the clean approved source"
+        )
+
+    from sealai_v2.config.runtime_profile import runtime_profile_hash
+
+    if runtime_profile_hash(settings) != binding["runtime_profile_sha256"]:
+        raise SystemExit(
+            "RC evidence binding does not match the executing runtime profile"
+        )
+    if (
+        settings.retriever_backend != "qdrant"
+        or settings.ground_enabled is not True
+        or settings.qdrant_collection != binding["qdrant_collection"]
+        or settings.qdrant_url != "http://rc-qdrant:6333"
+        or not isinstance(settings.qdrant_api_key, str)
+        or not 24 <= len(settings.qdrant_api_key) <= 256
+        or any(not 0x21 <= ord(char) <= 0x7E for char in settings.qdrant_api_key)
+    ):
+        raise SystemExit(
+            "RC evidence binding does not match the executing Qdrant retriever"
+        )
+    if settings.knowledge_authority_epoch != binding["authority_epoch"]:
+        raise SystemExit(
+            "RC evidence binding does not match the executing Authority Epoch"
+        )
+    if not settings.database_url:
+        raise SystemExit("RC evidence binding requires an isolated Postgres database")
+    database_url = urlsplit(settings.database_url)
+    if (
+        database_url.scheme != "postgresql+psycopg2"
+        or database_url.hostname != "rc-postgres"
+        or database_url.port != 5432
+        or unquote(database_url.username or "") != "sealai_rc_eval"
+        or not database_url.password
+        or database_url.query
+        or database_url.fragment
+    ):
+        raise SystemExit(
+            "RC evidence binding requires the fixed isolated Postgres endpoint"
+        )
+    database_name = unquote(database_url.path.lstrip("/"))
+    if not database_name or "/" in database_name:
+        raise SystemExit("RC Postgres database identity is ambiguous")
+    if database_name != binding["postgres_database"]:
+        raise SystemExit(
+            "RC evidence binding does not match the executing Postgres database"
+        )
+    return binding
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="sealai_v2 M1 eval-REPLAY (L1-alone)")
     ap.add_argument("--label", default="m1-baseline", help="run label / output subdir")
@@ -157,6 +384,14 @@ def main() -> None:
         metavar="ROLE=PROVIDER",
         help="per-role provider override (role: l1|verifier|helper|judge), repeatable; "
         "e.g. --provider l1=mistral",
+    )
+    ap.add_argument(
+        "--rc-evidence-binding-file",
+        default=os.getenv("SEALAI_EVAL_RC_BINDING_FILE"),
+        help=(
+            "canonical descriptor emitted by ops/v2_rc_evidence.py verify; when present, "
+            "the eval fails closed unless it matches the exact candidate/runtime/snapshots"
+        ),
     )
     args = ap.parse_args()
     configure_timing_logging()  # per-turn timing lines → stdout during the live REPLAY
@@ -210,12 +445,19 @@ def main() -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     tree_hash, dirty = _tree_binding()
+    git_sha = _git_sha()
+    release_candidate_evidence = _release_candidate_binding(
+        args.rc_evidence_binding_file,
+        settings,
+        git_sha=git_sha,
+        dirty=dirty,
+    )
     out = asyncio.run(
         run_eval(
             settings,
             run_dir=run_dir,
             run_label=args.label,
-            git_sha=_git_sha(),
+            git_sha=git_sha,
             tree_hash=tree_hash,
             dirty=dirty,
             timestamp=timestamp,
@@ -223,6 +465,7 @@ def main() -> None:
             smoke_limit=args.smoke,
             include_auxiliary=args.smoke is None,
             case_ids=case_ids,
+            release_candidate_evidence=release_candidate_evidence,
         )
     )
     print(f"\n=== M1 eval-REPLAY: {args.label} ===")

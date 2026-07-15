@@ -26,30 +26,82 @@
 # it never enters this hash (no circularity). Any positional arg is ignored — the
 # input set is fixed.
 #
-# RECIPE (NO side effects on the real index/worktree): a throwaway GIT_INDEX_FILE,
-# `git add` the inputs into it, `git write-tree` → the tree-object SHA. The real
-# .git/index and the worktree are untouched (proven by the status-invariance test).
+# RECIPE (NO side effects on the real index/worktree/object store): a throwaway
+# GIT_INDEX_FILE plus private object directory, `git add` the inputs into it,
+# `git write-tree` → the tree-object SHA. The real .git index/objects and the
+# worktree are untouched (including in a root-owned read-only staged checkout).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
+readonly GIT_CONFIG_NOSYSTEM=1
+readonly GIT_CONFIG_GLOBAL=/dev/null
+readonly GIT_TERMINAL_PROMPT=0
+readonly GIT_OPTIONAL_LOCKS=0
+readonly GIT_CONFIG_COUNT=0
+readonly GIT_ATTR_NOSYSTEM=1
+export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_TERMINAL_PROMPT GIT_OPTIONAL_LOCKS
+export GIT_CONFIG_COUNT GIT_ATTR_NOSYSTEM
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+unset GIT_CONFIG_PARAMETERS GIT_EXEC_PATH
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 cd "${REPO_ROOT}"
+GIT=(/usr/bin/git -c core.hooksPath=/dev/null -c "safe.directory=${REPO_ROOT}" -C "${REPO_ROOT}")
+REPO_GIT_OBJECTS_RAW="$("${GIT[@]}" rev-parse --git-path objects)"
+REPO_GIT_OBJECTS="$(CDPATH= cd -- "${REPO_GIT_OBJECTS_RAW}" && pwd -P)"
+readonly REPO_GIT_OBJECTS_RAW REPO_GIT_OBJECTS
 
-TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/sealai-tree-index.XXXXXX")"
-chmod 0700 "${TMP_ROOT}"
-TMP_INDEX="${TMP_ROOT}/index"
-trap 'rm -rf "${TMP_ROOT}"' EXIT
+TMP_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sealai-tree-hash.XXXXXX")"
+chmod 0700 "${TMP_WORK_DIR}"
+trap 'rm -rf -- "${TMP_WORK_DIR}"' EXIT
+TMP_INDEX="${TMP_WORK_DIR}/index"
+if [[ -n "${SEALAI_TREE_HASH_OBJECT_DIR:-}" ]]; then
+  TREE_OBJECT_DIR="${SEALAI_TREE_HASH_OBJECT_DIR}"
+  /usr/bin/python3 -I - "${TREE_OBJECT_DIR}" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
 
-GIT_INDEX_FILE="${TMP_INDEX}" git add -A -- \
+path = Path(sys.argv[1])
+try:
+    metadata = path.lstat()
+except OSError:
+    raise SystemExit(78)
+if (
+    not path.is_absolute()
+    or stat.S_ISLNK(metadata.st_mode)
+    or not stat.S_ISDIR(metadata.st_mode)
+    or metadata.st_uid != os.geteuid()
+    or stat.S_IMODE(metadata.st_mode) != 0o700
+):
+    raise SystemExit(78)
+PY
+else
+  TREE_OBJECT_DIR="${TMP_WORK_DIR}/objects"
+  mkdir -m 0700 "${TREE_OBJECT_DIR}"
+fi
+readonly TMP_WORK_DIR TMP_INDEX TREE_OBJECT_DIR
+readonly GIT_ALTERNATE_OBJECT_DIRECTORIES="${REPO_GIT_OBJECTS}"
+readonly GIT_OBJECT_DIRECTORY="${TREE_OBJECT_DIR}"
+readonly GIT_INDEX_FILE="${TMP_INDEX}"
+export GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OBJECT_DIRECTORY GIT_INDEX_FILE
+
+HASH_INPUTS=(
   backend/sealai_v2 \
   ":(exclude)backend/sealai_v2/eval" \
   ":(exclude)backend/sealai_v2/tests" \
   backend/requirements-v2.txt \
-  backend/requirements-v2.lock \
   backend/.dockerignore \
   backend/Dockerfile.v2 \
-  backend/docker-entrypoint-v2.sh >/dev/null
+  backend/docker-entrypoint-v2.sh
+)
+if [[ -e backend/requirements-v2.lock || -L backend/requirements-v2.lock ]]; then
+  HASH_INPUTS+=(backend/requirements-v2.lock)
+fi
+"${GIT[@]}" add -A -- "${HASH_INPUTS[@]}" >/dev/null
 
-GIT_INDEX_FILE="${TMP_INDEX}" git write-tree
+"${GIT[@]}" write-tree

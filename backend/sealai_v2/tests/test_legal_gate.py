@@ -14,7 +14,7 @@ from sealai_v2.api import deps
 from sealai_v2.api.main import app
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
-from sealai_v2.core.contracts import ModelConfig
+from sealai_v2.core.contracts import ModelConfig, RememberedFact
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.legal_doctrine import doctrine_payload
 from sealai_v2.db.legal_acceptance import InProcessLegalAcceptanceStore, LegalAcceptance
@@ -36,6 +36,18 @@ from sealai_v2.tests._fakes import FakeLlmClient
 
 def _base_client(*, gate_enabled: bool, pipeline: Pipeline | None = None, store=None):
     client, pipeline = make_client(pipeline=pipeline)
+    if pipeline.memory is not None and not pipeline.memory.history(
+        tenant_id="tenant-A", session_id="sess-A", owner_subject="user-A"
+    ):
+        pipeline.memory.record_turn(
+            tenant_id="tenant-A",
+            session_id="sess-A",
+            owner_subject="user-A",
+            question="x",
+            answer="ok",
+            facts=(RememberedFact(feld="medium", wert="Öl"),),
+            expected_case_revision=0,
+        )
     store = store if store is not None else InProcessLegalAcceptanceStore()
     app.dependency_overrides[deps.get_settings] = lambda: Settings(
         legal_gate_enabled=gate_enabled
@@ -73,7 +85,11 @@ def test_chat_works_without_acceptance_when_gate_is_off():
 
 def test_briefing_works_without_acceptance_when_gate_is_off():
     client, _, _ = _base_client(gate_enabled=False)
-    r = client.post("/api/v2/briefing", json={"message": "x"}, headers=auth("tok-A"))
+    r = client.post(
+        "/api/v2/briefing",
+        json={"case_id": "sess-A", "case_revision": 1},
+        headers=auth("tok-A"),
+    )
     assert r.status_code == 200
 
 
@@ -134,7 +150,11 @@ def test_acceptance_does_not_cross_the_tenant_boundary():
 
 def test_briefing_is_gated_too():
     client, _, _ = _base_client(gate_enabled=True)
-    r = client.post("/api/v2/briefing", json={"message": "x"}, headers=auth("tok-A"))
+    r = client.post(
+        "/api/v2/briefing",
+        json={"case_id": "sess-A", "case_revision": 1},
+        headers=auth("tok-A"),
+    )
     assert r.status_code == 403
 
 
@@ -179,7 +199,7 @@ def test_anfrage_is_gated_too():
     app.dependency_overrides[deps.get_lead_store] = lambda: InProcessLeadStore()
     r = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "acme", "message": "x"},
+        json={"partner_id": "acme", "case_id": "sess-A", "case_revision": 1},
         headers=auth("tok-A"),
     )
     assert r.status_code == 403

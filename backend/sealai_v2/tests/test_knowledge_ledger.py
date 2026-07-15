@@ -83,6 +83,42 @@ def _document(content=b"source-v1"):
     )
 
 
+def _review_and_approve(
+    ledger,
+    claim_id: str,
+    *,
+    reviewer: str = "domain-reviewer:alice",
+    approver: str = "domain-approver:bob",
+    now: str = NOW,
+    evidence=("DIN EN ISO 1",),
+    applicability=None,
+    uncertainty: str = "conditional",
+    transferability: str = "family_level_orientation",
+    review_expires_at: str = "2099-07-10T10:00:00Z",
+    change_reason: str = "independent domain review",
+):
+    ledger.review_claim(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        claim_id=claim_id,
+        to_status="reviewed",
+        actor=reviewer,
+        now=now,
+        evidence=evidence,
+        applicability=applicability or {"material": ["PTFE"]},
+        uncertainty=uncertainty,
+        transferability=transferability,
+        review_expires_at=review_expires_at,
+        change_reason=change_reason,
+    )
+    return ledger.review_claim(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        claim_id=claim_id,
+        to_status="approved",
+        actor=approver,
+        now=now,
+    )
+
+
 def test_replace_catalog_is_atomic_versioned_and_idempotent(tmp_path):
     ledger, sf = _ledger(tmp_path)
     first = ledger.replace_catalog(
@@ -165,19 +201,7 @@ def test_human_review_survives_unchanged_claim_contract_revision(tmp_path):
     ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
     with sf() as session:
         claim_id = session.scalar(select(V2KnowledgeClaim.id))
-    ledger.review_claim(
-        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
-        claim_id=claim_id,
-        to_status="approved",
-        actor="domain-reviewer:alice",
-        now=NOW,
-        evidence=("DIN EN ISO 1",),
-        applicability={"material": ["PTFE"]},
-        uncertainty="conditional",
-        transferability="family_level_orientation",
-        review_expires_at="2099-07-10T10:00:00Z",
-        change_reason="independent domain review",
-    )
+    _review_and_approve(ledger, claim_id)
 
     second = ledger.replace_catalog(
         _document(b"source-v2"),
@@ -196,7 +220,8 @@ def test_human_review_survives_unchanged_claim_contract_revision(tmp_path):
         assert row.reviewed_by == "domain-reviewer:alice"
         assert row.document_id == second.document_id
         assert [(item.from_status, item.to_status) for item in reviews] == [
-            ("draft", "approved")
+            ("draft", "reviewed"),
+            ("reviewed", "approved"),
         ]
     assert claim_id in ledger.resolve_claims((claim_id,), tenant_id="customer-a")
 
@@ -206,18 +231,7 @@ def test_authority_contract_change_quarantines_prior_human_review(tmp_path):
     ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
     with sf() as session:
         claim_id = session.scalar(select(V2KnowledgeClaim.id))
-    ledger.review_claim(
-        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
-        claim_id=claim_id,
-        to_status="approved",
-        actor="domain-reviewer:alice",
-        now=NOW,
-        evidence=("DIN EN ISO 1",),
-        applicability={"material": ["PTFE"]},
-        uncertainty="conditional",
-        transferability="family_level_orientation",
-        review_expires_at="2099-07-10T10:00:00Z",
-    )
+    _review_and_approve(ledger, claim_id)
 
     ledger.replace_catalog(
         _document(b"source-v2"),
@@ -289,7 +303,7 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
             now=NOW,
         )
     except KnowledgeLedgerError as exc:
-        assert "evidence" in str(exc)
+        assert "completed independent review" in str(exc)
     else:
         raise AssertionError("approval without evidence was accepted")
 
@@ -297,8 +311,8 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
         ledger.review_claim(
             tenant_id=GLOBAL_KNOWLEDGE_TENANT,
             claim_id=claim_id,
-            to_status="approved",
-            actor="owner",
+            to_status="reviewed",
+            actor="domain-reviewer:alice",
             now=NOW,
             evidence=("DIN EN ISO 1, owner checked",),
             applicability={"material": ["PTFE"]},
@@ -310,15 +324,38 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
     ledger.review_claim(
         tenant_id=GLOBAL_KNOWLEDGE_TENANT,
         claim_id=claim_id,
-        to_status="approved",
-        actor="owner",
+        to_status="reviewed",
+        actor="domain-reviewer:alice",
         now=NOW,
-        evidence=("DIN EN ISO 1, owner checked",),
+        evidence=("DIN EN ISO 1, reviewer checked",),
         applicability={"material": ["PTFE"]},
         uncertainty="conditional",
         transferability="family_level_orientation",
         review_expires_at="2099-07-10T10:00:00Z",
-        change_reason="owner review",
+    )
+    with pytest.raises(KnowledgeLedgerError, match="different human actors"):
+        ledger.review_claim(
+            tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+            claim_id=claim_id,
+            to_status="approved",
+            actor="domain-reviewer:alice",
+            now=NOW,
+        )
+
+    ledger.review_claim(
+        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
+        claim_id=claim_id,
+        to_status="quarantined",
+        actor="domain-reviewer:carol",
+        now=NOW,
+        note="reset after independence test",
+    )
+
+    _review_and_approve(
+        ledger,
+        claim_id,
+        evidence=("DIN EN ISO 1, reviewer checked",),
+        change_reason="independent review",
     )
     resolved = ledger.resolve_claims((claim_id,), tenant_id="customer-a")
     assert resolved[claim_id]["review_state"] == "reviewed"
@@ -327,7 +364,7 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
     assert resolved[claim_id]["applicability"] == {"material": ["PTFE"]}
     assert resolved[claim_id]["uncertainty"] == "conditional"
     assert resolved[claim_id]["review_expires_at"] == "2099-07-10T10:00:00Z"
-    assert resolved[claim_id]["reviewed_by"] == "owner"
+    assert resolved[claim_id]["reviewed_by"] == "domain-reviewer:alice"
 
     ledger.review_claim(
         tenant_id=GLOBAL_KNOWLEDGE_TENANT,
@@ -343,7 +380,10 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
             select(V2KnowledgeReview).order_by(V2KnowledgeReview.id)
         ).all()
         assert [(row.from_status, row.to_status) for row in reviews] == [
-            ("draft", "approved"),
+            ("draft", "reviewed"),
+            ("reviewed", "quarantined"),
+            ("quarantined", "reviewed"),
+            ("reviewed", "approved"),
             ("approved", "rejected"),
         ]
 
@@ -353,18 +393,7 @@ def test_expired_approved_claim_is_not_resolved(tmp_path):
     ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
     with sf() as session:
         claim_id = session.scalar(select(V2KnowledgeClaim.id))
-    ledger.review_claim(
-        tenant_id=GLOBAL_KNOWLEDGE_TENANT,
-        claim_id=claim_id,
-        to_status="approved",
-        actor="domain-reviewer:alice",
-        now=NOW,
-        evidence=("DIN EN ISO 1",),
-        applicability={"material": ["PTFE"]},
-        uncertainty="conditional",
-        transferability="family_level_orientation",
-        review_expires_at="2099-07-10T10:00:00Z",
-    )
+    _review_and_approve(ledger, claim_id)
     with sf() as session:
         row = session.get(V2KnowledgeClaim, claim_id)
         row.review_expires_at = "2020-01-01T00:00:00Z"

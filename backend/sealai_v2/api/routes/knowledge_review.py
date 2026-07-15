@@ -6,13 +6,14 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.api.deps import (
+    current_identity,
     get_knowledge_ledger,
     get_settings,
-    require_knowledge_reviewer,
 )
+from sealai_v2.api.errors import safe_http_error
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.knowledge.ledger import (
@@ -25,7 +26,9 @@ router = APIRouter(prefix="/api/v2/admin/knowledge", tags=["knowledge-review"])
 
 
 class ClaimReview(BaseModel):
-    to_status: Literal["approved", "quarantined", "rejected"]
+    model_config = ConfigDict(extra="forbid")
+
+    to_status: Literal["reviewed", "approved", "quarantined", "rejected"]
     independent_review_attested: bool = False
     note: str = Field(default="", max_length=4000)
     evidence: list[dict] = Field(default_factory=list, max_length=100)
@@ -60,17 +63,60 @@ def _require_review_surface(settings: Settings) -> None:
         )
 
 
+def _require_review_role(
+    identity: VerifiedIdentity, settings: Settings, *, approval: bool = False
+) -> None:
+    required = (
+        settings.auth_knowledge_approver_role
+        if approval
+        else settings.auth_knowledge_reviewer_role
+    )
+    if required not in identity.roles:
+        detail = (
+            "knowledge approver role required"
+            if approval
+            else "knowledge reviewer role required"
+        )
+        raise HTTPException(status_code=403, detail=detail)
+    incompatible = {
+        settings.auth_tenant_admin_role,
+        settings.auth_platform_owner_role,
+        settings.auth_system_operator_role,
+        settings.auth_knowledge_contributor_role,
+        (
+            settings.auth_knowledge_reviewer_role
+            if approval
+            else settings.auth_knowledge_approver_role
+        ),
+    }
+    if not incompatible.isdisjoint(identity.roles):
+        raise HTTPException(
+            status_code=403,
+            detail="knowledge governance roles must be held by separate identities",
+        )
+
+
+def _require_review_reader(identity: VerifiedIdentity, settings: Settings) -> None:
+    allowed = {
+        settings.auth_knowledge_reviewer_role,
+        settings.auth_knowledge_approver_role,
+    }
+    if allowed.isdisjoint(identity.roles):
+        raise HTTPException(status_code=403, detail="knowledge review role required")
+
+
 @router.get("/claims")
 def list_claims(
-    status: Literal["draft", "approved", "quarantined", "rejected"] = Query(
-        default="quarantined"
+    status: Literal["draft", "reviewed", "approved", "quarantined", "rejected"] = (
+        Query(default="quarantined")
     ),
     limit: int = Query(default=100, ge=1, le=500),
-    _: VerifiedIdentity = Depends(require_knowledge_reviewer),
+    identity: VerifiedIdentity = Depends(current_identity),
     ledger=Depends(get_knowledge_ledger),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     _require_review_surface(settings)
+    _require_review_reader(identity, settings)
     try:
         claims = ledger.list_claims(
             tenant_id=GLOBAL_KNOWLEDGE_TENANT,
@@ -78,7 +124,7 @@ def list_claims(
             limit=limit,
         )
     except KnowledgeLedgerError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "knowledge_query_invalid") from exc
     return {"claims": list(claims), "status": status, "authoritative": True}
 
 
@@ -86,11 +132,12 @@ def list_claims(
 def review_claim(
     claim_id: str,
     body: ClaimReview,
-    identity: VerifiedIdentity = Depends(require_knowledge_reviewer),
+    identity: VerifiedIdentity = Depends(current_identity),
     ledger=Depends(get_knowledge_ledger),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     _require_review_surface(settings)
+    _require_review_role(identity, settings, approval=body.to_status == "approved")
     if body.to_status == "approved" and not body.independent_review_attested:
         raise HTTPException(
             status_code=400,
@@ -118,5 +165,5 @@ def review_claim(
     except KnowledgeClaimNotFound as exc:
         raise HTTPException(status_code=404, detail="claim not found") from exc
     except KnowledgeLedgerError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "knowledge_review_invalid") from exc
     return {"claim": claim, "knowledge_mode_activated": False}

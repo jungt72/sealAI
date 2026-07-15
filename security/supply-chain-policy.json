@@ -73,7 +73,32 @@
     {
       "classification": "production",
       "path": "docker-compose.yml",
-      "required_digest_variables": []
+      "required_digest_variables": [
+        {
+          "name": "ALERTMANAGER_IMAGE",
+          "repository": "prom/alertmanager"
+        },
+        {
+          "name": "BLACKBOX_EXPORTER_IMAGE",
+          "repository": "prom/blackbox-exporter"
+        },
+        {
+          "name": "NODE_EXPORTER_IMAGE",
+          "repository": "prom/node-exporter"
+        },
+        {
+          "name": "CADVISOR_IMAGE",
+          "repository": "gcr.io/cadvisor/cadvisor"
+        },
+        {
+          "name": "POSTGRES_EXPORTER_IMAGE",
+          "repository": "quay.io/prometheuscommunity/postgres-exporter"
+        },
+        {
+          "name": "REDIS_EXPORTER_IMAGE",
+          "repository": "oliver006/redis_exporter"
+        }
+      ]
     },
     {
       "classification": "production",
@@ -90,6 +115,30 @@
         {
           "name": "KEYCLOAK_IMAGE",
           "repository": "ghcr.io/jungt72/sealai-keycloak"
+        },
+        {
+          "name": "NGINX_IMAGE",
+          "repository": "docker.io/library/nginx"
+        },
+        {
+          "name": "POSTGRES_IMAGE",
+          "repository": "docker.io/library/postgres"
+        },
+        {
+          "name": "REDIS_IMAGE",
+          "repository": "docker.io/redis/redis-stack-server"
+        },
+        {
+          "name": "QDRANT_IMAGE",
+          "repository": "docker.io/qdrant/qdrant"
+        },
+        {
+          "name": "GOTENBERG_IMAGE",
+          "repository": "docker.io/gotenberg/gotenberg"
+        },
+        {
+          "name": "TIKA_IMAGE",
+          "repository": "docker.io/apache/tika"
         }
       ]
     },
@@ -126,7 +175,20 @@
     {
       "classification": "production",
       "path": "paperless/docker-compose.yml",
-      "required_digest_variables": []
+      "required_digest_variables": [
+        {
+          "name": "PAPERLESS_GOTENBERG_IMAGE",
+          "repository": "docker.io/gotenberg/gotenberg"
+        },
+        {
+          "name": "PAPERLESS_TIKA_IMAGE",
+          "repository": "docker.io/apache/tika"
+        },
+        {
+          "name": "PAPERLESS_IMAGE",
+          "repository": "ghcr.io/paperless-ngx/paperless-ngx"
+        }
+      ]
     }
   ],
   "audit_policy": {

@@ -17,6 +17,9 @@ exit 2
 
 cd /home/thorsten/sealai
 
+/bin/bash -p "${SCRIPT_DIR}/validate-production-compose-security.sh" \
+  /home/thorsten/sealai/.env.prod
+
 COMPOSE_ARGS=(
   --env-file .env.prod
   -f docker-compose.yml
@@ -109,7 +112,7 @@ if PUSH_OUTPUT="$(docker push "${FRONTEND_IMAGE_TAG}" 2>&1)"; then
   echo ">> New pinned image: ${FRONTEND_IMAGE_REF}"
 else
   echo "${PUSH_OUTPUT}" >&2
-  echo "!! GHCR push failed; unsigned local production fallbacks are forbidden" >&2
+  echo "!! GHCR push failed; mutable/local production image fallbacks are forbidden; unsigned artifacts are forbidden" >&2
   exit 1
 fi
 

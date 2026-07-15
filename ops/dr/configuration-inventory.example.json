@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "source_git_commit": "0000000000000000000000000000000000000000",
+  "artifacts": [
+    {
+      "logical_id": "compose_base",
+      "path": "configuration/runtime/docker-compose.yml",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "logical_id": "compose_deploy",
+      "path": "configuration/runtime/docker-compose.deploy.yml",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "logical_id": "identity",
+      "path": "configuration/identity/keycloak.conf",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "logical_id": "monitoring",
+      "path": "configuration/monitoring/prometheus.yml",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "logical_id": "nginx",
+      "path": "configuration/nginx/default.conf",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "logical_id": "release_control",
+      "path": "configuration/release/production-release-state.json",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  ]
+}

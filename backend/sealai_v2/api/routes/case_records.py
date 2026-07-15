@@ -15,6 +15,7 @@ from sealai_v2.api.deps import (
     require_decision_reviewer,
     require_legal_acceptance,
 )
+from sealai_v2.api.errors import safe_http_error
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.core.decision_records import CaseDecisionError
@@ -75,7 +76,10 @@ def _require_case_access(
     bundle: dict, identity: VerifiedIdentity, settings: Settings
 ) -> None:
     owner_subject = bundle["case"].owner_subject
-    reviewer_roles = {settings.auth_admin_role, settings.auth_decision_reviewer_role}
+    reviewer_roles = {
+        settings.auth_tenant_admin_role,
+        settings.auth_decision_reviewer_role,
+    }
     if identity.subject != owner_subject and reviewer_roles.isdisjoint(identity.roles):
         raise HTTPException(status_code=404, detail="case not found")
 
@@ -108,7 +112,7 @@ def create_case(
             now=_now(),
         )
     except CaseDecisionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "case_create_invalid") from exc
     return {"case": asdict(record)}
 
 
@@ -157,7 +161,7 @@ def create_snapshot(
             now=_now(),
         )
     except CaseDecisionError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise safe_http_error(404, "case_snapshot_not_found") from exc
     return {"snapshot": asdict(snapshot)}
 
 
@@ -190,7 +194,7 @@ def create_decision(
             supersedes_decision_id=body.supersedes_decision_id,
         )
     except CaseDecisionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "case_decision_invalid") from exc
     return {
         "decision": asdict(decision),
         "release_authority": "external_manufacturer_or_responsible_engineer",
@@ -218,7 +222,7 @@ def add_approval(
             now=_now(),
         )
     except CaseDecisionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "case_approval_invalid") from exc
     return {
         "approval": asdict(approval),
         "release_authority": "external_manufacturer_or_responsible_engineer",

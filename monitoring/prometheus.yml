@@ -1,20 +1,102 @@
 global:
   scrape_interval: 15s
+  scrape_timeout: 10s
   evaluation_interval: 15s
 
-scrape_configs:
-  - job_name: "sealai-backend"
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["backend:8000"]
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
-  - job_name: "sealai-backend-v2"
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: sealai-backend-v2
     metrics_path: /metrics
     static_configs:
       - targets: ["backend-v2:8001"]
 
-# Current stack note:
-# - backend exposes /metrics when ENABLE_METRICS=true (set in docker-compose.yml)
-# - qdrant/redis exporter scrape targets from the target architecture are not
-#   added here yet because they are not provisioned as stable metrics endpoints
-#   in the current compose stack
+  - job_name: sealai-backend-v2-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend-v2-worker:9101"]
+
+  - job_name: sealai-keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["keycloak:9000"]
+
+  - job_name: sealai-qdrant
+    metrics_path: /metrics
+    http_headers:
+      api-key:
+        files: ["/run/secrets/qdrant_read_only_api_key"]
+    static_configs:
+      - targets: ["qdrant:6333"]
+
+  - job_name: sealai-node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "sealai_(backup|offsite_backup|restore_drill)_.*"
+        action: drop
+
+  - job_name: sealai-containers
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: sealai-postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: sealai-redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: sealai-dr-status
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "sealai_(backup|offsite_backup|restore_drill)_.*"
+        action: keep
+
+  - job_name: sealai-blackbox-tls-apex
+    metrics_path: /probe
+    params:
+      module: [https_apex_health_200]
+    static_configs:
+      - targets:
+          - https://sealingai.com/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: sealai-blackbox-tls-www-redirect
+    metrics_path: /probe
+    params:
+      module: [https_www_health_308_to_apex]
+    static_configs:
+      - targets:
+          - https://www.sealingai.com/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: sealai-alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]

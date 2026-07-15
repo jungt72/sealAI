@@ -13,4 +13,4 @@ from sealai_v2.knowledge.outbox_worker import main as outbox_main
 settings = Settings()
 print("collection      :", settings.qdrant_collection)
 print("ledger import   :", bootstrap_seed(build_knowledge_ledger(settings)))
-raise SystemExit(outbox_main(["drain-all", "--batch-size", "100"]))
+raise SystemExit(outbox_main(["drain-all", "--batch-size", "50"]))

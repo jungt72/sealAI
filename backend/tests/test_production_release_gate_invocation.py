@@ -12,6 +12,15 @@ OPS = ROOT / "ops"
 HELPER = OPS / "production-release-gate-check.sh"
 REMOTE = OPS / "production-deploy-remote-entrypoint.sh"
 SOURCE_SHA = "a" * 40
+RELEASE_HASHES = {
+    "served_tree_sha256": "1" * 64,
+    "backend_image_digest": "sha256:" + "2" * 64,
+    "frontend_image_digest": "sha256:" + "3" * 64,
+    "dashboard_artifact_sha256": "4" * 64,
+    "database_migration_sha256": "5" * 64,
+    "rollback_plan_sha256": "6" * 64,
+    "evidence_manifest_sha256": "7" * 64,
+}
 GATED_ENTRYPOINTS = (
     "install_sealai_stack_service.sh",
     "keycloak_upgrade_preflight.sh",
@@ -114,6 +123,7 @@ def _allowed_decision(**overrides: object) -> dict[str, object]:
         "state_id": "freeze-test",
         "required_gate": "GATE-10",
         "source_git_sha": SOURCE_SHA,
+        "release_hashes": RELEASE_HASHES.copy(),
     }
     value.update(overrides)
     return value
@@ -154,6 +164,41 @@ def test_gate_invocation_uses_isolated_system_python_and_exact_success_json(
         (_allowed_decision(reason="some_other_success"), SOURCE_SHA),
         (_allowed_decision(extra="unexpected"), SOURCE_SHA),
         (_allowed_decision(source_git_sha="b" * 40), SOURCE_SHA),
+        (_allowed_decision(release_hashes=None), SOURCE_SHA),
+        (
+            _allowed_decision(
+                release_hashes={
+                    key: value
+                    for key, value in RELEASE_HASHES.items()
+                    if key != "served_tree_sha256"
+                }
+            ),
+            SOURCE_SHA,
+        ),
+        (
+            _allowed_decision(
+                release_hashes={**RELEASE_HASHES, "unexpected": "8" * 64}
+            ),
+            SOURCE_SHA,
+        ),
+        (
+            _allowed_decision(
+                release_hashes={
+                    **RELEASE_HASHES,
+                    "backend_image_digest": "2" * 64,
+                }
+            ),
+            SOURCE_SHA,
+        ),
+        (
+            _allowed_decision(
+                release_hashes={
+                    **RELEASE_HASHES,
+                    "dashboard_artifact_sha256": "sha256:" + "4" * 64,
+                }
+            ),
+            SOURCE_SHA,
+        ),
     ],
 )
 def test_gate_invocation_rejects_zero_exit_with_non_exact_decision(
@@ -590,17 +635,33 @@ def test_legacy_deploy_sentinel_denies_every_supported_invocation_spelling(
     assert "missing sentinel" in result.stderr
 
 
-def test_installed_remote_boundary_holds_lease_and_stays_hard_denied() -> None:
+def test_installed_remote_boundary_uses_root_stage_two_gates_lease_and_privilege_drop() -> (
+    None
+):
     script = REMOTE.read_text(encoding="utf-8")
 
+    stage = script.index('"${INSTALLED_CONTROL}" verify-stage')
+    gate = script.index("production_release_gate_check")
+    authorize = script.index('"${INSTALLED_CONTROL}" authorize')
     lease = script.index("acquire_production_storage_lease")
-    hard_denial = script.index("p1_exact_artifact_promotion_not_implemented")
-    assert lease < hard_denial
-    assert "/usr/local/libexec/sealai/production-storage-lease.sh" in script
-    assert "/usr/local/libexec/sealai/production-release-gate-check.sh" in script
+    consume = script.index('"${INSTALLED_CONTROL}" consume')
+    release = script.index('/bin/bash -p "${STAGED_RELEASE}" --final')
+    dashboard = script.index('"${INSTALLED_CONTROL}" activate-dashboard')
+    assert stage < gate < authorize < lease < consume < release < dashboard
+    assert "${INSTALLED_ROOT}/production-storage-lease.sh" in script
+    assert "${INSTALLED_ROOT}/production-release-gate-check.sh" in script
     assert "git fetch" not in script
     assert "git checkout" not in script
     assert "/usr/bin/git" not in script
-    assert "production_release_gate.py" not in script
-    assert "release-backend-v2.sh" not in script
-    assert "docker " not in script
+    assert "/home/thorsten/sealai/ops/" not in script
+    assert '[[ "${EUID}" -eq 0 ]] || deny root_required' in script
+    assert "--reuid=" in script and "--init-groups" in script
+    assert 'BACKEND_V2_IMAGE="${BACKEND_IMAGE}"' in script
+
+    sudoers = (OPS / "sudoers" / "sealai-production-deploy").read_text(encoding="utf-8")
+    rules = [line for line in sudoers.splitlines() if line and not line.startswith("#")]
+    assert rules == [
+        "thorsten ALL=(root) NOPASSWD: "
+        "/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh *"
+    ]
+    assert "SETENV" not in sudoers

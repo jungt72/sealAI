@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "keep_daily": 14,
+  "keep_weekly": 8,
+  "keep_monthly": 12,
+  "keep_yearly": 7,
+  "minimum_verified_snapshots": 2,
+  "require_full_download_receipt": true,
+  "require_isolated_restore_receipt": true,
+  "prune_requires_gate_08": true
+}

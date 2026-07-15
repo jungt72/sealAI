@@ -1,5 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/lib/verified-tls.sh
+source "${SCRIPT_DIR}/lib/verified-tls.sh"
 
 require() { command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 2; }; }
 
@@ -28,12 +34,19 @@ NGINX_BASE_URL="${NGINX_BASE_URL:-https://sealingai.com}"
 BACKEND_BASE_URL="${BACKEND_BASE_URL:-http://localhost:8000}"
 MAX_EVENTS="${MAX_EVENTS:-5}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-25}"
-CURL_INSECURE="${CURL_INSECURE:-}"
 
 INPUT_TEXT="${INPUT_TEXT:-Streaming verify test}"
 CHAT_ID="${CHAT_ID:-thread-verify-$(date +%s)}"
 CLIENT_MSG_ID="${CLIENT_MSG_ID:-verify-$(date +%s)}"
 export INPUT_TEXT CHAT_ID CLIENT_MSG_ID
+
+sealai_configure_tls_client || exit $?
+sealai_validate_https_origin "${NGINX_BASE_URL%/}" NGINX_BASE_URL || exit $?
+if [[ "${BACKEND_BASE_URL%/}" == https://* ]]; then
+  sealai_validate_https_origin "${BACKEND_BASE_URL%/}" BACKEND_BASE_URL || exit $?
+else
+  sealai_validate_loopback_http_origin "${BACKEND_BASE_URL%/}" BACKEND_BASE_URL || exit $?
+fi
 
 format_data() {
   if command -v jq >/dev/null 2>&1; then
@@ -60,7 +73,7 @@ run_stream_test() {
   local url="$2"
 
   local tmpdir hdr timed cerr payload
-  tmpdir=$(mktemp -d)
+  tmpdir=$(mktemp -d /tmp/sealai-v2-sse.XXXXXX)
   hdr="$tmpdir/headers.txt"
   timed="$tmpdir/events.txt"
   cerr="$tmpdir/curl.err"
@@ -72,8 +85,8 @@ run_stream_test() {
   echo "chat_id: ${CHAT_ID}"
 
   local curl_opts=(-sS -N -D "$hdr" -H "Authorization: Bearer ${BEARER_TOKEN}" -H "Content-Type: application/json" -H "Accept: text/event-stream")
-  if [[ -n "$CURL_INSECURE" ]]; then
-    curl_opts+=(-k)
+  if [[ "$url" == https://* ]]; then
+    curl_opts=("${SEALAI_CURL_TLS_ARGS[@]}" "${curl_opts[@]}")
   fi
 
   set +e

@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
             note=f"Superseded by reviewed card {args.card_id}",
         )
         print(f"retired drafts : {retired} claim(s) from {args.delete_draft_id}")
-    return outbox_main(["drain-all", "--batch-size", "100"])
+    return outbox_main(["drain-all", "--batch-size", "50"])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { CaseSummary } from "../contracts";
 import { loadNavExpanded, saveNavExpanded } from "../lib/navSidebar";
 import { CaseSidebar } from "./CaseSidebar";
+import { ReleaseIdentity } from "./ReleaseIdentity";
 import { SafetyBanner } from "./SafetyBanner";
 import {
   ComposeIcon,
@@ -31,8 +32,7 @@ export function Shell({
   children: ReactNode;
   onLogout: () => void;
   onNewQuestion: () => void;
-  /** Owner-only: open the Hersteller-Partner dashboard. Provided only when the token carries the
-   * admin role — otherwise the entry is never rendered. */
+  /** Platform-owner-only: open the Hersteller-Partner dashboard. */
   onAdmin?: () => void;
   /** Manufacturer-only: open the self-service profile. Provided only when the token carries the
    * manufacturer role + a hersteller_id — otherwise never rendered. */
@@ -151,6 +151,7 @@ export function Shell({
                 Mein Hersteller-Profil
               </button>
             ) : null}
+            <ReleaseIdentity />
             <button className="rail-menu-item" role="menuitem" onClick={onLogout} data-testid="logout">
               Abmelden
             </button>

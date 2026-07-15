@@ -27,6 +27,15 @@ packages:
       - exact-answer cache remains hard-disabled; do not make any old namespace valid during rollback
       - non-rebuildable state requires verified persistence and restore evidence before any separately implemented mutation
       - a guard rollback must preserve noeviction and must not authorize legacy-key cleanup
+  p1-data-authority:
+    reversible:
+      - application authority, role gates, case-artifact contracts, and disabled-by-default cache behavior can be reverted only to another fail-closed tested commit
+      - nullable migration columns and NOT VALID constraints may remain during an application rollback because old code does not depend on their removal
+    recovery:
+      - disable exact-answer cache before reverting authority code; never make an old epoch namespace valid again
+      - roll backend and frontend case-artifact contracts together; stale or mixed clients must remain rejected
+      - never remove quarantine markers, assign an owner, validate a constraint, or disable RLS/FORCE outside the separately authorized GATE-07 rollback commands
+      - restore ownership or integrity data only from the named immutable backup and dual-reviewed mapping evidence
   production_deployment:
     recovery:
       - re-promote the previously attested backend digest and dashboard artifact

@@ -1,0 +1,3 @@
+# The command validates the complete argument grammar itself, then requires an
+# exact root-private, short-lived, single-use GATE-08 receipt and Gate-10 proof.
+thorsten ALL=(root) NOPASSWD: /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh *

@@ -1,71 +1,340 @@
-# ops/staging/docker-compose.staging.yml — Phase 2 staging validation stack (runbook §Phase 2).
+# Isolated release-candidate stack. This file has no production network, secret,
+# data-volume, certificate, or provider dependency. All mutable inputs come from
+# the strict host-local ops/staging/rc.env contract validated by rc-contract.sh.
 #
-# Validates the EXACT prod artifacts: the generated conf is a byte-copy of nginx/default.conf with
-# the include applied by ops/v2-flip.sh (run ./ops/staging/gen-staging-conf.sh first); the SPA is
-# the isolated frontend-v2/.build/dashboard-candidate output. Production's live
-# frontend-v2/dist bind mount is never a normal build target. nginx-staging dual-homes onto the live
-# sealai_default network so the shared conf's literal upstreams (sealai-frontend, sealai-backend,
-# sealai-keycloak, …) resolve at startup. backend-v2-staging carries the sealai-backend-v2 alias
-# ONLY on the staging net — prod nginx can never resolve it (isolation by construction); its
-# alias-free sealai_default attachment exists solely to reach sealai-keycloak for JWKS.
+# The deterministic LLM stub and RC-only model IDs make these runs safety/runtime
+# checks, never production-eligibility evidence. Snapshot/stub/TLS seeding is
+# BLOCKED_EXTERNAL until independently supplied and attested.
 #
+# Sanctioned web-stack entrypoint (after external inputs exist):
 #   ./ops/staging/gen-staging-conf.sh
-#   ./ops/staging/up-staging-v2.sh   # release gate (build) + installed global storage lease
-#   BASE_URL=https://sealingai.com:8443 ./ops/smoke-v2.sh
-#   docker compose --env-file .env.prod -f ops/staging/docker-compose.staging.yml --profile v2 down   # teardown after Phase 2
-name: sealai-staging
+#   ./ops/staging/up-staging-v2.sh
+name: sealai-rc
+
+x-rc-backend-build: &rc-backend-build
+  context: ../../backend
+  dockerfile: Dockerfile.v2
+  args:
+    GATE_TREE_HASH: ${RC_TREE_HASH:?RC_TREE_HASH must bind the candidate tree}
+    SOURCE_GIT_SHA: ${RC_GIT_SHA:?RC_GIT_SHA must bind the candidate commit}
+
+x-rc-backend-environment: &rc-backend-environment
+  APP_ENV: staging
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  HOME: /tmp
+
+  # Non-production auth stub. Empty/unset auth is not permitted to drift into a
+  # permissive mode, and no production issuer/JWKS endpoint is reachable.
+  SEALAI_V2_AUTH_JWKS_URL: http://rc-auth-stub:8080/realms/sealAI-rc/protocol/openid-connect/certs
+  SEALAI_V2_AUTH_ISSUER: https://rc.invalid/realms/sealAI-rc
+  SEALAI_V2_AUTH_AUDIENCE: sealai-v2-rc
+
+  # OpenAI-compatible deterministic stub on its dedicated internal network. The
+  # synthetic values are explicitly non-secrets and the model IDs cannot match
+  # a serving runtime profile, so stub output is never deploy evidence.
+  SEALAI_V2_PROVIDER: mistral
+  SEALAI_V2_L1_PROVIDER: mistral
+  SEALAI_V2_STANDARD_PROVIDER: mistral
+  SEALAI_V2_VERIFIER_PROVIDER: mistral
+  SEALAI_V2_HELPER_PROVIDER: mistral
+  SEALAI_V2_JUDGE_PROVIDER: mistral
+  SEALAI_V2_MISTRAL_BASE_URL: http://rc-llm-stub:8080/v1
+  SEALAI_V2_MISTRAL_API_KEY: TEST
+  SEALAI_V2_OPENAI_BASE_URL: http://rc-llm-stub:8080/v1
+  SEALAI_V2_OPENAI_API_KEY: TEST
+  SEALAI_V2_L1_MODEL: rc-stub-noneligible-v1
+  SEALAI_V2_STANDARD_MODEL: rc-stub-noneligible-v1
+  SEALAI_V2_VERIFIER_MODEL: rc-stub-noneligible-v1
+  SEALAI_V2_HELPER_MODEL: rc-stub-noneligible-v1
+  SEALAI_V2_JUDGE_MODEL: rc-stub-noneligible-v1
+  SEALAI_V2_EMBED_PROVIDER: openai
+  SEALAI_V2_EMBED_MODEL: rc-stub-embedding-noneligible-v1
+  # Gate-06 and the externally reviewed worst-case budget contract are both absent. The RC may
+  # exercise pure/eval paths against its deterministic stub, but the HTTP paid-provider boundary
+  # remains mechanically closed and cannot become production-eligibility evidence.
+  SEALAI_V2_PROVIDER_REQUESTS_ENABLED: "false"
+
+  # Fixed RC service hosts prevent a caller from substituting production URLs.
+  # The credential is RC-only and must be rotated during isolated snapshot seed.
+  SEALAI_V2_DATABASE_URL: postgresql+psycopg2://sealai_rc_eval:${RC_POSTGRES_PASSWORD:?RC_POSTGRES_PASSWORD required by RC contract}@rc-postgres:5432/sealai_v2_rc
+  SEALAI_V2_RETRIEVER_BACKEND: qdrant
+  SEALAI_V2_QDRANT_URL: http://rc-qdrant:6333
+  QDRANT_URL: http://rc-qdrant:6333
+  SEALAI_V2_QDRANT_COLLECTION: ${RC_QDRANT_COLLECTION:?RC_QDRANT_COLLECTION required by RC contract}
+  SEALAI_V2_MEMORY_QDRANT_COLLECTION: ${RC_QDRANT_MEMORY_COLLECTION:?RC_QDRANT_MEMORY_COLLECTION required by RC contract}
+  SEALAI_V2_KNOWLEDGE_AUTHORITY_EPOCH: ${RC_AUTHORITY_EPOCH:?RC authority epoch required by RC contract}
+  SEALAI_V2_GROUND_ENABLED: "true"
+
+  # Local evidence metadata only; tracing and external telemetry stay disabled.
+  SEALAI_EVAL_EVIDENCE_CLASS: RC_STUB_NON_ELIGIBLE
+  SEALAI_RC_POSTGRES_SNAPSHOT_SHA256: ${RC_POSTGRES_SNAPSHOT_SHA256:?RC Postgres snapshot hash required}
+  SEALAI_RC_QDRANT_SNAPSHOT_SHA256: ${RC_QDRANT_SNAPSHOT_SHA256:?RC Qdrant snapshot hash required}
+  SEALAI_V2_LLM_TELEMETRY_ENABLED: "false"
+  SEALAI_V2_METRICS_ENABLED: "false"
+  LANGSMITH_TRACING: "false"
+  LANGCHAIN_TRACING_V2: "false"
+
+x-rc-backend-hardening: &rc-backend-hardening
+  user: 10001:10001
+  restart: "no"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=256m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  mem_limit: 2g
+  cpus: 2
+
 services:
   nginx-staging:
-    image: nginx:1.29.4@sha256:9dd288848f4495869f76676e419ae2d767ca99fece2ec37ec0261f9fdaab5204
-    container_name: nginx-staging
-    restart: unless-stopped
+    profiles: [rc-web]
+    image: ${RC_NGINX_IMAGE:-localhost/sealai-rc-missing:v0@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    pull_policy: never
+    restart: "no"
     ports:
-    - 8443:443    # public during the validation window only (owner option: firewall to owner IP)
+      - "127.0.0.1:8443:443"
     volumes:
-    - ./conf/default.conf:/etc/nginx/conf.d/default.conf:ro
-    - ./conf/snippets:/etc/nginx/snippets:ro
-    - ../../nginx/00-tuning.conf:/etc/nginx/conf.d/00-tuning.conf:ro
-    - ../../frontend-v2/.build/dashboard-candidate:/usr/share/nginx/v2-client:ro
-    - ../../nginx/www:/var/www/certbot:ro
-    - /etc/letsencrypt:/etc/letsencrypt:ro
-    - ../../nginx/certs/config:/etc/letsencrypt-analytics:ro
+      - ./conf/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./conf/snippets:/etc/nginx/snippets:ro
+      - ../../nginx/00-tuning.conf:/etc/nginx/conf.d/00-tuning.conf:ro
+      # RC-only candidate at the production-equivalent in-container target. It is
+      # isolated from the production release root and can never change `current` there.
+      - ../../frontend-v2/.build/dashboard-candidate:/usr/share/nginx/dashboard-releases/current:ro
+      - ./tls:/etc/letsencrypt:ro
+    tmpfs:
+      - /var/cache/nginx:rw,nosuid,nodev,size=64m,mode=0755
+      - /var/run:rw,nosuid,nodev,size=16m,mode=0755
+      - /var/www/certbot:rw,noexec,nosuid,nodev,size=1m,mode=0755
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    depends_on:
+      backend-v2-staging:
+        condition: service_healthy
+      rc-auth-stub:
+        condition: service_healthy
+      rc-frontend-stub:
+        condition: service_healthy
     healthcheck:
-      test:
-      - CMD-SHELL
-      - test -s /var/run/nginx.pid || exit 1
+      test: [CMD-SHELL, "test -s /var/run/nginx.pid || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
     networks:
-    - staging
-    - sealai_default
+      - rc_edge
+
   backend-v2-staging:
-    container_name: backend-v2-staging
-    profiles:
-    - v2          # mirrors prod placement — rollback dry-run leg 3 (orphan probe) depends on this
-    build:
-      context: ../../backend
-      dockerfile: Dockerfile.v2
-    user: 10001:10001
-    restart: unless-stopped
-    environment:
-      APP_ENV: staging
-      PYTHONUNBUFFERED: '1'
-      SEALAI_V2_AUTH_JWKS_URL: http://sealai-keycloak:8080/realms/sealAI/protocol/openid-connect/certs
-      SEALAI_V2_AUTH_ISSUER: https://sealingai.com/realms/sealAI
-      SEALAI_V2_AUTH_AUDIENCE: sealai-v2
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — pass via docker compose --env-file}
-    # NO host port publish: this host's firewall drops host→container traffic on newly created
-    # bridges (verified 2026-06-10: 172.18.x sealai_default reachable, fresh staging bridge not),
-    # and docker-proxy targets the staging-net IP. Diagnose via
-    # `docker exec backend-v2-staging curl -fsS http://127.0.0.1:8001/health` instead. Prod is
-    # unaffected — prod backend-v2 sits on sealai_default only, where 127.0.0.1 publishes work.
+    profiles: [v2, rc-web]
+    image: ${RC_BACKEND_IMAGE:?RC_BACKEND_IMAGE is computed by the sanctioned wrapper}
+    pull_policy: never
+    build: *rc-backend-build
+    environment: *rc-backend-environment
+    <<: *rc-backend-hardening
+    depends_on:
+      rc-postgres:
+        condition: service_healthy
+      rc-qdrant:
+        condition: service_started
+      rc-llm-stub:
+        condition: service_healthy
+      rc-auth-stub:
+        condition: service_healthy
     networks:
-      staging:
+      rc_edge:
         aliases:
-        - sealai-backend-v2
-      sealai_default: {}
+          - sealai-backend-v2
+      rc_postgres: {}
+      rc_qdrant: {}
+      rc_provider: {}
+
+  # Eval uses the exact candidate build/runtime config but never auto-starts
+  # dependencies (`ops/run_eval.sh` adds --no-deps). Missing seeded services fail.
+  rc-eval:
+    profiles: [rc-eval]
+    image: ${RC_BACKEND_IMAGE:?RC_BACKEND_IMAGE is computed by ops/run_eval.sh}
+    pull_policy: never
+    build: *rc-backend-build
+    environment: *rc-backend-environment
+    <<: *rc-backend-hardening
+    volumes:
+      - ../../backend/sealai_v2/eval:/app/sealai_v2/eval:ro
+      - ../../backend/sealai_v2/eval/runs:/app/sealai_v2/eval/runs:rw
+    networks:
+      - rc_postgres
+      - rc_qdrant
+      - rc_provider
+
+  rc-postgres:
+    profiles: [rc-data]
+    image: ${RC_POSTGRES_IMAGE:?digest-pinned RC Postgres image required}
+    pull_policy: never
+    restart: "no"
+    environment:
+      POSTGRES_USER: sealai_rc_eval
+      POSTGRES_PASSWORD: ${RC_POSTGRES_PASSWORD:?RC-only Postgres credential required}
+      POSTGRES_DB: sealai_v2_rc
+    volumes:
+      - rc_postgres_snapshot:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U sealai_rc_eval -d sealai_v2_rc"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1
+    networks:
+      - rc_postgres
+
+  rc-qdrant:
+    profiles: [rc-data]
+    image: ${RC_QDRANT_IMAGE:?digest-pinned RC Qdrant image required}
+    pull_policy: never
+    restart: "no"
+    volumes:
+      - rc_qdrant_snapshot:/qdrant/storage
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    networks:
+      - rc_qdrant
+
+  rc-llm-stub:
+    profiles: [rc-stubs]
+    image: ${RC_LLM_STUB_IMAGE:?immutable local RC LLM stub image required}
+    pull_policy: never
+    restart: "no"
+    environment:
+      RC_STUB_MODE: deterministic-openai-compatible
+      RC_STUB_MODEL_ID: rc-stub-noneligible-v1
+      RC_STUB_EMBED_MODEL_ID: rc-stub-embedding-noneligible-v1
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1
+    healthcheck:
+      test: [CMD, /usr/local/bin/rc-stub-healthcheck]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      - rc_provider
+
+  rc-auth-stub:
+    profiles: [rc-stubs]
+    image: ${RC_AUTH_STUB_IMAGE:-localhost/sealai-rc-missing:v0@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    pull_policy: never
+    restart: "no"
+    environment:
+      RC_STUB_MODE: oidc-jwks
+      RC_AUTH_ISSUER: https://rc.invalid/realms/sealAI-rc
+      RC_AUTH_AUDIENCE: sealai-v2-rc
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, /usr/local/bin/rc-stub-healthcheck]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      rc_edge:
+        aliases:
+          - sealai-keycloak
+
+  rc-frontend-stub:
+    profiles: [rc-stubs]
+    image: ${RC_FRONTEND_STUB_IMAGE:-localhost/sealai-rc-missing:v0@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    pull_policy: never
+    restart: "no"
+    environment:
+      RC_STUB_MODE: v1-frontend-placeholder
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, /usr/local/bin/rc-stub-healthcheck]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      rc_edge:
+        aliases:
+          - sealai-frontend
+
 networks:
-  staging: {}
-  sealai_default:
+  rc_edge:
+    name: sealai-rc-edge
+    internal: true
+    labels:
+      io.sealai.environment: isolated-rc
+      io.sealai.production-eligible: "false"
+  rc_postgres:
+    name: sealai-rc-postgres-net-${RC_POSTGRES_SNAPSHOT_SHA256:?RC Postgres snapshot hash required}
+    internal: true
+    labels:
+      io.sealai.environment: isolated-rc
+      io.sealai.production-eligible: "false"
+  rc_qdrant:
+    name: sealai-rc-qdrant-net-${RC_QDRANT_SNAPSHOT_SHA256:?RC Qdrant snapshot hash required}
+    internal: true
+    labels:
+      io.sealai.environment: isolated-rc
+      io.sealai.production-eligible: "false"
+  rc_provider:
+    name: sealai-rc-provider
+    internal: true
+    labels:
+      io.sealai.environment: isolated-rc
+      io.sealai.production-eligible: "false"
+
+# External=true is deliberate for data volumes only: Compose must refuse to
+# create blank stores. An independent seeder creates and labels these exact,
+# hash-derived RC volumes after sanitization and non-empty verification.
+volumes:
+  rc_postgres_snapshot:
     external: true
+    name: sealai-rc-postgres-${RC_POSTGRES_SNAPSHOT_SHA256:?RC Postgres snapshot hash required}
+  rc_qdrant_snapshot:
+    external: true
+    name: sealai-rc-qdrant-${RC_QDRANT_SNAPSHOT_SHA256:?RC Qdrant snapshot hash required}

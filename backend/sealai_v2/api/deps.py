@@ -7,15 +7,22 @@ NEVER reads a tenant/session header or param. Auth not configured → 503 (fail-
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from functools import lru_cache
 
 from fastapi import Depends, Header, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import AuthError, AuthValidator, Flags, VerifiedIdentity
 from sealai_v2.llm.factory import build_client_factory
 from sealai_v2.pipeline.pipeline import Pipeline, build_pipeline
 from sealai_v2.security.auth import KeycloakJwtValidator
+from sealai_v2.security.control_metrics import record_auth_denial, record_quota_denial
+from sealai_v2.security.cost_control import CostControlPolicy, PostgresCostControlStore
+
+_COST_LOG = logging.getLogger("sealai_v2.provider_admission")
 
 
 @lru_cache(maxsize=1)
@@ -44,6 +51,13 @@ def get_validator() -> AuthValidator:
         issuer=s.auth_issuer,
         audience=s.auth_audience,
         tenant_claim=s.auth_tenant_claim,
+        jwks_ttl_s=s.auth_jwks_ttl_s,
+        jwks_max_ttl_s=s.auth_jwks_max_ttl_s,
+        unknown_kid_refresh_interval_s=s.auth_jwks_unknown_kid_refresh_interval_s,
+        negative_kid_ttl_s=s.auth_jwks_negative_kid_ttl_s,
+        max_negative_kids=s.auth_jwks_max_negative_kids,
+        max_token_age_s=s.auth_max_token_age_s,
+        clock_skew_s=s.auth_clock_skew_s,
     )
 
 
@@ -61,17 +75,20 @@ def current_identity(
 ) -> VerifiedIdentity:
     """P0: identity from the VERIFIED token only — never a client header/param."""
     if not authorization or not authorization.startswith("Bearer "):
+        record_auth_denial("missing_bearer")
         raise HTTPException(status_code=401, detail="missing bearer token")
     try:
         return validator.validate(authorization[len("Bearer ") :])
     except AuthError:
+        record_auth_denial("invalid_token")
         raise HTTPException(status_code=401, detail="invalid token") from None
 
 
 @lru_cache(maxsize=1)
 def get_lead_store():
     """Lead store for /api/v2/anfrage — Postgres (durable, partner/owner-retrievable) when
-    ``database_url`` is set, else in-process (eval/CI). Fail-safe to in-process; never crashes."""
+    ``database_url`` is set, else in-process for hermetic eval/CI only. A configured database is
+    authoritative and adapter failures propagate; there is no process-local production fork."""
     from sealai_v2.db.leads import build_lead_store
 
     return build_lead_store(get_settings())
@@ -81,18 +98,14 @@ def get_lead_store():
 def get_partner_registry():
     """Hersteller-Partner registry for the admin CRUD — Postgres (dashboard-editable, durable) when
     ``database_url`` is set, else in-process (eval/CI). Mirrors the pipeline's pool construction so
-    both surfaces back the SAME data in prod. Fail-safe to in-process; never crashes startup."""
+    both surfaces back the SAME data in prod. Configured Postgres is authoritative; construction
+    failure propagates instead of silently creating a process-local registry."""
     s = get_settings()
     if s.database_url:
-        try:
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
-            from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
 
-            return PostgresPartnerRegistry(
-                make_sessionmaker(make_engine(s.database_url))
-            )
-        except Exception:  # noqa: BLE001 — fail safe to in-process; never crash on startup
-            pass
+        return PostgresPartnerRegistry(make_sessionmaker(make_engine(s.database_url)))
     from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 
     return InProcessPartnerRegistry()
@@ -134,7 +147,7 @@ def get_case_decision_store():
 
 @lru_cache(maxsize=1)
 def get_interview_shadow_store():
-    """Tenant-scoped shadow telemetry store for the admin-only aggregate report."""
+    """Tenant-scoped shadow telemetry store for the system-operator aggregate report."""
     settings = get_settings()
     if not settings.adaptive_interview_shadow_reporting_enabled:
         raise HTTPException(
@@ -175,15 +188,23 @@ def get_knowledge_ledger():
     return build_knowledge_ledger(settings)
 
 
-def require_admin(
+def require_platform_owner(
     identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
 ) -> VerifiedIdentity:
-    """Owner/admin gate for the Hersteller-Partner management surface (P0 fail-closed). The verified
-    token MUST carry the configured admin realm-role (``auth_admin_role``), else 403. Identity (incl.
-    roles) comes ONLY from the verified token — never a header/param. This is an ADDITIVE role check;
-    the tenant boundary is untouched."""
-    if get_settings().auth_admin_role not in identity.roles:
-        raise HTTPException(status_code=403, detail="admin role required")
+    """Global business-owner authority; tenant admins and legacy ``admin`` are insufficient."""
+    if settings.auth_platform_owner_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="platform owner role required")
+    return identity
+
+
+def require_system_operator(
+    identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Operational telemetry/control role, separate from business and review authority."""
+    if settings.auth_system_operator_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="system operator role required")
     return identity
 
 
@@ -220,6 +241,16 @@ def require_knowledge_reviewer(
     return identity
 
 
+def require_knowledge_approver(
+    identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Second-person knowledge approval; reviewer or owner roles do not imply it."""
+    if settings.auth_knowledge_approver_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="knowledge approver role required")
+    return identity
+
+
 @lru_cache(maxsize=1)
 def get_contribution_store():
     """Wissens-Beitrag store — Postgres (durable review queue) when database_url set, else in-process."""
@@ -249,7 +280,7 @@ def require_legal_acceptance(
     all. Once enabled: 403 unless a CURRENT (version-matching) acceptance row exists for this
     tenant — a stale acceptance (pre-dating a reviewed text bump) does not count, same doctrine as
     the /acceptance endpoint's own version check. ``settings`` is a Depends param (not a direct
-    ``get_settings()`` call like require_admin/require_manufacturer use) so tests can flip
+    ``get_settings()`` call like the role dependencies use) so tests can flip
     ``legal_gate_enabled`` per-test via ``app.dependency_overrides`` instead of fighting the
     module-level ``lru_cache``."""
     if not settings.legal_gate_enabled:
@@ -269,6 +300,87 @@ def require_legal_acceptance(
             detail="legal_acceptance_required",
         )
     return identity
+
+
+@lru_cache(maxsize=1)
+def get_cost_control_store():
+    """Shared production authority. Absence/migration failure denies provider-backed requests."""
+    settings = get_settings()
+    if not settings.database_url:
+        return None
+    try:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+
+        return PostgresCostControlStore(
+            make_sessionmaker(make_engine(settings.database_url))
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="provider cost control unavailable"
+        ) from None
+
+
+async def require_provider_admission(
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    settings: Settings = Depends(get_settings),
+    store=Depends(get_cost_control_store),
+):
+    """Verified-email + rate/quota/concurrency/budget gate with a crash-safe lease."""
+    if not settings.provider_requests_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "provider_kill_switch",
+                "message": "provider requests disabled",
+            },
+        )
+    if not identity.email_verified:
+        record_auth_denial("email_unverified")
+        raise HTTPException(status_code=403, detail="verified email required")
+    if store is None:
+        raise HTTPException(status_code=503, detail="provider cost control unavailable")
+    try:
+        decision = await run_in_threadpool(
+            store.admit, identity, CostControlPolicy.from_settings(settings)
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="provider cost control unavailable"
+        ) from None
+    if not decision.allowed:
+        record_quota_denial(decision.reason)
+        headers = (
+            {"Retry-After": str(decision.retry_after_s)}
+            if decision.retry_after_s is not None
+            else None
+        )
+        raise HTTPException(
+            status_code=decision.status_code,
+            detail={"code": decision.reason, "message": "provider request denied"},
+            headers=headers,
+        )
+
+    assert decision.admission is not None
+    outcome = "error"
+    try:
+        yield identity
+        outcome = "success"
+    except asyncio.CancelledError:
+        outcome = "cancelled"
+        raise
+    finally:
+        try:
+            await run_in_threadpool(
+                store.release, decision.admission.request_id, outcome=outcome
+            )
+        except (
+            Exception
+        ) as exc:  # lease expiry is the crash-safe fallback; never leak DB detail
+            _COST_LOG.error(
+                "provider_admission event=release_failed request_id=%s error_type=%s",
+                decision.admission.request_id,
+                type(exc).__name__,
+            )
 
 
 def require_decision_reviewer(

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "default_action": "deny",
+  "services": {
+    "postgres": [
+      "postgres_backend_network",
+      "postgres_keycloak_network",
+      "postgres_metrics_network",
+      "strapi_postgres_network"
+    ],
+    "redis": ["redis_metrics_network", "redis_network"],
+    "qdrant": ["qdrant_backend_network", "qdrant_metrics_network"],
+    "gotenberg": ["document_network"],
+    "tika": ["document_network"],
+    "prometheus": [
+      "backend_metrics_network",
+      "keycloak_metrics_network",
+      "observability_network",
+      "qdrant_metrics_network"
+    ],
+    "grafana": ["observability_network"],
+    "alertmanager": ["notification_egress_network", "observability_network"],
+    "blackbox-exporter": ["observability_network", "probe_egress_network"],
+    "node-exporter": ["observability_network"],
+    "cadvisor": ["observability_network"],
+    "postgres-exporter": ["observability_network", "postgres_metrics_network"],
+    "redis-exporter": ["observability_network", "redis_metrics_network"],
+    "frontend": ["frontend_egress_network", "frontend_network"],
+    "keycloak": [
+      "backend_identity_network",
+      "keycloak_edge_network",
+      "keycloak_egress_network",
+      "keycloak_metrics_network",
+      "postgres_keycloak_network"
+    ],
+    "nginx": [
+      "backend_network",
+      "edge_network",
+      "frontend_network",
+      "keycloak_edge_network"
+    ],
+    "backend-v2": [
+      "backend_egress_network",
+      "backend_identity_network",
+      "backend_metrics_network",
+      "backend_network",
+      "postgres_backend_network",
+      "qdrant_backend_network"
+    ],
+    "backend-v2-worker": [
+      "backend_egress_network",
+      "backend_metrics_network",
+      "postgres_backend_network",
+      "qdrant_backend_network"
+    ]
+  },
+  "allowed_cap_add": {
+    "postgres": ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"],
+    "redis": ["CHOWN", "SETGID", "SETUID"],
+    "nginx": ["CHOWN", "NET_BIND_SERVICE", "SETGID", "SETUID"]
+  },
+  "required_users": {
+    "frontend": "1001:1001",
+    "backend-v2": "10001:10001",
+    "backend-v2-worker": "10001:10001"
+  },
+  "internal_networks": [
+    "backend_identity_network",
+    "backend_metrics_network",
+    "backend_network",
+    "document_network",
+    "frontend_network",
+    "keycloak_edge_network",
+    "keycloak_metrics_network",
+    "observability_network",
+    "postgres_backend_network",
+    "postgres_keycloak_network",
+    "postgres_metrics_network",
+    "qdrant_backend_network",
+    "qdrant_metrics_network",
+    "redis_metrics_network",
+    "redis_network"
+  ],
+  "external_networks": {
+    "strapi_postgres_network": {
+      "purpose": "scoped-cross-project",
+      "runtime_internal_required": true
+    }
+  },
+  "forbidden_network_names": ["default", "sealai_default"],
+  "denied_reachability": [
+    ["nginx", "postgres"],
+    ["nginx", "qdrant"],
+    ["nginx", "redis"],
+    ["frontend", "postgres"],
+    ["frontend", "qdrant"],
+    ["frontend", "redis"],
+    ["frontend", "backend-v2"],
+    ["keycloak", "qdrant"],
+    ["keycloak", "redis"],
+    ["postgres", "qdrant"],
+    ["postgres", "redis"],
+    ["qdrant", "redis"],
+    ["gotenberg", "backend-v2"],
+    ["tika", "backend-v2"]
+  ],
+  "allowed_published_ports": {
+    "nginx": [
+      {"host_ip": "", "published": 80, "target": 80, "protocol": "tcp"},
+      {"host_ip": "", "published": 443, "target": 443, "protocol": "tcp"}
+    ]
+  }
+}

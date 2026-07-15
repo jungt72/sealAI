@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: ${DR_POSTGRES_IMAGE:?DR_POSTGRES_IMAGE must be an immutable digest reference}
+    pull_policy: never
+    restart: "no"
+    environment:
+      POSTGRES_PASSWORD: ${DR_POSTGRES_PASSWORD:?ephemeral isolated password required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,mode=3775
+    networks:
+      - recovery
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "2"
+
+  qdrant:
+    image: ${DR_QDRANT_IMAGE:?DR_QDRANT_IMAGE must be an immutable digest reference}
+    pull_policy: never
+    restart: "no"
+    user: "0:0"
+    environment:
+      QDRANT__SERVICE__API_KEY: ${DR_QDRANT_API_KEY:?ephemeral isolated API key required}
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant-data:/qdrant/storage
+      - ${DR_SET_ROOT:?verified restore set required}:/recovery:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+    networks:
+      - recovery
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "2"
+
+  verifier:
+    image: ${DR_VERIFIER_IMAGE:?DR_VERIFIER_IMAGE must be the immutable backend digest}
+    pull_policy: never
+    restart: "no"
+    user: "0:0"
+    environment:
+      QDRANT_API_KEY: ${DR_QDRANT_API_KEY:?ephemeral isolated API key required}
+    command: ["sleep", "infinity"]
+    volumes:
+      - ${DR_SET_ROOT:?verified restore set required}:/recovery:ro
+      - ${DR_QDRANT_HELPER:?installed verifier helper required}:/opt/dr/qdrant_drill.py:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+    networks:
+      - recovery
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      qdrant:
+        condition: service_started
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "2"
+
+networks:
+  recovery:
+    internal: true
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+
+volumes:
+  postgres-data:
+  qdrant-data:

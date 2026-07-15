@@ -1,24 +1,21 @@
 services:
   gotenberg:
-    container_name: gotenberg
-    image: gotenberg/gotenberg:8.15.0@sha256:59eab80c51ad02b72eb1a972182bae71004b5522644b1f43dfdc48249e996acd
+    image: ${PAPERLESS_GOTENBERG_IMAGE:?PAPERLESS_GOTENBERG_IMAGE required - set an approved tag@sha256 digest}
     restart: unless-stopped
     command:
       - "gotenberg"
       - "--chromium-allow-list=file:///tmp/.*"
     networks:
-      - sealai_default
+      - paperless_internal
 
   tika:
-    container_name: tika
-    image: apache/tika:2.9.2.1@sha256:2be134745fcb59826c54041489946c66218b948ea0c0be3a37cb7919ecc845ba
+    image: ${PAPERLESS_TIKA_IMAGE:?PAPERLESS_TIKA_IMAGE required - set an approved tag@sha256 digest}
     restart: unless-stopped
     networks:
-      - sealai_default
+      - paperless_internal
 
   paperless:
-    container_name: paperless
-    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15@sha256:6c86cad803970ea782683a8e80e7403444c5bf3cf70de63b4d3c8e87500db92f
+    image: ${PAPERLESS_IMAGE:?PAPERLESS_IMAGE required - set an approved tag@sha256 digest}
     restart: unless-stopped
     depends_on:
       - gotenberg
@@ -32,8 +29,7 @@ services:
       - ./consume:/usr/src/paperless/consume
       - ./scripts:/usr/src/paperless/scripts:ro
     networks:
-      - sealai_default
+      - paperless_internal
 
 networks:
-  sealai_default:
-    external: true
+  paperless_internal: {}

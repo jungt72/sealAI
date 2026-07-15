@@ -1,6 +1,6 @@
 """Admin surface for the Hersteller-Partner pool (owner business model) — the dashboard-editable CRUD
 (manage paying partners) + lead retrieval (the captured Anfragen, so the owner can forward them to the
-manufacturers). EVERY endpoint requires the admin realm-role (``require_admin``, P0 fail-closed); the
+manufacturers). EVERY endpoint requires the platform-owner realm-role (``require_platform_owner``, P0 fail-closed); the
 gate is ADDITIVE over the verified token — tenant isolation is untouched.
 
 This is the OWNER surface, so ``lead_email`` IS returned here (the routing target the owner needs) —
@@ -14,7 +14,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import get_lead_store, get_partner_registry, require_admin
+from sealai_v2.api.deps import (
+    get_lead_store,
+    get_partner_registry,
+    require_platform_owner,
+)
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.leads import LeadStore
 from sealai_v2.knowledge.hersteller_partner import HerstellerPartner
@@ -64,7 +68,7 @@ def _partner_dict(p: HerstellerPartner) -> dict:
 
 @router.get("/hersteller")
 def list_partners(
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     registry=Depends(get_partner_registry),
 ) -> dict:
     return {"hersteller": [_partner_dict(p) for p in registry.list_all()]}
@@ -73,7 +77,7 @@ def list_partners(
 @router.get("/hersteller/{hersteller_id}")
 def get_partner(
     hersteller_id: str,
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     registry=Depends(get_partner_registry),
 ) -> dict:
     p = registry.get(hersteller_id)
@@ -86,7 +90,7 @@ def get_partner(
 def upsert_partner(
     hersteller_id: str,
     body: PartnerIn,
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     registry=Depends(get_partner_registry),
 ) -> dict:
     partner = HerstellerPartner(
@@ -112,7 +116,7 @@ def upsert_partner(
 @router.delete("/hersteller/{hersteller_id}")
 def delete_partner(
     hersteller_id: str,
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     registry=Depends(get_partner_registry),
 ) -> dict:
     if not registry.delete(hersteller_id):
@@ -122,7 +126,7 @@ def delete_partner(
 
 @router.get("/leads")
 def list_leads(
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     leads: LeadStore = Depends(get_lead_store),
     partner_id: str | None = None,
 ) -> dict:

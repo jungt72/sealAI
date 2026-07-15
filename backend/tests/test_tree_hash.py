@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import shutil
 import subprocess
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "ops" / "tree-hash.sh"
+SHA256_SCRIPT = REPO / "ops" / "served-tree-sha256.py"
 
 
 def _hash() -> str:
@@ -33,6 +35,14 @@ def _status() -> str:
     return subprocess.check_output(
         ["git", "status", "--porcelain"], cwd=str(REPO), text=True
     )
+
+
+def _sha256() -> str:
+    return subprocess.check_output(
+        ["/usr/bin/python3", "-I", str(SHA256_SCRIPT), _hash()],
+        cwd=str(REPO),
+        text=True,
+    ).strip()
 
 
 @contextlib.contextmanager
@@ -61,13 +71,18 @@ def _perturb(relpath: str):
 def test_deterministic_same_content_same_hash():
     assert _hash() == _hash()
     assert len(_hash()) >= 40
+    assert _sha256() == _sha256()
+    assert len(_sha256()) == 64
 
 
 def test_served_code_change_moves_the_hash():
     base = _hash()
+    base_sha256 = _sha256()
     with _probe_file("backend/sealai_v2/knowledge/__treehash_probe__.py"):
         assert _hash() != base
+        assert _sha256() != base_sha256
     assert _hash() == base
+    assert _sha256() == base_sha256
 
 
 def test_image_inputs_move_the_hash():
@@ -95,4 +110,83 @@ def test_eval_and_tests_are_hash_neutral():
 def test_status_unchanged_after_hash():
     before = _status()
     _hash()
+    _sha256()
     assert _status() == before
+
+
+def test_hash_projection_never_writes_root_staged_git_objects(
+    tmp_path: pathlib.Path,
+) -> None:
+    repo = tmp_path / "root-staged-fixture"
+    (repo / "ops").mkdir(parents=True)
+    shutil.copy2(SCRIPT, repo / "ops/tree-hash.sh")
+    shutil.copy2(SHA256_SCRIPT, repo / "ops/served-tree-sha256.py")
+    files = {
+        "README.md": "unserved root file\n",
+        "backend/Dockerfile.v2": "FROM scratch\n",
+        "backend/.dockerignore": "__pycache__\n",
+        "backend/requirements-v2.txt": "example==1.0\n",
+        "backend/docker-entrypoint-v2.sh": "#!/bin/sh\n",
+        "backend/sealai_v2/knowledge/example.py": "VALUE = 1\n",
+    }
+    for relative, content in files.items():
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(
+        ["/usr/bin/git", "init", "-q", str(repo)],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["/usr/bin/git", "-C", str(repo), "add", "."],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "/usr/bin/git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Tree Test",
+            "-c",
+            "user.email=tree@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    object_root = repo / ".git/objects"
+    object_directories = sorted(
+        (path for path in object_root.rglob("*") if path.is_dir()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in [*object_directories, object_root]:
+        directory.chmod(0o555)
+    try:
+        tree = subprocess.check_output(
+            ["/bin/bash", "-p", str(repo / "ops/tree-hash.sh")],
+            cwd=repo,
+            text=True,
+        ).strip()
+        projection = subprocess.check_output(
+            [
+                "/usr/bin/python3",
+                "-I",
+                str(repo / "ops/served-tree-sha256.py"),
+                tree,
+            ],
+            cwd=repo,
+            text=True,
+        ).strip()
+    finally:
+        for directory in [object_root, *reversed(object_directories)]:
+            directory.chmod(0o755)
+
+    assert len(tree) == 40
+    assert len(projection) == 64

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -10,6 +11,16 @@ from sqlalchemy.orm import sessionmaker
 
 from sealai_v2.db.models import V2KnowledgeClaim, V2KnowledgeOutbox
 from sealai_v2.knowledge.qdrant_retrieval import _DENSE, ensure_collection
+from sealai_v2.security.cost_control import (
+    EmbeddingServiceAdmission,
+    ProviderServiceUnavailable,
+    build_embedding_service_admission,
+    classify_outbox_failure,
+    embed_with_service_admission,
+    remote_embedding_enabled,
+    validate_remote_embedding_inputs,
+    validate_embedding_worker_limits,
+)
 
 _BACKOFF_BASE_SECONDS = 30
 _BACKOFF_MAX_SECONDS = 3600
@@ -36,8 +47,23 @@ def _next_attempt(now: str, attempts: int) -> str:
     )
 
 
-def ensure_knowledge_collection(client, settings, embedder) -> None:
-    dim = len(next(iter(embedder.embed(["_warmup_"]))).tolist())
+def ensure_knowledge_collection(
+    client,
+    settings,
+    embedder,
+    *,
+    remote_embeddings: bool = False,
+    service_admission: EmbeddingServiceAdmission | None = None,
+) -> None:
+    vectors = embed_with_service_admission(
+        embedder,
+        ("_warmup_",),
+        remote=remote_embeddings,
+        admission=service_admission,
+    )
+    if len(vectors) != 1:
+        raise RuntimeError("embedding provider returned an incomplete warmup batch")
+    dim = len(vectors[0].tolist())
     ensure_collection(
         client,
         settings.qdrant_collection,
@@ -110,7 +136,7 @@ def _failed(
     max_attempts: int,
 ) -> bool:
     row.attempts += 1
-    row.last_error = repr(error)[:2000]
+    row.last_error = classify_outbox_failure(error)
     row.processed_at = now
     final = row.attempts >= max_attempts
     row.status = "failed" if final else "pending"
@@ -134,7 +160,14 @@ def drain_knowledge_outbox(
     batch_size: int = 50,
     max_attempts: int = 5,
     claim_timeout_seconds: int = 300,
+    remote_embeddings: bool = False,
+    service_admission: EmbeddingServiceAdmission | None = None,
+    prepare_embeddings: Callable[
+        [], tuple[object, EmbeddingServiceAdmission | None] | None
+    ]
+    | None = None,
 ) -> KnowledgeDrainResult:
+    validate_embedding_worker_limits(batch_size, max_attempts, remote=False)
     claimed = synced = failed_permanently = 0
     with session_factory() as session:
         rows = _claim_rows(
@@ -187,34 +220,53 @@ def drain_knowledge_outbox(
                     from qdrant_client.models import PointStruct, SparseVector
 
                     payloads = [dict(row.payload or {}) for row in effective_rows]
-                    if any(not payload.get("claim_text") for payload in payloads):
-                        raise ValueError("knowledge outbox upsert has no claim_text")
-                    dense = list(
-                        embedder.embed(
-                            [
-                                f"{passage_prefix}{payload['claim_text']}"
-                                for payload in payloads
-                            ]
-                        )
+                    claim_texts = tuple(
+                        payload.get("claim_text") for payload in payloads
                     )
+                    if any(
+                        not isinstance(claim_text, str) or not claim_text
+                        for claim_text in claim_texts
+                    ):
+                        raise ValueError("knowledge outbox upsert has no claim_text")
+                    validate_embedding_worker_limits(
+                        batch_size, max_attempts, remote=remote_embeddings
+                    )
+                    dense_inputs = tuple(
+                        f"{passage_prefix}{claim_text}" for claim_text in claim_texts
+                    )
+                    if remote_embeddings:
+                        # Preflight the exact paid batch before the separately admitted warmup.
+                        validate_remote_embedding_inputs(dense_inputs)
                     sparse = (
-                        list(
-                            sparse_embedder.embed(
-                                [payload["claim_text"] for payload in payloads]
-                            )
-                        )
+                        list(sparse_embedder.embed(list(claim_texts)))
                         if sparse_embedder is not None
                         else None
+                    )
+                    if sparse is not None and len(sparse) != len(payloads):
+                        raise RuntimeError(
+                            "embedding provider returned an incomplete sparse batch: "
+                            f"{len(sparse)}/{len(payloads)}"
+                        )
+                    batch_embedder = embedder
+                    batch_admission = service_admission
+                    if prepare_embeddings is not None:
+                        prepared = prepare_embeddings()
+                        if prepared is not None:
+                            batch_embedder, batch_admission = prepared
+                    if batch_embedder is None:
+                        raise ProviderServiceUnavailable(
+                            "outbox embedding adapter is unavailable"
+                        )
+                    dense = embed_with_service_admission(
+                        batch_embedder,
+                        dense_inputs,
+                        remote=remote_embeddings,
+                        admission=batch_admission,
                     )
                     if len(dense) != len(payloads):
                         raise RuntimeError(
                             "embedding provider returned an incomplete dense batch: "
                             f"{len(dense)}/{len(payloads)}"
-                        )
-                    if sparse is not None and len(sparse) != len(payloads):
-                        raise RuntimeError(
-                            "embedding provider returned an incomplete sparse batch: "
-                            f"{len(sparse)}/{len(payloads)}"
                         )
                     points = []
                     for index, (row, payload, dense_vector) in enumerate(
@@ -292,12 +344,45 @@ def main(argv: list[str] | None = None) -> int:
     if not settings.database_url or not settings.qdrant_url:
         raise SystemExit("knowledge outbox requires Postgres and Qdrant")
     session_factory = make_sessionmaker(make_engine(settings.database_url))
+    remote = remote_embedding_enabled(settings)
+    validate_embedding_worker_limits(
+        args.batch_size, settings.outbox_max_attempts, remote=False
+    )
     client = _make_client(settings)
-    embedder = _make_embedder(settings)
+    embedder = None
+    service_admission = None
+    admission_ready = False
     sparse_embedder = (
         _make_sparse_embedder(settings) if settings.qdrant_hybrid_enabled else None
     )
-    ensure_knowledge_collection(client, settings, embedder)
+    collection_ready = False
+
+    def prepare_embeddings() -> tuple[object, EmbeddingServiceAdmission | None]:
+        nonlocal admission_ready, collection_ready, embedder, service_admission
+        validate_embedding_worker_limits(
+            args.batch_size, settings.outbox_max_attempts, remote=remote
+        )
+        if not admission_ready:
+            service_admission = build_embedding_service_admission(
+                settings, session_factory, service="knowledge_outbox"
+            )
+            admission_ready = True
+        if embedder is None:
+            # Retries happen only through a later drain pass and a fresh durable admission.
+            # SDK-internal retries are disabled so one admission binds one paid attempt.
+            embedder = _make_embedder(settings, max_retries=0)
+        if collection_ready:
+            return embedder, service_admission
+        ensure_knowledge_collection(
+            client,
+            settings,
+            embedder,
+            remote_embeddings=remote,
+            service_admission=service_admission,
+        )
+        collection_ready = True
+        return embedder, service_admission
+
     total_claimed = total_synced = total_failed = 0
     while True:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -312,6 +397,9 @@ def main(argv: list[str] | None = None) -> int:
             batch_size=args.batch_size,
             max_attempts=settings.outbox_max_attempts,
             claim_timeout_seconds=settings.outbox_claim_timeout_s,
+            remote_embeddings=remote,
+            service_admission=service_admission,
+            prepare_embeddings=prepare_embeddings,
         )
         total_claimed += result.claimed
         total_synced += result.synced

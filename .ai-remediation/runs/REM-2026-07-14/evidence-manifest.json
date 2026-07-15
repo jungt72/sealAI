@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T14:47:44Z",
+  "updated_at": "2026-07-14T23:27:00Z",
   "artifacts": [
     {
       "name": "production-sensitive-file-metadata.jsonl",
@@ -57,6 +57,14 @@
       "name": "storage-inventory.yaml",
       "classification": "SANITIZED_VERSIONED_READ_ONLY_SUMMARY",
       "sha256": "d3a895e41eede5d0e9e92321bca490ef23d571749d69a2b300b5af9c4d936bfb",
+      "mode": "0644",
+      "content_values_collected": false,
+      "production_mutation_performed": false
+    },
+    {
+      "name": "evidence/README.md#p1-data-authority",
+      "classification": "SANITIZED_VERSIONED_TEST_SUMMARY",
+      "sha256": "6725c4da253d9489bc38e20e58b7c0b9d3a43d3e291140959f6dce30c0067835",
       "mode": "0644",
       "content_values_collected": false,
       "production_mutation_performed": false

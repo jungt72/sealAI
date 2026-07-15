@@ -283,6 +283,28 @@ def test_future_unfreeze_requires_hash_bound_gate10_manifest(tmp_path: Path):
         )
 
 
+def test_future_gate10_success_returns_every_exact_release_hash(
+    tmp_path: Path, monkeypatch
+):
+    manifest = _manifest()
+    state_path, approval_path, manifest_path = _write_unfreeze_documents(
+        tmp_path, manifest=manifest
+    )
+    monkeypatch.setattr(gate, "GATE10_LIFT_IMPLEMENTED", True)
+
+    decision = gate.evaluate(
+        "deploy",
+        state_path=state_path,
+        approval_path=approval_path,
+        manifest_path=manifest_path,
+        require_versioned=False,
+    )
+
+    assert decision.allowed is True
+    assert decision.release_hashes == manifest["hashes"]
+    assert decision.as_dict()["release_hashes"] == manifest["hashes"]
+
+
 @pytest.mark.parametrize(
     "readiness",
     [
@@ -509,7 +531,76 @@ def test_v2_release_verifies_image_against_approved_source_parent():
     assert 'SOURCE_GIT_SHA="${APPROVED_SOURCE_SHA}"' in script
     assert '"${IMAGE_REVISION}" == "${SOURCE_GIT_SHA}"' in script
     assert '"gate_control_git_sha": gate_control_git_sha' in script
-    assert '"$(git rev-parse HEAD^)" == "${SOURCE_GIT_SHA}"' in script
+    assert '"$("${GIT[@]}" rev-parse HEAD^)" == "${SOURCE_GIT_SHA}"' in script
+
+
+def test_v2_release_binds_manifest_digest_to_compose_and_both_live_containers():
+    script = (OPS / "release-backend-v2.sh").read_text(encoding="utf-8")
+
+    assert (
+        'APPROVED_BACKEND_IMAGE_DIGEST="$(release_hash backend_image_digest)"' in script
+    )
+    assert 'APPROVED_SERVED_TREE_SHA256="$(release_hash served_tree_sha256)"' in script
+    assert '"${BACKEND_IMAGE_REF##*@}" == "${APPROVED_BACKEND_IMAGE_DIGEST}"' in script
+    assert '"${COMPOSE_BACKEND_IMAGE}" == "${BACKEND_IMAGE_REF}"' in script
+    assert '"${COMPOSE_WORKER_IMAGE}" == "${BACKEND_IMAGE_REF}"' in script
+    assert '"${SERVED_TREE_SHA256}" == "${APPROVED_SERVED_TREE_SHA256}"' in script
+    assert 'PREPARED_IMAGE_ID="$(docker image inspect' in script
+    assert '"${IMAGE_SHA}" == "${PREPARED_IMAGE_ID}"' in script
+    assert '"${WORKER_IMAGE_SHA}" == "${PREPARED_IMAGE_ID}"' in script
+    assert script.index('"${IMAGE_SHA}" == "${PREPARED_IMAGE_ID}"') < script.index(
+        'printf \'%s\\n\' "${LINE}" >> "${LEDGER}"'
+    )
+
+
+def test_v2_release_uses_complete_fixed_rc_evidence_before_database_or_activation():
+    script = (OPS / "release-backend-v2.sh").read_text(encoding="utf-8")
+
+    outer_gate = script.index("production_release_gate_check")
+    lease = script.index("acquire_production_storage_lease")
+    pull = script.index('docker pull "${BACKEND_IMAGE_REF}"')
+    rc_gate = script.index("/usr/bin/python3 -I ops/v2_deploy_gate.py")
+    backup = script.index("creating verified pre-migration backup")
+    migration = script.index("applying V2 Alembic migrations")
+    activation = script.index('"${COMPOSE[@]}" up -d')
+    assert outer_gate < lease < pull < rc_gate < backup < migration < activation
+    assert "RUNS_DIR=/var/lib/sealai/release-evidence/runs" in script
+    assert (
+        "PROMOTION_EVIDENCE_FILE=/var/lib/sealai/release-evidence/"
+        "promotion-evidence.json" in script
+    )
+    for option in (
+        "--rc-evidence",
+        "--rc-evidence-sha256",
+        "--candidate-image-digest",
+        "--candidate-image-config-digest",
+        "--served-tree-sha256",
+        "--database-migration-sha256",
+        "--authority-epoch",
+        "--source-git-sha",
+    ):
+        assert option in script
+
+
+def test_v2_release_verifies_every_gate10_exposure_hash_at_its_owner_path():
+    script = (OPS / "release-backend-v2.sh").read_text(encoding="utf-8")
+    remote = (OPS / "production-deploy-remote-entrypoint.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "APPROVED_FRONTEND_IMAGE_DIGEST" in script
+    assert "docker inspect frontend --format '{{.Image}}'" in script
+    assert "FRONTEND_REPO_DIGESTS_JSON" in script
+    assert "database-migration-sha256.py" in script
+    assert (
+        '"${ACTUAL_ROLLBACK_PLAN_SHA256}" == "${APPROVED_ROLLBACK_PLAN_SHA256}"'
+        in script
+    )
+    assert "/var/lib/sealai/dashboard-releases" in script
+    assert '"${INSTALLED_CONTROL}" activate-dashboard' in remote
+    assert remote.index('/bin/bash -p "${STAGED_RELEASE}" --final') < remote.index(
+        '"${INSTALLED_CONTROL}" activate-dashboard'
+    )
 
 
 def test_normal_dashboard_build_cannot_target_live_production_bind_mount():
@@ -526,10 +617,14 @@ def test_normal_dashboard_build_cannot_target_live_production_bind_mount():
     assert "lstatSync(current).isSymbolicLink()" in vite_config
     assert "candidate.dev === live.dev && candidate.ino === live.ino" in vite_config
     assert "buildStart()" in vite_config
-    assert "./frontend-v2/dist:/usr/share/nginx/v2-client:ro" in production_compose
     assert (
-        "../../frontend-v2/.build/dashboard-candidate:/usr/share/nginx/v2-client:ro"
-        in staging_compose
+        "/var/lib/sealai/dashboard-releases:/usr/share/nginx/dashboard-releases:ro"
+        in production_compose
+    )
+    assert "./frontend-v2/dist:/usr/share/nginx/v2-client:ro" not in production_compose
+    assert (
+        "../../frontend-v2/.build/dashboard-candidate:"
+        "/usr/share/nginx/dashboard-releases/current:ro" in staging_compose
     )
 
 

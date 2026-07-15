@@ -24,6 +24,9 @@ class Lead:
     briefing_title: str
     briefing_body: str
     created_at: str
+    owner_subject: str = ""
+    case_id: str = ""
+    case_revision: int | None = None
     status: str = "neu"
     id: int = 0
 
@@ -39,6 +42,9 @@ def _to_domain(row: V2Lead) -> Lead:
         briefing_title=row.briefing_title,
         briefing_body=row.briefing_body,
         created_at=row.created_at,
+        owner_subject=row.owner_subject or "",
+        case_id=row.case_id or "",
+        case_revision=row.case_revision,
         status=row.status,
     )
 
@@ -56,6 +62,7 @@ class InProcessLeadStore:
         self._leads: list[Lead] = []
 
     def store(self, lead: Lead) -> int:
+        _validate_new_lead_boundary(lead)
         new_id = len(self._leads) + 1
         self._leads.append(replace(lead, id=new_id))
         return new_id
@@ -72,6 +79,7 @@ class PostgresLeadStore:
         self._sf = session_factory
 
     def store(self, lead: Lead) -> int:
+        _validate_new_lead_boundary(lead)
         with self._sf() as s:
             row = V2Lead(
                 partner_id=lead.partner_id,
@@ -79,6 +87,10 @@ class PostgresLeadStore:
                 lead_email=lead.lead_email,
                 tenant_id=lead.tenant_id,
                 session_id=lead.session_id,
+                owner_subject=lead.owner_subject,
+                case_id=lead.case_id,
+                case_revision=lead.case_revision,
+                ownership_state="owned",
                 briefing_title=lead.briefing_title,
                 briefing_body=lead.briefing_body,
                 created_at=lead.created_at,
@@ -92,28 +104,43 @@ class PostgresLeadStore:
         with self._sf() as s:
             rows = s.scalars(
                 select(V2Lead)
-                .where(V2Lead.partner_id == partner_id)
+                .where(
+                    V2Lead.partner_id == partner_id,
+                    V2Lead.ownership_state == "owned",
+                )
                 .order_by(V2Lead.id.desc())
             ).all()
             return tuple(_to_domain(r) for r in rows)
 
     def list_all(self) -> tuple[Lead, ...]:
         with self._sf() as s:
-            rows = s.scalars(select(V2Lead).order_by(V2Lead.id.desc())).all()
+            rows = s.scalars(
+                select(V2Lead)
+                .where(V2Lead.ownership_state == "owned")
+                .order_by(V2Lead.id.desc())
+            ).all()
             return tuple(_to_domain(r) for r in rows)
+
+
+def _validate_new_lead_boundary(lead: Lead) -> None:
+    if (
+        not lead.tenant_id.strip()
+        or not lead.owner_subject.strip()
+        or not lead.case_id.strip()
+        or lead.case_revision is None
+        or lead.case_revision < 0
+    ):
+        raise ValueError(
+            "new leads require exact tenant, owner, case, and non-negative revision"
+        )
 
 
 def build_lead_store(settings) -> LeadStore:
     """The Postgres lead store (durable, dashboard/partner-retrievable) when ``database_url`` is set,
-    else the in-process store (eval/CI hermetic). Fail-safe: a missing dep / unreachable DB falls
-    back to in-process rather than crashing the API."""
+    else the in-process store (eval/CI hermetic). A configured database is authoritative: adapter
+    construction failures propagate and can never create a process-local production fork."""
     if getattr(settings, "database_url", None):
-        try:
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
 
-            return PostgresLeadStore(
-                make_sessionmaker(make_engine(settings.database_url))
-            )
-        except Exception:  # noqa: BLE001 — fail safe to in-process; never crash on startup
-            pass
+        return PostgresLeadStore(make_sessionmaker(make_engine(settings.database_url)))
     return InProcessLeadStore()

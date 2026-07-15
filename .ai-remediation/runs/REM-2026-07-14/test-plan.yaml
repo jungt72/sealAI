@@ -29,9 +29,16 @@ suites:
     - two-pass Gate-04 observation with duplicate-input, evidence-expiry, container-drift, no-write, and no-mutation denial
     - full V2 regression suite plus independent adversarial re-review
   p1-data-authority:
-    - authority epoch invalidation after quarantine, revocation, and expiry
-    - ledger and Qdrant reconciliation
-    - exact-answer cache namespace and cardinality bounds
+    - transactionally bumped Postgres authority and tenant-specific digest changes after quarantine, revoke, expiry, claim update, and tenant switch
+    - request-bound final authority recheck rejects an in-flight change before cache publication or response
+    - Qdrant payload, sync metadata, and rebuild state cannot mint or extend authority; ledger revalidation remains mandatory
+    - exact-answer cache authority namespace, TTL, tenant/global cardinality, and no-publication regression
+    - additive Alembic 0012/0013 upgrade with no data rewrite, constraint validation, RLS, or FORCE activation
+    - ownerless, quarantined, cross-owner, cross-tenant, orphan-child, durable-memory, curated-memory, purge, and RFQ-lead fail-closed tests
+    - explicit case ID and revision across multiple cases, parallel Briefing/RFQ requests, stale snapshots, IDOR, missing/deleted case, injection, and no-turn-mutation
+    - role matrix for tenant admin, platform owner, system operator, contributor, manufacturer, capability reviewer, knowledge reviewer, knowledge approver, and decision reviewer
+    - two-person knowledge review including same-actor, skipped-review, metadata-mutation, non-human, and incomplete-evidence denials
+    - opt-in real PostgreSQL role and FORCE-RLS proof only with explicit test DSN and nonproduction guard
   regression:
     - backend lint and focused tests
     - frontend lint, typecheck, and focused tests when touched

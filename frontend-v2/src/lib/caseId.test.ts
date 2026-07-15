@@ -9,72 +9,63 @@ import {
 } from "./caseId";
 
 afterEach(() => {
+  sessionStorage.clear();
   window.history.replaceState({}, "", "/dashboard/");
 });
 
-describe("caseId URL persistence ('Fälle'-Sidebar)", () => {
-  it("getCaseIdFromUrl returns null when the URL has no ?case= param", () => {
-    window.history.replaceState({}, "", "/dashboard/");
+describe("caseId non-URL persistence ('Fälle'-Sidebar)", () => {
+  it("returns null when history and tab storage contain no case", () => {
     expect(getCaseIdFromUrl()).toBeNull();
   });
 
-  it("getCaseIdFromUrl returns null for a blank ?case= param", () => {
-    window.history.replaceState({}, "", "/dashboard/?case=");
-    expect(getCaseIdFromUrl()).toBeNull();
-  });
-
-  it("getCaseIdFromUrl reads a present case id", () => {
-    window.history.replaceState({}, "", "/dashboard/?case=abc-123");
+  it("imports and synchronously scrubs a valid legacy ?case= bookmark", () => {
+    window.history.replaceState({}, "", "/dashboard/?case=abc-123&view=chat");
     expect(getCaseIdFromUrl()).toBe("abc-123");
+    expect(window.location.search).toBe("?view=chat");
+    expect(JSON.stringify(window.history.state)).toContain("abc-123");
   });
 
-  it("setCaseIdInUrl writes the param and getCaseIdFromUrl reads it back", () => {
-    window.history.replaceState({}, "", "/dashboard/");
+  it("scrubs and rejects an invalid legacy case value", () => {
+    window.history.replaceState({}, "", "/dashboard/?case=bad%0Avalue");
+    expect(getCaseIdFromUrl()).toBeNull();
+    expect(window.location.search).toBe("");
+  });
+
+  it("writes history state + session fallback without changing the URL", () => {
     setCaseIdInUrl("new-case-1");
     expect(getCaseIdFromUrl()).toBe("new-case-1");
-    expect(window.location.pathname).toBe("/dashboard/"); // path preserved
+    expect(window.location.href).not.toContain("new-case-1");
+    window.history.replaceState({}, "", "/dashboard/");
+    expect(getCaseIdFromUrl()).toBe("new-case-1"); // reload-style fallback
   });
 
-  it("setCaseIdInUrl with replace:true (default) does not grow browser history", () => {
-    window.history.replaceState({}, "", "/dashboard/");
+  it("replace does not grow history; push does", () => {
     const before = window.history.length;
     setCaseIdInUrl("case-a");
     setCaseIdInUrl("case-b");
-    expect(window.history.length).toBe(before); // both replaced, no new entries
-    expect(getCaseIdFromUrl()).toBe("case-b");
-  });
-
-  it("setCaseIdInUrl with replace:false adds a browser-history entry", () => {
-    window.history.replaceState({}, "", "/dashboard/");
-    const before = window.history.length;
-    setCaseIdInUrl("case-pushed", { replace: false });
+    expect(window.history.length).toBe(before);
+    setCaseIdInUrl("case-c", { replace: false });
     expect(window.history.length).toBe(before + 1);
-    expect(getCaseIdFromUrl()).toBe("case-pushed");
+    expect(getCaseIdFromUrl()).toBe("case-c");
   });
 
-  it("newCaseId returns a non-empty string and two calls never collide", () => {
-    const a = newCaseId();
-    const b = newCaseId();
-    expect(a).toBeTruthy();
-    expect(a).not.toBe(b);
+  it("rejects unsafe identifiers before they can become a header", () => {
+    expect(() => setCaseIdInUrl("bad\r\nX-Evil: yes")).toThrow("invalid case id");
+  });
+
+  it("newCaseId returns unique non-empty IDs", () => {
+    expect(newCaseId()).not.toBe(newCaseId());
   });
 });
 
-
-describe("stashCaseIdForAuthRedirect / takeStashedCaseId (survives an OIDC redirect round trip)", () => {
-  afterEach(() => sessionStorage.clear());
-
-  it("round-trips a stashed caseId and clears it (one-time read, like the PKCE verifier)", () => {
+describe("auth redirect case stash", () => {
+  it("round-trips once", () => {
     stashCaseIdForAuthRedirect("case-before-redirect");
     expect(takeStashedCaseId()).toBe("case-before-redirect");
-    expect(takeStashedCaseId()).toBeNull(); // consumed — a second read finds nothing
-  });
-
-  it("takeStashedCaseId returns null when nothing was ever stashed", () => {
     expect(takeStashedCaseId()).toBeNull();
   });
 
-  it("a later stash overwrites an earlier one (only the most recent redirect's case matters)", () => {
+  it("keeps only the latest valid case", () => {
     stashCaseIdForAuthRedirect("case-1");
     stashCaseIdForAuthRedirect("case-2");
     expect(takeStashedCaseId()).toBe("case-2");

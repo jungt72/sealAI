@@ -13,12 +13,16 @@ set -euo pipefail
 readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ops/lib/verified-tls.sh
+source "${SCRIPT_DIR}/lib/verified-tls.sh"
+
 BASE_URL="${BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"
-TMP_DIR="${TMPDIR:-/tmp}"
-BODY_FILE="${TMP_DIR}/sealai-v2-smoke-body.$$"
-HEADER_FILE="${TMP_DIR}/sealai-v2-smoke-headers.$$"
-trap 'rm -f "${BODY_FILE}" "${HEADER_FILE}"' EXIT
+WORK_DIR=""
+BODY_FILE=""
+HEADER_FILE=""
+trap 'if [[ -n "${WORK_DIR}" ]]; then rm -rf -- "${WORK_DIR}"; fi' EXIT
 
 pass() { printf 'PASS: %s\n' "$1"; }
 fail() {
@@ -32,10 +36,16 @@ fail() {
 need_cmd() { command -v "$1" >/dev/null 2>&1 || fail "missing dependency: $1"; }
 need_cmd curl
 need_cmd jq
+need_cmd mktemp
+sealai_configure_tls_client || exit $?
+sealai_validate_https_origin "$BASE_URL" BASE_URL || exit $?
+WORK_DIR="$(mktemp -d /tmp/sealai-v2-smoke.XXXXXX)"
+BODY_FILE="${WORK_DIR}/body.txt"
+HEADER_FILE="${WORK_DIR}/headers.txt"
 
 request_code() {
   local method="$1" url="$2" data="${3:-}" auth="${4:-}"
-  local args=(-k -sS --max-time 30 -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}')
+  local args=("${SEALAI_CURL_TLS_ARGS[@]}" -sS --max-time 30 -D "${HEADER_FILE}" -o "${BODY_FILE}" -w '%{http_code}')
   [[ -n "$auth" ]] && args+=(-H "Authorization: Bearer ${auth}")
   if [[ "$method" == "GET" ]]; then
     curl "${args[@]}" "$url"
@@ -54,7 +64,9 @@ code="$(request_code GET "${BASE_URL}/dashboard/")"
 [[ "$code" == "200" ]] || fail "/dashboard/ expected 200, got ${code}"
 grep -qi '^content-security-policy: ' "${HEADER_FILE}" || fail "/dashboard/ missing CSP header"
 grep -qi "default-src 'self'" "${HEADER_FILE}" || fail "/dashboard/ CSP not strict (no default-src 'self')"
-pass "/dashboard/ → 200 + strict CSP"
+sealai_assert_security_headers "$HEADER_FILE" true \
+  || fail '/dashboard/ is missing required security headers'
+pass "/dashboard/ → 200 + HSTS, strict CSP, XCTO, referrer, and permissions policy"
 
 asset="$(grep -oE '/dashboard/assets/[A-Za-z0-9._-]+\.js' "${BODY_FILE}" | head -1 || true)"
 [[ -n "$asset" ]] || fail "no /dashboard/assets/*.js reference in index.html (dist mounted? empty dir?)"

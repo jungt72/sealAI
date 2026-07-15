@@ -10,6 +10,11 @@ Legacy hosts must redirect to the canonical host. Runtime, Auth.js, Keycloak iss
 sitemaps, robots.txt, and smoke tests must not reintroduce `sealai.net` as the app
 origin.
 
+The explicit `www` policy is to retain `www.sealingai.com` only as an HTTPS 308
+redirect to the canonical apex host. It is not an independent application origin.
+The redirect may be activated only when its DNS record, trusted certificate chain,
+exact SAN, and Nginx security headers all pass together.
+
 ## Daily checks
 
 ```bash
@@ -51,6 +56,31 @@ Then issue the production certificate:
 cd /home/thorsten/sealai
 ./ops/issue-sealingai-cert.sh
 ./ops/check-domain-readiness.sh
+```
+
+Certificate issuance, DNS changes, and Nginx activation are production mutations.
+The commands above are an execution sequence, not current authorization: record the
+exact DNS/certificate/rollback plan and obtain `GATE-08` before running it. Until then,
+use only the local contract tests. The readiness script validates both hostnames with
+the system trust store (or an explicit safe `TLS_CA_FILE`), requires TLS 1.2 or newer,
+checks the exact SAN, and rejects missing HSTS, CSP, XCTO, referrer, or permissions
+policy. It has no certificate-verification bypass.
+
+The monitoring rollout must preserve that policy as two independent, non-following probes:
+
+- `https://sealingai.com/api/health` must return exactly 200 over a trusted apex TLS connection.
+- `https://www.sealingai.com/api/health` must return exactly 308 over a trusted `www` TLS connection
+  with `Location: https://sealingai.com/api/health`.
+
+This separation is mandatory: probing `www` with a 2xx module creates a permanent false alarm, while
+following its redirect can hide a broken `www` certificate, hostname, or redirect destination.
+Production DNS, certificate issuance, Nginx activation, and monitoring deployment remain GATE-08
+mutations; the repository contract alone is not runtime evidence.
+
+```bash
+python3 -m pytest \
+  backend/tests/test_tls_verification_contract.py \
+  backend/tests/test_remediation_control.py -q
 ```
 
 ## GHCR prerequisite

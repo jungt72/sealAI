@@ -511,20 +511,18 @@ def test_node_lock_rejects_missing_registry_integrity(tmp_path: Path):
 
 def test_materialized_compose_images_reject_wrong_backend_repository(tmp_path: Path):
     manifests = ("docker-compose.yml", "docker-compose.deploy.yml")
+    policy = GATE.load_policy()
+    inventory = {item["path"]: item for item in policy["production_manifests"]}
     references = []
     for manifest in manifests:
         references.extend(
             repository + ":fixture@sha256:" + "a" * 64
             for repository in GATE._manifest_literal_repositories(REPO / manifest)
         )
-    references.extend(
-        repository + ":fixture@sha256:" + "b" * 64
-        for repository in (
-            "ghcr.io/jungt72/sealai-backend-v2",
-            "ghcr.io/jungt72/sealai-frontend",
-            "ghcr.io/jungt72/sealai-keycloak",
+        references.extend(
+            item["repository"] + ":fixture@sha256:" + "b" * 64
+            for item in inventory[manifest]["required_digest_variables"]
         )
-    )
     images = tmp_path / "images.txt"
     images.write_text("\n".join(references) + "\n", encoding="utf-8")
     GATE.verify_materialized_images(manifests, images)

@@ -52,6 +52,10 @@ build/
 
 # Local scratch
 *.sql
+# Reviewed, data-free GATE-07 operational templates (no credentials or row payloads).
+!ops/postgres/gate07-data-authority-profile.sql
+!ops/postgres/gate07-quarantine-ambiguous.sql
+!ops/postgres/gate07-rls-cutover.sql
 # Legacy one-off frontend scratch copy. Canonical frontend sources are
 # frontend/ (public Next frontend) and frontend-v2/ (dashboard SPA).
 frontend-cockpit-deploy/

@@ -3,10 +3,11 @@ name: Deploy Backend V2 (Blocked External)
 on:
   workflow_dispatch:
 
-# Production deployment is mechanically unavailable. The previous workflow
-# accepted arbitrary control commits and image repositories. Re-enabling it
-# requires independently verifiable protected-main, environment approval and
-# immutable producer-artifact evidence; repository assertions are insufficient.
+# Production deployment is mechanically unavailable. The root-owned P1
+# promotion boundary, release freeze, Gate-10 source/control binding and digest
+# checks remain mandatory, but CI cannot reach them until protected-main,
+# environment approval and immutable producer-artifact evidence are verified
+# independently of repository-controlled code.
 permissions: {}
 
 jobs:

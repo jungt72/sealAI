@@ -24,7 +24,7 @@ from sealai_v2.api.deps import (
     flags_from_settings,
     get_pipeline,
     get_settings,
-    require_legal_acceptance,
+    require_provider_admission,
 )
 from sealai_v2.api.serializers import chat_response
 from sealai_v2.api.sse import STREAM_SCHEMA_VERSION, stream_frames
@@ -67,10 +67,12 @@ def _mode_unavailable_detail(exc: ProductModeUnavailable) -> dict:
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=8000)
     # max_length matches V2Session.session_id's own column width (db/models.py) — an over-long
     # value now fails closed with a clean 422 instead of a generic 500 from the DB constraint.
-    case_id: str | None = Field(default=None, max_length=255)
+    case_id: str | None = Field(
+        default=None, max_length=255, pattern=r"^[A-Za-z0-9._~-]+$"
+    )
 
 
 async def _run_pipeline(
@@ -99,7 +101,7 @@ async def _run_pipeline(
 @router.post("/chat")
 async def chat(
     req: ChatRequest,
-    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    identity: VerifiedIdentity = Depends(require_provider_admission, scope="request"),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -117,7 +119,7 @@ async def chat(
 @router.post("/chat/stream")
 async def chat_stream(
     req: ChatRequest,
-    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    identity: VerifiedIdentity = Depends(require_provider_admission, scope="request"),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
 ) -> StreamingResponse:

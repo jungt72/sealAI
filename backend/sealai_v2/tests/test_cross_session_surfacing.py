@@ -19,12 +19,14 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlalchemy import select
 
 from sealai_v2.core.contracts import ModelConfig, RememberedFact, SessionContext
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.db.conversation_memory import PostgresConversationMemory
 from sealai_v2.db.cross_session_memory import PostgresCrossSessionMemory
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
+from sealai_v2.db.models import V2DurableFact
 from sealai_v2.memory.distiller import Distiller
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import DistillPromptAssembler, PromptAssembler
@@ -99,6 +101,32 @@ def test_same_tenant_durable_facts_are_isolated_by_verified_subject(db_url):
         query="Getriebe-Anwendung?",
     )
     assert any(f.feld == "anwendung" and "Getriebe" in f.wert for f in visible)
+
+
+def test_legacy_durable_fact_is_neither_read_nor_implicitly_claimed(db_url):
+    x = _x(db_url)
+    x.remember_durable(
+        tenant_id="A",
+        owner_subject="user-A",
+        facts=(RememberedFact("anwendung", "legacy value"),),
+    )
+    session_factory = make_sessionmaker(make_engine(db_url))
+    with session_factory.begin() as session:
+        row = session.scalars(select(V2DurableFact)).one()
+        row.ownership_state = None
+
+    assert (
+        x.relevant_facts(tenant_id="A", owner_subject="user-A", query="legacy value")
+        == ()
+    )
+    with pytest.raises(PermissionError, match="ownership is unresolved"):
+        x.remember_durable(
+            tenant_id="A",
+            owner_subject="user-A",
+            facts=(RememberedFact("anwendung", "new value"),),
+        )
+    with session_factory() as session:
+        assert session.scalars(select(V2DurableFact)).one().wert == "legacy value"
 
 
 def test_durable_facts_survive_restart(db_url):
