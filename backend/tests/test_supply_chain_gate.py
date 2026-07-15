@@ -437,6 +437,113 @@ def test_trivy_versionless_licenses_bind_to_lock_or_file_digest(tmp_path: Path):
     )
 
 
+def test_trivy_image_licenses_bind_to_exact_os_package_inventory():
+    package_purl = (
+        "pkg:rpm/redhat/alternatives@1.24-2.el9?arch=x86_64&distro=redhat-9.8"
+    )
+    report = {
+        "SchemaVersion": 2,
+        "ArtifactName": "keycloak.oci.tar",
+        "ArtifactType": "container_image",
+        "Results": [
+            {
+                "Target": "keycloak.oci.tar (redhat 9.8)",
+                "Class": "os-pkgs",
+                "Packages": [
+                    {
+                        "Name": "alternatives",
+                        "Identifier": {"PURL": package_purl},
+                        "Licenses": ["GPL-2.0-only"],
+                        "InstalledFiles": ["/usr/share/licenses/alternatives/COPYING"],
+                    }
+                ],
+            },
+            {
+                "Target": "OS Packages",
+                "Class": "license",
+                "Licenses": [
+                    {
+                        "Severity": "HIGH",
+                        "Name": "GPL-2.0-only",
+                        "PkgName": "alternatives",
+                        "FilePath": "",
+                    }
+                ],
+            },
+            {
+                "Target": "Loose File License(s)",
+                "Class": "license-file",
+                "Licenses": [
+                    {
+                        "Severity": "HIGH",
+                        "Name": "GPL-2.0",
+                        "PkgName": "",
+                        "FilePath": "usr/share/licenses/alternatives/COPYING",
+                    }
+                ],
+            },
+        ],
+    }
+
+    findings = GATE.findings_from_report(
+        "trivy",
+        report,
+        scope="keycloak-image",
+        root=REPO,
+        policy=GATE.load_policy(),
+    )
+
+    assert {(finding.package, finding.installed_version) for finding in findings} == {
+        ("alternatives", package_purl)
+    }
+    assert {finding.advisory_id for finding in findings} == {
+        "GPL-2.0-only",
+        "GPL-2.0",
+    }
+
+
+def test_trivy_image_license_without_matching_inventory_fails_closed():
+    report = {
+        "SchemaVersion": 2,
+        "ArtifactName": "keycloak.oci.tar",
+        "ArtifactType": "container_image",
+        "Results": [
+            {
+                "Target": "keycloak.oci.tar (redhat 9.8)",
+                "Class": "os-pkgs",
+                "Packages": [
+                    {
+                        "Name": "bash",
+                        "Identifier": {"PURL": "pkg:rpm/redhat/bash@5.1.8-9.el9"},
+                        "Licenses": ["GPLv3+"],
+                    }
+                ],
+            },
+            {
+                "Target": "OS Packages",
+                "Class": "license",
+                "Licenses": [
+                    {
+                        "Severity": "HIGH",
+                        "Name": "GPL-2.0-only",
+                        "PkgName": "alternatives",
+                        "FilePath": "",
+                    }
+                ],
+            },
+        ],
+    }
+
+    with pytest.raises(GATE.SupplyChainError, match="exact OS inventory"):
+        GATE.findings_from_report(
+            "trivy",
+            report,
+            scope="keycloak-image",
+            root=REPO,
+            policy=GATE.load_policy(),
+        )
+
+
 def test_npm_emits_only_actual_critical_advisory_not_transitive_echoes():
     package_count = len(
         json.loads((REPO / "package-lock.json").read_text(encoding="utf-8"))["packages"]

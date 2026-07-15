@@ -1254,8 +1254,89 @@ def _npm_versions(
     return versions
 
 
+def _trivy_image_path(raw: Any, label: str, *, allow_absolute: bool) -> str:
+    if not isinstance(raw, str) or not raw or "\\" in raw or "\x00" in raw:
+        raise SupplyChainError(f"{label} must be a safe image-relative path")
+    path = PurePosixPath(raw)
+    if (path.is_absolute() and not allow_absolute) or ".." in path.parts:
+        raise SupplyChainError(f"{label} must be a safe image-relative path")
+    normalized = path.as_posix().lstrip("/")
+    if allow_absolute and path.as_posix() == "/":
+        return "/"
+    if not normalized or normalized == ".":
+        raise SupplyChainError(f"{label} must be a safe image-relative path")
+    return normalized
+
+
+def _trivy_os_package_identities(
+    report: dict[str, Any],
+    *,
+    package: str | None = None,
+    file_path: str | None = None,
+    license_name: str | None = None,
+) -> set[tuple[str, str]]:
+    """Resolve a versionless image license to Trivy's exact OS inventory."""
+
+    identities: set[tuple[str, str]] = set()
+    inventory_seen = False
+    for result in report.get("Results") or []:
+        if not isinstance(result, dict) or result.get("Class") != "os-pkgs":
+            continue
+        packages = result.get("Packages")
+        if not isinstance(packages, list) or not packages:
+            raise SupplyChainError("Trivy image OS package inventory is malformed")
+        inventory_seen = True
+        for item in packages:
+            if not isinstance(item, dict):
+                raise SupplyChainError("Trivy image OS package inventory is malformed")
+            name = item.get("Name")
+            if package is not None and name != package:
+                continue
+            if license_name is not None:
+                licenses = item.get("Licenses")
+                if not isinstance(licenses, list) or license_name not in licenses:
+                    continue
+            if file_path is not None:
+                installed_files = item.get("InstalledFiles")
+                if not isinstance(installed_files, list):
+                    continue
+                normalized_files = {
+                    _trivy_image_path(
+                        installed_file,
+                        "Trivy installed package file",
+                        allow_absolute=True,
+                    )
+                    for installed_file in installed_files
+                }
+                if file_path not in normalized_files:
+                    continue
+            identifier = item.get("Identifier")
+            purl = identifier.get("PURL") if isinstance(identifier, dict) else None
+            if (
+                not isinstance(name, str)
+                or not name
+                or not isinstance(purl, str)
+                or not purl.startswith("pkg:")
+                or any(character.isspace() for character in purl)
+            ):
+                raise SupplyChainError(
+                    "Trivy image OS package lacks an exact package identity"
+                )
+            identities.add((name, purl))
+    if not inventory_seen:
+        raise SupplyChainError("Trivy image has no exact OS package inventory")
+    if not identities:
+        raise SupplyChainError(
+            "Trivy image license cannot be resolved in its exact OS inventory"
+        )
+    return identities
+
+
 def _trivy_license_identities(
-    root: Path, result: dict[str, Any], license_item: dict[str, Any]
+    root: Path,
+    report: dict[str, Any],
+    result: dict[str, Any],
+    license_item: dict[str, Any],
 ) -> set[tuple[str, str]]:
     """Return exact, repository-bound identities for a Trivy license finding."""
 
@@ -1265,6 +1346,33 @@ def _trivy_license_identities(
         return {(package, version)}
 
     file_path = license_item.get("FilePath")
+    if report.get("ArtifactType") == "container_image":
+        license_name = license_item.get("Name")
+        if isinstance(package, str) and package:
+            if file_path:
+                raise SupplyChainError(
+                    "versionless Trivy image package license has an unexpected file"
+                )
+            if result.get("Target") != "OS Packages" or not isinstance(
+                license_name, str
+            ):
+                raise SupplyChainError(
+                    "versionless Trivy image package license is malformed"
+                )
+            return _trivy_os_package_identities(
+                report,
+                package=package,
+                license_name=license_name,
+            )
+        if result.get("Target") != "Loose File License(s)":
+            raise SupplyChainError(
+                "Trivy image license finding lacks an exact package identity"
+            )
+        image_path = _trivy_image_path(
+            file_path, "Trivy license file", allow_absolute=False
+        )
+        return _trivy_os_package_identities(report, file_path=image_path)
+
     path = _safe_path(root, file_path, "Trivy license file")
     if isinstance(package, str) and package:
         if path.name != "package-lock.json":
@@ -1493,7 +1601,7 @@ def findings_from_report(
                     raise SupplyChainError("Trivy license finding is malformed")
                 if str(license_item.get("Severity", "")).upper() in license_fail:
                     for package, version in _trivy_license_identities(
-                        root, result, license_item
+                        root, report, result, license_item
                     ):
                         findings.add(
                             Finding(
