@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "ops/keycloak_governance_reconcile.py"
 MANIFEST = ROOT / "security/keycloak-governance-v1.json"
@@ -103,7 +105,7 @@ def test_group_overlap_and_legacy_assignment_block_apply_without_identity_leak()
     raw = _complete_state(manifest)
     by_path = {item["path"]: item for item in raw["groups"]}
     by_path["/sealai-knowledge-contributors"]["members"] = ["sensitive-subject"]
-    by_path["/sealai-knowledge-reviewers"]["members"] = ["sensitive-subject"]
+    raw["role_members"] = {"knowledge_reviewer": ["sensitive-subject"]}
     raw["forbidden_role_assignments"] = {"admin": 2}
     state = module.normalize_state(raw, realm=manifest["realm"])
 
@@ -114,8 +116,28 @@ def test_group_overlap_and_legacy_assignment_block_apply_without_identity_leak()
     assert result.apply_blocked is True
     assert receipt["counts"]["incompatible_subjects"] == 1
     assert receipt["counts"]["forbidden_direct_assignments"] == 2
+    assert receipt["counts"]["managed_role_subject_bindings"] == 1
     assert receipt["user_memberships_managed"] is False
     assert "sensitive-subject" not in serialized
+
+    changed = _complete_state(manifest)
+    changed_by_path = {item["path"]: item for item in changed["groups"]}
+    changed_by_path["/sealai-knowledge-contributors"]["members"] = ["other-subject"]
+    changed["role_members"] = {"knowledge_reviewer": ["other-subject"]}
+    changed["forbidden_role_assignments"] = {"admin": 2}
+    changed_receipt = module.build_receipt(
+        manifest,
+        module.normalize_state(changed, realm=manifest["realm"]),
+        module.compute_reconciliation(
+            manifest, module.normalize_state(changed, realm=manifest["realm"])
+        ),
+        mode="dry-run",
+    )
+    assert changed_receipt["counts"]["incompatible_subjects"] == 1
+    assert (
+        changed_receipt["sanitized_state_sha256"] != receipt["sanitized_state_sha256"]
+    )
+    assert "other-subject" not in json.dumps(changed_receipt, sort_keys=True)
 
 
 def test_offline_fixture_can_never_be_used_for_apply(tmp_path: Path) -> None:
@@ -133,6 +155,8 @@ def test_offline_fixture_can_never_be_used_for_apply(tmp_path: Path) -> None:
             "--apply",
             "--expected-manifest-sha256",
             module._digest(manifest),
+            "--expected-state-sha256",
+            "0" * 64,
         ],
         cwd=ROOT,
         text=True,
@@ -142,6 +166,75 @@ def test_offline_fixture_can_never_be_used_for_apply(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "cannot be used with an offline state file" in result.stderr
+
+
+def test_apply_requires_manifest_and_exact_census_hash() -> None:
+    module = _module()
+    manifest = module.load_manifest(MANIFEST)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--apply",
+            "--expected-manifest-sha256",
+            module._digest(manifest),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "--expected-state-sha256" in result.stderr
+
+
+def test_online_census_fails_closed_when_existing_role_members_are_unreadable() -> None:
+    module = _module()
+    manifest = module.load_manifest(MANIFEST)
+    existing = manifest["roles"][0]
+    client = module.KcadmClient(
+        container="unused", server="https://unused.invalid", auth_realm="master"
+    )
+
+    def fake_kcadm(args: list[str]):
+        endpoint = args[1]
+        if endpoint == "roles":
+            return [{"name": existing["name"], "description": existing["description"]}]
+        if endpoint == "groups":
+            return []
+        if endpoint == f"roles/{existing['name']}/users":
+            raise module.ReconcileError("member census denied")
+        raise AssertionError(f"unexpected census endpoint: {endpoint}")
+
+    client.kcadm = fake_kcadm
+
+    with pytest.raises(module.ReconcileError, match="member census denied"):
+        client.read_state(manifest)
+
+
+def test_online_census_paginates_without_exposing_member_ids() -> None:
+    module = _module()
+    client = module.KcadmClient(
+        container="unused", server="https://unused.invalid", auth_realm="master"
+    )
+    first_page = [{"id": f"opaque-{index}"} for index in range(100)]
+    second_page = [{"id": "opaque-100"}]
+
+    def fake_kcadm(args: list[str]):
+        return second_page if "first=100" in args else first_page
+
+    client.kcadm = fake_kcadm
+    items = client._paged_get(
+        endpoint="roles/knowledge_reviewer/users",
+        realm="sealAI",
+        fields="id",
+        identity_field="id",
+    )
+
+    assert len(items) == 101
+    receipt = {"member_count": len(items)}
+    assert "opaque-100" not in json.dumps(receipt)
 
 
 def test_broad_keycloak_hardener_cannot_assign_governance_roles() -> None:

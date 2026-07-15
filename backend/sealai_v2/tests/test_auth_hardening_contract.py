@@ -35,7 +35,10 @@ def test_governance_reconciler_is_separate_read_only_by_default():
     assert manifest["forbidden_role_names"] == ["admin"]
     assert manifest["assignment_policy"]["manage_user_memberships"] is False
     assert 'parser.add_argument("--apply", action="store_true")' in governance
-    assert "if args.apply and not args.expected_manifest_sha256" in governance
+    assert (
+        "--apply requires --expected-manifest-sha256 and --expected-state-sha256"
+        in governance
+    )
     assert "if args.apply:" in governance
 
 

@@ -134,8 +134,13 @@ def normalize_state(raw: dict[str, Any], *, realm: str) -> dict[str, Any]:
         raise ReconcileError("observed state belongs to a different realm")
     roles = raw.get("roles", [])
     groups = raw.get("groups", [])
+    role_members = raw.get("role_members", {})
     forbidden_assignments = raw.get("forbidden_role_assignments", {})
-    if not isinstance(roles, list) or not isinstance(groups, list):
+    if (
+        not isinstance(roles, list)
+        or not isinstance(groups, list)
+        or not isinstance(role_members, dict)
+    ):
         raise ReconcileError("observed roles and groups must be arrays")
     normalized_roles: dict[str, str] = {}
     for role in roles:
@@ -161,10 +166,18 @@ def normalize_state(raw: dict[str, Any], *, realm: str) -> dict[str, Any]:
     }
     if any(count < 0 for count in assignment_counts.values()):
         raise ReconcileError("forbidden role assignment counts cannot be negative")
+    normalized_role_members = {
+        str(role): sorted({str(item) for item in members if item})
+        for role, members in role_members.items()
+        if isinstance(members, list)
+    }
+    if set(normalized_role_members) != set(role_members):
+        raise ReconcileError("observed role memberships must be arrays")
     return {
         "realm": realm,
         "roles": normalized_roles,
         "groups": normalized_groups,
+        "role_members": normalized_role_members,
         "forbidden_role_assignments": assignment_counts,
     }
 
@@ -223,7 +236,13 @@ def compute_reconciliation(
     for policy in manifest["incompatibility_sets"]:
         memberships: Counter[str] = Counter()
         for path in policy["groups"]:
-            memberships.update(observed_groups.get(path, {}).get("members", []))
+            desired_roles = next(
+                group["roles"] for group in manifest["groups"] if group["path"] == path
+            )
+            bound_subjects = set(observed_groups.get(path, {}).get("members", []))
+            for role in desired_roles:
+                bound_subjects.update(state["role_members"].get(role, []))
+            memberships.update(bound_subjects)
         conflicted = {subject for subject, count in memberships.items() if count > 1}
         overlap_subjects.update(conflicted)
         overlap_sets[policy["id"]] = len(conflicted)
@@ -255,19 +274,39 @@ def build_receipt(
         for path, group in sorted(state["groups"].items())
     }
     operation_counts = Counter(item["action"] for item in reconciliation.operations)
+    managed_role_binding_counts = {
+        role["name"]: len(state["role_members"].get(role["name"], []))
+        for role in manifest["roles"]
+    }
+    membership_binding_sha256 = _digest(
+        {
+            "group_members": {
+                path: group["members"]
+                for path, group in sorted(state["groups"].items())
+            },
+            "managed_role_members": {
+                role["name"]: state["role_members"].get(role["name"], [])
+                for role in manifest["roles"]
+            },
+        }
+    )
+    sanitized_state_sha256 = _digest(
+        {
+            "roles": dict(sorted(state["roles"].items())),
+            "groups": sanitized_groups,
+            "managed_role_binding_counts": managed_role_binding_counts,
+            "membership_binding_sha256": membership_binding_sha256,
+            "forbidden_assignment_counts": state["forbidden_role_assignments"],
+        }
+    )
     return {
         "schema_version": 1,
         "mode": mode,
         "realm": manifest["realm"],
         "contract_version": manifest["contract_version"],
         "manifest_sha256": _digest(manifest),
-        "sanitized_state_sha256": _digest(
-            {
-                "roles": sorted(state["roles"]),
-                "groups": sanitized_groups,
-                "forbidden_assignment_counts": state["forbidden_role_assignments"],
-            }
-        ),
+        "sanitized_state_sha256": sanitized_state_sha256,
+        "membership_binding_sha256": membership_binding_sha256,
         "counts": {
             "managed_roles": len(manifest["roles"]),
             "managed_groups": len(manifest["groups"]),
@@ -276,9 +315,13 @@ def build_receipt(
             "planned_operations": len(reconciliation.operations),
             "incompatible_subjects": reconciliation.overlap_count,
             "forbidden_direct_assignments": reconciliation.forbidden_assignment_count,
+            "managed_role_subject_bindings": sum(managed_role_binding_counts.values()),
         },
         "operation_counts": dict(sorted(operation_counts.items())),
         "incompatibility_counts": dict(sorted(reconciliation.overlap_sets.items())),
+        "managed_role_binding_counts": dict(
+            sorted(managed_role_binding_counts.items())
+        ),
         "apply_blocked": reconciliation.apply_blocked,
         "user_memberships_managed": False,
     }
@@ -362,10 +405,21 @@ class KcadmClient:
 
     def read_state(self, manifest: dict[str, Any]) -> dict[str, Any]:
         realm = manifest["realm"]
-        roles = self.kcadm(
-            ["get", "roles", "-r", realm, "--fields", "name,description"]
+        roles = self._paged_get(
+            endpoint="roles",
+            realm=realm,
+            fields="name,description",
+            identity_field="name",
         )
-        groups = self.kcadm(["get", "groups", "-r", realm, "--fields", "id,name,path"])
+        groups = self._paged_get(
+            endpoint="groups",
+            realm=realm,
+            fields="id,name,path",
+            identity_field="id",
+        )
+        observed_role_names = {
+            str(role.get("name", "")) for role in roles if role.get("name")
+        }
         managed_paths = {item["path"] for item in manifest["groups"]}
         normalized_groups: list[dict[str, Any]] = []
         for group in groups or []:
@@ -376,28 +430,15 @@ class KcadmClient:
             mappings = self.kcadm(
                 ["get", f"groups/{group_id}/role-mappings/realm", "-r", realm]
             )
-            members: list[str] = []
-            first = 0
-            while True:
-                page = self.kcadm(
-                    [
-                        "get",
-                        f"groups/{group_id}/members",
-                        "-r",
-                        realm,
-                        "-q",
-                        f"first={first}",
-                        "-q",
-                        "max=100",
-                        "--fields",
-                        "id",
-                    ]
+            members = [
+                str(item["id"])
+                for item in self._paged_get(
+                    endpoint=f"groups/{group_id}/members",
+                    realm=realm,
+                    fields="id",
+                    identity_field="id",
                 )
-                page = page or []
-                members.extend(str(item["id"]) for item in page if item.get("id"))
-                if len(page) < 100:
-                    break
-                first += len(page)
+            ]
             normalized_groups.append(
                 {
                     "id": group_id,
@@ -407,23 +448,86 @@ class KcadmClient:
                 }
             )
         forbidden_assignments: dict[str, int] = {}
+        role_members: dict[str, list[str]] = {}
+        for role in manifest["roles"]:
+            name = role["name"]
+            role_members[name] = (
+                self._role_member_ids(realm=realm, role=name)
+                if name in observed_role_names
+                else []
+            )
         for role in manifest["forbidden_role_names"]:
-            try:
-                assignments = self.kcadm(
-                    ["get", f"roles/{role}/users", "-r", realm, "--fields", "id"]
-                )
-            except ReconcileError:
-                assignments = []
-            forbidden_assignments[role] = len(assignments or [])
+            forbidden_assignments[role] = (
+                len(self._role_member_ids(realm=realm, role=role))
+                if role in observed_role_names
+                else 0
+            )
         return normalize_state(
             {
                 "realm": realm,
                 "roles": roles or [],
                 "groups": normalized_groups,
+                "role_members": role_members,
                 "forbidden_role_assignments": forbidden_assignments,
             },
             realm=realm,
         )
+
+    def _paged_get(
+        self,
+        *,
+        endpoint: str,
+        realm: str,
+        fields: str,
+        identity_field: str,
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        identities: set[str] = set()
+        first = 0
+        while True:
+            page = self.kcadm(
+                [
+                    "get",
+                    endpoint,
+                    "-r",
+                    realm,
+                    "-q",
+                    f"first={first}",
+                    "-q",
+                    "max=100",
+                    "--fields",
+                    fields,
+                ]
+            )
+            if page is None:
+                page = []
+            if not isinstance(page, list) or any(
+                not isinstance(item, dict) for item in page
+            ):
+                raise ReconcileError("Keycloak census returned an invalid page")
+            page_identities = [
+                str(item.get(identity_field, "")).strip() for item in page
+            ]
+            if any(not identity for identity in page_identities):
+                raise ReconcileError("Keycloak census page lacks stable identities")
+            if identities & set(page_identities):
+                raise ReconcileError("Keycloak census pagination did not advance")
+            identities.update(page_identities)
+            items.extend(page)
+            if len(page) < 100:
+                return items
+            first += len(page)
+
+    def _role_member_ids(self, *, realm: str, role: str) -> list[str]:
+        return [
+            str(item["id"])
+            for item in self._paged_get(
+                endpoint=f"roles/{role}/users",
+                realm=realm,
+                fields="id",
+                identity_field="id",
+            )
+        ]
 
     def apply(self, manifest: dict[str, Any], reconciliation: Reconciliation) -> None:
         if reconciliation.apply_blocked:
@@ -464,6 +568,11 @@ class KcadmClient:
                 groups_by_path[path] = group_id
 
         state = self.read_state(manifest)
+        intermediate = compute_reconciliation(manifest, state)
+        if intermediate.apply_blocked:
+            raise ReconcileError(
+                "apply stopped because the membership census changed during reconciliation"
+            )
         groups_by_path.update(
             {
                 path: group["id"]
@@ -480,13 +589,30 @@ class KcadmClient:
                 raise ReconcileError(
                     "managed group could not be resolved after creation"
                 )
-            role = self.kcadm(["get", f"roles/{operation['role']}", "-r", realm])
-            role_payload = json.dumps([role], ensure_ascii=True, separators=(",", ":"))
-            endpoint = f"groups/{group_id}/role-mappings/realm"
             if action == "add_group_role":
-                self.kcadm(["create", endpoint, "-r", realm, "-b", role_payload])
+                self.kcadm(
+                    [
+                        "add-roles",
+                        "-r",
+                        realm,
+                        "--gid",
+                        group_id,
+                        "--rolename",
+                        operation["role"],
+                    ]
+                )
             else:
-                self.kcadm(["delete", endpoint, "-r", realm, "-b", role_payload])
+                self.kcadm(
+                    [
+                        "remove-roles",
+                        "-r",
+                        realm,
+                        "--gid",
+                        group_id,
+                        "--rolename",
+                        operation["role"],
+                    ]
+                )
 
     def _create_group(self, *, realm: str, path: str) -> str:
         name = path.removeprefix("/")
@@ -516,6 +642,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--state-file", type=Path)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--expected-manifest-sha256")
+    parser.add_argument("--expected-state-sha256")
     parser.add_argument(
         "--container", default=os.environ.get("KEYCLOAK_CONTAINER", "keycloak")
     )
@@ -540,8 +667,12 @@ def main(argv: list[str] | None = None) -> int:
             raise ReconcileError(
                 "manifest hash does not match the expected release contract"
             )
-        if args.apply and not args.expected_manifest_sha256:
-            raise ReconcileError("--apply requires --expected-manifest-sha256")
+        if args.apply and (
+            not args.expected_manifest_sha256 or not args.expected_state_sha256
+        ):
+            raise ReconcileError(
+                "--apply requires --expected-manifest-sha256 and --expected-state-sha256"
+            )
         if args.state_file:
             if args.apply:
                 raise ReconcileError(
@@ -550,9 +681,17 @@ def main(argv: list[str] | None = None) -> int:
             raw_state = json.loads(args.state_file.read_text(encoding="utf-8"))
             state = normalize_state(raw_state, realm=manifest["realm"])
             reconciliation = compute_reconciliation(manifest, state)
+            receipt = build_receipt(manifest, state, reconciliation, mode="dry-run")
+            if (
+                args.expected_state_sha256
+                and args.expected_state_sha256 != receipt["sanitized_state_sha256"]
+            ):
+                raise ReconcileError(
+                    "observed state hash differs from the approved census"
+                )
             print(
                 json.dumps(
-                    build_receipt(manifest, state, reconciliation, mode="dry-run"),
+                    receipt,
                     sort_keys=True,
                 )
             )
@@ -565,6 +704,17 @@ def main(argv: list[str] | None = None) -> int:
             client.authenticate()
             state = client.read_state(manifest)
             reconciliation = compute_reconciliation(manifest, state)
+            pre_apply_receipt = build_receipt(
+                manifest, state, reconciliation, mode="dry-run"
+            )
+            if (
+                args.expected_state_sha256
+                and args.expected_state_sha256
+                != pre_apply_receipt["sanitized_state_sha256"]
+            ):
+                raise ReconcileError(
+                    "observed state hash differs from the approved census"
+                )
             if args.apply:
                 client.apply(manifest, reconciliation)
                 final_state = client.read_state(manifest)
@@ -577,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
                     manifest, final_state, final_reconciliation, mode="apply"
                 )
             else:
-                receipt = build_receipt(manifest, state, reconciliation, mode="dry-run")
+                receipt = pre_apply_receipt
             print(json.dumps(receipt, sort_keys=True))
             return 2 if receipt["apply_blocked"] else 0
         finally:

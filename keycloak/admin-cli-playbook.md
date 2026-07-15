@@ -100,9 +100,11 @@ the future apply command is:
 
 ```bash
 MANIFEST_SHA256='<approved canonical manifest SHA-256>'
+STATE_SHA256='<approved sanitized_state_sha256 from the dry-run receipt>'
 python3 ops/keycloak_governance_reconcile.py \
   --apply \
-  --expected-manifest-sha256 "$MANIFEST_SHA256"
+  --expected-manifest-sha256 "$MANIFEST_SHA256" \
+  --expected-state-sha256 "$STATE_SHA256"
 ```
 
 Run the default dry-run again afterwards. `planned_operations`,
