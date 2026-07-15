@@ -51,6 +51,13 @@ dependency_order:
     branch: remediation/p1-data-authority
     findings: [RAG-001, DATA-001, APP-001, AUTH-003, GOV-001]
     depends_on: [p0-redis-stability]
+    local_scope:
+      - transactionally couple mutable Postgres knowledge authority to claim lifecycle, cache namespace, response metadata, and a just-before-serve recheck
+      - preserve Qdrant as a rebuildable derived projection that cannot mint authority
+      - make owner-bound application reads fail closed for ambiguous legacy sessions, memory, and RFQ leads without auto-assignment or deletion
+      - add only nullable boundaries and PostgreSQL NOT VALID constraints; prepare aggregate profiling, quarantine, validation, roles, RLS, FORCE, and rollback as gated operations
+      - bind Briefing and RFQ to one explicit authorized case revision and keep projection read-only
+      - separate platform, tenant, operator, contributor, manufacturer, reviewer, and approver authorities and enforce a two-person knowledge decision
     production_gates: [GATE-07, GATE-08]
   - package: p2-monitoring-hardening
     branch: remediation/p2-monitoring-hardening

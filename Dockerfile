@@ -1,5 +1,5 @@
 # Stage 1: Keycloak Builder
-FROM quay.io/keycloak/keycloak:24.0.1 as builder
+FROM quay.io/keycloak/keycloak:24.0.1@sha256:8e38bc8a4e0606e38a37401422dfbf414e2b73797952dfe94c9b56e2f9207897 AS builder
 
 ENV KC_DB=postgres
 ENV KC_FEATURES=persistent-user-sessions
@@ -7,7 +7,7 @@ ENV KC_FEATURES=persistent-user-sessions
 RUN /opt/keycloak/bin/kc.sh build
 
 # Stage 2: Final Image
-FROM quay.io/keycloak/keycloak:24.0.1
+FROM quay.io/keycloak/keycloak:24.0.1@sha256:8e38bc8a4e0606e38a37401422dfbf414e2b73797952dfe94c9b56e2f9207897
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 

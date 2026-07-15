@@ -1,18 +1,6 @@
-FROM postgres:16
+# Official pgvector image: PostgreSQL 16 plus pgvector 0.8.5. The manifest is
+# immutable; no mutable apt repository or unauthenticated build download is used.
+FROM pgvector/pgvector:0.8.5-pg16-bookworm@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
 
-# Installiere benötigte Tools
-RUN apt-get update && apt-get install -y \
-    postgresql-contrib \
-    postgresql-server-dev-16 \
-    build-essential \
-    wget
-
-# PgVector von der offiziellen Quelle herunterladen und installieren
-RUN cd /tmp && \
-    wget https://github.com/pgvector/pgvector/archive/refs/tags/v0.5.1.tar.gz && \
-    tar -xzf v0.5.1.tar.gz && \
-    cd pgvector-0.5.1 && \
-    make && make install
-
-# PgVector in der PostgreSQL-Config aktivieren
-RUN echo "shared_preload_libraries = 'vector'" >> /usr/share/postgresql/postgresql.conf.sample
+RUN printf '%s\n' "shared_preload_libraries = 'vector'" \
+  >> /usr/share/postgresql/postgresql.conf.sample

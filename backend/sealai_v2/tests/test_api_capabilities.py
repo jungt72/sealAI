@@ -32,7 +32,9 @@ IDENTITIES = {
         roles=("manufacturer", "capability_reviewer"),
         hersteller_id="acme",
     ),
-    "admin": VerifiedIdentity("tenant-a", "session-a", "admin-user", roles=("admin",)),
+    "admin": VerifiedIdentity(
+        "tenant-a", "session-a", "owner-user", roles=("platform_owner",)
+    ),
 }
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from sealai_v2.api.errors import install_safe_exception_mapper
 from sealai_v2.api.routes import (
     adaptive_interview,
     anfrage,
@@ -30,16 +31,23 @@ from sealai_v2.api.routes import (
     rag_ingest,
 )
 from sealai_v2.config.settings import Settings
+from sealai_v2.obs.log_redaction import configure_safe_logging
+from sealai_v2.obs.request_context import RequestIdMiddleware
 from sealai_v2.pipeline.timing import configure_timing_logging
 from sealai_v2.security.control_metrics import configure_provider_cost_metrics
 from sealai_v2.security.request_limits import RequestBoundaryMiddleware
 
+configure_safe_logging()
 settings = Settings()
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
+install_safe_exception_mapper(app)
 app.add_middleware(
     RequestBoundaryMiddleware, max_body_bytes=settings.api_max_request_body_bytes
 )
+# FastAPI prepends newly added middleware. Register request correlation last so even boundary
+# rejections receive a server-generated request ID and remain traceable without trusting callers.
+app.add_middleware(RequestIdMiddleware)
 app.include_router(chat.router)
 app.include_router(adaptive_interview.router)
 app.include_router(conversations.router)

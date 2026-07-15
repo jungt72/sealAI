@@ -88,18 +88,23 @@ validate_required_keys() {
 validate_image_ref() {
   local file=$1
   local key=$2
+  local repository=$3
   local value
 
   if ! value="$(extract_key "$file" "$key")"; then
     echo "fatal: $key not set in $file" >&2
     exit 1
   fi
-  if [[ "$value" == *":latest"* ]]; then
-    echo "fatal: $key in $file must not use a floating :latest reference" >&2
-    exit 1
-  fi
-  if [[ ! "$value" =~ ^[^[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
-    echo "fatal: $key in $file must be pinned as an exact name@sha256 digest" >&2
+  if ! /usr/bin/python3 -I - "$value" "$repository" <<'PY'
+import re
+import sys
+
+value, repository = sys.argv[1:]
+pattern = re.escape(repository) + r":[A-Za-z0-9][A-Za-z0-9._-]{0,127}@sha256:[0-9a-f]{64}"
+raise SystemExit(0 if re.fullmatch(pattern, value) else 1)
+PY
+  then
+    echo "fatal: $key in $file must use exact repository ${repository} and tag@sha256 digest" >&2
     exit 1
   fi
 }
@@ -134,6 +139,23 @@ validate_database_identifier() {
   fi
 }
 
+validate_distinct_values() {
+  local file=$1
+  local first_key=$2
+  local second_key=$3
+  local first_value second_value
+
+  if ! first_value="$(extract_key "$file" "$first_key")" ||
+     ! second_value="$(extract_key "$file" "$second_key")"; then
+    echo "fatal: cannot compare required scoped credentials" >&2
+    exit 1
+  fi
+  if [[ "$first_value" == "$second_value" ]]; then
+    echo "fatal: $first_key and $second_key in $file must use distinct scoped credentials" >&2
+    exit 1
+  fi
+}
+
 source_secret=""
 
 required_keys=(
@@ -154,8 +176,26 @@ fi
 validate_required_keys "$SOURCE_FILE" "${required_keys[@]}"
 
 if [[ "$MODE" == "prod" ]]; then
+  validate_image_ref "$SOURCE_FILE" BACKEND_IMAGE ghcr.io/jungt72/sealai-backend
+  validate_image_ref "$SOURCE_FILE" BACKEND_V2_IMAGE ghcr.io/jungt72/sealai-backend-v2
+  validate_image_ref "$SOURCE_FILE" KEYCLOAK_IMAGE ghcr.io/jungt72/sealai-keycloak
+  validate_image_ref "$SOURCE_FILE" FRONTEND_IMAGE ghcr.io/jungt72/sealai-frontend
+  validate_image_ref "$SOURCE_FILE" NGINX_IMAGE docker.io/library/nginx
+  validate_image_ref "$SOURCE_FILE" POSTGRES_IMAGE docker.io/library/postgres
+  validate_image_ref "$SOURCE_FILE" REDIS_IMAGE docker.io/redis/redis-stack-server
+  validate_image_ref "$SOURCE_FILE" QDRANT_IMAGE docker.io/qdrant/qdrant
+  validate_image_ref "$SOURCE_FILE" GOTENBERG_IMAGE docker.io/gotenberg/gotenberg
+  validate_image_ref "$SOURCE_FILE" TIKA_IMAGE docker.io/apache/tika
+  validate_image_ref "$SOURCE_FILE" ALERTMANAGER_IMAGE prom/alertmanager
+  validate_image_ref "$SOURCE_FILE" BLACKBOX_EXPORTER_IMAGE prom/blackbox-exporter
+  validate_image_ref "$SOURCE_FILE" NODE_EXPORTER_IMAGE prom/node-exporter
+  validate_image_ref "$SOURCE_FILE" CADVISOR_IMAGE gcr.io/cadvisor/cadvisor
+  validate_image_ref "$SOURCE_FILE" POSTGRES_EXPORTER_IMAGE quay.io/prometheuscommunity/postgres-exporter
+  validate_image_ref "$SOURCE_FILE" REDIS_EXPORTER_IMAGE oliver006/redis_exporter
+
   production_secret_keys=(
     QDRANT_API_KEY
+    QDRANT_READ_ONLY_API_KEY
     KC_DB_NAME
     KC_DB_USERNAME
     KC_DB_PASSWORD
@@ -163,18 +203,10 @@ if [[ "$MODE" == "prod" ]]; then
     SEALAI_V2_DB_PASSWORD
     GRAFANA_ADMIN_PASSWORD
     MISTRAL_API_KEY
-  )
-  production_image_keys=(
-    BACKEND_IMAGE
-    BACKEND_V2_IMAGE
-    KEYCLOAK_IMAGE
-    FRONTEND_IMAGE
-    NGINX_IMAGE
-    POSTGRES_IMAGE
-    REDIS_IMAGE
-    QDRANT_IMAGE
-    GOTENBERG_IMAGE
-    TIKA_IMAGE
+    POSTGRES_EXPORTER_DSN
+    REDIS_EXPORTER_PASSWORD
+    ALERTMANAGER_WEBHOOK_URL
+    ALERTMANAGER_WATCHDOG_URL
   )
   production_runtime_keys=(
     STRAPI_POSTGRES_NETWORK_NAME
@@ -185,23 +217,67 @@ if [[ "$MODE" == "prod" ]]; then
     TIKA_MEMORY_LIMIT TIKA_CPU_LIMIT TIKA_PIDS_LIMIT
     PROMETHEUS_MEMORY_LIMIT PROMETHEUS_CPU_LIMIT PROMETHEUS_PIDS_LIMIT
     GRAFANA_MEMORY_LIMIT GRAFANA_CPU_LIMIT GRAFANA_PIDS_LIMIT
+    ALERTMANAGER_MEMORY_LIMIT ALERTMANAGER_CPU_LIMIT ALERTMANAGER_PIDS_LIMIT
+    BLACKBOX_EXPORTER_MEMORY_LIMIT BLACKBOX_EXPORTER_CPU_LIMIT BLACKBOX_EXPORTER_PIDS_LIMIT
+    NODE_EXPORTER_MEMORY_LIMIT NODE_EXPORTER_CPU_LIMIT NODE_EXPORTER_PIDS_LIMIT
+    CADVISOR_MEMORY_LIMIT CADVISOR_CPU_LIMIT CADVISOR_PIDS_LIMIT
+    POSTGRES_EXPORTER_MEMORY_LIMIT POSTGRES_EXPORTER_CPU_LIMIT POSTGRES_EXPORTER_PIDS_LIMIT
+    REDIS_EXPORTER_MEMORY_LIMIT REDIS_EXPORTER_CPU_LIMIT REDIS_EXPORTER_PIDS_LIMIT
     FRONTEND_MEMORY_LIMIT FRONTEND_CPU_LIMIT FRONTEND_PIDS_LIMIT
     KEYCLOAK_MEMORY_LIMIT KEYCLOAK_CPU_LIMIT KEYCLOAK_PIDS_LIMIT
     NGINX_MEMORY_LIMIT NGINX_CPU_LIMIT NGINX_PIDS_LIMIT
     BACKEND_V2_MEMORY_LIMIT BACKEND_V2_CPU_LIMIT BACKEND_V2_PIDS_LIMIT
     BACKEND_V2_WORKER_MEMORY_LIMIT BACKEND_V2_WORKER_CPU_LIMIT BACKEND_V2_WORKER_PIDS_LIMIT
+    NODE_EXPORTER_TEXTFILE_DIR
   )
-  for image_key in "${production_image_keys[@]}"; do
-    validate_image_ref "$SOURCE_FILE" "$image_key"
-  done
   validate_required_keys "$SOURCE_FILE" "${production_secret_keys[@]}"
   validate_required_keys "$SOURCE_FILE" "${production_runtime_keys[@]}"
-  for credential_key in QDRANT_API_KEY KC_DB_PASSWORD SEALAI_V2_DB_PASSWORD GRAFANA_ADMIN_PASSWORD; do
+  for credential_key in \
+    QDRANT_API_KEY \
+    QDRANT_READ_ONLY_API_KEY \
+    KC_DB_PASSWORD \
+    SEALAI_V2_DB_PASSWORD \
+    GRAFANA_ADMIN_PASSWORD \
+    REDIS_EXPORTER_PASSWORD; do
     validate_scoped_credential "$SOURCE_FILE" "$credential_key"
   done
   for identifier_key in KC_DB_NAME KC_DB_USERNAME SEALAI_V2_DB_USER; do
     validate_database_identifier "$SOURCE_FILE" "$identifier_key"
   done
+  validate_distinct_values "$SOURCE_FILE" QDRANT_API_KEY QDRANT_READ_ONLY_API_KEY
+
+  images_dir="$(mktemp -d "${TMPDIR:-/tmp}/sealai-compose-images.XXXXXX")"
+  trap 'rm -rf "${images_dir}"' EXIT
+  env \
+    -u BACKEND_IMAGE \
+    -u BACKEND_V2_IMAGE \
+    -u FRONTEND_IMAGE \
+    -u KEYCLOAK_IMAGE \
+    -u NGINX_IMAGE \
+    -u POSTGRES_IMAGE \
+    -u REDIS_IMAGE \
+    -u QDRANT_IMAGE \
+    -u GOTENBERG_IMAGE \
+    -u TIKA_IMAGE \
+    -u ALERTMANAGER_IMAGE \
+    -u BLACKBOX_EXPORTER_IMAGE \
+    -u NODE_EXPORTER_IMAGE \
+    -u CADVISOR_IMAGE \
+    -u POSTGRES_EXPORTER_IMAGE \
+    -u REDIS_EXPORTER_IMAGE \
+    docker compose \
+      --env-file "$SOURCE_FILE" \
+      -f "$REPO_ROOT/docker-compose.yml" \
+      -f "$REPO_ROOT/docker-compose.deploy.yml" \
+      --profile v2 \
+      --profile frontend-container \
+      --profile observability \
+      config --images > "${images_dir}/images.txt"
+  /usr/bin/python3 -I "$REPO_ROOT/ops/supply_chain_gate.py" \
+    verify-materialized-images \
+    --manifest docker-compose.yml \
+    --manifest docker-compose.deploy.yml \
+    --images-file "${images_dir}/images.txt"
   exit 0
 fi
 

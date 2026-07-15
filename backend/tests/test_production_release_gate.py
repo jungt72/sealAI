@@ -507,26 +507,19 @@ def test_boot_recovery_is_existing_artifacts_only_and_has_no_pull_path():
     )
 
 
-def test_deploy_workflow_delegates_gate_and_digest_resolution_to_installed_boundary():
+def test_deploy_workflow_is_mechanically_blocked_without_external_trust():
     workflow = (REPO / ".github" / "workflows" / "deploy.yml").read_text(
         encoding="utf-8"
     )
 
+    assert "BLOCKED_EXTERNAL" in workflow
+    assert "exit 2" in workflow
+    assert "permissions: {}" in workflow
     assert "actions/checkout" not in workflow
-    assert "production_release_gate_check" not in workflow
     assert "docker buildx imagetools inspect" not in workflow
-    assert (
-        "backend_image must be the canonical backend-v2 tag@sha256:digest" in workflow
-    )
-    assert workflow.index("Validate immutable promotion coordinates") < workflow.index(
-        "appleboy/ssh-action"
-    )
-    assert "EXPECTED_CONTROL_SHA,EXPECTED_SOURCE_SHA,BACKEND_V2_IMAGE" in workflow
-    assert (
-        "/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh" in workflow
-    )
-    assert "/usr/bin/env -i" in workflow
-    assert "/usr/bin/sudo -n --" in workflow
+    assert "appleboy/ssh-action" not in workflow
+    assert "source_sha" not in workflow
+    assert "backend_image" not in workflow
     assert "git fetch" not in workflow
     assert "git checkout" not in workflow
     assert "./ops/release-backend-v2.sh" not in workflow

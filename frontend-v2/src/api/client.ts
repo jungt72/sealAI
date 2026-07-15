@@ -206,19 +206,25 @@ export class ApiClient {
   listCases(): Promise<{ cases: CaseSummary[] }> {
     return this.req("/conversations");
   }
-  briefing(message: string): Promise<Briefing> {
-    return this.req("/briefing", { method: "POST", body: JSON.stringify({ message }) });
+  briefing(caseId: string, caseRevision: number): Promise<Briefing> {
+    return this.req("/briefing", {
+      method: "POST",
+      body: JSON.stringify({ case_id: caseId, case_revision: caseRevision }),
+    });
   }
-  /** Modus F lead-gen: route a structured RFQ briefing (rendered server-side from the session) to the
-   * chosen partner. Returns the briefing preview so the user sees what was sent; lead_email never is. */
-  anfrage(partnerId: string, message: string): Promise<AnfrageResponse> {
+  /** Modus F lead-gen: route the read-only projection of one exact authorized case revision. */
+  anfrage(partnerId: string, caseId: string, caseRevision: number): Promise<AnfrageResponse> {
     return this.req("/anfrage", {
       method: "POST",
-      body: JSON.stringify({ partner_id: partnerId, message }),
+      body: JSON.stringify({
+        partner_id: partnerId,
+        case_id: caseId,
+        case_revision: caseRevision,
+      }),
     });
   }
 
-  // ── Owner/admin surface (role-gated server-side; a non-admin token 403s) ──────────────────────
+  // Platform-owner surface (role-gated server-side; other roles receive 403)
   adminListHersteller(): Promise<{ hersteller: AdminPartner[] }> {
     return this.req("/admin/hersteller");
   }

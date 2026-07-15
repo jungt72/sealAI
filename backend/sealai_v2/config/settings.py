@@ -13,10 +13,9 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# A config-provided digest cannot observe mutable ledger transitions. Keep the
-# serving cache unreachable until an atomic ledger epoch is checked on every
-# get/put and covered by lifecycle integration tests.
-EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED = False
+# Cache activation is implemented only through the request-bound Postgres authority store. The
+# legacy config digest remains release-evidence metadata and is never trusted as runtime authority.
+EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED = True
 # Monetary provider ceilings are implemented, but production activation remains mechanically
 # unavailable until the externally maintained provider prices plus maximum call/retry/token graph
 # have been reviewed into a worst-case reservation contract. This prevents an arbitrary digest or
@@ -257,9 +256,8 @@ class Settings(BaseSettings):
     exact_answer_cache_max_entries: int = 512
     exact_answer_cache_max_entries_per_tenant: int = 64
     exact_answer_cache_ttl_s: float = 3600.0
-    # Canonical digest of the complete active claim-authority set. Any approval,
-    # quarantine, revocation, expiry, or authority-relevant edit must roll it.
-    # Exact-answer caching fails closed unless this release-bound digest exists.
+    # Optional release-evidence expectation only. Runtime/cache authority is always read from
+    # Postgres twice per request; this value can never authorize a cache hit or response.
     knowledge_authority_epoch: str | None = None
     # SSoT M15/G8: general sealing knowledge, material knowledge, and material
     # comparison are a separately activated product mode. The mode remains
@@ -283,6 +281,26 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_product_mode_dependencies(self) -> "Settings":
+        if not 1024 <= self.outbox_metrics_port <= 65535:
+            raise ValueError("outbox metrics port must be an unprivileged TCP port")
+        privileged_roles = (
+            self.auth_tenant_admin_role,
+            self.auth_platform_owner_role,
+            self.auth_system_operator_role,
+            self.auth_knowledge_contributor_role,
+            self.auth_manufacturer_role,
+            self.auth_capability_reviewer_role,
+            self.auth_knowledge_reviewer_role,
+            self.auth_knowledge_approver_role,
+            self.auth_decision_reviewer_role,
+        )
+        normalized_roles = tuple(role.strip() for role in privileged_roles)
+        if any(not role for role in normalized_roles):
+            raise ValueError("privileged role names must not be empty")
+        if len(set(normalized_roles)) != len(normalized_roles):
+            raise ValueError("privileged role names must be pairwise distinct")
+        if "admin" in normalized_roles:
+            raise ValueError("the ambiguous legacy admin role is not accepted")
         if not (
             0 < self.auth_jwks_ttl_s <= self.auth_jwks_max_ttl_s <= 900
             and 0
@@ -360,11 +378,13 @@ class Settings(BaseSettings):
         if self.exact_answer_cache_enabled:
             if not self.execution_policy_enabled:
                 raise ValueError("exact answer cache requires execution_policy_enabled")
-            if self.knowledge_authority_epoch is None or not re.fullmatch(
-                r"sha256:[0-9a-f]{64}", self.knowledge_authority_epoch
-            ):
+            if not self.database_url:
                 raise ValueError(
-                    "exact answer cache requires a canonical knowledge_authority_epoch"
+                    "exact answer cache requires the Postgres knowledge authority"
+                )
+            if self.retriever_backend != "qdrant" or not self.qdrant_url:
+                raise ValueError(
+                    "exact answer cache requires the Postgres-revalidated Qdrant path"
                 )
             if not EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED:
                 raise ValueError(
@@ -477,9 +497,12 @@ class Settings(BaseSettings):
     # swap behind the same Protocols (M3 lazy-adapter pattern); value is never logged.
     # Env: SEALAI_V2_DATABASE_URL (e.g. postgresql+psycopg2://…@postgres:5432/sealai_v2).
     database_url: str | None = None
-    # Keycloak realm role that gates the owner/admin surface (Hersteller-Partner CRUD + lead retrieval).
-    # Env: SEALAI_V2_AUTH_ADMIN_ROLE. Additive gate — tenant isolation is untouched.
-    auth_admin_role: str = "admin"
+    # AUTH-003/GOV-001: disjoint role names. No legacy ``admin`` alias is accepted at runtime;
+    # production mapping/cutover remains an explicit GATE-06/GATE-07 operation.
+    auth_tenant_admin_role: str = "tenant_admin"
+    auth_platform_owner_role: str = "platform_owner"
+    auth_system_operator_role: str = "system_operator"
+    auth_knowledge_contributor_role: str = "knowledge_contributor"
     # Keycloak realm role for the manufacturer SELF-SERVICE surface (manage own partner record + leads).
     # Env: SEALAI_V2_AUTH_MANUFACTURER_ROLE.
     auth_manufacturer_role: str = "manufacturer"
@@ -488,6 +511,8 @@ class Settings(BaseSettings):
     auth_capability_reviewer_role: str = "capability_reviewer"
     # Independent human domain/evidence reviewer for technical claims.
     auth_knowledge_reviewer_role: str = "knowledge_reviewer"
+    # A separate approver performs the second decision after an independent review.
+    auth_knowledge_approver_role: str = "knowledge_approver"
     # Human review role for decision records. This records an internal technical
     # review only; manufacturer/component release remains external.
     auth_decision_reviewer_role: str = "decision_reviewer"
@@ -533,6 +558,9 @@ class Settings(BaseSettings):
     outbox_batch_size: int = 50
     outbox_max_attempts: int = 5
     outbox_claim_timeout_s: int = 300
+    # Internal-only Prometheus listener of the dedicated worker container. The
+    # production network contract never publishes this port on the host.
+    outbox_metrics_port: int = 9101
     # Embedding model: the PROD path is the OpenAI API ("text-embedding-3-small", 1536-dim) — strong on
     # German, reuses OPENAI_API_KEY, and crucially NO local model so NO RAM/OOM (the local e5-large model
     # OOM'd the 7.6 GB host). DATA leaves the box for the embedding call (it IS an API) — this is NOT a

@@ -32,8 +32,7 @@ export function Shell({
   children: ReactNode;
   onLogout: () => void;
   onNewQuestion: () => void;
-  /** Owner-only: open the Hersteller-Partner dashboard. Provided only when the token carries the
-   * admin role — otherwise the entry is never rendered. */
+  /** Platform-owner-only: open the Hersteller-Partner dashboard. */
   onAdmin?: () => void;
   /** Manufacturer-only: open the self-service profile. Provided only when the token carries the
    * manufacturer role + a hersteller_id — otherwise never rendered. */

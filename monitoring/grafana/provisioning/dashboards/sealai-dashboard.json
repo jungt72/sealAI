@@ -1,76 +1,72 @@
 {
   "id": null,
-  "uid": "sealai-operations",
-  "title": "SeaLAI Operations",
-  "tags": ["sealai", "operations", "prometheus"],
+  "uid": "sealai-v2-operations",
+  "title": "sealingAI V2 Operations",
+  "tags": ["sealai", "v2", "operations"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "10s",
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
+  "time": {"from": "now-6h", "to": "now"},
   "panels": [
     {
       "type": "stat",
-      "title": "Backend Up",
+      "title": "Backend V2 Up",
       "id": 1,
       "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
-      "targets": [{"expr": "max(up{job=\"sealai-backend\"})", "refId": "A"}]
+      "targets": [{"expr": "max(up{job=\"sealai-backend-v2\"})", "refId": "A"}]
     },
     {
-      "type": "timeseries",
-      "title": "HTTP Requests/s",
+      "type": "stat",
+      "title": "Outbox Worker Up",
       "id": 2,
-      "gridPos": {"h": 6, "w": 18, "x": 6, "y": 0},
-      "targets": [{"expr": "sum(rate(sealai_http_requests_total[5m]))", "refId": "A"}]
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "max(up{job=\"sealai-backend-v2-worker\"})", "refId": "A"}]
     },
     {
-      "type": "timeseries",
-      "title": "HTTP Requests/s by Path",
+      "type": "stat",
+      "title": "Firing Critical Alerts",
       "id": 3,
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
-      "targets": [{"expr": "sum by (path) (rate(sealai_http_requests_total[5m]))", "refId": "A"}]
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "count(ALERTS{alertstate=\"firing\",severity=~\"critical|emergency\"})", "refId": "A"}]
     },
     {
-      "type": "timeseries",
-      "title": "HTTP Latency Quantiles (s)",
+      "type": "stat",
+      "title": "Redis Memory Ratio",
       "id": 4,
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
-      "targets": [
-        {"expr": "histogram_quantile(0.50, sum by (le) (rate(sealai_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p50", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum by (le) (rate(sealai_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95", "refId": "B"},
-        {"expr": "histogram_quantile(0.99, sum by (le) (rate(sealai_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p99", "refId": "C"}
-      ]
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "targets": [{"expr": "sealai:redis_memory_usage_ratio", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "HTTP 5xx/s",
+      "title": "HTTP Requests/s by Status",
       "id": 5,
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
-      "targets": [{"expr": "sum(rate(sealai_http_requests_total{status=~\"5..\"}[5m]))", "refId": "A"}]
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "targets": [{"expr": "sum by (status) (rate(http_requests_total{job=\"sealai-backend-v2\"}[5m]))", "legendFormat": "{{status}}", "refId": "A"}]
     },
     {
-      "type": "bargauge",
-      "title": "Dependency Health",
+      "type": "timeseries",
+      "title": "HTTP Latency p95 (s)",
       "id": 6,
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
-      "targets": [{"expr": "sealai_dependency_up", "refId": "A"}]
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "targets": [{"expr": "sealai:http_p95_seconds_5m", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "Gate Route Decisions/s",
+      "title": "Filesystem Usage (%)",
       "id": 7,
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
-      "targets": [{"expr": "sum by (route) (rate(sealai_gate_route_decisions_total[5m]))", "refId": "A"}]
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "targets": [{"expr": "sealai:node_filesystem_usage_percent", "legendFormat": "{{mountpoint}}", "refId": "A"}]
     },
     {
       "type": "timeseries",
-      "title": "Gate Decision Latency p95 (s)",
+      "title": "HTTP Error Ratios",
       "id": 8,
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, route) (rate(sealai_gate_route_decision_seconds_bucket[5m])))", "refId": "A"}]
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "targets": [
+        {"expr": "sealai:http_4xx_ratio_5m", "legendFormat": "4xx", "refId": "A"},
+        {"expr": "sealai:http_5xx_ratio_5m", "legendFormat": "5xx", "refId": "B"}
+      ]
     }
   ]
 }

@@ -26,6 +26,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import sessionmaker
 
 from sealai_v2.core.contracts import (
+    ArtifactCaseSnapshot,
     CaseRevisionConflict,
     ConversationAccessDenied,
     DerivedFact,
@@ -103,10 +104,22 @@ class PostgresConversationMemory:
         self._sf = session_factory
 
     @staticmethod
-    def _assert_owner(session_row: V2Session | None, owner_subject: str) -> None:
-        if not owner_subject or session_row is None:
+    def _assert_owner(
+        session_row: V2Session | None,
+        owner_subject: str,
+        *,
+        allow_missing: bool = False,
+    ) -> None:
+        if not owner_subject:
             return
-        if session_row.owner_subject != owner_subject:
+        if session_row is None:
+            if allow_missing:
+                return
+            raise ConversationAccessDenied("conversation not found")
+        if (
+            session_row.owner_subject != owner_subject
+            or session_row.ownership_state != "owned"
+        ):
             raise ConversationAccessDenied("conversation not found")
 
     def assert_session_access(
@@ -116,6 +129,28 @@ class PostgresConversationMemory:
         with self._sf() as s:
             self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
 
+    @staticmethod
+    def _orphan_payload_exists(session, tenant_id: str, session_id: str) -> bool:
+        """Detect legacy child rows before a new owner-bound parent could be created.
+
+        A caller may create a genuinely new case, but it must never implicitly claim orphaned
+        messages/facts/derived state. Those rows stay inaccessible until GATE-07 quarantine and a
+        separately reviewed mapping.
+        """
+
+        return any(
+            session.scalar(
+                select(model)
+                .where(
+                    model.tenant_id == tenant_id,
+                    model.session_id == session_id,
+                )
+                .limit(1)
+            )
+            is not None
+            for model in (V2Message, V2Fact, V2Derived)
+        )
+
     # --- hot path (pipeline-facing Protocol) ---
 
     def recall(
@@ -124,7 +159,7 @@ class PostgresConversationMemory:
         _require(tenant_id, session_id)
         with self._sf() as s:
             session_row = s.get(V2Session, (tenant_id, session_id))
-            self._assert_owner(session_row, owner_subject)
+            self._assert_owner(session_row, owner_subject, allow_missing=True)
             msgs = (
                 s.execute(
                     select(V2Message)
@@ -146,6 +181,8 @@ class PostgresConversationMemory:
                 .scalars()
                 .all()
             )
+        if owner_subject and session_row is None and (msgs or facts):
+            raise ConversationAccessDenied("conversation not found")
         if not msgs and not facts:
             return MemoryView()  # fresh session → true no-op
         window = tuple(
@@ -161,6 +198,57 @@ class PostgresConversationMemory:
                 case_id=session_id, revision=revision, facts=case_state
             ),
         )
+
+    def artifact_snapshot(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        owner_subject: str,
+        expected_case_revision: int,
+    ) -> ArtifactCaseSnapshot:
+        """Read a complete turn under a shared row lock; never mutates the case."""
+
+        _require(tenant_id, session_id)
+        with self._sf.begin() as session:
+            session_row = session.scalar(
+                select(V2Session)
+                .where(
+                    V2Session.tenant_id == tenant_id,
+                    V2Session.session_id == session_id,
+                    V2Session.owner_subject == owner_subject,
+                    V2Session.ownership_state == "owned",
+                )
+                .with_for_update(read=True)
+            )
+            if session_row is None:
+                raise ConversationAccessDenied("conversation not found")
+            if session_row.case_revision != expected_case_revision:
+                raise CaseRevisionConflict(
+                    f"expected case revision {expected_case_revision}, "
+                    f"got {session_row.case_revision}"
+                )
+            rows = session.scalars(
+                select(V2Message)
+                .where(
+                    V2Message.tenant_id == tenant_id,
+                    V2Message.session_id == session_id,
+                )
+                .order_by(V2Message.idx.desc())
+                .limit(2)
+            ).all()
+            if len(rows) != 2:
+                raise ConversationAccessDenied("conversation not found")
+            answer, question = rows
+            if question.role != "user" or answer.role != "assistant":
+                raise ConversationAccessDenied("conversation has no complete turn")
+            return ArtifactCaseSnapshot(
+                case_id=session_id,
+                case_revision=session_row.case_revision,
+                message_index=answer.idx,
+                question=question.text,
+                answer=answer.text,
+            )
 
     def record_turn(
         self,
@@ -185,6 +273,10 @@ class PostgresConversationMemory:
                 .with_for_update()
             )
             if sess is None:
+                if owner_subject and self._orphan_payload_exists(
+                    s, tenant_id, session_id
+                ):
+                    raise ConversationAccessDenied("conversation not found")
                 if expected_case_revision not in (None, 0):
                     raise CaseRevisionConflict(
                         f"expected case revision {expected_case_revision}, got 0"
@@ -195,6 +287,7 @@ class PostgresConversationMemory:
                     turns=0,
                     case_revision=0,
                     owner_subject=owner_subject or None,
+                    ownership_state="owned",
                     created_at=now,
                     title=_title_from_question(question) if now else None,
                 )
@@ -270,18 +363,23 @@ class PostgresConversationMemory:
                 .with_for_update()
             )
             actual = sess.case_revision if sess is not None else 0
-            self._assert_owner(sess, owner_subject)
+            self._assert_owner(sess, owner_subject, allow_missing=True)
             if expected_case_revision is not None and actual != expected_case_revision:
                 raise CaseRevisionConflict(
                     f"expected case revision {expected_case_revision}, got {actual}"
                 )
             if sess is None:
+                if owner_subject and self._orphan_payload_exists(
+                    s, tenant_id, session_id
+                ):
+                    raise ConversationAccessDenied("conversation not found")
                 sess = V2Session(
                     tenant_id=tenant_id,
                     session_id=session_id,
                     turns=0,
                     case_revision=0,
                     owner_subject=owner_subject or None,
+                    ownership_state="owned",
                 )
                 s.add(sess)
             if facts:
@@ -302,7 +400,8 @@ class PostgresConversationMemory:
     ) -> tuple[Turn, ...]:
         _require(tenant_id, session_id)
         with self._sf() as s:
-            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
+            session_row = s.get(V2Session, (tenant_id, session_id))
+            self._assert_owner(session_row, owner_subject, allow_missing=True)
             msgs = (
                 s.execute(
                     select(V2Message)
@@ -315,6 +414,8 @@ class PostgresConversationMemory:
                 .scalars()
                 .all()
             )
+            if owner_subject and session_row is None and msgs:
+                raise ConversationAccessDenied("conversation not found")
         return tuple(Turn(role=m.role, text=m.text, index=m.idx) for m in msgs)
 
     def sessions(
@@ -324,7 +425,10 @@ class PostgresConversationMemory:
         with self._sf() as s:
             query = select(V2Session).where(V2Session.tenant_id == tenant_id)
             if owner_subject:
-                query = query.where(V2Session.owner_subject == owner_subject)
+                query = query.where(
+                    V2Session.owner_subject == owner_subject,
+                    V2Session.ownership_state == "owned",
+                )
             rows = s.scalars(
                 query.order_by(
                     V2Session.updated_at.desc().nullslast(), V2Session.session_id
@@ -347,7 +451,8 @@ class PostgresConversationMemory:
     ) -> tuple[RememberedFact, ...]:
         _require(tenant_id, session_id)
         with self._sf() as s:
-            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
+            session_row = s.get(V2Session, (tenant_id, session_id))
+            self._assert_owner(session_row, owner_subject, allow_missing=True)
             facts = (
                 s.execute(
                     select(V2Fact).where(
@@ -357,6 +462,8 @@ class PostgresConversationMemory:
                 .scalars()
                 .all()
             )
+            if owner_subject and session_row is None and facts:
+                raise ConversationAccessDenied("conversation not found")
         return tuple(_remembered_fact(f) for f in facts)
 
     def edit_fact(
@@ -380,12 +487,17 @@ class PostgresConversationMemory:
                 .with_for_update()
             )
             if sess is None:
+                if owner_subject and self._orphan_payload_exists(
+                    s, tenant_id, session_id
+                ):
+                    raise ConversationAccessDenied("conversation not found")
                 sess = V2Session(
                     tenant_id=tenant_id,
                     session_id=session_id,
                     turns=0,
                     case_revision=0,
                     owner_subject=owner_subject or None,
+                    ownership_state="owned",
                 )
                 s.add(sess)
             else:
@@ -459,8 +571,11 @@ class PostgresConversationMemory:
     ) -> tuple[DerivedFact, ...]:
         _require(tenant_id, session_id)
         with self._sf() as s:
-            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
+            session_row = s.get(V2Session, (tenant_id, session_id))
+            self._assert_owner(session_row, owner_subject, allow_missing=True)
             row = s.get(V2Derived, (tenant_id, session_id))
+            if owner_subject and session_row is None and row is not None:
+                raise ConversationAccessDenied("conversation not found")
             payload = list(row.slice_json) if row is not None else []
         return tuple(_deser_derived(r) for r in payload)
 

@@ -28,6 +28,8 @@ from sealai_v2.memory.outbox_worker import (
     drain_outbox,
     ensure_memory_collection,
 )
+from sealai_v2.obs.log_redaction import configure_safe_logging
+from sealai_v2.obs.outbox_metrics import collect_outbox_metrics
 from sealai_v2.security.cost_control import (
     build_embedding_service_admission,
     remote_embedding_enabled,
@@ -199,6 +201,9 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
                 _LOG.info("knowledge outbox pass: %s", knowledge_result)
         except Exception:  # noqa: BLE001 - the loop must survive transient infrastructure faults
             _LOG.exception("outbox pass failed; retrying after poll interval")
+        metrics_status = collect_outbox_metrics(session_factory)
+        if not all(metrics_status.values()):
+            _LOG.error("outbox metrics refresh failed")
         _write_heartbeat()
         stop_event.wait(settings.outbox_poll_interval_s)
 
@@ -211,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sealai_v2.memory.outbox_daemon")
     parser.add_argument("--healthcheck", action="store_true")
     args = parser.parse_args(argv)
+    configure_safe_logging()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -219,6 +225,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.healthcheck:
         healthcheck(settings)
         return 0
+    from prometheus_client import start_http_server
+
+    start_http_server(settings.outbox_metrics_port, addr="0.0.0.0")
     stop = Event()
     signal.signal(signal.SIGTERM, lambda *_args: stop.set())
     signal.signal(signal.SIGINT, lambda *_args: stop.set())

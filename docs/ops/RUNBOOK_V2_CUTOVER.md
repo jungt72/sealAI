@@ -29,7 +29,9 @@ in-memory token) — zero V1 code changes.
   (pilot gate) lands in `core/framing.py` only.
 - `/dashboard/new` → SPA URL normalization (non-callback subpaths → `/dashboard/`).
 - reject-no-kid: `security/auth.py` requires a `kid` header + exact JWKS match (red-before-green).
-- `backend/Dockerfile.v2` ships the FULL /api/v2 app (pins: `backend/requirements-v2.txt`,
+- `backend/Dockerfile.v2` ships the FULL /api/v2 app (reviewed direct pins:
+  `backend/requirements-v2.txt`; installed transitive hash lock:
+  `backend/requirements-v2.lock`,
   build-time import keystone); `GET /api/v2/health` alias added (the proxy preserves paths).
 - `docker-compose.deploy.yml`: nginx gains two INERT ro mounts (`./nginx/snippets`,
   `./frontend-v2/dashboard-releases`); `backend-v2` defined behind `profiles: [v2]` (orphan-proof vs

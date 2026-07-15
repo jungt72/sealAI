@@ -1,0 +1,7 @@
+# Full license discovery is mandatory. The machine-readable policy blocks
+# UNKNOWN, HIGH (Restricted) and CRITICAL (Forbidden) license findings; no
+# ignored-license list is permitted.
+license:
+  confidenceLevel: 0.9
+  full: true
+  ignored: []

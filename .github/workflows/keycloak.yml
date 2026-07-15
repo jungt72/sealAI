@@ -1,68 +1,70 @@
-name: Keycloak 26.7
+name: Keycloak 26.7 Validation
 
 on:
   pull_request:
     paths:
       - "keycloak/**"
-      - "docker-compose.dev.yml"
-      - "docker-compose.deploy.yml"
-      - ".env.example"
-      - ".env.prod.example"
-      - "nginx/default.conf"
-      - "ops/check-env-drift.sh"
+      - "docker-compose*.yml"
       - "ops/keycloak_*.sh"
-      - "ops/production-release-gate-check.sh"
-      - "ops/production_release_gate.py"
-      - "ops/production-release-state.json"
+      - "security/**"
       - ".github/workflows/keycloak.yml"
   push:
     branches: [main]
     paths:
       - "keycloak/**"
-      - "docker-compose.dev.yml"
-      - "docker-compose.deploy.yml"
-      - ".env.example"
-      - ".env.prod.example"
-      - "nginx/default.conf"
-      - "ops/check-env-drift.sh"
+      - "docker-compose*.yml"
       - "ops/keycloak_*.sh"
-      - "ops/production-release-gate-check.sh"
-      - "ops/production_release_gate.py"
-      - "ops/production-release-state.json"
+      - "security/**"
       - ".github/workflows/keycloak.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE: ${{ github.repository_owner }}/sealai-keycloak
-
 jobs:
-  validate:
-    runs-on: ubuntu-latest
+  validate-build-scan:
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - name: Checkout
+      - name: Checkout exact unprivileged validation commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Validate operational scripts and Compose model
+      - name: Validate scripts and Compose syntax
         shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         run: |
           set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           bash -n ops/keycloak_ensure_roles.sh
           bash -n ops/keycloak_recover_admin.sh
           bash -n ops/keycloak_upgrade_preflight.sh
           docker compose -f docker-compose.yml -f docker-compose.deploy.yml config --no-interpolate >/dev/null
 
+      - name: Enforce release freeze for main release-shaped builds
+        if: github.ref == 'refs/heads/main'
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          source "$PWD/ops/production-release-gate-check.sh"
+          production_release_gate_check \
+            "$PWD/ops/production_release_gate.py" build
+
+      - name: Bind source tree
+        id: source
+        run: |
+          tree_hash="$(git rev-parse "${GITHUB_SHA}:keycloak")"
+          [[ "$tree_hash" =~ ^[0-9a-f]{40}$ ]]
+          echo "tree_hash=$tree_hash" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
-        if: github.event_name == 'pull_request'
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Validate Keycloak image build
-        if: github.event_name == 'pull_request'
+      - name: Build immutable Keycloak OCI archive without credentials
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: keycloak
@@ -71,94 +73,62 @@ jobs:
           push: false
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=keycloak-26-7
-
-  publish:
-    if: github.event_name != 'pull_request'
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions:
-      attestations: write
-      contents: read
-      id-token: write
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Enforce release freeze before image build or publication
-        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        run: |
-          set -euo pipefail
-          # shellcheck source=ops/production-release-gate-check.sh
-          source "$PWD/ops/production-release-gate-check.sh"
-          production_release_gate_check \
-            "$PWD/ops/production_release_gate.py" build
-
-      - name: Log in to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
-
-      - name: Build immutable Keycloak image
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: keycloak
-          file: keycloak/Dockerfile
-          platforms: linux/amd64
-          push: true
-          provenance: mode=max
-          sbom: true
-          cache-from: type=gha,scope=keycloak-26-7
-          cache-to: type=gha,mode=max,scope=keycloak-26-7
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}
+          outputs: type=oci,dest=keycloak.oci.tar
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=26.7.0
 
-      - name: Extract and validate pushed SPDX SBOM
-        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+      - name: Scan exact Keycloak archive
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          version: v0.69.3
+          scan-type: image
+          input: keycloak.oci.tar
+          scanners: vuln,license
+          trivy-config: security/trivy.yaml
+          format: json
+          output: keycloak.trivy.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+
+      - name: Create artifact-bound Keycloak scan predicate
         env:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          set -euo pipefail
-          image="${REGISTRY}/${IMAGE}@${IMAGE_DIGEST}"
-          docker buildx imagetools inspect "$image" \
-            --format '{{ json .SBOM.SPDX }}' > keycloak.spdx.json
-          jq -e \
-            '.spdxVersion and .documentNamespace and ((.packages // []) | length > 0)' \
-            keycloak.spdx.json >/dev/null
+          python3 ops/supply_chain_gate.py create-scan-predicate \
+            --scope keycloak-image \
+            --report keycloak.trivy.json \
+            --output keycloak.scan-predicate.json \
+            --artifact-name ghcr.io/jungt72/sealai-keycloak \
+            --artifact-digest "$IMAGE_DIGEST" \
+            --artifact-type container_image \
+            --report-artifact-name keycloak.oci.tar \
+            --source-git-sha "$GITHUB_SHA" \
+            --tree-hash "${{ steps.source.outputs.tree_hash }}"
 
-      - name: Sign build provenance
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      - name: Generate exact Keycloak SPDX SBOM
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+          version: v0.69.3
+          scan-type: image
+          input: keycloak.oci.tar
+          format: spdx-json
+          output: keycloak.spdx.json
+          exit-code: "0"
 
-      - name: Sign SPDX SBOM
-        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+      - name: Retain immutable Keycloak evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          sbom-path: keycloak.spdx.json
-          push-to-registry: true
+          name: keycloak-security-evidence-${{ github.sha }}
+          path: |
+            keycloak.oci.tar
+            keycloak.spdx.json
+            keycloak.trivy.json
+            keycloak.scan-predicate.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
 
-      - name: Publish artifact coordinates
-        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        run: |
-          {
-            echo "### Keycloak 26.7.0 artifact"
-            echo "- commit: \`${{ github.sha }}\`"
-            echo "- image: \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}\`"
-            echo "- digest: \`${{ steps.build.outputs.digest }}\`"
-            echo "- supply chain: BuildKit OCI provenance/SBOM plus GitHub-signed provenance and SPDX SBOM"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Record disabled publication boundary
+        run: echo "publication=BLOCKED_EXTERNAL" >> "$GITHUB_STEP_SUMMARY"

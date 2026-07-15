@@ -6,16 +6,21 @@ contract for humans. The single production backend is `backend/sealai_v2/`
 (`backend-v2`); the former `backend/app/` V1 runtime was retired 2026-06-28. Full
 contract: `AGENTS.md`.
 
+> **Current release status: `BLOCKED_EXTERNAL`.** Repository hooks are local
+> defense in depth, not proof of GitHub ruleset or independent approval. Current
+> workflows retain unprivileged OCI evidence only and do not publish; production
+> deploy and marketing publication are disabled. The procedural sections below
+> are future operator contracts, not current authorization.
+
 ## Branch model — `main` is the single line
 
-`main` is the single active line for `sealai_v2` / `frontend-v2` work. Branch
-protection requires a PR with **3 green required checks** (`backend-contracts`,
-`v2-contracts`, `secret-scan`) and **`enforce_admins` ON** — no direct-push bypass
-(direct pushes to `main` are also denied in permissions). Work on a short-lived
-branch → PR → merge once green → delete the branch. One active branch per
-workstream.
+`main` is the single active line for `sealai_v2` / `frontend-v2` work. The target
+check set is `.github/required-security-checks.json`; external GitHub ruleset,
+code-owner-review, strict-check, and admin-bypass enforcement remain
+`BLOCKED_EXTERNAL` until independently verified. Work on a short-lived branch →
+PR → merge once green → delete the branch. One active branch per workstream.
 
-## Backend-v2 production deploy — `ops/release-backend-v2.sh` (the ONLY sanctioned path)
+## Backend-v2 production deploy — future operator path, currently blocked
 
 A backend-v2 deploy runs **only** through this wrapper. It binds the deploy to the
 exact served tree and fails closed. Never `docker compose … up backend-v2` by hand

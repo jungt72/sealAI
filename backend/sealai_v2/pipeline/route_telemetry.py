@@ -17,6 +17,46 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from prometheus_client import Counter, Histogram
+
+from sealai_v2.obs.log_redaction import (
+    opaque_reference,
+    safe_code_or_placeholder,
+)
+from sealai_v2.obs.telemetry_sampling import (
+    resolve_telemetry_sample_rate,
+    should_sample,
+)
+
+_ROUTE_DECISIONS = Counter(
+    "sealai_v2_route_decisions_total",
+    "V2 deterministic route decisions.",
+    ("route", "prompt_family", "forced_full_pipeline", "l3_bypassed"),
+)
+_ROUTE_LATENCY = Histogram(
+    "sealai_v2_route_decision_duration_seconds",
+    "V2 deterministic routing wall time in seconds.",
+    ("route",),
+    buckets=(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5),
+)
+
+# Keep family-presence alerting meaningful before the first routed request.
+_ROUTE_DECISIONS.labels("none", "none", "false", "false").inc(0)
+
+
+def _record_metrics(event: "RouteTelemetry") -> None:
+    route = safe_code_or_placeholder(event.route_name).value
+    prompt_family = safe_code_or_placeholder(
+        event.prompt_family, placeholder="none"
+    ).value
+    _ROUTE_DECISIONS.labels(
+        route[:96],
+        prompt_family[:96],
+        str(bool(event.forced_full_pipeline)).lower(),
+        str(bool(event.l3_bypassed)).lower(),
+    ).inc()
+    _ROUTE_LATENCY.labels(route[:96]).observe(max(0.0, event.route_latency_ms / 1000.0))
+
 
 @dataclass(frozen=True)
 class RouteTelemetry:
@@ -43,21 +83,37 @@ class LoggingRouteTelemetrySink:
     module — no new dependency, no behavior change, safe to leave on by default (same reasoning as
     ``llm.telemetry.LoggingTelemetrySink``)."""
 
-    def __init__(self, logger_name: str = "sealai_v2.pipeline.routing") -> None:
+    def __init__(
+        self,
+        logger_name: str = "sealai_v2.pipeline.routing",
+        *,
+        sample_rate: float | None = None,
+    ) -> None:
         import logging
 
         self._logger = logging.getLogger(logger_name)
+        self._sample_rate = (
+            resolve_telemetry_sample_rate()
+            if sample_rate is None
+            else resolve_telemetry_sample_rate(str(sample_rate))
+        )
 
     def record(self, event: RouteTelemetry) -> None:
+        try:
+            _record_metrics(event)
+        except Exception:  # noqa: BLE001 - metrics must never affect a routing decision
+            pass
+        if not should_sample(self._sample_rate):
+            return
         self._logger.info(
             "route_decision route=%s reason=%s confidence=%.2f forced_full_pipeline=%s "
             "signal_count=%d latency_ms=%.2f prompt_family=%s l3_bypassed=%s",
-            event.route_name,
-            event.route_reason,
+            safe_code_or_placeholder(event.route_name),
+            opaque_reference("route_reason", event.route_reason),
             event.route_confidence,
             event.forced_full_pipeline,
             event.deterministic_signal_count,
             event.route_latency_ms,
-            event.prompt_family,
+            safe_code_or_placeholder(event.prompt_family, placeholder="none"),
             event.l3_bypassed,
         )

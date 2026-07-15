@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sealai_v2.api import deps
 from sealai_v2.api.main import app
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import ModelConfig, VerifiedIdentity
+from sealai_v2.core.contracts import ModelConfig, RememberedFact, VerifiedIdentity
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.db.leads import InProcessLeadStore
 from sealai_v2.knowledge.hersteller_partner import (
@@ -20,6 +20,7 @@ from sealai_v2.knowledge.manufacturer_capability import (
     ManufacturerCapabilityProfile,
 )
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.auth import FakeAuthValidator
 from sealai_v2.tests._apiutil import auth, make_client
@@ -51,10 +52,20 @@ def test_chat_response_risk_flags_empty_when_no_match():
 
 
 def test_briefing_response_carries_risk_flags():
-    client, _ = make_client(pipeline=None)
+    client, pipeline = make_client(pipeline=None)
+    assert pipeline.memory is not None
+    pipeline.memory.record_turn(
+        tenant_id="tenant-A",
+        session_id="case-a",
+        owner_subject="user-A",
+        question="Ist FKM für ATEX-Zonen geeignet?",
+        answer="Antwort.",
+        facts=(RememberedFact(feld="medium", wert="Luft"),),
+        expected_case_revision=0,
+    )
     r = client.post(
         "/api/v2/briefing",
-        json={"message": "Ist FKM für ATEX-Zonen geeignet?"},
+        json={"case_id": "case-a", "case_revision": 1},
         headers=auth("tok-A"),
     )
     assert r.status_code == 200
@@ -82,6 +93,17 @@ def test_anfrage_response_briefing_carries_risk_flags():
         understand_enabled=False,
         retriever=InProcessRetriever(),
         partner_registry=commercial_registry,
+        memory=InProcessConversationMemory(),
+    )
+    assert pipeline.memory is not None
+    pipeline.memory.record_turn(
+        tenant_id="tenant-A",
+        session_id="case-a",
+        owner_subject="user-A",
+        question="Ist FKM für ATEX-Zonen geeignet?",
+        answer="Antwort.",
+        facts=(RememberedFact(feld="medium", wert="Luft"),),
+        expected_case_revision=0,
     )
     capability_store = InProcessManufacturerCapabilityStore(
         (
@@ -113,7 +135,7 @@ def test_anfrage_response_briefing_carries_risk_flags():
     client = TestClient(app)
     r = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "acme", "message": "Ist FKM für ATEX-Zonen geeignet?"},
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
         headers=auth("tok-A"),
     )
     assert r.status_code == 200

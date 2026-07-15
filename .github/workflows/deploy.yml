@@ -1,87 +1,23 @@
-name: Promote Gate-10 Backend V2
+name: Deploy Backend V2 (Blocked External)
 
 on:
   workflow_dispatch:
-    inputs:
-      control_sha:
-        description: "Exact dedicated Gate-10 control commit already staged on the VPS"
-        required: true
-        type: string
-      source_sha:
-        description: "Exact single parent/source commit approved by Gate 10"
-        required: true
-        type: string
-      backend_image:
-        description: "Exact RC image ref (registry/repository:tag@sha256:digest)"
-        required: true
-        type: string
 
-permissions:
-  contents: read
+# Production deployment is mechanically unavailable. The root-owned P1
+# promotion boundary, release freeze, Gate-10 source/control binding and digest
+# checks remain mandatory, but CI cannot reach them until protected-main,
+# environment approval and immutable producer-artifact evidence are verified
+# independently of repository-controlled code.
+permissions: {}
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    environment:
-      name: production
+  deploy-blocked-external:
+    runs-on: ubuntu-24.04
+    permissions: {}
     steps:
-      - name: Validate immutable promotion coordinates
-        id: coordinates
+      - name: Refuse production mutation without external trust proof
         shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        env:
-          INPUT_CONTROL_SHA: ${{ inputs.control_sha }}
-          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
-          INPUT_BACKEND_IMAGE: ${{ inputs.backend_image }}
         run: |
-          set -euo pipefail
-          [[ "$INPUT_CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "control_sha is not one full SHA-1" >&2
-            exit 2
-          }
-          [[ "$INPUT_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
-            echo "source_sha is not one full SHA-1" >&2
-            exit 2
-          }
-          [[ "$INPUT_CONTROL_SHA" != "$INPUT_SOURCE_SHA" ]] || {
-            echo "Gate-10 control and source commits must be distinct" >&2
-            exit 2
-          }
-          [[ "$INPUT_BACKEND_IMAGE" =~ ^ghcr\.io/jungt72/sealai-backend-v2:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}@sha256:[0-9a-f]{64}$ ]] || {
-            echo "backend_image must be the canonical backend-v2 tag@sha256:digest" >&2
-            exit 2
-          }
-          {
-            echo "control_sha=$INPUT_CONTROL_SHA"
-            echo "source_sha=$INPUT_SOURCE_SHA"
-            echo "backend_image=$INPUT_BACKEND_IMAGE"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Promote through installed two-gate boundary
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
-        env:
-          EXPECTED_CONTROL_SHA: ${{ steps.coordinates.outputs.control_sha }}
-          EXPECTED_SOURCE_SHA: ${{ steps.coordinates.outputs.source_sha }}
-          BACKEND_V2_IMAGE: ${{ steps.coordinates.outputs.backend_image }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          envs: EXPECTED_CONTROL_SHA,EXPECTED_SOURCE_SHA,BACKEND_V2_IMAGE
-          script: |
-            set -euo pipefail
-            # No runner checkout is trusted as a production gate. The installed
-            # root-owned boundary independently verifies the root-staged exact
-            # two-commit checkout, Gate-10 manifest, requested/resolved backend
-            # digest, fixed promotion evidence/results and one-shot GATE-08
-            # receipt before it acquires the storage lease and drops privilege.
-            /usr/bin/env -i \
-              HOME=/home/thorsten \
-              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-              LANG=C \
-              LC_ALL=C \
-              /usr/bin/sudo -n -- \
-              /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh \
-              --control-sha "$EXPECTED_CONTROL_SHA" \
-              --source-sha "$EXPECTED_SOURCE_SHA" \
-              --backend-image "$BACKEND_V2_IMAGE"
+          echo "BLOCKED_EXTERNAL: production publisher/deployer is disabled" >&2
+          echo "No checkout, registry credential, OIDC token, SSH secret or production command is reachable." >&2
+          exit 2

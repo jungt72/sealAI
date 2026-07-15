@@ -12,6 +12,10 @@ production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" pull
 source /usr/local/libexec/sealai/production-storage-lease.sh
 acquire_production_storage_lease
 
+echo "BLOCKED_EXTERNAL: Keycloak promotion lacks an independently verified publisher/attestation chain" >&2
+echo "The isolated upgrade preflight remains disabled until that external trust proof exists." >&2
+exit 2
+
 # Starts a candidate Keycloak image against a restored copy of production data.
 # The live database and live Keycloak container are never touched.
 

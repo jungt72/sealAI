@@ -1,0 +1,33 @@
+[Unit]
+Description=sealingAI isolated full-download disaster-recovery drill
+Documentation=file:///usr/local/share/doc/sealai/disaster-recovery.md
+Wants=network-online.target
+After=network-online.target docker.service
+ConditionPathExists=/etc/sealai/dr/isolated-recovery-runner
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/libexec/sealai/dr_restore_latest.sh
+TimeoutStartSec=10h
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=read-only
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/sealai-dr /var/cache/sealai-dr /run/sealai-gates -/run/docker.sock -/var/run/docker.sock
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

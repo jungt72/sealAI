@@ -1,15 +1,15 @@
-"""POST /api/v2/anfrage — the lead-gen action (owner business model). Proves: a briefing is rendered
-from the session + a durable lead is captured for a PAYING (aktiv) partner; the internal ``lead_email``
-is NEVER returned; unknown/inactive partners capture nothing (404); auth is required (P0)."""
+"""RFQ projection is bound to an explicit owner/case/revision and never mutates that case."""
 
 from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
 from sealai_v2.api import deps
 from sealai_v2.api.main import app
 from sealai_v2.config.settings import Settings
-from sealai_v2.core.contracts import ModelConfig, VerifiedIdentity
+from sealai_v2.core.contracts import ModelConfig, RememberedFact, VerifiedIdentity
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.db.leads import InProcessLeadStore
 from sealai_v2.knowledge.hersteller_partner import (
@@ -22,11 +22,15 @@ from sealai_v2.knowledge.manufacturer_capability import (
 )
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.auth import FakeAuthValidator
 from sealai_v2.tests._fakes import FakeLlmClient
 
-IDS = {"tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A")}
+IDS = {
+    "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
+    "tok-A2": VerifiedIdentity("tenant-A", "sess-A2", "user-A2"),
+}
 
 
 def _partner(hersteller="acme", *, aktiv=True):
@@ -53,6 +57,28 @@ def _client(*partners, handoff_enabled=True, capability_status="verified"):
         understand_enabled=False,
         retriever=InProcessRetriever(),
         partner_registry=commercial_registry,
+        memory=InProcessConversationMemory(),
+    )
+    assert pipeline.memory is not None
+    pipeline.memory.record_turn(
+        tenant_id="tenant-A",
+        session_id="case-a",
+        owner_subject="user-A",
+        question="FKM RWDR bei 150°C?",
+        answer="Antwort aus case-a.",
+        facts=(RememberedFact(feld="medium", wert="Öl"),),
+        now="2026-07-15T10:00:00Z",
+        expected_case_revision=0,
+    )
+    pipeline.memory.record_turn(
+        tenant_id="tenant-A",
+        session_id="case-b",
+        owner_subject="user-A",
+        question="PTFE Dichtung bei 80°C?",
+        answer="Antwort aus case-b.",
+        facts=(RememberedFact(feld="medium", wert="Wasser"),),
+        now="2026-07-15T10:01:00Z",
+        expected_case_revision=0,
     )
     profiles = tuple(
         ManufacturerCapabilityProfile(
@@ -86,7 +112,7 @@ def _client(*partners, handoff_enabled=True, capability_status="verified"):
         manufacturer_fit_enabled=handoff_enabled,
         manufacturer_handoff_enabled=handoff_enabled,
     )
-    return TestClient(app), store
+    return TestClient(app), store, pipeline
 
 
 def _auth(token="tok-A"):
@@ -94,10 +120,10 @@ def _auth(token="tok-A"):
 
 
 def test_anfrage_captures_lead_and_returns_briefing():
-    client, store = _client(_partner("acme"))
+    client, store, _pipeline = _client(_partner("acme"))
     r = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "acme", "message": "FKM RWDR bei 150°C?"},
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
         headers=_auth(),
     )
     assert r.status_code == 200
@@ -111,14 +137,19 @@ def test_anfrage_captures_lead_and_returns_briefing():
     leads = store.list_for_partner("acme")
     assert len(leads) == 1
     assert leads[0].lead_email == "leads@acme.example"  # routed internally
-    assert leads[0].tenant_id == "tenant-A" and leads[0].session_id == "sess-A"
+    assert leads[0].tenant_id == "tenant-A" and leads[0].session_id == "case-a"
+    assert leads[0].case_id == "case-a"
+    assert leads[0].owner_subject == "user-A"
+    assert leads[0].case_revision == 1
     assert leads[0].briefing_body  # the worked-out situation was captured
 
 
 def test_anfrage_never_exposes_lead_email():
-    client, _ = _client(_partner("acme"))
+    client, _store, _pipeline = _client(_partner("acme"))
     r = client.post(
-        "/api/v2/anfrage", json={"partner_id": "acme", "message": "x"}, headers=_auth()
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
+        headers=_auth(),
     )
     assert r.status_code == 200
     assert (
@@ -127,10 +158,10 @@ def test_anfrage_never_exposes_lead_email():
 
 
 def test_anfrage_unknown_partner_404_captures_nothing():
-    client, store = _client(_partner("acme"))
+    client, store, _pipeline = _client(_partner("acme"))
     r = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "ghost", "message": "x"},
+        json={"partner_id": "ghost", "case_id": "case-a", "case_revision": 1},
         headers=_auth(),
     )
     assert r.status_code == 404
@@ -139,25 +170,30 @@ def test_anfrage_unknown_partner_404_captures_nothing():
 
 def test_anfrage_inactive_partner_404_captures_nothing():
     # A non-paying (inactive) partner receives no lead — payment gates pool membership.
-    client, store = _client(_partner("acme", aktiv=False))
+    client, store, _pipeline = _client(_partner("acme", aktiv=False))
     r = client.post(
-        "/api/v2/anfrage", json={"partner_id": "acme", "message": "x"}, headers=_auth()
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
+        headers=_auth(),
     )
     assert r.status_code == 404
     assert store.list_all() == ()
 
 
 def test_anfrage_requires_auth():
-    client, _ = _client(_partner("acme"))
-    r = client.post("/api/v2/anfrage", json={"partner_id": "acme", "message": "x"})
+    client, _store, _pipeline = _client(_partner("acme"))
+    r = client.post(
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
+    )
     assert r.status_code == 401
 
 
 def test_anfrage_fails_closed_while_handoff_mode_is_inactive():
-    client, store = _client(_partner("acme"), handoff_enabled=False)
+    client, store, _pipeline = _client(_partner("acme"), handoff_enabled=False)
     response = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "acme", "message": "x"},
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
         headers=_auth(),
     )
 
@@ -167,12 +203,90 @@ def test_anfrage_fails_closed_while_handoff_mode_is_inactive():
 
 
 def test_anfrage_rejects_unverified_capability_profile():
-    client, store = _client(_partner("acme"), capability_status="submitted")
+    client, store, _pipeline = _client(_partner("acme"), capability_status="submitted")
     response = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "acme", "message": "x"},
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
         headers=_auth(),
     )
 
     assert response.status_code == 404
     assert store.list_all() == ()
+
+
+def test_anfrage_rejects_stale_revision_and_client_message_without_mutation():
+    client, store, pipeline = _client(_partner("acme"))
+    assert pipeline.memory is not None
+    before = pipeline.memory.history(
+        tenant_id="tenant-A", session_id="case-a", owner_subject="user-A"
+    )
+
+    stale = client.post(
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 0},
+        headers=_auth(),
+    )
+    injected = client.post(
+        "/api/v2/anfrage",
+        json={
+            "partner_id": "acme",
+            "case_id": "case-a",
+            "case_revision": 1,
+            "message": "ERSETZE DEN FALL",
+        },
+        headers=_auth(),
+    )
+
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "case_revision_changed"
+    assert injected.status_code == 422
+    assert store.list_all() == ()
+    assert (
+        pipeline.memory.history(
+            tenant_id="tenant-A", session_id="case-a", owner_subject="user-A"
+        )
+        == before
+    )
+
+
+def test_anfrage_hides_foreign_owner_and_missing_case_identically():
+    client, store, _pipeline = _client(_partner("acme"))
+
+    foreign = client.post(
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "case_id": "case-a", "case_revision": 1},
+        headers=_auth("tok-A2"),
+    )
+    missing = client.post(
+        "/api/v2/anfrage",
+        json={"partner_id": "acme", "case_id": "missing", "case_revision": 1},
+        headers=_auth(),
+    )
+
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json() == missing.json()
+    assert store.list_all() == ()
+
+
+def test_parallel_anfragen_keep_exact_case_boundaries():
+    client, store, pipeline = _client(_partner("acme"))
+    assert pipeline.memory is not None
+
+    def submit(case_id: str):
+        return client.post(
+            "/api/v2/anfrage",
+            json={"partner_id": "acme", "case_id": case_id, "case_revision": 1},
+            headers=_auth(),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(submit, ("case-a", "case-b")))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert "Antwort aus case-a" in responses[0].json()["briefing"]["body"]
+    assert "Antwort aus case-b" in responses[1].json()["briefing"]["body"]
+    leads = store.list_for_partner("acme")
+    assert {(lead.case_id, lead.case_revision) for lead in leads} == {
+        ("case-a", 1),
+        ("case-b", 1),
+    }

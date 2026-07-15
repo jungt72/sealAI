@@ -41,7 +41,7 @@ findings:
     root_cause: Environment and backup sprawl, permissive umask or copy modes, and missing retention and permission gates.
     dependencies: [SEC-001, exact metadata-only file inventory, service ownership mapping]
     remediation_type: [configuration, operational, credential_rotation, governance]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#SEC-002
       - metadata-only count of 164 mode-0664 secret-adjacent files
@@ -293,17 +293,23 @@ findings:
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#RAG-001
     changes:
-      - Added canonical authority-epoch cache namespace primitives, finite TTL, per-tenant and global cardinality bounds, aggregate metrics, and explicit invalidation.
-      - Hard-disabled serving-cache activation because a static environment digest cannot prove atomic quarantine, revocation, expiry, or claim-update coupling; ledger lifecycle integration remains P1 work.
+      - Added a Postgres-owned mutable authority sequence that is bumped in the same transaction as claim replacement, review-state changes, and retirement.
+      - Bound each request and exact-cache namespace to a tenant-specific digest of the sequence plus the currently usable claim IDs, versions, fingerprints, and expiry timestamps.
+      - Added a second Postgres authority read immediately before cache publication and response; an in-flight quarantine, revoke, update, or expiry publishes neither.
+      - Kept Qdrant strictly derived: retrieval metadata cannot mint authority and every resolved claim remains ledger-revalidated.
     tests:
-      - Approve, cache, quarantine, revoke, and expire sequences must miss or revalidate immediately.
+      - Local lifecycle tests cover quarantine, revoke, claim update, expiry without a scheduler, tenant change, Qdrant rebuild metadata, and in-flight authority change.
+      - Pipeline regression proves a changed final epoch prevents both cache publication and response.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Disable the cache; do not make old namespace entries valid after reverting code.
     evidence_after:
       - docs/ops/redis-cache-contract.md
-      - Settings reject cache activation even with a syntactically valid static epoch; lifecycle namespace and tenant-isolation tests pass offline.
-    residual_risk: Exact-answer caching remains unavailable by design. Mutable ledger epoch propagation into responses, evaluation, Qdrant reconciliation, and release evidence is still unimplemented.
+      - backend/sealai_v2/knowledge/authority.py
+      - backend/sealai_v2/tests/test_knowledge_authority.py
+      - backend/sealai_v2/tests/test_answer_cache_authority.py
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
+    residual_risk: The lifecycle-bound implementation is local only. Production remains unchanged, and final release/evaluation evidence must bind the deployed Postgres state and exact image under GATE-08.
 
   - finding_id: DATA-001
     title: Legacy ownership and relational integrity are incomplete
@@ -315,19 +321,29 @@ findings:
     root_cause: Incremental migration left legacy data ownerless and relies on application-only authorization without relational constraints or RLS.
     dependencies: [deterministic dry-run mapping, immutable backup, tenant authority decision]
     remediation_type: [code, configuration, data_migration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#DATA-001
       - Pull request 288 adds an undeployed state-cleanup migration; it does not add ownership constraints, foreign keys, or RLS and requires GATE-07.
     changes:
-      - Design auditable ownership backfill or quarantine followed by NOT NULL, FK, checks, and RLS with a non-bypass application role.
+      - Added nullable ownership/case boundaries, a privacy-minimized quarantine ledger, and PostgreSQL NOT VALID checks and composite foreign keys without validating or rewriting legacy rows.
+      - Owner-bound session, durable-memory, curated-memory, purge, and RFQ-lead paths now require owned state and never implicitly claim or automatically delete ambiguous legacy rows.
+      - Added aggregate-only profiling, guarded HMAC quarantine, staged validation, role/RLS/FORCE template, rollback and stop conditions for GATE-07.
     tests:
-      - Dry-run row counts, orphan and ownerless zero-state checks, and cross-tenant fail-closed tests.
+      - SQLite migration/source-contract tests prove 0012/0013 are additive and contain no validation or RLS activation.
+      - Negative tests cover ownerless, quarantined, orphan-child, cross-owner, cross-tenant, lead, durable-memory, curated-memory, and purge boundaries.
+      - A guarded opt-in real-PostgreSQL role/FORCE-RLS test exists but was not executed in this run.
     production_action_required: true
     approval_gate: GATE-07
     rollback: Preserve immutable backup and mapping table; enable constraints and policies separately for scoped rollback.
-    evidence_after: []
-    residual_risk: Legacy data remains ambiguous and database-level tenant protection absent until the approved migration completes.
+    evidence_after:
+      - docs/ops/gate07-data-authority-cutover.md
+      - ops/postgres/gate07-data-authority-profile.sql
+      - ops/postgres/gate07-quarantine-ambiguous.sql
+      - ops/postgres/gate07-rls-cutover.sql
+      - backend/sealai_v2/tests/test_postgres_gate07_integration.py
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
+    residual_risk: Application paths fail closed locally, but production legacy counts, an immutable restore proof, reviewed ownership mappings, constraint validation, the transaction-scoped role/GUC adapter, and deployed FORCE RLS are absent. GATE-07 remains closed.
 
   - finding_id: APP-001
     title: Briefing and RFQ lose the active case identifier and may process the wrong case
@@ -339,18 +355,24 @@ findings:
     root_cause: UI, artifact routes, and pipeline use inconsistent session and case contracts and export paths can mutate turns.
     dependencies: [server-authorized case contract, DATA-001]
     remediation_type: [code, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#APP-001
     changes:
-      - Require an authorized explicit case identifier for artifact routes and use read-only projection for export.
+      - Briefing and RFQ now require an explicit authorized case ID and expected revision and project only the last complete durable turn.
+      - Removed client message text from both artifact request contracts; rendering is deterministic and read-only and RFQ leads retain exact tenant, owner, case, and revision provenance.
     tests:
-      - Multi-case auth, IDOR, exact-selection, and no-turn-mutation regression tests.
+      - Multi-case exact selection, parallel requests, stale revision, IDOR/missing-case equivalence, injection rejection, read-only history, and exact lead provenance regressions pass locally.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Keep the old route behind a disabled compatibility flag during shadow comparison; no data rollback is required.
-    evidence_after: []
-    residual_risk: Users can receive artifacts from unintended context until route and UI contracts are deployed together.
+    evidence_after:
+      - backend/sealai_v2/api/case_artifacts.py
+      - backend/sealai_v2/tests/test_api_briefing.py
+      - backend/sealai_v2/tests/test_api_anfrage.py
+      - frontend-v2/src/api/client.test.ts
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
+    residual_risk: Production still serves the old deployed contract until backend and frontend are promoted together through GATE-08.
 
   - finding_id: AUTH-003
     title: Admin role conflates tenant administration with global platform-owner authority
@@ -362,19 +384,25 @@ findings:
     root_cause: A single realm role is interpreted as both tenant-local and platform-global authority.
     dependencies: [production role-assignment census, explicit role model, tenant-scoped queries]
     remediation_type: [code, configuration, data_migration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#AUTH-003
       - Code collision confirmed; current customer-facing admin role assignments remain unverified.
     changes:
-      - Separate tenant_admin, platform_owner, and reviewer roles and migrate mappings deny-by-default.
+      - Replaced the ambiguous application role with pairwise-distinct tenant-admin, platform-owner, system-operator, contributor, manufacturer, capability-reviewer, knowledge-reviewer, knowledge-approver, and decision-reviewer settings.
+      - Global business, operational telemetry, tenant decision, manufacturer self-service, and technical-review routes now enforce their dedicated role and reject the legacy literal admin role.
     tests:
-      - Role matrix and cross-tenant queue access tests.
+      - Settings reject empty, duplicate, or legacy admin role names; endpoint tests cover platform-owner, system-operator, reviewer, approver, manufacturer, and ordinary-user denials.
     production_action_required: true
     approval_gate: GATE-07
     rollback: Permit time-bounded dual-read only during migration and retain a separately controlled break-glass role.
-    evidence_after: []
-    residual_risk: Impact depends on current assignments, which require a sanitized production census before confirmation.
+    evidence_after:
+      - backend/sealai_v2/api/deps.py
+      - backend/sealai_v2/config/settings.py
+      - docker-compose.deploy.yml
+      - docs/ops/gate07-data-authority-cutover.md
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
+    residual_risk: Production role assignments are still unknown and unchanged. A sanitized census, deny-by-default Keycloak mapping migration, DB-role cutover, and negative production-equivalent tests remain GATE-06/GATE-07 work.
 
   - finding_id: GOV-001
     title: Review independence and conflicts of interest are not server-verifiable
@@ -386,18 +414,24 @@ findings:
     root_cause: Creator, reviewer, and affiliation relationships are incomplete and conflict claims are self-attested.
     dependencies: [identity and affiliation authority, DATA-001]
     remediation_type: [code, data_migration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IN_PROGRESS
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#GOV-001
     changes:
-      - Persist immutable submitter and reviewer identities, model affiliations, enforce server-side self-review and conflict denial, and audit approvals.
+      - Split knowledge review into reviewer and approver roles and enforce a draft/quarantined to reviewed to approved two-person transition with immutable reviewed evidence and append-only actor logs.
+      - Contributor, platform-owner, tenant-admin, system-operator, reviewer, and approver roles are incompatible on knowledge decisions; manufacturer capability self-review is denied by verified manufacturer identity.
     tests:
-      - Negative tests for self-review, shared organization, unknown affiliation, and insufficient role.
+      - Negative tests cover same-actor approval, approver metadata mutation, skipped review, conflicting roles, non-human actors, missing evidence/applicability/expiry, and manufacturer self-review.
     production_action_required: true
     approval_gate: GATE-07
     rollback: Add schema fields first and retain server-side self-review denial even if presentation changes are rolled back.
-    evidence_after: []
-    residual_risk: The defective code is deployed but the affected review and capability features are disabled; enabling them before the server-side graph exists would activate the risk.
+    evidence_after:
+      - backend/sealai_v2/knowledge/ledger.py
+      - backend/sealai_v2/api/routes/knowledge_review.py
+      - backend/sealai_v2/tests/test_knowledge_ledger.py
+      - backend/sealai_v2/tests/test_api_knowledge_review.py
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
+    residual_risk: Role and subject separation is implemented locally, but authoritative organization/affiliation data and a server-verifiable shared-affiliation conflict graph do not exist. Review and capability features must remain disabled until that dependency and production role census pass GATE-07.
 
   - finding_id: DR-001
     title: Backups share the production failure domain and complete restore is unproven
@@ -416,17 +450,29 @@ findings:
       - Added fail-closed target and capacity binding, no-clobber publication, checksums, fixed command timeouts, lifecycle locks, and safe local retention for Postgres and Qdrant backups.
       - Added a provider-neutral encrypted-offsite receipt contract binding local plaintext, downloaded ciphertext, decrypted plaintext, object identity, and versioned key identity.
       - Hardened Qdrant snapshot deletion and restore to preserve the verified local inode, wait for completion, and validate the exact success response.
+      - Added an immutable manifest-v2 full-recovery set covering Postgres, Qdrant, uploads, documents, configuration, and secret-recovery identifiers without secret values; every file binds its actual mtime_ns alongside path, size, mode, and digest.
+      - Added provider-neutral Restic transport with no inherited credential environment, short manifest-bound Gate-08 approvals, dry-run-only retention, non-authoritative local observations, and externally attested full-download receipt requirements.
+      - Added a dedicated internal-network restore runner for Postgres integrity, Qdrant checksum/point/tenant invariants, file verification, fail-closed local RPO/RTO observations, and monthly scheduling.
+      - Manifest and local-evidence creation reject actual payload mtimes outside RPO even when recovery-point timestamps are freshly self-declared; local writers can emit only LOCAL_EVIDENCE_ONLY and local verifiers always require a future trusted external receipt importer.
+      - The restore runner verifies a short-lived Gate-08 receipt bound to the exact set and snapshot identifier before any full-data read, then rebinds it to the restored manifest before containers start.
     tests:
       - Capacity stop conditions, descriptor and inode binding, poisoned environment and shell functions, no-clobber publication, retention, checksum, offsite receipt, Qdrant deletion, and restore-response tests.
-      - Empty-host offsite restore covering Redis, uploads, auth, configuration, and artifact digests remains pending P2 and external infrastructure.
+      - Empty-host execution against real offsite data remains blocked on external storage, key custody, a dedicated runner, P1-D rebuild authority, and Gate-08.
+      - Adversarial manifest-mtime, non-elevating local evidence, secret-inventory, Qdrant-plan, metrics, and isolated-runner contract tests.
+      - Stale payload/recovery-point evidence, forged VERIFIED status/provenance, missing-component metric, pre-download gate-order, set/snapshot mismatch, and missing-snapshot-binding regressions; 95 combined backup/DR tests passed.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Add offsite copies without reducing local retention until two successful restore drills.
     evidence_after:
       - docs/runbooks/backup-storage-safety.md
       - ops/RESTORE.md
+      - ops/dr_recovery.py
+      - ops/dr_offsite.sh
+      - ops/dr_restore_drill.sh
+      - ops/dr/restore-compose.yml
+      - docs/runbooks/disaster-recovery.md
       - Local backup safety tests passed; no production backup, deletion, offsite transfer, or restore was executed.
-    residual_risk: Host or volume loss can destroy production and all local recovery material until external storage is configured and tested.
+    residual_risk: Host or volume loss can destroy production and all local recovery material until external storage/key custody and two isolated drills are configured under Gate-08; Postgres-only Qdrant rebuild remains blocked on P1-D.
 
   - finding_id: OBS-001
     title: Production monitoring is stopped, stale, and lacks alert routing
@@ -438,21 +484,27 @@ findings:
     root_cause: Retired V1 monitoring was not migrated to V2 and critical signals lack active rules and delivery paths.
     dependencies: [metrics contract, alert receiver, OPS-001, OPS-002]
     remediation_type: [code, configuration, infrastructure, operational]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#OBS-001
     changes:
       - Added locally tested Redis capacity, TTL coverage, key ownership, queue depth, eviction, write-error, and state-continuity observations with bounded local alert handoff.
-      - Keep external delivery explicitly BLOCKED_EXTERNAL; the broader V2 monitoring stack, dashboards, and receiver-path tests remain P2 work.
+      - Replaced retired V1 scrapes and dashboards with a renderable isolated V2 graph for API, worker, Keycloak, host, containers, Postgres, Redis, Qdrant, recovery, TLS, auth, quota, and provider-cost contracts.
+      - Added 58 fail-closed recording/alert rules, including explicit absent and up=0 behavior, per-queue and per-DR-component completeness, file-backed Qdrant auth, and bounded retention.
+      - Added separate primary and external dead-man Alertmanager receivers; external ownership, missed-heartbeat proof, exact exporter digests/identities, and production GATE-08 remain BLOCKED_EXTERNAL.
     tests:
-      - Controlled signal-to-receiver tests and dashboard query validation.
+      - Contract tests reject V1 scrapes, V1 dashboard metrics, missing required signals, embedded secrets, permissive TLS, and mutable image references.
+      - Native YAML/PromQL-shape validation, alert truth tables, real daemon-free Compose rendering, graph semantics, and a loopback-only firing/resolved receiver rehearsal passed.
+      - Native promtool/amtool validation remains BLOCKED_EXTERNAL because neither pinned binary is installed; no download or container daemon was used.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Disable individual noisy rules while preserving the base monitoring path.
     evidence_after:
       - docs/ops/redis-capacity-guard.md
-      - Forty-four adversarial guard tests and an independent security re-review passed; the service is not installed.
-    residual_risk: Critical capacity, backup, service, and cost failures remain silent until the V2 monitoring stack is deployed.
+      - docs/ops/v2-observability.md
+      - monitoring/rules/sealai-v2-alerts.yml
+      - ops/verify-alert-route.py
+    residual_risk: Production monitoring remains stopped. Exact exporter images and scoped identities, cAdvisor host compatibility, a DR textfile producer, an external watchdog owner with missed-heartbeat receipt, native promtool/amtool evidence, and GATE-08 deployment are still required.
 
   - finding_id: REL-003
     title: Ungated release candidate receives production secrets and network access
@@ -499,20 +551,28 @@ findings:
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#LOG-001
     changes:
+      - Added process-wide metadata-only redaction, server-owned correlation IDs, opaque references, allowlisted operational codes, stable Paperless failure reasons, and safe exception-class retention without payloads or tracebacks.
+      - Added independently sampled metadata logs while retaining unsampled aggregate LLM and routing metrics.
       - Replaced RAG source, document, card, case, and exception context with allowlisted structured reason codes and opaque hashes.
       - Prevented raw exceptions and payloads from entering outbox state, API errors, Nginx access logs, and routine RAG ingest logs.
     tests:
+      - Synthetic PII, medical data, prompt, secret, token, document-title, URL, connection-string, and exception fixtures do not appear in logs or API failures.
+      - Static logging contracts reject dynamic messages; streaming request correlation and unsampled-metric tests pass.
       - Canary API key, bearer token, PII, document title, source URL, card/case identifier, exception payload, outbox-state, and Nginx query-log tests.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Retain redaction; use protected short-lived diagnostic sampling instead of restoring raw standard logs.
     evidence_after:
+      - docs/ops/v2-log-redaction.md
+      - backend/sealai_v2/obs/log_redaction.py
+      - backend/sealai_v2/obs/request_context.py
+      - backend/sealai_v2/tests/test_log_redaction.py
       - backend/sealai_v2/api/routes/rag_ingest.py
       - backend/sealai_v2/knowledge/outbox_worker.py
       - backend/sealai_v2/memory/outbox_worker.py
       - backend/sealai_v2/tests/test_rag_ingest.py
       - nginx/default.conf
-    residual_risk: Production logs remain unchanged until Gate-08 deployment. Central cross-application redaction, telemetry retention, and live alert delivery remain P2 work.
+    residual_risk: Production keeps the prior logging behavior until the new image is approved and deployed; downstream proxy, external trace-sink, retention, and live alert-delivery verification remain GATE-08 work.
 
   - finding_id: CONT-001
     title: Containers lack consistent limits and least-privilege runtime hardening
@@ -639,15 +699,23 @@ findings:
     root_cause: Hostname, DNS, certificate, proxy-header, and smoke-test sources of truth are not synchronized and TLS verification is bypassed in smoke tests.
     dependencies: [hostname owner decision, certificate issuance plan, external DNS access]
     remediation_type: [code, configuration, infrastructure, operational, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#TLS-001
     changes:
-      - Make the WWW hostname decision explicit, align DNS and SAN atomically or remove the block, and assert verified TLS and security headers without insecure curl flags.
+      - Kept www.sealingai.com explicitly as an HTTPS-only 308 alias of the canonical apex; its DNS, trusted chain, exact SAN, headers, and rollback must pass atomically before activation.
+      - Added one fail-closed TLS client contract to all five previously bypass-capable operational smoke paths, requiring HTTPS origins, TLS 1.2 or newer, system trust or an explicit absolute readable non-symlink CA file, and no userinfo, query, fragment, or insecure curl flag.
+      - Added HSTS, XCTO, referrer, and permissions policy to the sealingAI and existing header-bearing Nginx TLS contexts and repeated all inherited headers plus the strict CSP in the dashboard location.
+      - Replaced predictable smoke-response files with private mktemp directories and bound certificate inspection to the exact connected hostname with chain and hostname verification.
     tests:
-      - Certificate chain, SAN, TLS policy, HSTS, CSP, XCTO, referrer, and permissions-policy assertions.
+      - Negative HTTPS origin, port, custom-CA, missing-header, and TLS-bypass fixtures plus positive apex and staging-origin fixtures.
+      - Shell syntax, repository-wide operational-script bypass scan, exact chain/hostname/SAN contract, and Nginx server/dashboard header-context assertions.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Use planned DNS TTL rollback and retain the previous valid certificate and server configuration as versioned artifacts.
-    evidence_after: []
-    residual_risk: WWW remains unreliable and header or certificate regressions can pass current smoke checks until the decision and checks are deployed.
+    evidence_after:
+      - ops/lib/verified-tls.sh
+      - backend/tests/test_tls_verification_contract.py
+      - docs/runbook_production_readiness.md
+      - 20 focused TLS and remediation-control tests and the complete 2427-test backend/V2 collection passed with one pre-existing skip, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks; no external endpoint was contacted.
+    residual_risk: Production DNS, the currently served certificate and headers, and the www redirect remain externally unverified and unchanged until the exact GATE-08 plan is approved, deployed, and observed without a verification bypass.

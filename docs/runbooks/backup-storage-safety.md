@@ -4,6 +4,11 @@ This runbook describes the repository implementation only. Installing or executi
 scripts on the production VPS remains a gated production change; this document does not authorize
 deployment, deletion, permission changes, or offsite-storage configuration.
 
+The full host-loss target, immutable recovery-set contract, Restic transport, upload/document/config
+coverage, and dedicated restore runner are specified in `docs/runbooks/disaster-recovery.md`. The P0
+rules below remain authoritative for individual backup publication and local retention and are not
+weakened by the P2 workflow.
+
 ## Capacity preflight
 
 Every backup script first acquires the global storage lease, then calls the canonical Docker disk

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from sealai_v2.core.contracts import (
     GroundingFact,
     LlmResult,
@@ -13,6 +15,7 @@ from sealai_v2.core.contracts import (
 from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.memory.store import InProcessConversationMemory
+from sealai_v2.knowledge.authority import AuthorityEpoch, KnowledgeAuthorityChanged
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.orchestration.answer_cache import InProcessExactAnswerCache
 from sealai_v2.prompts.assembler import PromptAssembler
@@ -88,6 +91,18 @@ class _RequiredMissingMemory:
 
     def record_turn(self, **kwargs):
         return None
+
+
+class _ChangingAuthority:
+    def capture(self, *, tenant_id: str) -> AuthorityEpoch:
+        return AuthorityEpoch(
+            tenant_id=tenant_id,
+            sequence=1,
+            value="sha256:" + "a" * 64,
+        )
+
+    def assert_current(self, captured: AuthorityEpoch) -> None:
+        raise KnowledgeAuthorityChanged("authority changed during request")
 
 
 def _generator(client: _RecordingClient, model: str) -> L1Generator:
@@ -275,3 +290,17 @@ def test_second_identical_low_risk_turn_is_tenant_scoped_d0_cache_hit():
     assert third.turn_state.execution_class == "S0"
     assert len(standard.calls) == 2
     assert helper.calls == frontier.calls == []
+
+
+def test_final_authority_recheck_precedes_cache_publication_and_response():
+    pipeline, _helper, standard, _frontier = _pipeline(evidence_count=1)
+    cache = InProcessExactAnswerCache()
+    pipeline.answer_cache = cache
+    pipeline.answer_cache_namespace_for_epoch = lambda epoch: f"authority:{epoch}"
+    pipeline.knowledge_authority = _ChangingAuthority()
+
+    with pytest.raises(KnowledgeAuthorityChanged):
+        asyncio.run(pipeline.run("Was ist PTFE?", tenant=TenantContext("tenant-1")))
+
+    assert len(standard.calls) == 1
+    assert cache.metrics().entries == 0

@@ -6,11 +6,13 @@
 # ALL call this script (no args) — byte-identical by construction.
 #
 # SCOPE — every input that determines the image content, per backend/Dockerfile.v2
-# (FROM python:3.12-slim; COPY requirements-v2.txt; COPY sealai_v2; COPY
+# (FROM digest-pinned python:3.12-slim; COPY requirements-v2.txt + its
+# transitive lock; COPY sealai_v2; COPY
 # docker-entrypoint-v2.sh):
 #     backend/Dockerfile.v2            # the build recipe itself
 #     backend/.dockerignore            # controls which context bytes COPY can observe
 #     backend/requirements-v2.txt      # pinned runtime deps (COPYed)
+#     backend/requirements-v2.lock     # hash-locked transitive runtime graph (COPYed)
 #     backend/sealai_v2                # the app — minus eval/ + tests/ (see below)
 #     backend/docker-entrypoint-v2.sh  # the COPYed entrypoint (the deploy teeth)
 # EXCLUDED: backend/sealai_v2/eval and /tests, and git-ignored files
@@ -88,13 +90,18 @@ readonly GIT_OBJECT_DIRECTORY="${TREE_OBJECT_DIR}"
 readonly GIT_INDEX_FILE="${TMP_INDEX}"
 export GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OBJECT_DIRECTORY GIT_INDEX_FILE
 
-"${GIT[@]}" add -A -- \
+HASH_INPUTS=(
   backend/sealai_v2 \
   ":(exclude)backend/sealai_v2/eval" \
   ":(exclude)backend/sealai_v2/tests" \
   backend/requirements-v2.txt \
   backend/.dockerignore \
   backend/Dockerfile.v2 \
-  backend/docker-entrypoint-v2.sh >/dev/null
+  backend/docker-entrypoint-v2.sh
+)
+if [[ -e backend/requirements-v2.lock || -L backend/requirements-v2.lock ]]; then
+  HASH_INPUTS+=(backend/requirements-v2.lock)
+fi
+"${GIT[@]}" add -A -- "${HASH_INPUTS[@]}" >/dev/null
 
 "${GIT[@]}" write-tree

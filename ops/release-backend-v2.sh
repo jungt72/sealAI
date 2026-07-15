@@ -11,8 +11,9 @@
 #
 # Gate chain:
 #   1. TREE_HASH = ops/tree-hash.sh backend/sealai_v2   (served-runtime content)
-#   2. Pull the immutable candidate, verify its signed SLSA provenance + SPDX
-#      SBOM, then derive its secret-free runtime-profile hash.
+#   2. Pull the immutable candidate, verify its signed SLSA provenance, SPDX
+#      SBOM, and passing vulnerability/license scan, then derive its secret-free
+#      runtime-profile hash.
 #   3. final: ops/v2_deploy_gate.py -> a complete, final-adjudicated full replay
 #      with that exact tree, L1 and runtime profile; all gated axes are clean.
 #      Targeted/chained evidence and owner waivers cannot authorize promotion.
@@ -117,6 +118,12 @@ source /usr/local/libexec/sealai/production-storage-lease.sh
 acquire_production_storage_lease
 
 cd "${REPO_ROOT}"
+
+# Validate the current lock, base-image, manifest, and exception policy before
+# any image pull or other release-side effect. Expired exceptions therefore
+# cannot authorize an older otherwise-valid scan attestation.
+/usr/bin/python3 -I ops/supply_chain_gate.py verify \
+  || { echo "release-backend-v2: supply-chain policy verification failed" >&2; exit 1; }
 
 SERVICE="backend-v2"
 WORKER_SERVICE="backend-v2-worker"
@@ -378,6 +385,8 @@ PREPARED_IMAGE_ID=""
 if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
   [[ "${BACKEND_IMAGE_REF}" =~ ^[^@[:space:]]+@sha256:[0-9a-f]{64}$ ]] \
     || die "BACKEND_V2_IMAGE must be pinned as one exact tag@sha256:digest reference"
+  /usr/bin/python3 -I ops/supply_chain_gate.py verify-image-ref "${BACKEND_IMAGE_REF}" \
+    >/dev/null || die "BACKEND_V2_IMAGE must use the exact approved backend-v2 tag@sha256 repository"
   echo ">> pulling immutable backend-v2 image ${BACKEND_IMAGE_REF}"
   docker pull "${BACKEND_IMAGE_REF}" >/dev/null
   PREPARED_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
@@ -392,7 +401,7 @@ if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
   [[ "${IMAGE_REVISION}" == "${SOURCE_GIT_SHA}" ]] || die "image revision ${IMAGE_REVISION:-<missing>} does not match approved source ${SOURCE_GIT_SHA}"
   /bin/bash -p ops/verify-image-attestations.sh \
     "${BACKEND_IMAGE_REF}" "${SOURCE_GIT_SHA}" ".github/workflows/build-and-push.yml" \
-    || die "candidate image provenance or SBOM attestation verification failed"
+    || die "candidate image provenance, SBOM, or scan attestation verification failed"
   PREPARED_IMAGE="${BACKEND_IMAGE_REF}"
 else
   echo "!! non-production local candidate has no signed registry attestations" >&2

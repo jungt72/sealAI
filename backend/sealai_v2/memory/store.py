@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 
 from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.contracts import (
+    ArtifactCaseSnapshot,
     ConversationAccessDenied,
     DerivedFact,
     CaseRevisionConflict,
@@ -119,6 +120,36 @@ class InProcessConversationMemory:
             case_state_v2=CaseStateV2.from_remembered_facts(
                 case_id=session_id, revision=st.case_revision, facts=facts
             ),
+        )
+
+    def artifact_snapshot(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        owner_subject: str,
+        expected_case_revision: int,
+    ) -> ArtifactCaseSnapshot:
+        """Read one exact case revision without recording a turn or invoking a model."""
+
+        _require(tenant_id, session_id)
+        st = self._store.get((tenant_id, session_id))
+        self._assert_owner(st, owner_subject)
+        if st is None or len(st.messages) < 2:
+            raise ConversationAccessDenied("conversation not found")
+        if st.case_revision != expected_case_revision:
+            raise CaseRevisionConflict(
+                f"expected case revision {expected_case_revision}, got {st.case_revision}"
+            )
+        question, answer = st.messages[-2:]
+        if question.role != "user" or answer.role != "assistant":
+            raise ConversationAccessDenied("conversation has no complete turn")
+        return ArtifactCaseSnapshot(
+            case_id=session_id,
+            case_revision=st.case_revision,
+            message_index=answer.index,
+            question=question.text,
+            answer=answer.text,
         )
 
     def record_turn(

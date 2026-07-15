@@ -50,6 +50,7 @@ _ALLOWLIST_FILES = {
     "knowledge/produktspec/contracts.py",  # `freigegeben: bool = False` G1 structural invariant
     "knowledge/produktspec/kernel.py",  # constructs with `freigegeben=False` (always)
     "knowledge/ledger.py",  # `approved` is an internal review-state enum; never user-facing advice
+    "knowledge/authority.py",  # reads that same internal claim state for cache authority only
     "pipeline/produktspec_step.py",  # surfaces the same always-False `freigegeben` field
     "pipeline/routing.py",  # regex DETECTING "geeignet für" in USER input, not an output claim
     "pipeline/stages.py",  # "Herstellerempfehlung" = WHICH manufacturer partner to route an RFQ

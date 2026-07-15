@@ -11,6 +11,10 @@ production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
 source /usr/local/libexec/sealai/production-storage-lease.sh
 acquire_production_storage_lease
 
+echo "BLOCKED_EXTERNAL: frontend publication requires independently verified protected-main and environment approval evidence" >&2
+echo "No local image build, registry push, unsigned fallback or production mutation is permitted." >&2
+exit 2
+
 cd /home/thorsten/sealai
 
 /bin/bash -p "${SCRIPT_DIR}/validate-production-compose-security.sh" \
@@ -108,7 +112,7 @@ if PUSH_OUTPUT="$(docker push "${FRONTEND_IMAGE_TAG}" 2>&1)"; then
   echo ">> New pinned image: ${FRONTEND_IMAGE_REF}"
 else
   echo "${PUSH_OUTPUT}" >&2
-  echo "!! GHCR push failed; mutable/local production image fallbacks are forbidden" >&2
+  echo "!! GHCR push failed; mutable/local production image fallbacks are forbidden; unsigned artifacts are forbidden" >&2
   exit 1
 fi
 

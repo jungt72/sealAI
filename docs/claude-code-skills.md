@@ -55,8 +55,9 @@ are hardened against a specific past incident):
    (live `dist/` bind-mount); the no-V1-imports boundary; projection-of-backend-
    truth; the OIDC `?case=` / case-switch-race incidents.
 8. **`frontend-marketing`** — the Next.js marketing site (`frontend/`, NOT the
-   product UI). Deploys via `ops/release-frontend.sh`; `frontend/DESIGN.md` is the
-   design SoT; NextAuth/BFF is distinct from V2 OIDC.
+   product UI). `frontend/DESIGN.md` is the design SoT; NextAuth/BFF is distinct
+   from V2 OIDC. Its historical `ops/release-frontend.sh` publisher is currently
+   `BLOCKED_EXTERNAL`.
 
 ### Coverage map (why these eight)
 

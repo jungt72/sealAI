@@ -26,9 +26,10 @@ services:
       options:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
-    networks:
+    networks: !override
     - postgres_keycloak_network
     - postgres_backend_network
+    - postgres_metrics_network
     - strapi_postgres_network
   redis:
     image: ${REDIS_IMAGE:?REDIS_IMAGE required - use an immutable name@sha256 digest}
@@ -52,12 +53,16 @@ services:
       options:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
-    networks:
+    networks: !override
     - redis_network
+    - redis_metrics_network
   qdrant:
     image: ${QDRANT_IMAGE:?QDRANT_IMAGE required - use an immutable name@sha256 digest}
     environment:
+      # Production requires separate write and read-only credentials. Only the
+      # read-only value is mounted into Prometheus.
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY required - provision only through GATE-02/GATE-05}
+      QDRANT__SERVICE__READ_ONLY_API_KEY: ${QDRANT_READ_ONLY_API_KEY:?QDRANT_READ_ONLY_API_KEY required - provision only through GATE-02/GATE-05}
     volumes:
     - qdrant_snapshots:/qdrant/snapshots
     read_only: true
@@ -75,8 +80,9 @@ services:
       options:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
-    networks:
+    networks: !override
     - qdrant_backend_network
+    - qdrant_metrics_network
   gotenberg:
     image: ${GOTENBERG_IMAGE:?GOTENBERG_IMAGE required - use an immutable name@sha256 digest}
     read_only: true
@@ -118,11 +124,11 @@ services:
     - document_network
   prometheus:
     read_only: true
-    tmpfs:
-    - /tmp:rw,noexec,nosuid,nodev,mode=1770
-    security_opt:
+    tmpfs: !override
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770,size=64m
+    security_opt: !override
     - no-new-privileges:true
-    cap_drop:
+    cap_drop: !override
     - ALL
     pids_limit: ${PROMETHEUS_PIDS_LIMIT:?PROMETHEUS_PIDS_LIMIT required after bounded-load measurement}
     mem_limit: ${PROMETHEUS_MEMORY_LIMIT:?PROMETHEUS_MEMORY_LIMIT required after bounded-load measurement}
@@ -132,18 +138,20 @@ services:
       options:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
-    networks:
+    networks: !override
     - observability_network
     - backend_metrics_network
+    - keycloak_metrics_network
+    - qdrant_metrics_network
   grafana:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD required - rotate through GATE-02}
     read_only: true
-    tmpfs:
-    - /tmp:rw,noexec,nosuid,nodev,mode=1770
-    security_opt:
+    tmpfs: !override
+    - /tmp:rw,noexec,nosuid,nodev,mode=1770,size=64m
+    security_opt: !override
     - no-new-privileges:true
-    cap_drop:
+    cap_drop: !override
     - ALL
     pids_limit: ${GRAFANA_PIDS_LIMIT:?GRAFANA_PIDS_LIMIT required after bounded-load measurement}
     mem_limit: ${GRAFANA_MEMORY_LIMIT:?GRAFANA_MEMORY_LIMIT required after bounded-load measurement}
@@ -153,8 +161,78 @@ services:
       options:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
-    networks:
+    networks: !override
     - observability_network
+  alertmanager:
+    pids_limit: ${ALERTMANAGER_PIDS_LIMIT:?ALERTMANAGER_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${ALERTMANAGER_MEMORY_LIMIT:?ALERTMANAGER_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${ALERTMANAGER_CPU_LIMIT:?ALERTMANAGER_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks: !override
+    - observability_network
+    - notification_egress_network
+  blackbox-exporter:
+    pids_limit: ${BLACKBOX_EXPORTER_PIDS_LIMIT:?BLACKBOX_EXPORTER_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${BLACKBOX_EXPORTER_MEMORY_LIMIT:?BLACKBOX_EXPORTER_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${BLACKBOX_EXPORTER_CPU_LIMIT:?BLACKBOX_EXPORTER_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks: !override
+    - observability_network
+    - probe_egress_network
+  node-exporter:
+    pids_limit: ${NODE_EXPORTER_PIDS_LIMIT:?NODE_EXPORTER_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${NODE_EXPORTER_MEMORY_LIMIT:?NODE_EXPORTER_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${NODE_EXPORTER_CPU_LIMIT:?NODE_EXPORTER_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks: !override
+    - observability_network
+  cadvisor:
+    pids_limit: ${CADVISOR_PIDS_LIMIT:?CADVISOR_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${CADVISOR_MEMORY_LIMIT:?CADVISOR_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${CADVISOR_CPU_LIMIT:?CADVISOR_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks: !override
+    - observability_network
+  postgres-exporter:
+    pids_limit: ${POSTGRES_EXPORTER_PIDS_LIMIT:?POSTGRES_EXPORTER_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${POSTGRES_EXPORTER_MEMORY_LIMIT:?POSTGRES_EXPORTER_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${POSTGRES_EXPORTER_CPU_LIMIT:?POSTGRES_EXPORTER_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks: !override
+    - observability_network
+    - postgres_metrics_network
+  redis-exporter:
+    pids_limit: ${REDIS_EXPORTER_PIDS_LIMIT:?REDIS_EXPORTER_PIDS_LIMIT required after bounded-load measurement}
+    mem_limit: ${REDIS_EXPORTER_MEMORY_LIMIT:?REDIS_EXPORTER_MEMORY_LIMIT required after bounded-load measurement}
+    cpus: ${REDIS_EXPORTER_CPU_LIMIT:?REDIS_EXPORTER_CPU_LIMIT required after bounded-load measurement}
+    logging:
+      driver: local
+      options:
+        max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
+        max-file: ${CONTAINER_LOG_MAX_FILES:-5}
+    networks: !override
+    - observability_network
+    - redis_metrics_network
   frontend:
     profiles:
     - frontend-container
@@ -186,7 +264,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set pinned image ref in .env.prod}
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE required — set tag@sha256 digest in .env.prod}
     pull_policy: ${FRONTEND_PULL_POLICY:-always}
     networks:
       frontend_network:
@@ -234,7 +312,7 @@ services:
     expose:
     - '8080'
     - '9000'
-    image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set pinned image ref in .env.prod}
+    image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set tag@sha256 digest in .env.prod}
     pull_policy: ${KEYCLOAK_PULL_POLICY:-always}
     healthcheck:
       test:
@@ -252,6 +330,7 @@ services:
       keycloak_edge_network:
         aliases:
         - sealai-keycloak
+      keycloak_metrics_network: {}
       backend_identity_network:
         aliases:
         - sealai-keycloak
@@ -275,7 +354,7 @@ services:
         max-size: ${CONTAINER_LOG_MAX_SIZE:-10m}
         max-file: ${CONTAINER_LOG_MAX_FILES:-5}
   nginx:
-    image: ${NGINX_IMAGE:?NGINX_IMAGE required - use an immutable name@sha256 digest}
+    image: ${NGINX_IMAGE:?NGINX_IMAGE required - set an approved tag@sha256 digest}
     container_name: nginx
     depends_on:
       keycloak:
@@ -338,11 +417,8 @@ services:
     container_name: backend-v2
     profiles:
     - v2
-    image: ${BACKEND_V2_IMAGE:?BACKEND_V2_IMAGE required - use an immutable name@sha256 digest}
-    pull_policy: ${BACKEND_V2_PULL_POLICY:-missing}
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.v2
+    image: ${BACKEND_V2_IMAGE:?BACKEND_V2_IMAGE required — set attested tag@sha256 digest}
+    pull_policy: ${BACKEND_V2_PULL_POLICY:-always}
     user: 10001:10001
     restart: unless-stopped
     environment:
@@ -376,15 +452,16 @@ services:
       SEALAI_V2_PROVIDER_MONTHLY_BUDGET_MICROS: ${SEALAI_V2_PROVIDER_MONTHLY_BUDGET_MICROS:-100000000}
       SEALAI_V2_PROVIDER_BUDGET_CONTRACT_SHA256: ${SEALAI_V2_PROVIDER_BUDGET_CONTRACT_SHA256:-}
       SEALAI_V2_API_MAX_REQUEST_BODY_BYTES: ${SEALAI_V2_API_MAX_REQUEST_BODY_BYTES:-131072}
-      # Ops hardening (2026-07-03 deep-dive re-audit, §3): these two gate real runtime access
-      # (api/deps.py — the Hersteller-Partner admin/manufacturer surface) but had no compose
-      # passthrough, so a `.env.prod` override would have silently done nothing. Defaults match
-      # settings.py's own defaults, so this is a pure no-op today — additive-only, zero behavior
-      # change until someone actually needs to override a Keycloak role name.
-      SEALAI_V2_AUTH_ADMIN_ROLE: ${SEALAI_V2_AUTH_ADMIN_ROLE:-admin}
+      # AUTH-003/GOV-001: role names are deliberately disjoint. Mapping these realm roles and
+      # changing production authorization is a separately approved GATE-06/GATE-07 cutover.
+      SEALAI_V2_AUTH_TENANT_ADMIN_ROLE: ${SEALAI_V2_AUTH_TENANT_ADMIN_ROLE:-tenant_admin}
+      SEALAI_V2_AUTH_PLATFORM_OWNER_ROLE: ${SEALAI_V2_AUTH_PLATFORM_OWNER_ROLE:-platform_owner}
+      SEALAI_V2_AUTH_SYSTEM_OPERATOR_ROLE: ${SEALAI_V2_AUTH_SYSTEM_OPERATOR_ROLE:-system_operator}
+      SEALAI_V2_AUTH_KNOWLEDGE_CONTRIBUTOR_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_CONTRIBUTOR_ROLE:-knowledge_contributor}
       SEALAI_V2_AUTH_MANUFACTURER_ROLE: ${SEALAI_V2_AUTH_MANUFACTURER_ROLE:-manufacturer}
       SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE: ${SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE:-capability_reviewer}
       SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE:-knowledge_reviewer}
+      SEALAI_V2_AUTH_KNOWLEDGE_APPROVER_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_APPROVER_ROLE:-knowledge_approver}
       SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE: ${SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE:-decision_reviewer}
       # Ops hardening (2026-07-03): the 6 documented "incident-only kill-switches" (their own
       # settings.py docstrings say they're meant to be env-flippable in an emergency) had no
@@ -455,6 +532,8 @@ services:
       # in-process keyword matcher on a missing dep / unreachable Qdrant / missing collection.
       SEALAI_V2_RETRIEVER_BACKEND: ${SEALAI_V2_RETRIEVER_BACKEND:-in_process}
       SEALAI_V2_QDRANT_URL: ${SEALAI_V2_QDRANT_URL:-http://qdrant:6333}
+      # Qdrant's write credential. The service-side read-only credential is
+      # reserved for Prometheus and is never mounted into this container.
       SEALAI_V2_QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY required - rotate/provision only through GATE-02/GATE-05}
       SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-/app/models}
       # Wave 2 RAG: embedding provider. PROD = openai text-embedding-3-small (1536-dim, RAM-safe — the
@@ -541,6 +620,9 @@ services:
       PAPERLESS_URL: ${PAPERLESS_URL:-}
       PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:-}
       PAPERLESS_WEBHOOK_TOKEN: ${PAPERLESS_WEBHOOK_TOKEN:-}
+      # Production metadata telemetry is explicitly sampled; counters, cost,
+      # security, audit, and DR evidence remain unsampled.
+      SEALAI_V2_TELEMETRY_SAMPLE_RATE: ${SEALAI_V2_TELEMETRY_SAMPLE_RATE:-0.10}
     volumes:
     # Pre-staged e5-large ONNX cache (FastEmbed) — read-only; avoids a ~2GB cold download on the
     # health-gated recreate. uid 10001 reads via the bind mount (the cache contents are world-readable).
@@ -597,6 +679,7 @@ services:
     ports: !reset []
     expose: !reset []
     networks: !override
+      backend_metrics_network: {}
       postgres_backend_network: {}
       qdrant_backend_network: {}
       backend_egress_network:

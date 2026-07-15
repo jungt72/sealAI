@@ -1,70 +1,8 @@
-# Biz-Services (Strapi + Odoo) in eigenem Compose-Projekt starten:
-#   docker compose -p biz -f docker-compose.biz.yml up -d
-#
-# Hintergrund: Die Container liefen zuvor im Projekt "sealai" und wurden beim
-#   docker compose up ...
-# als "orphan containers" erkannt. Durch eigenes Projekt verschwinden die Orphans.
-
-services:
-  # Strapi reaches only the shared Postgres service through a dedicated,
-  # Gate-05-created bridge. It never joins any sealingAI application network.
-  strapi:
-    image: ${STRAPI_IMAGE:?STRAPI_IMAGE required - use an immutable name@sha256 digest}
-    container_name: strapi
-    restart: unless-stopped
-    env_file: [ ./strapi-backend/.env ]
-    command: ["npm", "run", "develop"]
-    volumes:
-      - strapi_uploads:/app/public/uploads
-    networks:
-      - strapi_postgres_network
-
-  # Odoo (eigene Postgres-Instanz)
-  odoo-db:
-    image: ${ODOO_POSTGRES_IMAGE:?ODOO_POSTGRES_IMAGE required - use an immutable name@sha256 digest}
-    container_name: odoo-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: odoo
-      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:?ODOO_DB_PASSWORD required - provision through GATE-02}
-      POSTGRES_DB: postgres
-    volumes:
-      - odoo_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U odoo -d postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  odoo:
-    image: ${ODOO_IMAGE:?ODOO_IMAGE required - use an immutable name@sha256 digest}
-    container_name: odoo
-    restart: unless-stopped
-    depends_on:
-      odoo-db: { condition: service_healthy }
-    environment:
-      HOST: odoo-db
-      USER: odoo
-      PASSWORD: ${ODOO_DB_PASSWORD:?ODOO_DB_PASSWORD required - provision through GATE-02}
-    volumes:
-      - ./odoo/addons:/mnt/extra-addons
-      - odoo_web_data:/var/lib/odoo
-    ports:
-      - "127.0.0.1:8069:8069"
-
-volumes:
-  # Reuse existing volumes (created previously under the "sealai" project)
-  strapi_uploads:
-    external: true
-    name: sealai_strapi_uploads
-  odoo_web_data:
-    external: true
-    name: sealai_odoo-web-data
-  odoo_db_data:
-    external: true
-    name: sealai_odoo-db-data
-
-networks:
-  strapi_postgres_network:
-    external: true
-    name: ${STRAPI_POSTGRES_NETWORK_NAME:?STRAPI_POSTGRES_NETWORK_NAME required for the scoped cross-project bridge}
+# BLOCKED_EXTERNAL: the former Strapi/Odoo stack had floating images, shared
+# production networks and static database credentials.  It is intentionally
+# inert until an independently approved, attested release topology exists.
+# Any future Strapi reactivation must use the Gate-05-scoped
+# STRAPI_POSTGRES_NETWORK_NAME bridge; this blocked manifest must not create or
+# join the sealingAI production networks.
+name: sealai-biz-blocked-external
+services: {}

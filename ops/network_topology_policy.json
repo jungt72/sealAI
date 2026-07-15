@@ -5,19 +5,32 @@
     "postgres": [
       "postgres_backend_network",
       "postgres_keycloak_network",
+      "postgres_metrics_network",
       "strapi_postgres_network"
     ],
-    "redis": ["redis_network"],
-    "qdrant": ["qdrant_backend_network"],
+    "redis": ["redis_metrics_network", "redis_network"],
+    "qdrant": ["qdrant_backend_network", "qdrant_metrics_network"],
     "gotenberg": ["document_network"],
     "tika": ["document_network"],
-    "prometheus": ["backend_metrics_network", "observability_network"],
+    "prometheus": [
+      "backend_metrics_network",
+      "keycloak_metrics_network",
+      "observability_network",
+      "qdrant_metrics_network"
+    ],
     "grafana": ["observability_network"],
+    "alertmanager": ["notification_egress_network", "observability_network"],
+    "blackbox-exporter": ["observability_network", "probe_egress_network"],
+    "node-exporter": ["observability_network"],
+    "cadvisor": ["observability_network"],
+    "postgres-exporter": ["observability_network", "postgres_metrics_network"],
+    "redis-exporter": ["observability_network", "redis_metrics_network"],
     "frontend": ["frontend_egress_network", "frontend_network"],
     "keycloak": [
       "backend_identity_network",
       "keycloak_edge_network",
       "keycloak_egress_network",
+      "keycloak_metrics_network",
       "postgres_keycloak_network"
     ],
     "nginx": [
@@ -36,6 +49,7 @@
     ],
     "backend-v2-worker": [
       "backend_egress_network",
+      "backend_metrics_network",
       "postgres_backend_network",
       "qdrant_backend_network"
     ]
@@ -57,10 +71,14 @@
     "document_network",
     "frontend_network",
     "keycloak_edge_network",
+    "keycloak_metrics_network",
     "observability_network",
     "postgres_backend_network",
     "postgres_keycloak_network",
+    "postgres_metrics_network",
     "qdrant_backend_network",
+    "qdrant_metrics_network",
+    "redis_metrics_network",
     "redis_network"
   ],
   "external_networks": {
@@ -90,12 +108,6 @@
     "nginx": [
       {"host_ip": "", "published": 80, "target": 80, "protocol": "tcp"},
       {"host_ip": "", "published": 443, "target": 443, "protocol": "tcp"}
-    ],
-    "prometheus": [
-      {"host_ip": "127.0.0.1", "published": 9090, "target": 9090, "protocol": "tcp"}
-    ],
-    "grafana": [
-      {"host_ip": "127.0.0.1", "published": 3001, "target": 3000, "protocol": "tcp"}
     ]
   }
 }

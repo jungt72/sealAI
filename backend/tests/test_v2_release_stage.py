@@ -92,15 +92,18 @@ def test_missing_running_image_requires_identity_matched_override():
     )
 
 
-def test_production_ci_is_manual_and_p0_remote_path_is_hard_denied():
+def test_production_ci_is_manual_and_mechanically_blocked_external():
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "workflow_dispatch:" in workflow
     assert "workflow_run:" not in workflow
     assert "release_stage:" not in workflow
-    assert (
-        "/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh" in workflow
-    )
+    assert "BLOCKED_EXTERNAL" in workflow
+    assert "exit 2" in workflow
+    assert "actions/checkout" not in workflow
+    assert "ssh-action" not in workflow
+    assert "id-token: write" not in workflow
+    assert "packages: write" not in workflow
     assert "git fetch" not in workflow
     assert "git checkout" not in workflow
     assert "--final" not in workflow

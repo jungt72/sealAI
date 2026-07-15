@@ -1,4 +1,4 @@
-"""Admin-only aggregate review surface for adaptive-interview shadow telemetry."""
+"""System-operator-only aggregate surface for adaptive-interview shadow telemetry."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sealai_v2.api.deps import (
     get_interview_shadow_store,
     get_settings,
-    require_admin,
+    require_system_operator,
 )
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
@@ -35,7 +35,7 @@ def shadow_summary(
     since: datetime | None = Query(default=None),
     until: datetime | None = Query(default=None),
     limit: int = Query(default=10_000, ge=1, le=50_000),
-    identity: VerifiedIdentity = Depends(require_admin),
+    identity: VerifiedIdentity = Depends(require_system_operator),
     store=Depends(get_interview_shadow_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:

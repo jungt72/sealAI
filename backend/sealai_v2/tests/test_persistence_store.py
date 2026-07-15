@@ -12,11 +12,13 @@ import pytest
 
 from sealai_v2.core.contracts import (
     CaseRevisionConflict,
+    ConversationAccessDenied,
     DerivedFact,
     RememberedFact,
 )
 from sealai_v2.db.conversation_memory import PostgresConversationMemory
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
+from sealai_v2.db.models import V2Message, V2Session
 from sealai_v2.security.tenant import TenantScopeError
 
 
@@ -66,6 +68,78 @@ def test_tenant_and_session_mandatory_fail_closed(db_url):
             mem.recall(tenant_id=bad, session_id="s1")
     with pytest.raises(ValueError):
         mem.recall(tenant_id="A", session_id="")
+
+
+def test_legacy_session_without_owned_state_is_inaccessible_even_to_matching_subject(
+    db_url,
+):
+    session_factory = make_sessionmaker(make_engine(db_url))
+    with session_factory.begin() as session:
+        row = V2Session(
+            tenant_id="A",
+            session_id="legacy",
+            owner_subject="subject-1",
+            ownership_state="owned",
+            turns=0,
+            case_revision=0,
+        )
+        session.add(row)
+        session.flush()
+        row.ownership_state = None
+
+    mem = _mem(db_url)
+    with pytest.raises(ConversationAccessDenied, match="conversation not found"):
+        mem.assert_session_access(
+            tenant_id="A", session_id="legacy", owner_subject="subject-1"
+        )
+    assert mem.sessions(tenant_id="A", owner_subject="subject-1") == ()
+
+
+@pytest.mark.parametrize("operation", ["record_turn", "merge_facts", "edit_fact"])
+def test_owner_bound_write_never_implicitly_claims_orphan_payload(db_url, operation):
+    session_factory = make_sessionmaker(make_engine(db_url))
+    with session_factory.begin() as session:
+        session.add(
+            V2Message(
+                tenant_id="A",
+                session_id="orphan",
+                idx=0,
+                role="user",
+                text="legacy payload",
+            )
+        )
+
+    mem = _mem(db_url)
+    with pytest.raises(ConversationAccessDenied, match="conversation not found"):
+        if operation == "record_turn":
+            mem.record_turn(
+                tenant_id="A",
+                session_id="orphan",
+                question="new question",
+                answer="new answer",
+                owner_subject="subject-1",
+            )
+        elif operation == "merge_facts":
+            mem.merge_facts(
+                tenant_id="A",
+                session_id="orphan",
+                facts=(RememberedFact("medium", "water"),),
+                owner_subject="subject-1",
+            )
+        else:
+            mem.edit_fact(
+                tenant_id="A",
+                session_id="orphan",
+                feld="medium",
+                wert="water",
+                owner_subject="subject-1",
+            )
+
+    with session_factory() as session:
+        assert session.get(V2Session, ("A", "orphan")) is None
+        message = session.get(V2Message, ("A", "orphan", 0))
+        assert message is not None
+        assert message.text == "legacy payload"
 
 
 def test_record_turn_builds_bounded_window_and_full_history(db_url):

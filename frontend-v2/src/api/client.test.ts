@@ -263,6 +263,29 @@ describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
     expect(String(fetchFn.mock.calls[0][0])).toBe("/api/v2/conversations");
     expect(res).toEqual(payload);
   });
+
+  it("briefing sends only the explicit case and revision boundary", async () => {
+    const fetchFn = mockFetch(200, {});
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.briefing("case-42", 7);
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      case_id: "case-42",
+      case_revision: 7,
+    });
+  });
+
+  it("anfrage cannot serialize client-authored briefing text", async () => {
+    const fetchFn = mockFetch(200, {});
+    const client = new ApiClient(() => "tok", () => undefined);
+    await client.anfrage("partner-1", "case-42", 7);
+    const [, init] = fetchFn.mock.calls[0];
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      partner_id: "partner-1",
+      case_id: "case-42",
+      case_revision: 7,
+    });
+  });
 });
 
 describe("ApiClient.chatStream — Phase 3A live token streaming (smalltalk-only)", () => {

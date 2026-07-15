@@ -12,11 +12,15 @@ import argparse
 import base64
 import binascii
 import json
+import re
 from pathlib import Path
 
 
 class AttestationPayloadError(ValueError):
     pass
+
+
+SCAN_PREDICATE_TYPE = "https://sealingai.com/attestations/trivy-scan/v1"
 
 
 def _json_objects(raw: str) -> list[dict]:
@@ -108,6 +112,64 @@ def _validate_spdx(statement: dict) -> None:
         raise AttestationPayloadError("SPDX SBOM contains no packages")
 
 
+def _validate_scan(
+    statement: dict,
+    *,
+    image_name: str,
+    image_digest: str,
+    expected_revision: str,
+    expected_tree_hash: str,
+    policy_sha256: str | None,
+    exceptions_sha256: str | None,
+) -> None:
+    predicate = statement.get("predicate") or {}
+    expected_keys = {
+        "schema_version",
+        "artifact",
+        "scanner",
+        "source",
+        "scope",
+        "result",
+        "report_sha256",
+        "policy_sha256",
+        "exceptions_sha256",
+    }
+    if set(predicate) != expected_keys or predicate.get("schema_version") != 2:
+        raise AttestationPayloadError("scan predicate schema is invalid")
+    scanner = predicate.get("scanner") or {}
+    if scanner != {
+        "license_confidence_level": 0.9,
+        "license_full_scan": True,
+        "name": "trivy",
+        "version": "0.69.3",
+    }:
+        raise AttestationPayloadError("scan predicate uses an unapproved scanner")
+    if predicate.get("artifact") != {
+        "digest": image_digest,
+        "name": image_name,
+        "type": "container_image",
+    }:
+        raise AttestationPayloadError("scan predicate does not bind the image")
+    if predicate.get("source") != {
+        "git_sha": expected_revision,
+        "tree_hash": expected_tree_hash,
+    }:
+        raise AttestationPayloadError("scan predicate does not bind the source tree")
+    if (
+        predicate.get("scope") != "backend-v2-image"
+        or predicate.get("result") != "pass"
+    ):
+        raise AttestationPayloadError("image scan did not record a policy pass")
+    for key in ("report_sha256", "policy_sha256", "exceptions_sha256"):
+        value = predicate.get(key)
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise AttestationPayloadError("scan predicate contains an invalid digest")
+    if not policy_sha256 or predicate.get("policy_sha256") != policy_sha256:
+        raise AttestationPayloadError("scan predicate policy digest does not match")
+    if not exceptions_sha256 or predicate.get("exceptions_sha256") != exceptions_sha256:
+        raise AttestationPayloadError("scan predicate exception digest does not match")
+
+
 def validate_attestations(
     raw: str,
     *,
@@ -117,6 +179,9 @@ def validate_attestations(
     expected_revision: str,
     repository: str,
     workflow_path: str,
+    expected_tree_hash: str,
+    policy_sha256: str | None = None,
+    exceptions_sha256: str | None = None,
 ) -> dict:
     errors: list[str] = []
     for envelope in _json_objects(raw):
@@ -139,6 +204,16 @@ def validate_attestations(
                 )
             elif predicate_type == "https://spdx.dev/Document/v2.3":
                 _validate_spdx(statement)
+            elif predicate_type == SCAN_PREDICATE_TYPE:
+                _validate_scan(
+                    statement,
+                    image_name=image_name,
+                    image_digest=image_digest,
+                    expected_revision=expected_revision,
+                    expected_tree_hash=expected_tree_hash,
+                    policy_sha256=policy_sha256,
+                    exceptions_sha256=exceptions_sha256,
+                )
             else:
                 raise AttestationPayloadError("predicate type is not approved")
             return {
@@ -160,8 +235,11 @@ def main() -> int:
     parser.add_argument("--image-digest", required=True)
     parser.add_argument("--predicate-type", required=True)
     parser.add_argument("--expected-revision", required=True)
+    parser.add_argument("--expected-tree-hash", required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--workflow-path", required=True)
+    parser.add_argument("--policy-sha256")
+    parser.add_argument("--exceptions-sha256")
     args = parser.parse_args()
     try:
         result = validate_attestations(
@@ -170,8 +248,11 @@ def main() -> int:
             image_digest=args.image_digest,
             predicate_type=args.predicate_type,
             expected_revision=args.expected_revision,
+            expected_tree_hash=args.expected_tree_hash,
             repository=args.repository,
             workflow_path=args.workflow_path,
+            policy_sha256=args.policy_sha256,
+            exceptions_sha256=args.exceptions_sha256,
         )
     except (OSError, json.JSONDecodeError, AttestationPayloadError) as exc:
         parser.exit(2, f"attestation payload verification failed: {exc}\n")

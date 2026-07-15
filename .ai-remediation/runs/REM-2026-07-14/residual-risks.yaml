@@ -20,22 +20,34 @@ risks:
     blocked_by: [exact collision-free key selection, verified Redis recovery evidence, external alert receiver, GATE-04, GATE-08]
   - risk_id: RISK-P0-REDIS-CACHE-AUTHORITY
     severity: HIGH
-    summary: Exact-answer cache activation is hard-disabled because a static environment digest cannot observe atomic ledger quarantine, revocation, expiry, or claim updates. The lifecycle-bound authority epoch remains P1 work.
-    blocked_by: [mutable ledger epoch implementation, lifecycle integration tests, production-faithful release evidence, GATE-08]
+    summary: A lifecycle-bound Postgres authority epoch and final request recheck are implemented and tested locally, but production still runs the audited code and no exact-image release evidence binds the deployed ledger state.
+    blocked_by: [production-faithful replay, exact-image release evidence, GATE-08]
   - risk_id: RISK-PARALLEL-DEPLOYMENT
     severity: HIGH
     summary: Production advanced independently from the initial audited commit to 6e5608c3 while remediation was active; it is healthy and clean, but the locally tested release freeze is not deployed and therefore did not govern that event.
     blocked_by: [GATE-08, GATE-10]
   - risk_id: RISK-DR-OFFSITE
     severity: HIGH
-    summary: Local backup lifecycle controls and an encrypted offsite receipt contract are implemented, but no external object store, managed key lifecycle, or two isolated full restore drills are available yet.
-    blocked_by: [external alert receiver, external encrypted object storage, two isolated restore drills, GATE-08]
+    summary: Local immutable manifest-v2 recovery sets, provider-neutral encrypted transport, fail-closed local-only evidence, retention planning, RPO/RTO, and monitoring contracts are implemented and tested. Local evidence can never become OFFSITE_VERIFIED or RESTORE_VERIFIED; no external repository, cryptographic receipt trust root/importer, managed key lifecycle, dedicated runner, real full restore, or canonical Postgres-to-Qdrant rebuild is available yet.
+    blocked_by: [external alert receiver, external encrypted object storage, offline key custody, dedicated recovery runner, Gate-08-approved cryptographic receipt trust root and independent attestor/importer, two isolated restore drills, P1-D Qdrant rebuild command, GATE-08]
   - risk_id: RISK-P1-RELEASE
     severity: HIGH
     summary: The final gate does not yet prove the exact production retrieval path and immutable artifacts.
     blocked_by: [GATE-08, GATE-10]
   - risk_id: RISK-P1-AUTH-DATA-NETWORK
     severity: HIGH
-    summary: Auth, authority, tenant data, and network segmentation findings remain open pending later isolated packages.
+    summary: Local role separation and ownership guards do not change production Keycloak assignments, legacy data, database roles, or network segmentation.
     blocked_by: [GATE-05, GATE-06, GATE-07, GATE-08]
+  - risk_id: RISK-P1-DATA-RLS
+    severity: HIGH
+    summary: Legacy ownership counts and mappings are unknown, shadow constraints are unvalidated, and production lacks a verified transaction-scoped role/GUC adapter plus FORCE RLS. The prepared scripts were not executed.
+    blocked_by: [aggregate production profile, immutable restore proof, dual-reviewed ownership mapping, runtime role/GUC adapter, opt-in PostgreSQL proof, GATE-07]
+  - risk_id: RISK-P1-CASE-ARTIFACT-DEPLOYMENT
+    severity: HIGH
+    summary: Exact read-only Briefing/RFQ contracts pass locally, but production remains vulnerable until backend and frontend are promoted together and stale clients are rejected.
+    blocked_by: [exact-image verification, frontend/backend coordinated deployment, GATE-08]
+  - risk_id: RISK-P1-REVIEW-AFFILIATION
+    severity: HIGH
+    summary: Two-person subject and role separation is local, while authoritative organization affiliations and shared-affiliation conflict checks remain unavailable; review features must stay disabled.
+    blocked_by: [identity affiliation authority, sanitized production role census, GATE-07]
 accepted_risks: []

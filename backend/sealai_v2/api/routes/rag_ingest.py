@@ -38,7 +38,6 @@ import logging
 import os
 from dataclasses import replace
 from datetime import datetime, timezone
-from hashlib import sha256
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -62,6 +61,7 @@ from sealai_v2.knowledge.paperless_client import (
     remove_tag_from_document,
 )
 from sealai_v2.llm.factory import build_client_factory
+from sealai_v2.obs.log_redaction import opaque_reference, safe_code
 from sealai_v2.prompts.assembler import FachkarteExtractPromptAssembler
 from sealai_v2.security.cost_control import CostControlPolicy
 from sealai_v2.security.control_metrics import record_quota_denial
@@ -86,11 +86,6 @@ class IngestRequest(BaseModel):
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _opaque_ref(kind: str, value: str) -> str:
-    """Stable correlation handle that never exposes Paperless/RAG metadata in logs."""
-    return sha256(f"sealai-rag-{kind}-v1\x00{value}".encode()).hexdigest()[:16]
 
 
 def _build_extractor(settings: Settings) -> FachkarteExtractor:
@@ -126,11 +121,12 @@ def _mark_status(document_id: str, add: str, *, remove: tuple[str, ...] = ()) ->
                 remove_tag_from_document(document_id, old_id)
     except Exception as exc:  # noqa: BLE001
         _log.error(
-            "rag_ingest event=status_tag_failed document_ref=%s add=%s remove=%s error_type=%s",
-            _opaque_ref("document", document_id),
-            add,
-            remove,
-            type(exc).__name__,
+            "event=rag_ingest_status_update_failed document_ref=%s add_tag=%s "
+            "remove_count=%d error_class=%s",
+            opaque_reference("paperless", document_id),
+            safe_code(add),
+            len(remove),
+            safe_code(type(exc).__name__),
         )
 
 
@@ -144,9 +140,9 @@ async def _attempt(
     try:
         draft = await extractor.extract_document(text, source=source)
     except Exception:  # noqa: BLE001 — an LLM hiccup (rate limit/timeout) must not abort the loop
-        return None, "extraction_error"
+        return None, "extraction_failed"
     if draft is None or draft.empty:
-        return None, "no doc-grounded claims extracted"
+        return None, "no_grounded_claims"
 
     # Stable id: the LLM's own titel_vorschlag can vary across runs of the SAME document, which
     # would otherwise slug into a DIFFERENT card id each time -> duplicate cards instead of a
@@ -156,7 +152,7 @@ async def _attempt(
     try:
         card = _card(draft.to_seed_entry())
     except ValueError:
-        return None, "invalid_draft"
+        return None, "invalid_extraction"
 
     catalog = FachkartenCatalog(cards=(card,))
     try:
@@ -198,7 +194,7 @@ async def ingest(
     cost_store=Depends(get_cost_control_store),
 ) -> dict:
     _check_webhook_token(x_sealai_webhook_token)
-    document_ref = _opaque_ref("document", req.document_id)
+    document_ref = opaque_reference("paperless", req.document_id)
 
     text = source = ""
     tags: tuple[str, ...] = ()
@@ -213,11 +209,12 @@ async def ingest(
             return {"ingested": False, "reason": "paperless_not_configured"}
         except Exception as exc:  # noqa: BLE001 — a Paperless/network hiccup must never 500-loop the webhook
             _log.warning(
-                "rag_ingest event=fetch_failed document_ref=%s attempt=%d/%d error_type=%s",
-                document_ref,
+                "event=rag_ingest_fetch_failed attempt=%d max_attempts=%d "
+                "document_ref=%s error_class=%s",
                 fetch_attempt,
                 _MAX_ATTEMPTS,
-                type(exc).__name__,
+                document_ref,
+                safe_code(type(exc).__name__),
             )
     if not fetch_ok:
         _mark_status(req.document_id, _STATUS_FAILED_TAG)
@@ -283,12 +280,11 @@ async def ingest(
             )
             if result is not None:
                 _log.info(
-                    "rag_ingest event=ingested document_ref=%s card_ref=%s claims=%d "
-                    "index=%s queued=%d attempt=%d/%d",
+                    "event=rag_ingest_succeeded document_ref=%s claims=%d "
+                    "index_status=%s points_queued=%d attempt=%d max_attempts=%d",
                     document_ref,
-                    _opaque_ref("card", result["card_id"]),
                     result["claims"],
-                    result["index_status"],
+                    safe_code(result["index_status"]),
                     result["points_queued"],
                     attempt,
                     _MAX_ATTEMPTS,
@@ -299,17 +295,18 @@ async def ingest(
                 outcome = "success"
                 return result
             _log.warning(
-                "rag_ingest event=attempt_failed document_ref=%s attempt=%d/%d reason=%s",
-                document_ref,
+                "event=rag_ingest_attempt_failed attempt=%d max_attempts=%d "
+                "document_ref=%s reason=%s",
                 attempt,
                 _MAX_ATTEMPTS,
-                last_reason,
+                document_ref,
+                safe_code(last_reason),
             )
         _log.error(
-            "rag_ingest event=terminal_failure document_ref=%s attempts=%d reason=%s",
-            document_ref,
+            "event=rag_ingest_terminal_failure attempts=%d document_ref=%s reason=%s",
             _MAX_ATTEMPTS,
-            last_reason,
+            document_ref,
+            safe_code(last_reason),
         )
         _mark_status(req.document_id, _STATUS_FAILED_TAG)
         return {"ingested": False, "reason": last_reason, "attempts": _MAX_ATTEMPTS}
@@ -323,7 +320,7 @@ async def ingest(
             )
         except Exception as exc:
             _log.error(
-                "rag_ingest: provider admission release failed request_id=%s error_type=%s",
-                decision.admission.request_id,
-                type(exc).__name__,
+                "event=rag_ingest_admission_release_failed request_ref=%s error_class=%s",
+                opaque_reference("provider-request", decision.admission.request_id),
+                safe_code(type(exc).__name__),
             )

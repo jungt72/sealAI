@@ -256,6 +256,8 @@ def _compose_test_environment() -> dict[str, str]:
             environment[key] = "128"
         elif key == "STRAPI_POSTGRES_NETWORK_NAME":
             environment[key] = "sealai_strapi_postgres_scoped"
+        elif key == "NODE_EXPORTER_TEXTFILE_DIR":
+            environment[key] = "/tmp/sealai-textfile-contract"
         elif key == "QDRANT_API_KEY":
             environment[key] = "DUMMY_QDRANT_KEY_WITH_32_CHARS_000"
         elif key == "GRAFANA_ADMIN_PASSWORD":
@@ -322,6 +324,7 @@ def test_compose_source_requires_separate_data_credentials() -> None:
     base = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
     deploy = (REPO / "docker-compose.deploy.yml").read_text(encoding="utf-8")
     assert "QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?" in deploy
+    assert "QDRANT__SERVICE__READ_ONLY_API_KEY: ${QDRANT_READ_ONLY_API_KEY:?" in deploy
     assert "SEALAI_V2_QDRANT_API_KEY: ${QDRANT_API_KEY:?" in deploy
     assert "${KC_DB_PASSWORD:?" in deploy
     assert "${SEALAI_V2_DB_PASSWORD:?" in deploy
@@ -329,6 +332,22 @@ def test_compose_source_requires_separate_data_credentials() -> None:
     assert "SEALAI_V2_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER" not in deploy
     assert "POSTGRES_IMAGE required" not in base
     assert "QDRANT_API_KEY required" not in base
+    assert "QDRANT_READ_ONLY_API_KEY required" not in base
+
+
+def test_environment_templates_cover_every_fail_closed_compose_input() -> None:
+    source = "\n".join(
+        (REPO / name).read_text(encoding="utf-8")
+        for name in ("docker-compose.yml", "docker-compose.deploy.yml")
+    )
+    required = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*):\?[^}]*}", source))
+    for relative in (".env.example", ".env.prod.example"):
+        configured = {
+            line.split("=", 1)[0]
+            for line in (REPO / relative).read_text(encoding="utf-8").splitlines()
+            if "=" in line and not line.lstrip().startswith("#")
+        }
+        assert required <= configured, relative
 
 
 def test_all_sanctioned_production_compose_paths_call_security_guard() -> None:

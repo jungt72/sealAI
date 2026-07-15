@@ -87,7 +87,8 @@ def current_identity(
 @lru_cache(maxsize=1)
 def get_lead_store():
     """Lead store for /api/v2/anfrage — Postgres (durable, partner/owner-retrievable) when
-    ``database_url`` is set, else in-process (eval/CI). Fail-safe to in-process; never crashes."""
+    ``database_url`` is set, else in-process for hermetic eval/CI only. A configured database is
+    authoritative and adapter failures propagate; there is no process-local production fork."""
     from sealai_v2.db.leads import build_lead_store
 
     return build_lead_store(get_settings())
@@ -97,18 +98,14 @@ def get_lead_store():
 def get_partner_registry():
     """Hersteller-Partner registry for the admin CRUD — Postgres (dashboard-editable, durable) when
     ``database_url`` is set, else in-process (eval/CI). Mirrors the pipeline's pool construction so
-    both surfaces back the SAME data in prod. Fail-safe to in-process; never crashes startup."""
+    both surfaces back the SAME data in prod. Configured Postgres is authoritative; construction
+    failure propagates instead of silently creating a process-local registry."""
     s = get_settings()
     if s.database_url:
-        try:
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
-            from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.hersteller_partner import PostgresPartnerRegistry
 
-            return PostgresPartnerRegistry(
-                make_sessionmaker(make_engine(s.database_url))
-            )
-        except Exception:  # noqa: BLE001 — fail safe to in-process; never crash on startup
-            pass
+        return PostgresPartnerRegistry(make_sessionmaker(make_engine(s.database_url)))
     from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 
     return InProcessPartnerRegistry()
@@ -150,7 +147,7 @@ def get_case_decision_store():
 
 @lru_cache(maxsize=1)
 def get_interview_shadow_store():
-    """Tenant-scoped shadow telemetry store for the admin-only aggregate report."""
+    """Tenant-scoped shadow telemetry store for the system-operator aggregate report."""
     settings = get_settings()
     if not settings.adaptive_interview_shadow_reporting_enabled:
         raise HTTPException(
@@ -191,15 +188,23 @@ def get_knowledge_ledger():
     return build_knowledge_ledger(settings)
 
 
-def require_admin(
+def require_platform_owner(
     identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
 ) -> VerifiedIdentity:
-    """Owner/admin gate for the Hersteller-Partner management surface (P0 fail-closed). The verified
-    token MUST carry the configured admin realm-role (``auth_admin_role``), else 403. Identity (incl.
-    roles) comes ONLY from the verified token — never a header/param. This is an ADDITIVE role check;
-    the tenant boundary is untouched."""
-    if get_settings().auth_admin_role not in identity.roles:
-        raise HTTPException(status_code=403, detail="admin role required")
+    """Global business-owner authority; tenant admins and legacy ``admin`` are insufficient."""
+    if settings.auth_platform_owner_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="platform owner role required")
+    return identity
+
+
+def require_system_operator(
+    identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Operational telemetry/control role, separate from business and review authority."""
+    if settings.auth_system_operator_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="system operator role required")
     return identity
 
 
@@ -236,6 +241,16 @@ def require_knowledge_reviewer(
     return identity
 
 
+def require_knowledge_approver(
+    identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Second-person knowledge approval; reviewer or owner roles do not imply it."""
+    if settings.auth_knowledge_approver_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="knowledge approver role required")
+    return identity
+
+
 @lru_cache(maxsize=1)
 def get_contribution_store():
     """Wissens-Beitrag store — Postgres (durable review queue) when database_url set, else in-process."""
@@ -265,7 +280,7 @@ def require_legal_acceptance(
     all. Once enabled: 403 unless a CURRENT (version-matching) acceptance row exists for this
     tenant — a stale acceptance (pre-dating a reviewed text bump) does not count, same doctrine as
     the /acceptance endpoint's own version check. ``settings`` is a Depends param (not a direct
-    ``get_settings()`` call like require_admin/require_manufacturer use) so tests can flip
+    ``get_settings()`` call like the role dependencies use) so tests can flip
     ``legal_gate_enabled`` per-test via ``app.dependency_overrides`` instead of fighting the
     module-level ``lru_cache``."""
     if not settings.legal_gate_enabled:

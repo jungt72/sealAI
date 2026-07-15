@@ -262,6 +262,7 @@ class PostgresMemoryStore:
                 id=item.id,
                 tenant_id=item.tenant_id,
                 owner_subject=item.owner_subject or None,
+                ownership_state="owned",
                 scope=item.scope.value,
                 scope_id=item.scope_id,
                 # Read-path denormalization (Patch 2 design note, extended Patch 9): populated here
@@ -347,7 +348,10 @@ class PostgresMemoryStore:
     ) -> tuple[MemoryItem, ...]:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
-            q = select(V2MemoryItem).where(V2MemoryItem.tenant_id == tenant_id)
+            q = select(V2MemoryItem).where(
+                V2MemoryItem.tenant_id == tenant_id,
+                V2MemoryItem.ownership_state == "owned",
+            )
             if owner_subject:
                 q = q.where(V2MemoryItem.owner_subject == owner_subject)
             if scope is not None:
@@ -365,10 +369,12 @@ class PostgresMemoryStore:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
             status_query = select(V2MemoryItem.status, func.count()).where(
-                V2MemoryItem.tenant_id == tenant_id
+                V2MemoryItem.tenant_id == tenant_id,
+                V2MemoryItem.ownership_state == "owned",
             )
             scope_query = select(V2MemoryItem.scope, func.count()).where(
-                V2MemoryItem.tenant_id == tenant_id
+                V2MemoryItem.tenant_id == tenant_id,
+                V2MemoryItem.ownership_state == "owned",
             )
             if owner_subject:
                 status_query = status_query.where(
@@ -396,6 +402,7 @@ class PostgresMemoryStore:
             if (
                 row is None
                 or row.tenant_id != tenant_id
+                or row.ownership_state != "owned"
                 or (owner_subject and row.owner_subject != owner_subject)
             ):
                 return None
@@ -422,6 +429,7 @@ class PostgresMemoryStore:
             if (
                 row is None
                 or row.tenant_id != tenant_id
+                or row.ownership_state != "owned"
                 or (owner_subject and row.owner_subject != owner_subject)
             ):
                 raise MemoryItemNotFound(item_id)
@@ -467,15 +475,12 @@ class PostgresMemoryStore:
 
 def build_memory_store(settings) -> MemoryStore:
     """The Postgres memory store (durable, cross-session) when ``database_url`` is set, else the
-    in-process store (eval/CI hermetic). Fail-safe: a missing dep / unreachable DB falls back to
-    in-process rather than crashing the API — mirrors ``build_lead_store``."""
+    in-process store (eval/CI hermetic). Once a database URL is configured, adapter failure
+    propagates; production can never fork authority into process memory."""
     if getattr(settings, "database_url", None):
-        try:
-            from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
 
-            return PostgresMemoryStore(
-                make_sessionmaker(make_engine(settings.database_url))
-            )
-        except Exception:  # noqa: BLE001 — fail safe to in-process; never crash on startup
-            pass
+        return PostgresMemoryStore(
+            make_sessionmaker(make_engine(settings.database_url))
+        )
     return InProcessMemoryStore()

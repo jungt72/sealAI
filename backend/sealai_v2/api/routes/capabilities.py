@@ -11,10 +11,11 @@ from pydantic import BaseModel, Field
 from sealai_v2.api.deps import (
     get_capability_store,
     get_settings,
-    require_admin,
+    require_platform_owner,
     require_capability_reviewer,
     require_manufacturer,
 )
+from sealai_v2.api.errors import safe_http_error
 from sealai_v2.config.settings import Settings
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.knowledge.manufacturer_capability import (
@@ -153,13 +154,13 @@ def submit_own_capability(
     try:
         submitted = store.submit(profile, actor=identity.subject, now=now)
     except ManufacturerCapabilityError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "capability_submission_invalid") from exc
     return _profile_dict(submitted)
 
 
 @router.get("/admin/manufacturer-capabilities")
 def list_capabilities(
-    _: VerifiedIdentity = Depends(require_admin),
+    _: VerifiedIdentity = Depends(require_platform_owner),
     store=Depends(get_capability_store),
     settings: Settings = Depends(get_settings),
 ) -> dict:
@@ -195,5 +196,5 @@ def review_capability(
             reviewer_manufacturer_id=identity.hersteller_id,
         )
     except ManufacturerCapabilityError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise safe_http_error(400, "capability_review_invalid") from exc
     return _profile_dict(reviewed)

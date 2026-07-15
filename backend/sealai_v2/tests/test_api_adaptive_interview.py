@@ -76,7 +76,7 @@ def _client(*, reporting_enabled: bool = True) -> TestClient:
     )
     identities = {
         "admin-a": VerifiedIdentity(
-            "tenant-a", "session-a", "admin-a", roles=("admin",)
+            "tenant-a", "session-a", "operator-a", roles=("system_operator",)
         ),
         "user-a": VerifiedIdentity("tenant-a", "session-u", "user-a"),
     }
@@ -94,7 +94,7 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_shadow_summary_requires_admin_and_is_tenant_aggregate_only() -> None:
+def test_shadow_summary_requires_operator_and_is_tenant_aggregate_only() -> None:
     client = _client()
     denied = client.get(
         "/api/v2/admin/adaptive-interview/shadow-summary",

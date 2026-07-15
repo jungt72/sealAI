@@ -336,6 +336,9 @@ def test_all_gated_shell_entrypoints_use_fixed_privileged_bash() -> None:
     privileged_runner = "shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}"
     assert workflow.count(privileged_runner) == 1
     assert "shell: bash" not in workflow
+    assert "BLOCKED_EXTERNAL" in workflow
+    assert "actions/checkout" not in workflow
+    assert "ssh-action" not in workflow
 
 
 def _exported_function_parent_command(child_command: str) -> str:
@@ -430,6 +433,7 @@ def test_privileged_parent_and_real_child_do_not_reimport_exported_git_function(
     shutil.copy2(OPS / "tree-hash.sh", repo / "ops" / "tree-hash.sh")
     for relative in (
         "backend/requirements-v2.txt",
+        "backend/requirements-v2.lock",
         "backend/.dockerignore",
         "backend/Dockerfile.v2",
         "backend/docker-entrypoint-v2.sh",
@@ -512,36 +516,35 @@ def test_release_evidence_and_root_service_shell_boundaries_are_privileged() -> 
         encoding="utf-8"
     )
     privileged_runner = "shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}"
-    assert build_workflow.count(privileged_runner) == 4
+    assert build_workflow.count(privileged_runner) == 3
     assert "shell: bash" not in build_workflow
     assert 'tree_hash="$(/bin/bash -p ops/tree-hash.sh)"' in build_workflow
-    assert "production_release_gate_check" not in build_workflow
-    assert "workflow_dispatch:" in build_workflow
-    trigger_block = build_workflow.split("\npermissions:\n", maxsplit=1)[0]
-    assert "\n  push:\n" not in trigger_block
-    assert "environment:" not in build_workflow
-    assert "WORKFLOW_REF: ${{ github.ref }}" in build_workflow
-    assert "WORKFLOW_SHA: ${{ github.sha }}" in build_workflow
-    assert '"$SOURCE_SHA" == "$WORKFLOW_SHA"' in build_workflow
-    assert "immutable RC only; this build does not lift Gate 10" in build_workflow
-    assert build_workflow.index(
-        "Validate exact source coordinate"
-    ) < build_workflow.index("docker/login-action")
+    build_freeze = build_workflow.index("production_release_gate_check")
+    assert build_freeze < build_workflow.index("docker/build-push-action")
+    assert "docker/login-action" not in build_workflow
+    assert "actions/attest" not in build_workflow
+    assert "id-token: write" not in build_workflow
+    assert "packages: write" not in build_workflow
+    assert "source_sha:" not in build_workflow
+    assert "actions/upload-artifact@" in build_workflow
+    assert "backend-v2.scan-predicate.json" in build_workflow
+    assert "--no-deps" in build_workflow
+    assert "--disable-pip" in build_workflow
+    assert "--strict" in build_workflow
 
     keycloak_workflow = (ROOT / ".github" / "workflows" / "keycloak.yml").read_text(
         encoding="utf-8"
     )
-    assert keycloak_workflow.count(privileged_runner) == 4
+    assert keycloak_workflow.count(privileged_runner) == 2
     assert "shell: bash" not in keycloak_workflow
-    keycloak_freeze = keycloak_workflow.index(
-        "production_release_gate_check", keycloak_workflow.index("publish:")
-    )
-    assert keycloak_freeze < keycloak_workflow.index(
-        "docker/login-action", keycloak_workflow.index("publish:")
-    )
-    assert keycloak_freeze < keycloak_workflow.index(
-        "docker/build-push-action", keycloak_workflow.index("publish:")
-    )
+    keycloak_freeze = keycloak_workflow.index("production_release_gate_check")
+    assert keycloak_freeze < keycloak_workflow.index("docker/build-push-action")
+    assert "docker/login-action" not in keycloak_workflow
+    assert "actions/attest" not in keycloak_workflow
+    assert "id-token: write" not in keycloak_workflow
+    assert "packages: write" not in keycloak_workflow
+    assert "push: true" not in keycloak_workflow
+    assert "BLOCKED_EXTERNAL" in keycloak_workflow
     eval_entrypoint = (
         ROOT / "backend" / "sealai_v2" / "eval" / "__main__.py"
     ).read_text(encoding="utf-8")

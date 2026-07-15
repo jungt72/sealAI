@@ -33,13 +33,123 @@ updates:
       marketing-frontend:
         patterns: ["*"]
 
-  - package-ecosystem: pip
-    directory: /backend
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:35"
+      timezone: Europe/Berlin
+    groups:
+      repository-tooling:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /strapi-backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:40"
+      timezone: Europe/Berlin
+    groups:
+      strapi:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /nginx
     schedule:
       interval: weekly
       day: monday
       time: "05:45"
       timezone: Europe/Berlin
     groups:
+      nginx-node-compat:
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:50"
+      timezone: Europe/Berlin
+    groups:
       backend-python:
         patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /security/tools
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:55"
+      timezone: Europe/Berlin
+    groups:
+      security-control-tools:
+        patterns: ["*"]
+
+  # Digest updates remain reviewable and auditable; the policy gate rejects
+  # updates that replace immutable references with tag-only references.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:05"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:10"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /strapi-backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:15"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /nginx
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:20"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /nginx-certbot
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:25"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /calculix
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: Europe/Berlin
+
+  - package-ecosystem: docker
+    directory: /keycloak
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:35"
+      timezone: Europe/Berlin
