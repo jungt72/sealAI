@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "recorded_at": "2026-07-15T00:18:04Z",
+  "recorded_at": "2026-07-15T00:46:43Z",
   "package": "agent-relay",
   "local_status": "IMPLEMENTED_NOT_DEPLOYED",
-  "baseline_commit": "ea0d8bc2b0dd72f87b5fdedbb48c5d26ebc87704",
+  "baseline_commit": "9321f0960c335ba05c7782bceae09d2c7a91b912",
   "branch": "remediation/agent-relay",
   "build_contract": {
     "status": "JSON_SCHEMA_VALIDATED",
@@ -35,9 +35,15 @@
   "tests": {
     "focused_tests_status": "PASSED",
     "focused_tests_passed": 26,
+    "full_backend_tests_status": "PASSED",
+    "full_backend_tests_collected": 2769,
+    "full_backend_tests_passed": 2767,
+    "full_backend_tests_skipped": 2,
     "ruff_check_status": "PASSED",
     "ruff_format_status": "PASSED",
     "bash_syntax_status": "PASSED",
-    "schema_validation_status": "PASSED"
+    "schema_validation_status": "PASSED",
+    "supply_chain_policy_status": "PASSED",
+    "worktree_secret_scan_status": "PASSED"
   }
 }

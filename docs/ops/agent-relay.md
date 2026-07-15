@@ -21,10 +21,13 @@ dependencies itself.
 Prepare the manual local runtime once, without production credentials:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt -r backend/requirements-dev.txt
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --require-hashes -r backend/requirements-ci.lock
 ```
 
+Use CPython 3.12 or newer, as required by the reviewed CI lock. The lock includes
+the relay's PyYAML, jsonschema, pytest, and Ruff dependencies; the retired
+V1/host requirement snapshots are never installed.
 Dependency installation is a manual workstation action. The relay remains
 `BLOCKED_EXTERNAL` when the interpreter or packages are unavailable.
 

@@ -1,19 +1,40 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-07-15T00:18:04Z",
+  "recorded_at": "2026-07-15T00:46:43Z",
   "status": "PASS",
   "raw_output_persisted": false,
   "dependency_installation_performed": true,
-  "dependency_runtime": "Dedicated ignored Python 3.11 virtualenv with repository-pinned PyYAML 6.0.3, jsonschema 4.10.3, pytest 8.4.2, and Ruff 0.6.9; no production credential or runtime was used.",
+  "dependency_runtime": "Dedicated ignored CPython 3.14.4 virtualenv installed exclusively from backend/requirements-ci.lock with --require-hashes, including jsonschema 4.26.0; pip check passed and no production credential or runtime was used.",
   "provider_calls": 0,
   "production_queries": 0,
   "production_mutations": 0,
   "implementation_diff_scope": {
-    "changed_files_total": 27,
-    "source_and_status_files_in_diff": 17,
+    "changed_files_total": 30,
+    "source_and_status_files_in_diff": 20,
     "self_referential_audit_bundle_files_excluded_from_diff": 10
   },
   "commands": [
+    {
+      "name": "hash-locked-ci-runtime",
+      "status": "PASS",
+      "python": "3.14.4",
+      "lock": "backend/requirements-ci.lock",
+      "require_hashes": true,
+      "pip_check": "PASS"
+    },
+    {
+      "name": "full-backend-pytest",
+      "status": "PASS",
+      "collected": 2769,
+      "passed": 2767,
+      "skipped": 2,
+      "failed": 0,
+      "errors": 0,
+      "scope": [
+        "backend/tests",
+        "backend/sealai_v2/tests"
+      ]
+    },
     {
       "name": "focused-pytest",
       "status": "PASS",
@@ -53,6 +74,11 @@
       "name": "worktree-secret-scan",
       "status": "PASS",
       "scanner": "ops/check-secret-hygiene.py"
+    },
+    {
+      "name": "supply-chain-policy",
+      "status": "PASS",
+      "checker": "ops/supply_chain_gate.py verify"
     },
     {
       "name": "git-diff-check",

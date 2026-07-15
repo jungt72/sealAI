@@ -5,8 +5,8 @@ objective: >-
   Add a fail-closed, read-only Claude contract and diff audit relay plus a
   non-mutating legacy inventory classifier backed only by sanitized local input.
 repository:
-  expected_base_commit: ea0d8bc2b0dd72f87b5fdedbb48c5d26ebc87704
-  base_branch: remediation/p1-auth-cost-control
+  expected_base_commit: 9321f0960c335ba05c7782bceae09d2c7a91b912
+  base_branch: remediation/p2-supply-chain
   allowed_paths:
     - .ai-remediation/schemas/agent-relay-*.schema.json
     - .ai-remediation/schemas/legacy-inventory-*.schema.json
@@ -24,6 +24,9 @@ repository:
     - backend/tests/fixtures/legacy_inventory_*.json
     - backend/tests/test_agent_relay.py
     - backend/tests/test_legacy_inventory.py
+    - backend/requirements-ci.txt
+    - backend/requirements-ci.lock
+    - security/supply-chain-policy.json
 prerequisites:
   release_freeze_respected: true
   production_mutation_authorized: false
@@ -32,6 +35,10 @@ prerequisites:
     - p0-storage-safety
     - p0-redis-stability
     - p1-auth-cost-control
+    - p1-data-authority
+    - p2-disaster-recovery
+    - p2-monitoring-hardening
+    - p2-supply-chain
 claude_audits:
   model: claude-sonnet-4-5-20250929
   allowed_tools: []

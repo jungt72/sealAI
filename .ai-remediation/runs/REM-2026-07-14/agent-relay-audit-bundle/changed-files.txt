@@ -16,6 +16,8 @@
 .ai-remediation/schemas/legacy-inventory-input.schema.json
 .ai-remediation/schemas/legacy-inventory-report.schema.json
 .gitignore
+backend/requirements-ci.lock
+backend/requirements-ci.txt
 backend/tests/fixtures/legacy_inventory_synthetic.json
 backend/tests/test_agent_relay.py
 backend/tests/test_legacy_inventory.py
@@ -25,3 +27,4 @@ ops/agent_relay.py
 ops/contracts/agent-relay-build-contract.yaml
 ops/legacy_inventory.py
 ops/relay.sh
+security/supply-chain-policy.json

@@ -23,9 +23,9 @@
     },
     {
       "input": "backend/requirements-ci.txt",
-      "input_sha256": "e5ee3a878f8004e43df704500e5087f5a5091d7fb301194a6f77d3691792e1a0",
+      "input_sha256": "38bafe0fb670d440de024f52d0c920e2d124dc6323ead1fe4d815d7f24a76505",
       "lock": "backend/requirements-ci.lock",
-      "lock_sha256": "746ff119f08dc7f5eaa129bd549445968f636dd4cef44a11d8f6473435e173d7",
+      "lock_sha256": "10a98b366b0eaeda338f19afbf1d87e1f0fe72428730c8bab51a90d53dd9b6dc",
       "name": "backend-v2-ci"
     },
     {
