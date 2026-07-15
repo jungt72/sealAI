@@ -30,6 +30,9 @@ MANIFEST_PATH = REPO_ROOT / "ops" / "production-release-manifest.json"
 REMEDIATION_APPROVAL_PATH = Path(
     "/etc/sealai/approvals/gate-08-remediation-control.json"
 )
+OPERATIONAL_CONTROL_APPROVAL_PATH = Path(
+    "/etc/sealai/approvals/gate-08-operational-controls.json"
+)
 LIVE_PRODUCTION_REPO = Path("/home/thorsten/sealai")
 GATE10_LIFT_IMPLEMENTED = False
 GATE_DOCUMENT_PATHS = frozenset(
@@ -51,9 +54,11 @@ MUTATING_OPERATIONS = frozenset(
 )
 RECOVERY_OPERATION = "recovery-start-existing"
 REMEDIATION_CONTROL_OPERATION = "remediation-control-install"
+OPERATIONAL_CONTROL_OPERATION = "operational-control-install"
 OPERATIONS = MUTATING_OPERATIONS | {
     RECOVERY_OPERATION,
     REMEDIATION_CONTROL_OPERATION,
+    OPERATIONAL_CONTROL_OPERATION,
 }
 
 REMEDIATION_CONTROL_ARTIFACTS = frozenset(
@@ -65,6 +70,7 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
         "ops/docker-disk-guard.sh",
         "ops/docker_disk_guard.py",
         "ops/gate08_legacy_unit_retirement.py",
+        "ops/hash_verified_python_loader.py",
         "ops/install-disk-guard.sh",
         "ops/production-deploy-remote-entrypoint.sh",
         "ops/production-release-gate-check.sh",
@@ -78,6 +84,39 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
         "ops/tmpfiles/sealai-storage-mutation.conf",
     }
 )
+
+OPERATIONAL_CONTROL_ARTIFACTS = frozenset(
+    {
+        "docs/ops/operational-control-install.md",
+        "docs/ops/p0-operational-gate-unblock.md",
+        "docs/ops/production-release-freeze.md",
+        "ops/bootstrap_gate08_operational_controls.py",
+        "ops/credential_cutover.py",
+        "ops/install-operational-controls.sh",
+        "ops/permission_manifest.py",
+        "ops/production-release-state.json",
+        "ops/production_release_gate.py",
+        "ops/schemas/credential-cutover-approval.schema.json",
+        "ops/schemas/gate08-operational-controls.schema.json",
+        "ops/schemas/permission-manifest.schema.json",
+    }
+)
+OPERATIONAL_CONTROL_TARGETS = {
+    "ops/credential_cutover.py": "/usr/local/libexec/sealai/credential-cutover.py",
+    "ops/permission_manifest.py": "/usr/local/libexec/sealai/permission-manifest.py",
+    "ops/schemas/credential-cutover-approval.schema.json": (
+        "/usr/local/share/sealai/schemas/credential-cutover-approval.schema.json"
+    ),
+    "ops/schemas/permission-manifest.schema.json": (
+        "/usr/local/share/sealai/schemas/permission-manifest.schema.json"
+    ),
+}
+OPERATIONAL_CONTROL_MODES = {
+    "/usr/local/libexec/sealai/credential-cutover.py": "0755",
+    "/usr/local/libexec/sealai/permission-manifest.py": "0755",
+    "/usr/local/share/sealai/schemas/credential-cutover-approval.schema.json": "0644",
+    "/usr/local/share/sealai/schemas/permission-manifest.schema.json": "0644",
+}
 
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -116,6 +155,8 @@ class GateDecision:
     source_git_sha: str | None = None
     approval_id: str | None = None
     artifact_sha256: dict[str, str] | None = None
+    install_targets: dict[str, str] | None = None
+    target_preconditions: dict[str, dict[str, object]] | None = None
 
     def as_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -131,6 +172,10 @@ class GateDecision:
             value["approval_id"] = self.approval_id
         if self.artifact_sha256 is not None:
             value["artifact_sha256"] = self.artifact_sha256
+        if self.install_targets is not None:
+            value["install_targets"] = self.install_targets
+        if self.target_preconditions is not None:
+            value["target_preconditions"] = self.target_preconditions
         return value
 
 
@@ -614,6 +659,137 @@ def _validate_remediation_control_approval(
     )
 
 
+def _validate_operational_target_preconditions(
+    value: Any,
+) -> dict[str, dict[str, object]]:
+    preconditions = _require_mapping(value, "target_preconditions")
+    expected_targets = set(OPERATIONAL_CONTROL_TARGETS.values())
+    if set(preconditions) != expected_targets:
+        raise GateConfigurationError("operational target precondition set is not exact")
+    normalized: dict[str, dict[str, object]] = {}
+    for target in sorted(expected_targets):
+        item = _require_mapping(preconditions.get(target), "target precondition")
+        if item.get("state") == "ABSENT":
+            _require_exact_keys(item, {"state"}, "absent target precondition")
+        elif item.get("state") == "PRESENT":
+            _require_exact_keys(
+                item,
+                {"state", "type", "sha256", "uid", "gid", "mode"},
+                "present target precondition",
+            )
+            if (
+                item.get("type") != "file"
+                or item.get("uid") != 0
+                or item.get("gid") != 0
+                or item.get("mode") != OPERATIONAL_CONTROL_MODES[target]
+                or not isinstance(item.get("sha256"), str)
+                or not SHA256_RE.fullmatch(str(item["sha256"]))
+            ):
+                raise GateConfigurationError(
+                    "present operational target precondition is unsafe"
+                )
+        else:
+            raise GateConfigurationError("operational target state is invalid")
+        normalized[target] = dict(item)
+    return normalized
+
+
+def _validate_operational_control_approval(
+    approval_path: Path, *, require_versioned: bool
+) -> tuple[
+    str,
+    str,
+    dict[str, str],
+    dict[str, str],
+    dict[str, dict[str, object]],
+]:
+    if REPO_ROOT.resolve() == LIVE_PRODUCTION_REPO:
+        raise GateConfigurationError(
+            "operational control install must run from a non-live root-owned checkout"
+        )
+    if require_versioned:
+        _assert_root_checkout()
+        _assert_trusted_path(approval_path, leaf_directory=False, root_only=True)
+    approval, _ = _load_private_json(approval_path)
+    _require_exact_keys(
+        approval,
+        {
+            "schema_version",
+            "gate_id",
+            "operation",
+            "decision",
+            "scope",
+            "approval_id",
+            "owner",
+            "approved_at",
+            "expires_at",
+            "source_git_sha",
+            "artifact_sha256",
+            "install_targets",
+            "target_preconditions",
+        },
+        "GATE-08 operational controls approval",
+    )
+    if (
+        approval.get("schema_version") != 1
+        or approval.get("gate_id") != "GATE-08"
+        or approval.get("operation") != OPERATIONAL_CONTROL_OPERATION
+        or approval.get("decision") != "APPROVED"
+        or approval.get("scope") != "p0-operational-control-install"
+    ):
+        raise GateConfigurationError(
+            "approval does not authorize operational control install"
+        )
+    approval_id = _require_nonempty(approval.get("approval_id"), "approval_id")
+    _require_nonempty(approval.get("owner"), "owner")
+    approved_at = _parse_utc_timestamp(approval.get("approved_at"), "approved_at")
+    expires_at = _parse_utc_timestamp(approval.get("expires_at"), "expires_at")
+    now = dt.datetime.now(dt.timezone.utc)
+    if approved_at > now + dt.timedelta(minutes=5):
+        raise GateConfigurationError("operational approval is future-dated")
+    if expires_at <= now or expires_at > approved_at + dt.timedelta(hours=4):
+        raise GateConfigurationError("operational approval is expired or over-broad")
+
+    source_git_sha = str(approval.get("source_git_sha", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", source_git_sha):
+        raise GateConfigurationError("operational approval source commit is invalid")
+    if source_git_sha != _git("rev-parse", "HEAD").strip():
+        raise GateConfigurationError("operational approval is bound to another commit")
+
+    install_targets = _require_mapping(
+        approval.get("install_targets"), "install_targets"
+    )
+    if install_targets != OPERATIONAL_CONTROL_TARGETS:
+        raise GateConfigurationError("operational install target set is not exact")
+    preconditions = _validate_operational_target_preconditions(
+        approval.get("target_preconditions")
+    )
+    artifact_hashes = _require_mapping(
+        approval.get("artifact_sha256"), "artifact_sha256"
+    )
+    if set(artifact_hashes) != OPERATIONAL_CONTROL_ARTIFACTS:
+        raise GateConfigurationError("operational approval artifact set is not exact")
+    normalized_hashes: dict[str, str] = {}
+    for relative_path in sorted(OPERATIONAL_CONTROL_ARTIFACTS):
+        expected = artifact_hashes.get(relative_path)
+        if not isinstance(expected, str) or not SHA256_RE.fullmatch(expected):
+            raise GateConfigurationError("operational artifact hash is invalid")
+        if require_versioned:
+            _assert_committed_versioned(REPO_ROOT / relative_path)
+        if expected != _artifact_sha256(relative_path):
+            raise GateConfigurationError("operational control artifact hash mismatch")
+        normalized_hashes[relative_path] = expected
+    if require_versioned:
+        _assert_clean_checkout()
+    return (
+        approval_id,
+        source_git_sha,
+        normalized_hashes,
+        dict(OPERATIONAL_CONTROL_TARGETS),
+        preconditions,
+    )
+
+
 def _assert_two_commit_binding(manifest: dict[str, Any]) -> str:
     lineage = _git("rev-list", "--parents", "-n", "1", "HEAD").strip().split()
     if len(lineage) != 2:
@@ -655,6 +831,7 @@ def evaluate(
     approval_path: Path = APPROVAL_PATH,
     manifest_path: Path = MANIFEST_PATH,
     remediation_approval_path: Path = REMEDIATION_APPROVAL_PATH,
+    operational_approval_path: Path = OPERATIONAL_CONTROL_APPROVAL_PATH,
     require_versioned: bool = True,
 ) -> GateDecision:
     if operation not in OPERATIONS:
@@ -689,6 +866,29 @@ def evaluate(
                 source_git_sha,
                 approval_id,
                 artifact_hashes,
+            )
+        if operation == OPERATIONAL_CONTROL_OPERATION:
+            (
+                approval_id,
+                source_git_sha,
+                artifact_hashes,
+                install_targets,
+                target_preconditions,
+            ) = _validate_operational_control_approval(
+                operational_approval_path,
+                require_versioned=require_versioned,
+            )
+            return GateDecision(
+                True,
+                operation,
+                "gate08_hash_bound_operational_control_install",
+                state_id,
+                "GATE-08",
+                source_git_sha,
+                approval_id,
+                artifact_hashes,
+                install_targets,
+                target_preconditions,
             )
         raise GateDenied("production release freeze is active")
 
@@ -732,6 +932,7 @@ def _status_document() -> dict[str, object]:
         "mutating_operations": sorted(MUTATING_OPERATIONS),
         "freeze_recovery_operation": RECOVERY_OPERATION,
         "freeze_remediation_operation": REMEDIATION_CONTROL_OPERATION,
+        "freeze_operational_control_operation": OPERATIONAL_CONTROL_OPERATION,
     }
 
 

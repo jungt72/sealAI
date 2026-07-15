@@ -537,6 +537,7 @@ def test_permission_and_approval_schemas_compile():
         OPS / "schemas/permission-manifest.schema.json",
         OPS / "schemas/credential-cutover-approval.schema.json",
         OPS / "schemas/gate08-legacy-units.schema.json",
+        OPS / "schemas/gate08-operational-controls.schema.json",
     ):
         jsonschema.Draft202012Validator.check_schema(json.loads(path.read_text()))
 
@@ -551,7 +552,9 @@ def test_tls_d0_is_public_identifier_only_and_subgates_are_separate():
         "GATE-01D3",
         "GATE-01D4",
         "GATE-02D",
+        "GATE-02E",
     }
+    assert "GATE-02E" in permissions.BATCHES
     assert gates["GATE-01D0"]["mutation"] is False
     assert "private_key_bytes" in gates["GATE-01D0"]["forbidden_inputs"]
     assert gates["GATE-01D4"]["required_predecessors"] == ["GATE-01D0", "GATE-01D3"]

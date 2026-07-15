@@ -25,12 +25,13 @@ checkout and requires a separately installed root-owned fixed control path.
 
 ## GATE-02 object-exact permissions
 
-`ops/permission_manifest.py` supports four separate batches:
+`ops/permission_manifest.py` supports five separate batches:
 
 - `GATE-02A`: environment and rollback files;
 - `GATE-02B`: backup and runtime artifacts;
 - `GATE-02C`: key and ACME artifacts before live cutover;
 - `GATE-02D`: newly issued live TLS and ACME material.
+- `GATE-02E`: explicitly listed existing live TLS and ACME material.
 
 Generation requires an explicit JSON list. There are no globs or directory
 walks. Each object is bound to path, type, device, inode, owner, group, mode,
@@ -42,6 +43,26 @@ private rollback manifest first, then uses descriptor-bound owner and mode
 changes. No production manifest is checked in by this change.
 The manifest binds the control SHA-256, and apply likewise refuses to run from
 a checkout. Installation of that root-owned fixed control is a separate gate.
+
+GATE-02E does not reinterpret GATE-02D. Every GATE-02E object additionally
+binds its lineage, Certbot and Nginx consumer relationship, renewal
+configuration path, material kind, and public certificate fingerprint. A
+private-key object is opened write-only and is bound only by path, type,
+device, inode, owner, group, and mode; its bytes are never read or hashed.
+Every lineage must contain an explicitly listed public certificate, private
+key, and renewal configuration. Apply writes rollback evidence before the
+first descriptor-bound permission change and automatically restores the
+complete batch after a partial failure. It never walks a directory, reloads
+Nginx, invokes Certbot, or accepts a glob.
+
+## Root-owned operational controls
+
+The separate `operational-control-install` operation is described in
+`docs/ops/operational-control-install.md`. It installs only the two GATE-01/
+GATE-02 programs and their two schemas at fixed root-owned paths. The GATE-08
+approval binds the exact commit, complete artifact set, hashes, target paths,
+and pre-existing target fingerprints. It does not authorize any application,
+container, release, or systemd action.
 
 ## GATE-08 legacy unit retirement
 

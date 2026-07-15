@@ -73,14 +73,29 @@ compatibility build because it creates no production artifact.
 
 ## Narrow GATE-08 bootstrap exception
 
-The only mutating operation accepted while the normal release freeze remains
-active is `remediation-control-install`. It exists solely to install and start
-the non-destructive disk guard without first pretending that
+Two narrow hash-bound GATE-08 install operations are accepted while the normal
+release freeze remains active. `remediation-control-install` exists solely to install
+and start the non-destructive disk guard without first pretending that
 `P0_STORAGE_STABLE` is already true. It requires the fixed root-owned file
 `/etc/sealai/approvals/gate-08-remediation-control.json` with mode `0600` and an
 expiry no later than four hours after approval. Every receipt-path ancestor
 must also be a root-owned, non-group/other-writable real directory; symlinks are
 rejected.
+
+The exact remediation artifact set includes
+`ops/hash_verified_python_loader.py`. The remediation installer copies it from
+its already hash-verified private stage to
+`/usr/local/libexec/sealai/hash-verified-python-loader.py` as `root:root 0755`
+and verifies the installed SHA-256. This fixed loader is the only permitted
+pre-execution boundary for the later operational-control bootstrap.
+
+The separate `operational-control-install` operation installs only the two
+already reviewed GATE-01/GATE-02 programs and their schemas at four fixed
+root-owned paths. It uses
+`/etc/sealai/approvals/gate-08-operational-controls.json`, binds existing target
+fingerprints, and cannot run a build, pull, deployment, migration, dashboard
+publish, container action, or systemd action. Its exact contract and rollback
+model are documented in `docs/ops/operational-control-install.md`.
 
 The receipt has an exact schema:
 
