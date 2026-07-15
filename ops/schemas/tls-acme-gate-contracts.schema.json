@@ -9,14 +9,14 @@
     "contract_id": {"const": "p0-tls-acme-gates-v1"},
     "gates": {
       "type": "array",
-      "minItems": 6,
-      "maxItems": 6,
+      "minItems": 7,
+      "maxItems": 7,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["gate_id", "operation", "mutation", "allowed_identifiers", "forbidden_inputs", "required_predecessors"],
         "properties": {
-          "gate_id": {"enum": ["GATE-01D0", "GATE-01D1", "GATE-01D2", "GATE-01D3", "GATE-01D4", "GATE-02D"]},
+          "gate_id": {"enum": ["GATE-01D0", "GATE-01D1", "GATE-01D2", "GATE-01D3", "GATE-01D4", "GATE-02D", "GATE-02E"]},
           "operation": {"type": "string", "minLength": 1},
           "mutation": {"type": "boolean"},
           "allowed_identifiers": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},

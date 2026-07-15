@@ -56,6 +56,14 @@
       "allowed_identifiers": ["public_key_fingerprint", "certificate_serial_number", "lineage"],
       "forbidden_inputs": ["recursive_permission_change", "symlink_target"],
       "required_predecessors": ["GATE-01D1"]
+    },
+    {
+      "gate_id": "GATE-02E",
+      "operation": "harden-existing-live-tls-acme-material",
+      "mutation": true,
+      "allowed_identifiers": ["public_key_fingerprint", "lineage", "device", "inode", "uid", "gid", "mode"],
+      "forbidden_inputs": ["private_key_bytes", "recursive_permission_change", "symlink_target", "unmanifested_object"],
+      "required_predecessors": ["GATE-01D0"]
     }
   ]
 }
