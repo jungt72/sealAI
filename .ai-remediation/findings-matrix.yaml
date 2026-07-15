@@ -453,13 +453,17 @@ findings:
       - Added an immutable manifest-v2 full-recovery set covering Postgres, Qdrant, uploads, documents, configuration, and secret-recovery identifiers without secret values; every file binds its actual mtime_ns alongside path, size, mode, and digest.
       - Added provider-neutral Restic transport with no inherited credential environment, short manifest-bound Gate-08 approvals, dry-run-only retention, non-authoritative local observations, and externally attested full-download receipt requirements.
       - Added a dedicated internal-network restore runner for Postgres integrity, Qdrant checksum/point/tenant invariants, file verification, fail-closed local RPO/RTO observations, and monthly scheduling.
-      - Manifest and local-evidence creation reject actual payload mtimes outside RPO even when recovery-point timestamps are freshly self-declared; local writers can emit only LOCAL_EVIDENCE_ONLY and local verifiers always require a future trusted external receipt importer.
+      - Manifest and local-evidence creation reject actual payload mtimes outside RPO even when recovery-point timestamps are freshly self-declared; local writers can emit only LOCAL_EVIDENCE_ONLY.
       - The restore runner verifies a short-lived Gate-08 receipt bound to the exact set and snapshot identifier before any full-data read, then rebinds it to the restored manifest before containers start.
+      - Added a verification-only DSSE importer with no signer/private-key path, at-least-two-key Ed25519 role thresholds, exclusive private replay-resistant storage, active-policy re-verification on every use, and exact file-backup, DR-set, restore-run, and rebuild-approval subjects.
+      - Wired dr_recovery receipt verification to consume only already-imported trust-root-valid records whose manifest, set, snapshot, Gate-08 approval, and local-evidence digest exactly match; local evidence alone still blocks.
+      - Added a canonical repeatable-read/read-only Postgres snapshot and candidate-only Qdrant rebuild using the live knowledge/memory projection builders, exact IDs/payloads/tenant/vector/source contracts, signed plan approval, single-use journal, and no alias/delete/cutover operation.
     tests:
       - Capacity stop conditions, descriptor and inode binding, poisoned environment and shell functions, no-clobber publication, retention, checksum, offsite receipt, Qdrant deletion, and restore-response tests.
-      - Empty-host execution against real offsite data remains blocked on external storage, key custody, a dedicated runner, P1-D rebuild authority, and Gate-08.
+      - Empty-host execution against real offsite data remains blocked on external storage, key custody, a dedicated runner, an approved real embedding adapter, and Gate-08.
       - Adversarial manifest-mtime, non-elevating local evidence, secret-inventory, Qdrant-plan, metrics, and isolated-runner contract tests.
-      - Stale payload/recovery-point evidence, forged VERIFIED status/provenance, missing-component metric, pre-download gate-order, set/snapshot mismatch, and missing-snapshot-binding regressions; 95 combined backup/DR tests passed.
+      - Stale payload/recovery-point evidence, forged VERIFIED status/provenance, missing-component metric, pre-download gate-order, set/snapshot mismatch, and missing-snapshot-binding regressions remain covered.
+      - Threshold/role/key/policy/replay/tamper tests, imported-receipt-to-local-evidence integration, and deterministic candidate rebuild tests run locally: 110 focused backup/receipt/recovery/rebuild tests passed with one explicit ephemeral-Postgres skip; 42 shared projection/persistence and 34 outbox regressions also passed.
     production_action_required: true
     approval_gate: GATE-08
     rollback: Add offsite copies without reducing local retention until two successful restore drills.
@@ -467,12 +471,14 @@ findings:
       - docs/runbooks/backup-storage-safety.md
       - ops/RESTORE.md
       - ops/dr_recovery.py
+      - ops/dr_receipts.py
       - ops/dr_offsite.sh
       - ops/dr_restore_drill.sh
       - ops/dr/restore-compose.yml
+      - backend/sealai_v2/knowledge/qdrant_rebuild.py
       - docs/runbooks/disaster-recovery.md
       - Local backup safety tests passed; no production backup, deletion, offsite transfer, or restore was executed.
-    residual_risk: Host or volume loss can destroy production and all local recovery material until external storage/key custody and two isolated drills are configured under Gate-08; Postgres-only Qdrant rebuild remains blocked on P1-D.
+    residual_risk: Host or volume loss can destroy production and all local recovery material until external storage/key custody, signer trust roots, and two isolated drills are configured under Gate-08. The canonical rebuild is implemented only for isolated candidates; real embedding-provider approval, live tenant/source evidence, an independently reviewed cutover, and production deployment remain blocked.
 
   - finding_id: OBS-001
     title: Production monitoring is stopped, stale, and lacks alert routing

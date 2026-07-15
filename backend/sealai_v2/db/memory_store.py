@@ -118,6 +118,23 @@ def _outbox_payload(item: MemoryItem) -> dict:
     }
 
 
+def memory_row_projection_payload(row: V2MemoryItem) -> dict:
+    """Canonical live-row projection used by an isolated Postgres rebuild snapshot."""
+
+    return {
+        "id": row.id,
+        "tenant_id": row.tenant_id,
+        "owner_subject": row.owner_subject or "",
+        "scope": row.scope,
+        "scope_id": row.scope_id,
+        "status": row.status,
+        "version": row.version,
+        "type": row.type,
+        "semantic_key": row.semantic_key,
+        "content": row.content,
+    }
+
+
 class MemoryStore(Protocol):
     def create_candidate(self, item: MemoryItem) -> MemoryItem: ...
     def list_items(

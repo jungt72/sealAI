@@ -72,6 +72,35 @@ class DrainResult:
     failed_permanently: int
 
 
+def memory_qdrant_payload(payload: dict) -> dict:
+    """Strip embedding-only content while retaining the exact tenant/owner boundary."""
+
+    return {
+        "tenant_id": payload.get("tenant_id"),
+        "owner_subject": payload.get("owner_subject"),
+        "scope": payload.get("scope"),
+        "scope_id": payload.get("scope_id"),
+        "status": payload.get("status"),
+        "version": payload.get("version"),
+        "type": payload.get("type"),
+        "semantic_key": payload.get("semantic_key"),
+    }
+
+
+def build_memory_projection_point(
+    *, point_id: str, payload: dict, dense_vector: list[float]
+):
+    """Build the one canonical memory point shape for live sync and DR rebuilds."""
+
+    from qdrant_client.models import PointStruct
+
+    return PointStruct(
+        id=point_id,
+        vector={_DENSE: dense_vector},
+        payload=memory_qdrant_payload(payload),
+    )
+
+
 def _make_memory_embedder(settings):
     # Reuses the SAME embedder factory as Fachkarten retrieval (OpenAI text-embedding-3-small by
     # default — RAM-safe, no local model) — deliberately NOT a separate embedding config surface for
@@ -283,27 +312,16 @@ def drain_outbox(
                     ):
                         failed_permanently += 1
             else:
-                from qdrant_client.models import PointStruct
-
                 for row, payload, vector in zip(upsert_rows, payloads, vectors):
                     point_id = payload.get("id", row.memory_item_id)
                     try:
                         qdrant_client.upsert(
                             collection,
                             points=[
-                                PointStruct(
-                                    id=point_id,
-                                    vector={_DENSE: vector.tolist()},
-                                    payload={
-                                        "tenant_id": payload.get("tenant_id"),
-                                        "owner_subject": payload.get("owner_subject"),
-                                        "scope": payload.get("scope"),
-                                        "scope_id": payload.get("scope_id"),
-                                        "status": payload.get("status"),
-                                        "version": payload.get("version"),
-                                        "type": payload.get("type"),
-                                        "semantic_key": payload.get("semantic_key"),
-                                    },
+                                build_memory_projection_point(
+                                    point_id=point_id,
+                                    dense_vector=vector.tolist(),
+                                    payload=payload,
                                 )
                             ],
                         )

@@ -33,6 +33,19 @@ class KnowledgeDrainResult:
     failed_permanently: int
 
 
+def build_knowledge_projection_point(
+    *, claim_id: str, payload: dict, dense_vector: list[float], sparse_vector=None
+):
+    """Build the one canonical knowledge point shape for live sync and DR rebuilds."""
+
+    from qdrant_client.models import PointStruct
+
+    vectors: dict = {_DENSE: dense_vector}
+    if sparse_vector is not None:
+        vectors["sparse"] = sparse_vector
+    return PointStruct(id=claim_id, vector=vectors, payload=payload)
+
+
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -217,7 +230,7 @@ def drain_knowledge_outbox(
                         wait=True,
                     )
                 else:
-                    from qdrant_client.models import PointStruct, SparseVector
+                    from qdrant_client.models import SparseVector
 
                     payloads = [dict(row.payload or {}) for row in effective_rows]
                     claim_texts = tuple(
@@ -272,16 +285,17 @@ def drain_knowledge_outbox(
                     for index, (row, payload, dense_vector) in enumerate(
                         zip(effective_rows, payloads, dense)
                     ):
-                        vectors: dict = {_DENSE: dense_vector.tolist()}
+                        sparse_vector = None
                         if sparse is not None:
-                            vectors["sparse"] = SparseVector(
+                            sparse_vector = SparseVector(
                                 indices=sparse[index].indices.tolist(),
                                 values=sparse[index].values.tolist(),
                             )
                         points.append(
-                            PointStruct(
-                                id=row.claim_id,
-                                vector=vectors,
+                            build_knowledge_projection_point(
+                                claim_id=row.claim_id,
+                                dense_vector=dense_vector.tolist(),
+                                sparse_vector=sparse_vector,
                                 payload=payload,
                             )
                         )

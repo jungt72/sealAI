@@ -352,7 +352,10 @@ def _claim_scope(card, claim) -> dict:
     }
 
 
-def _claim_payload(row: V2KnowledgeClaim, document: V2KnowledgeDocument) -> dict:
+def claim_projection_payload(
+    row: V2KnowledgeClaim, document: V2KnowledgeDocument
+) -> dict:
+    """Canonical Postgres-to-Qdrant payload shared by live outbox and DR rebuilds."""
     scope = dict(row.scope_json or {})
     answer_facets = list(scope.pop("_answer_facets", ()) or ())
     subject_type = str(scope.pop("_subject_type", "general") or "general")
@@ -409,7 +412,7 @@ def _enqueue(
             tenant_id=row.tenant_id,
             event_type=event_type,
             payload=(
-                _claim_payload(row, document)
+                claim_projection_payload(row, document)
                 if event_type == "upsert" and document is not None
                 else {"claim_id": row.id}
             ),
@@ -796,7 +799,7 @@ class PostgresKnowledgeLedger:
                 ).all()
             }
             return {
-                row.id: _claim_payload(row, documents[row.document_id])
+                row.id: claim_projection_payload(row, documents[row.document_id])
                 for row in rows
                 if row.document_id in documents
                 and (row.review_status == "draft" or _approved_claim_is_current(row))
@@ -829,7 +832,7 @@ class PostgresKnowledgeLedger:
                 ).all()
             }
             return tuple(
-                _claim_payload(row, documents[row.document_id])
+                claim_projection_payload(row, documents[row.document_id])
                 for row in rows
                 if row.document_id in documents
             )
@@ -930,7 +933,7 @@ class PostgresKnowledgeLedger:
                 )
             if previous == to_status and not metadata_change:
                 document = session.get(V2KnowledgeDocument, row.document_id)
-                return _claim_payload(row, document)
+                return claim_projection_payload(row, document)
             row.review_status = to_status
             row.active = to_status != "rejected"
             row.version += 1
@@ -977,7 +980,7 @@ class PostgresKnowledgeLedger:
             )
             bump_authority_epoch(session, now=now)
             session.commit()
-            return _claim_payload(row, document)
+            return claim_projection_payload(row, document)
 
     def retire_card(
         self,

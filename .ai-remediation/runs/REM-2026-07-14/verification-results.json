@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T23:27:00Z",
+  "updated_at": "2026-07-15T01:40:56Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -146,13 +146,23 @@
       "check_id": "P2-DR-LOCAL-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "Manifest v2 now binds actual file mtime_ns and rejects stale payload even behind freshly self-declared recovery timestamps; Gate-08-bound writers emit only non-authoritative LOCAL_EVIDENCE_ONLY and local verifiers cannot elevate OFFSITE_VERIFIED or RESTORE_VERIFIED without a future trusted external importer. Twenty-seven adversarial DR tests plus 68 existing backup tests, Ruff, Bash syntax, secret scanning, structured-file parsing, and diff checks passed locally. No Restic binary, systemd runtime, Docker daemon, external repository, real recovery material, Gate-08 receipt, cryptographic receipt trust root/importer, or P1-D rebuild command was available; no external check, restore, or authoritative receipt is claimed."
+      "summary": "Manifest v2 and Gate-08-bound writers remain non-authoritative LOCAL_EVIDENCE_ONLY. A verification-only threshold-signed DSSE importer now re-verifies active policy and signatures on every use, and dr_recovery consumes only imported records with exact manifest/set/snapshot/Gate/local-evidence binding. A canonical repeatable-read Postgres plan can build and verify isolated run-specific Qdrant candidates using the live projection builders, but exposes no alias/delete/cutover path. The final local run passed 110 focused backup/receipt/recovery/rebuild tests with one explicit ephemeral-Postgres skip, 42 shared projection/persistence tests, and 34 outbox regressions with an in-memory model stub; Ruff, Python/Bash syntax, structured-file parsing, secret scanning, and diff checks passed. No external system, signer, provider, restore, production trust root/import, deployment, or authoritative receipt was used or claimed.",
+      "evidence": [
+        "ops/dr_receipts.py",
+        "ops/dr_recovery.py",
+        "ops/backup_safety.py",
+        "backend/sealai_v2/knowledge/qdrant_rebuild.py",
+        "backend/tests/test_dr_receipts.py",
+        "backend/tests/test_dr_recovery.py",
+        "backend/sealai_v2/tests/test_qdrant_rebuild.py",
+        "docs/runbooks/disaster-recovery.md"
+      ]
     },
     {
       "check_id": "P2-DR-EXTERNAL-001",
       "scope": "external_attestation",
       "status": "BLOCKED_EXTERNAL",
-      "summary": "Authoritative off-site backup and restore verification requires Gate 08, real recovery material, an independent repository, and a cryptographically trusted external receipt importer. None was authorized or available, so local evidence cannot satisfy this check."
+      "summary": "The verification/import/consumption path now exists locally, but authoritative off-site backup and restore status still requires Gate 08, real recovery material, an independent encrypted repository, provisioned public-key policy, independently held signer keys and attestors, actual threshold-signed envelopes, two isolated full restores, and external status publication. None was authorized or available, so this check remains blocked and local evidence cannot satisfy it."
     },
     {
       "check_id": "P1-AUTHORITY-EPOCH-001",

@@ -8,8 +8,10 @@ network change. No production or external system was touched while implementing 
 
 The repository now defines a fail-closed recovery-set manifest, encrypted provider-neutral offsite
 transport through Restic, a dedicated isolated restore runner, non-authoritative local evidence,
-monthly systemd scheduling, and stable monitoring metrics. It deliberately cannot create or accept
-an `OFFSITE_VERIFIED` or `RESTORE_VERIFIED` receipt. The following items remain `BLOCKED_EXTERNAL`:
+monthly systemd scheduling, stable monitoring metrics, a verification-only threshold-signed DSSE
+receipt importer, and a candidate-only canonical Postgres-to-Qdrant rebuild. It cannot sign a
+receipt, perform independent attestation, call a real embedding provider from the repository CLI,
+or mutate a production collection. The following items remain `BLOCKED_EXTERNAL`:
 
 - a dedicated encrypted recovery runner and its Docker daemon;
 - an approved versioned/immutable Restic repository, verified TLS, least-privilege access, and the
@@ -17,13 +19,13 @@ an `OFFSITE_VERIFIED` or `RESTORE_VERIFIED` receipt. The following items remain 
 - offline escrow for the repository password/key version and actual secret-recovery authorities;
 - sanitized real Postgres/Qdrant/upload/document recovery material;
 - immutable digest-pinned Postgres, Qdrant, and verifier images preloaded on the recovery runner;
-- a Gate-08-approved cryptographic receipt trust root, independent external attestor, and exact
-  manifest/payload/run-bound receipt importer;
+- a Gate-08-approved cryptographic receipt trust root, independently held attestor/approver signing
+  keys, and actual external receipt production;
 - two successful isolated full restores and import of their receipts;
 - installation/activation under an exact `GATE-08` approval; and
-- the P1-D canonical Postgres-to-Qdrant rebuild command and tenant-count inventory. Until P1-D
-  lands, the automated Qdrant leg supports only checksum-bound snapshots. It must not claim that a
-  Postgres-only rebuild has been proven.
+- an approved real embedding adapter/model identity, live tenant-count inventory, and a separately
+  reviewed cutover mechanism. The implemented rebuild creates and verifies isolated run-specific
+  candidates only; it contains no alias, rename, delete, or production cutover operation.
 
 ## Recovery authority and asset inventory
 
@@ -34,7 +36,7 @@ silently promoted to a DR system of record.
 | Component | Recovery source | Target RPO | Target RTO | Required proof |
 | --- | --- | ---: | ---: | --- |
 | Postgres, including V2 ledger and Keycloak/Strapi DBs on that instance | verified `pg_dumpall` plus P0 SHA-256 sidecar | 24 h | 4 h | isolated restore, non-empty V2 schema, `pg_amcheck` |
-| Qdrant knowledge and memory collections | verified snapshots; canonical rebuild from Postgres after P1-D | 24 h | 8 h | checksum, exact point count, tenant-count digest, no duplicate IDs |
+| Qdrant knowledge and memory collections | verified snapshots or candidate-only canonical rebuild from Postgres | 24 h | 8 h | source fingerprint, authority epoch, exact IDs/payloads/vector dimensions, tenant-count digest, no production mutation |
 | Strapi uploads | read-only export of `sealai_strapi_uploads` | 24 h | 8 h | manifest byte/file verification |
 | Paperless documents | read-only export of `data`, `media`, `export`, and `consume` | 24 h | 8 h | manifest byte/file verification |
 | Runtime configuration | clean exact Git tree allowlist plus immutable image digests | one release | 2 h | source commit and file-manifest match |
@@ -125,14 +127,72 @@ Upload success is deliberately reported as `backup_uploaded_unverified`. It is n
 evidence. The repository writer can record only `LOCAL_EVIDENCE_ONLY` with
 `authoritative=false` and provenance `LOCAL_UNATTESTED`. That record binds the manifest, set,
 snapshot, actual payload mtimes, and exact Gate-08 receipt/approval hashes, but it cannot be renamed,
-edited, or revalidated into an authoritative receipt. Both repository receipt-verifier commands
-terminate with `external_receipt_required` after validating local structure.
+edited, or revalidated into an authoritative receipt. The two `dr_recovery.py` verifier commands
+terminate with `external_receipt_required` unless a separate imported record and active policy are
+supplied; local evidence is deliberately never a trust root.
 
-A future valid `OFFSITE_VERIFIED` receipt requires a separately Gate-08-approved cryptographic trust
-root, an independent external attestor that observed `restic check --read-data`, full restore,
-authenticated decryption, and byte-for-byte manifest verification, plus an exact
-manifest/payload/run-bound importer. None exists or ran in this remediation. Upload responses,
-object existence, ETags, partial reads, local JSON, and provider dashboards are insufficient.
+`ops/dr_receipts.py` is the separate external trust boundary. It has no signer and accepts only
+canonical DSSE envelopes meeting an active, unexpired Ed25519 policy with at least two distinct
+role keys. Import is exclusive into a private store and every later consumption re-verifies the
+embedded signatures under the current policy. The repository implementation was exercised only
+with ephemeral test keys; no production trust root, signer, envelope, or import exists.
+
+A real `OFFSITE_VERIFIED` decision still requires an independent external attestor that observed
+`restic check --read-data`, full restore, authenticated decryption, and byte-for-byte manifest
+verification. The file-level `offsite_backup` receipt currently consumed by P0 retention binds an
+exact backup filename/plaintext digest, complete downloaded-ciphertext digest, object/version hash,
+and encryption-key-version hash. The DR-set `dr_offsite_set` subject additionally binds the exact
+manifest, set, Restic snapshot, Gate-08 approval, repository/key identifiers, and SHA-256 of the
+local evidence file. Upload responses, object existence, ETags, partial reads, local JSON, and
+provider dashboards are insufficient.
+
+### Authoritative receipt import and consumption
+
+Provision one reviewed public-key policy at `/etc/sealai/dr/receipt-trust-policy.json` and a private
+mode-`0700` import store. Private signer keys must not exist on the VPS or recovery runner. After the
+external attestors return a canonical envelope through the approved channel, import it exactly
+once:
+
+```bash
+/usr/bin/python3 -I /usr/local/libexec/sealai/dr_receipts.py import \
+  --envelope /secure/incoming/<offsite-envelope>.dsse.json \
+  --policy /etc/sealai/dr/receipt-trust-policy.json \
+  --kind dr_offsite_set --store /var/lib/sealai-dr/imported-receipts
+
+/usr/bin/python3 -I /usr/local/libexec/sealai/dr_receipts.py import \
+  --envelope /secure/incoming/<restore-envelope>.dsse.json \
+  --policy /etc/sealai/dr/receipt-trust-policy.json \
+  --kind restore_drill --store /var/lib/sealai-dr/imported-receipts
+```
+
+Import does not itself mark a drill successful. Consume the imported record through the wrapper
+that first revalidates the local evidence and Gate-08 provenance, then re-verifies the DSSE and
+requires exact subject equality:
+
+Retain the exact root-private Gate-08 receipt referenced by each local evidence record in immutable
+drill evidence storage. Recreating or overwriting `/run/sealai-gates/gate-08-dr.json` cannot satisfy
+the later wrapper because its approval digest must still match byte-for-byte.
+
+```bash
+/usr/bin/python3 -I /usr/local/libexec/sealai/dr_recovery.py verify-offsite-receipt \
+  --root /var/lib/sealai-dr/drills/<drill>/var/lib/sealai-dr/sets/<set-id> \
+  --receipt /var/lib/sealai-dr/receipts/<set-id>/<offsite-local-evidence>.json \
+  --gate-receipt /run/sealai-gates/gate-08-dr.json \
+  --imported-receipt /var/lib/sealai-dr/imported-receipts/<receipt-id>.dsse.json \
+  --trust-policy /etc/sealai/dr/receipt-trust-policy.json
+
+/usr/bin/python3 -I /usr/local/libexec/sealai/dr_recovery.py verify-drill-receipt \
+  --root /var/lib/sealai-dr/drills/<drill>/var/lib/sealai-dr/sets/<set-id> \
+  --receipt /var/lib/sealai-dr/receipts/<set-id>/<restore-local-evidence>.json \
+  --gate-receipt /run/sealai-gates/gate-08-dr.json \
+  --imported-receipt /var/lib/sealai-dr/imported-receipts/<receipt-id>.dsse.json \
+  --trust-policy /etc/sealai/dr/receipt-trust-policy.json
+```
+
+Omitting either imported record or policy blocks. A local-evidence file passed as the imported
+record, a receipt for the other kind/run, a stale/revoked policy or key, insufficient signatures,
+or any manifest/set/snapshot/Gate/evidence-digest mismatch blocks. Only the final wrapper `ok`
+result may feed authoritative receipt status; `write-*-receipt` output never may.
 
 The offsite policy is 14 daily, 8 weekly, 12 monthly, and 7 yearly snapshots, while preserving at
 least two independently verified snapshots. `dr_offsite.sh retention-plan` is dry-run only. There
@@ -183,17 +243,86 @@ Run an explicitly selected set/snapshot with:
 
 The monthly timer selects the newest snapshot having exactly one `set-<set-id>` tag and delegates to
 that command. It still fails closed without a fresh matching Gate-08 receipt and, even after all
-local checks, exits blocked because the independent signed receipt path is not implemented.
+local checks, exits blocked because the independent signer has not produced a threshold-signed
+envelope. A `restore_drill` envelope can be verified/imported by `dr_receipts.py`, but importing test
+or locally generated evidence is forbidden and no repository command can sign it.
 Installation and timer activation are external and gated; repository presence and local evidence
 are not proof that a verified drill ran. Restored plaintext under `/var/lib/sealai-dr/drills/` must
 be retained only until an external evidence workflow is reviewed, then deleted as the exact drill
 directory under a separately reviewed runner-local retention job. Never run the drill on the VPS.
 
-For `mode=postgres_rebuild`, stop after Postgres verification until P1-D supplies the canonical
-command registry. Do not replace it with ad-hoc ingestion, a guessed collection name, or an
-in-process fallback. Once P1-D lands, the rebuild must start from empty target collections and prove
-authority epoch, tenant counts, orphan absence, and idempotence before the receipt can say
-`qdrant_recovered=true`.
+For `mode=postgres_rebuild`, use only the candidate workflow below. Do not use ad-hoc ingestion, a
+guessed collection name, direct production writes, or an in-process fallback. The restore drill
+still cannot claim `qdrant_recovered=true`: its current container path verifies snapshots, while a
+real-embedding rebuild and any later cutover require separate Gate-08 evidence.
+
+## Canonical Postgres-to-Qdrant candidate rebuild
+
+`backend/sealai_v2/knowledge/qdrant_rebuild.py` reads Postgres in one `REPEATABLE READ`, `READ ONLY`,
+`DEFERRABLE` transaction. It reuses the exact live knowledge and memory projection builders, binds
+the authority sequence, source rows, tenant counts, payloads, IDs, database identity, embedder model
+digest, vector size, production collection-name digest, and run-specific candidate names. Snapshot,
+plan, imported approval, and journal files are private canonical JSON. A run ID is single-use.
+The plan explicitly binds both collections to the named dense-vector-only schema used by current
+defaults. If the approved runtime has hybrid/sparse knowledge enabled, stop: this implementation
+rejects that schema and must be extended/reviewed before the run rather than silently dropping the
+sparse projection.
+
+The module intentionally contains no alias, collection rename, delete, or cutover function. It
+creates only absent `sealai-dr-<run-id>-knowledge` and `sealai-dr-<run-id>-memory` collections and
+refuses to adopt an existing collection. Partial candidates are retained for investigation; retry
+with a newly approved run ID rather than deleting or reusing them.
+
+The offline example path is restricted to a loopback Qdrant endpoint, requires
+`--ephemeral-only`, uses the fixed deterministic fake-model digest
+`sha256("sealai-local-fake-embedder-v1")`, and is never production evidence. A plan for a real run
+uses `embedder_kind=runtime_external`; execution must inject an approved adapter exposing the exact
+`model_id_sha256` from the plan and `dr_rebuild_admission_verified=true` only after the reviewed
+budget/rate/concurrency admission wrapper is active. Passing the ordinary runtime embedder directly
+fails before provider access. The repository CLI deliberately cannot construct that paid/external
+adapter, so provider selection, cost approval, and the real run remain external Gate-08 work.
+
+Prepare a private working and journal directory, capture the canonical plan from the restored
+Postgres, and submit the emitted plan hash plus candidate-name hash for the independent
+`qdrant_rebuild_approval` DSSE envelope:
+
+The digest-pinned verifier container must receive the reviewed root-owned `dr_receipts.py` read-only
+at `/opt/dr/dr_receipts.py`; the rebuild loader rejects symlinks, writable files, hardlinks, and
+untrusted ownership. The database URL, private artifacts, and journal need separately scoped
+read/write mounts. These mounts are part of the Gate-08 command manifest, not inherited ad hoc.
+
+```bash
+install -d -m 0700 /var/lib/sealai-dr/rebuild /var/lib/sealai-dr/rebuild-journal
+# Run inside the digest-pinned backend verifier image, whose WORKDIR is /app.
+/usr/local/bin/python -m sealai_v2.knowledge.qdrant_rebuild capture-plan \
+  --snapshot /var/lib/sealai-dr/rebuild/<run-id>.snapshot.json \
+  --plan /var/lib/sealai-dr/rebuild/<run-id>.plan.json \
+  --run-id <run-id> --created-at <UTC-RFC3339> \
+  --embedder-kind runtime_external --model-id-sha256 <approved-model-digest> \
+  --vector-size <exact-dimension> --passage-prefix 'passage: ' \
+  --production-collection sealai_v2_knowledge_v1 \
+  --production-collection sealai_v2_memory
+```
+
+`capture-plan` reads the database URL only from the named environment variable and never prints it.
+The approval subject is exactly `gate_id=GATE-08`, the plan SHA-256, snapshot SHA-256, and candidate
+collection-name SHA-256. Import it with `dr_receipts.py --kind qdrant_rebuild_approval`; an unsigned,
+locally edited, expired, replayed, wrong-plan, or wrong-role approval fails before Qdrant access.
+
+After candidate construction, capture a second read-only snapshot to a new file:
+
+```bash
+/usr/local/bin/python -m sealai_v2.knowledge.qdrant_rebuild capture-snapshot \
+  --snapshot /var/lib/sealai-dr/rebuild/<run-id>.current.json \
+  --captured-at <later-UTC-RFC3339>
+```
+
+Verification rejects the original snapshot reused as “current,” a different database identity,
+authority/row drift, missing or extra IDs, payload drift, tenant-count drift, missing/non-finite or
+wrong-size dense vectors, and any candidate name that is a production collection. A passing result
+is only `CANDIDATES_VERIFIED_NO_CUTOVER`. Separately test tenant-filtered retrieval and compare
+semantic samples under a new Gate-08 request. No command in this package authorizes an alias switch
+or deletion of either old or candidate collections.
 
 ## Secret recovery
 
@@ -223,8 +352,9 @@ sealai_backup_receipt_valid{component}
 Alert on a missed RPO, failed backup, invalid/stale receipt, no successful monthly drill within 35
 days, or any timer failure. The renderer rejects a status document that omits any required recovery
 component, so partial exporter state cannot look healthy. `LOCAL_EVIDENCE_ONLY` must leave
-`sealai_backup_receipt_valid` at `0`. External alert delivery and authoritative receipt import remain
-`BLOCKED_EXTERNAL`.
+`sealai_backup_receipt_valid` at `0`. The import/consumption code exists, but production trust-root
+provisioning, external signing, import execution, status publication after wrapper success, and
+external alert delivery remain `BLOCKED_EXTERNAL`.
 
 ## Gate-08 request
 
