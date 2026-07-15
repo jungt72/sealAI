@@ -20,7 +20,7 @@ def test_tree_binding_matches_the_canonical_script():
 
     tree_hash, dirty = _tree_binding()
     script = subprocess.check_output(
-        ["bash", str(REPO / "ops" / "tree-hash.sh")],
+        ["/bin/bash", "-p", str(REPO / "ops" / "tree-hash.sh")],
         cwd=str(REPO),
         text=True,
     ).strip()

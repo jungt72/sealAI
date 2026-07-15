@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ─────────────────────────────────────────────────────────────────────────────
 # ops/tree-hash.sh — canonical, side-effect-free CONTENT hash of the backend-v2
 # IMAGE build-inputs. SINGLE SOURCE OF TRUTH: the eval manifest (sealai_v2/eval),
@@ -29,6 +29,8 @@
 # .git/index and the worktree are untouched (proven by the status-invariance test).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"

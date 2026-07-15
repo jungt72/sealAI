@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 # Token-free verification of GitHub Artifact Attestations through Sigstore.
 # The Cosign runtime is immutable and intentionally runs as a container so the
@@ -32,12 +34,12 @@ trap 'rm -rf "${tmp_dir}"' EXIT
 
 verify_one() {
   local predicate_type="$1" output_file="$2"
-  docker run --rm "${COSIGN_IMAGE}" verify-attestation \
+  /usr/bin/docker run --rm "${COSIGN_IMAGE}" verify-attestation \
     --type "${predicate_type}" \
     --certificate-identity "${CERTIFICATE_IDENTITY}" \
     --certificate-oidc-issuer "${OIDC_ISSUER}" \
     "${IMAGE_REF}" >"${output_file}"
-  python3 "${ROOT_DIR}/ops/verify_attestation_payload.py" "${output_file}" \
+  /usr/bin/python3 -I "${ROOT_DIR}/ops/verify_attestation_payload.py" "${output_file}" \
     --image-name "${IMAGE_NAME}" \
     --image-digest "${IMAGE_DIGEST}" \
     --predicate-type "${predicate_type}" \

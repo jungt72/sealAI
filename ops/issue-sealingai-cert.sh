@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 DOMAIN="${DOMAIN:-sealingai.com}"
 WWW_DOMAIN="${WWW_DOMAIN:-www.${DOMAIN}}"
@@ -21,9 +23,9 @@ sudo certbot certonly \
   --cert-name "$DOMAIN" \
   -d "$DOMAIN" \
   -d "$WWW_DOMAIN" \
-  --deploy-hook "docker exec nginx nginx -s reload"
+  --deploy-hook "/usr/bin/docker exec nginx nginx -s reload"
 
-docker exec nginx nginx -t
-docker exec nginx nginx -s reload
+/usr/bin/docker exec nginx nginx -t
+/usr/bin/docker exec nginx nginx -s reload
 
-./ops/check-domain-readiness.sh
+/bin/bash -p ./ops/check-domain-readiness.sh

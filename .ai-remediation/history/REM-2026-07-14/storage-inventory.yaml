@@ -1,0 +1,194 @@
+schema_version: 1
+evidence_class: HISTORICAL_SNAPSHOT
+authoritative_current_state: false
+source_repository_commit: 35690352c68750c7fbbcbbd6ea46b13571c43f08
+production_commit_at_capture: 6e5608c3d9c61f67560e6a27f632e73969fe3e86
+superseded: true
+run_id: REM-2026-07-14
+captured_at: "2026-07-14T11:35:38Z"
+classification: SANITIZED_READ_ONLY_SUMMARY
+production_mutation_performed: false
+capacity:
+  data_filesystem:
+    mount_aliases: [/mnt/sealai-data, /mnt/sealai-volume]
+    percent_used: 95
+    bytes_available: 5330395136
+    short_term_target_percent: 84
+    sustainable_target_percent: 80
+    minimum_reclaim_bytes_with_margin: 11811160064
+    preferred_reclaim_bytes_with_margin: 17179869184
+  root_filesystem:
+    percent_used: 82
+    relation_to_docker_target: separate_filesystem
+categories:
+  - category: active_docker_images
+    path_or_object: /mnt/sealai-volume/docker-data
+    size: shared_layers_prevent_safe_category_sum
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: false
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: Retain every running-container image, every stopped-container image, staging, and at least two explicitly attested rollback rungs.
+  - category: unreferenced_docker_images
+    path_or_object: 154 metadata-only inventoried image IDs
+    size: 19690000000
+    active_dependency: false
+    safe_to_remove: false
+    backup_required: false
+    estimated_reclaim: 19690000000
+    risk: HIGH
+    recommended_action: After GATE-03 only, select exact registry-digest-recoverable IDs, recheck all running and stopped references immediately before each deletion, and remove at most ten IDs per health-verified batch. Never prune.
+    local_evidence:
+      artifact: docker-unreferenced-images.jsonl
+      records: 154
+      sha256: 5fbcfdbb58f137ed8aedcabed67f89e6c75bc77004741d70ffdca7ddfb1b1968
+      unresolved: {age: 1, external_owner: 2, v1_decommission: 1}
+  - category: build_cache
+    path_or_object: Docker BuildKit cache
+    size: 5814000000
+    active_dependency: unknown
+    safe_to_remove: false
+    backup_required: false
+    estimated_reclaim: 0
+    risk: MEDIUM
+    recommended_action: Docker reports no reclaimable bytes; do not run builder prune and do not count this category toward recovery.
+  - category: stopped_containers
+    path_or_object: 16 stopped containers
+    size: unknown
+    active_dependency: unknown
+    safe_to_remove: false
+    backup_required: unknown
+    estimated_reclaim: 0
+    risk: HIGH
+    recommended_action: Retain until workload ownership and rollback purpose are resolved; their seven image references are exclusion inputs for every cleanup plan.
+  - category: docker_volumes
+    path_or_object: 30 Docker volumes
+    size: 11450000000
+    active_dependency: mixed
+    safe_to_remove: false
+    backup_required: true
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: No volume is eligible for automated removal. Six unreferenced volumes reported as 3.833 GB require an owner, data classification, verified offsite copy, and a separate object-specific decision.
+  - category: container_logs
+    path_or_object: Docker local and json-file logs
+    size: unknown
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: policy_dependent
+    estimated_reclaim: unknown
+    risk: HIGH
+    recommended_action: Inventory metadata without reading payloads; add bounded rotation, especially for Postgres json-file, before considering any historical-log action.
+  - category: journald
+    path_or_object: system journal
+    size: unknown
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: policy_dependent
+    estimated_reclaim: unknown
+    risk: MEDIUM
+    recommended_action: Measure on the target filesystem and define size/time retention; do not vacuum as part of GATE-03 without a separate exact estimate.
+  - category: pm2_logs
+    path_or_object: user and root PM2 workloads
+    size: unknown
+    active_dependency: foreign_or_shared
+    safe_to_remove: false
+    backup_required: owner_decision
+    estimated_reclaim: unknown
+    risk: HIGH
+    recommended_action: Obtain workload-owner classification; sealingAI remediation must not mutate foreign-workload logs.
+  - category: local_backups
+    path_or_object: same-host Postgres, Qdrant, and pre-migration backups
+    size: latest_files_approximately_57_MB_total
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: true
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: Located on the separate root filesystem and therefore unable to recover Docker data-space. Keep every good local copy until checksum-bound encrypted offsite receipts and two isolated restores exist.
+  - category: database_dumps
+    path_or_object: Postgres logical and V2 pre-migration dumps
+    size: included_in_local_backups
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: true
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: No age deletion without offsite receipt; never delete the last good local dump.
+  - category: qdrant_snapshots
+    path_or_object: configured-collection snapshots
+    size: included_in_local_backups
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: true
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: Preserve server-side snapshot until the local copy is verified; preserve local snapshots until an offsite checksum receipt exists.
+  - category: old_releases_and_rollback_artifacts
+    path_or_object: Docker image tags and rollback rungs
+    size: included_in_docker_image_totals
+    active_dependency: unknown
+    safe_to_remove: false
+    backup_required: false
+    estimated_reclaim: included_in_unreferenced_image_estimate
+    risk: HIGH
+    recommended_action: Resolve each digest against active, staging, two known-good rollback rungs, and registry availability; prevent double-counting shared layers.
+  - category: old_dashboard_builds
+    path_or_object: frontend-v2/dist host bind mount
+    size: 2690000
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: immutable_artifact_required
+    estimated_reclaim: 0
+    risk: HIGH
+    recommended_action: The currently served 72-file directory is an unattested live artifact. Do not build into or remove it; replace it later with an immutable digest-bound release.
+  - category: temporary_files
+    path_or_object: host and Docker temporary locations
+    size: unknown
+    active_dependency: unknown
+    safe_to_remove: false
+    backup_required: unknown
+    estimated_reclaim: unknown
+    risk: MEDIUM
+    recommended_action: Inventory by metadata and owner before any deletion; no wildcard or age-only command is authorized.
+  - category: foreign_workloads
+    path_or_object: shared-host containers, images, volumes, and PM2 processes
+    size: unknown
+    active_dependency: true
+    safe_to_remove: false
+    backup_required: owner_decision
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: Exclude from sealingAI cleanup. Two unreferenced image records still require external-owner resolution.
+  - category: obsolete_collections
+    path_or_object: Qdrant collections outside the active ledger-derived collection
+    size: unknown
+    active_dependency: unknown
+    safe_to_remove: false
+    backup_required: true
+    estimated_reclaim: 0
+    risk: CRITICAL
+    recommended_action: Treat as data, not cache, until authority and owner classification plus an isolated restore prove otherwise.
+  - category: other_large_files
+    path_or_object: data and root filesystems
+    size: unknown
+    active_dependency: unknown
+    safe_to_remove: false
+    backup_required: unknown
+    estimated_reclaim: unknown
+    risk: HIGH
+    recommended_action: Complete metadata-only owner and filesystem classification; unknown objects cannot enter a cleanup manifest.
+decision:
+  current_safe_reclaim_bytes: 0
+  gated_candidate_reclaim_bytes: 19690000000
+  sufficient_for_short_term_target: true
+  sufficient_for_sustainable_target: true
+  gate_required: GATE-03
+  stop_conditions:
+    - any selected image becomes referenced by a running or stopped container
+    - immutable registry recovery digest is absent
+    - an external owner or V1 decommission decision remains unresolved for a selected object
+    - data filesystem available bytes drop below 3221225472
+    - any core service is unhealthy
+    - exact reclaim estimate no longer reaches the approved target
