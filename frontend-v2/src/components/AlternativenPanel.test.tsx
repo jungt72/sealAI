@@ -71,24 +71,35 @@ describe("AlternativenPanel", () => {
         title: "Technische Orientierung (Screening)",
         body: "BRIEFING-INHALT",
         provenance: [],
+        wissensstand: "",
+        risk_flags: [],
       },
-      hinweis: "Ihre Anfrage wurde an den Hersteller übermittelt.",
+      lifecycle_state: "active",
+      prompt_trust: "untrusted",
+      idempotent_replay: false,
+      hinweis: "Die Anfrage ist für den geschützten Herstellerzugriff erfasst.",
     };
     const onAnfrage = vi.fn().mockResolvedValue(res);
     render(<AlternativenPanel data={PARTNERS} onAnfrage={onAnfrage} />);
+    fireEvent.click(screen.getByTestId("anfrage-confirm-acme"));
     fireEvent.click(screen.getByTestId("anfrage-acme"));
     await waitFor(() =>
       expect(screen.getByTestId("anfrage-done")).toBeInTheDocument(),
     );
-    expect(onAnfrage).toHaveBeenCalledWith("acme");
-    expect(screen.getByText(/an den Hersteller übermittelt/)).toBeInTheDocument();
-    // the user transparently sees what was sent to the manufacturer
+    expect(onAnfrage).toHaveBeenCalledWith("acme", {
+      handoff_confirmed: true,
+      pii_classification: "unknown",
+      prompt_trust: "untrusted",
+    });
+    expect(screen.getByText(/geschützten Herstellerzugriff erfasst/)).toBeInTheDocument();
+    // the user transparently sees what was captured for controlled access
     expect(screen.getByText("BRIEFING-INHALT")).toBeInTheDocument();
   });
 
   it("surfaces an error state when the Anfrage fails", async () => {
     const onAnfrage = vi.fn().mockRejectedValue(new Error("boom"));
     render(<AlternativenPanel data={PARTNERS} onAnfrage={onAnfrage} />);
+    fireEvent.click(screen.getByTestId("anfrage-confirm-acme"));
     fireEvent.click(screen.getByTestId("anfrage-acme"));
     await waitFor(() =>
       expect(screen.getByText(/Anfrage fehlgeschlagen/)).toBeInTheDocument(),

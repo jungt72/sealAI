@@ -43,7 +43,12 @@ configure_timing_logging()  # per-turn timing lines → stdout (visible in docke
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
 install_safe_exception_mapper(app)
 app.add_middleware(
-    RequestBoundaryMiddleware, max_body_bytes=settings.api_max_request_body_bytes
+    RequestBoundaryMiddleware,
+    max_body_bytes=settings.api_max_request_body_bytes,
+    max_request_bytes=settings.api_max_request_bytes,
+    max_header_bytes=settings.api_max_header_bytes,
+    max_query_bytes=settings.api_max_query_bytes,
+    max_path_bytes=settings.api_max_path_bytes,
 )
 # FastAPI prepends newly added middleware. Register request correlation last so even boundary
 # rejections receive a server-generated request ID and remain traceable without trusting callers.

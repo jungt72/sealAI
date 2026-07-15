@@ -199,8 +199,21 @@ def test_anfrage_is_gated_too():
     app.dependency_overrides[deps.get_lead_store] = lambda: InProcessLeadStore()
     r = client.post(
         "/api/v2/anfrage",
-        json={"partner_id": "acme", "case_id": "sess-A", "case_revision": 1},
-        headers=auth("tok-A"),
+        json={
+            "partner_id": "acme",
+            "case_id": "sess-A",
+            "case_revision": 1,
+            "governance": {
+                "tenant_id": "tenant-A",
+                "policy_authority_ref": "authority:test-policy-v1",
+                "purpose_version": "purpose:test-v1",
+                "consent_version": "consent:test-v1",
+                "handoff_confirmed": True,
+                "pii_classification": "unknown",
+                "prompt_trust": "untrusted",
+            },
+        },
+        headers={**auth("tok-A"), "Idempotency-Key": "legal-gate-lead-key-0001"},
     )
     assert r.status_code == 403
 

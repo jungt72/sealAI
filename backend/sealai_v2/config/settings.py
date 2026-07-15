@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from pydantic import model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -95,6 +95,37 @@ class Settings(BaseSettings):
     # The hash is evidence identity, not a secret; an empty value keeps the kill switch closed.
     provider_budget_contract_sha256: str | None = None
     api_max_request_body_bytes: int = 131_072
+    # Complete ASGI request envelope. Nginx independently enforces the body ceiling; the app also
+    # bounds path/query/header bytes so a large cookie or request target cannot bypass the body-only
+    # edge limit. The total includes the complete body and all request metadata counted below.
+    api_max_request_bytes: int = 163_840
+    api_max_header_bytes: int = 16_384
+    api_max_query_bytes: int = 4_096
+    api_max_path_bytes: int = 2_048
+    api_max_case_payload_bytes: int = 32_768
+    api_max_case_facts: int = 64
+
+    # API-001 lifecycle plane. All write paths stay unavailable by default. Activation requires a
+    # PostgreSQL-backed, transaction-scoped authority plus externally supplied policy identities and
+    # a receipt-signing secret. These values are references to human/legal authority, never legal
+    # conclusions authored by the service.
+    api_lifecycle_enabled: bool = False
+    api_lifecycle_policy_authority_ref: str | None = None
+    api_lifecycle_purpose_version: str | None = None
+    api_lifecycle_consent_version: str | None = None
+    api_lifecycle_receipt_hmac_secret: SecretStr | None = None
+    # Human/legal authority must select a duration. None is the restrictive technical default:
+    # records can be quarantined or withdrawn but no automated hard deletion is authorized.
+    api_lifecycle_retention_days: int | None = None
+    api_lifecycle_actor_requests_per_minute: int = 3
+    api_lifecycle_tenant_requests_per_minute: int = 20
+    api_lifecycle_actor_requests_per_day: int = 20
+    api_lifecycle_tenant_requests_per_day: int = 200
+    api_lifecycle_actor_storage_bytes: int = 1_048_576
+    api_lifecycle_tenant_storage_bytes: int = 20_971_520
+    api_lifecycle_actor_max_concurrent: int = 1
+    api_lifecycle_tenant_max_concurrent: int = 5
+    api_lifecycle_request_lease_s: int = 120
 
     # --- model tiers: Small 4 standard, current broadly available OpenAI frontier for complex cases ---
     standard_model: str = "mistral-small-2603"
@@ -280,6 +311,12 @@ class Settings(BaseSettings):
     # commercial routing relationship and legal readiness.
     manufacturer_handoff_enabled: bool = False
 
+    @field_validator("api_lifecycle_retention_days", mode="before")
+    @classmethod
+    def empty_retention_authority_is_unset(cls, value):
+        """Compose may pass an empty optional env value; it must not invent a duration."""
+        return None if value == "" else value
+
     @model_validator(mode="after")
     def validate_product_mode_dependencies(self) -> "Settings":
         if not 1024 <= self.outbox_metrics_port <= 65535:
@@ -317,7 +354,7 @@ class Settings(BaseSettings):
             )
         if not 0 <= self.auth_clock_skew_s <= 60:
             raise ValueError("auth clock skew must be between 0 and 60 seconds")
-        positive_cost_limits = (
+        positive_hard_limits = (
             self.provider_subject_requests_per_minute,
             self.provider_tenant_requests_per_minute,
             self.provider_subject_requests_per_day,
@@ -330,9 +367,24 @@ class Settings(BaseSettings):
             self.provider_daily_budget_micros,
             self.provider_monthly_budget_micros,
             self.api_max_request_body_bytes,
+            self.api_max_request_bytes,
+            self.api_max_header_bytes,
+            self.api_max_query_bytes,
+            self.api_max_path_bytes,
+            self.api_max_case_payload_bytes,
+            self.api_max_case_facts,
+            self.api_lifecycle_actor_requests_per_minute,
+            self.api_lifecycle_tenant_requests_per_minute,
+            self.api_lifecycle_actor_requests_per_day,
+            self.api_lifecycle_tenant_requests_per_day,
+            self.api_lifecycle_actor_storage_bytes,
+            self.api_lifecycle_tenant_storage_bytes,
+            self.api_lifecycle_actor_max_concurrent,
+            self.api_lifecycle_tenant_max_concurrent,
+            self.api_lifecycle_request_lease_s,
         )
-        if any(value <= 0 for value in positive_cost_limits):
-            raise ValueError("provider cost-control limits must be positive")
+        if any(value <= 0 for value in positive_hard_limits):
+            raise ValueError("provider and API hard limits must be positive")
         if (
             self.provider_subject_requests_per_minute
             > self.provider_tenant_requests_per_minute
@@ -360,6 +412,55 @@ class Settings(BaseSettings):
             raise ValueError("daily provider budget cannot exceed monthly budget")
         if not 1024 <= self.api_max_request_body_bytes <= 1_048_576:
             raise ValueError("API request-body bound must be between 1 KiB and 1 MiB")
+        if not (
+            self.api_max_request_body_bytes <= self.api_max_request_bytes <= 1_310_720
+        ):
+            raise ValueError(
+                "API total-request bound must include the body and stay bounded"
+            )
+        metadata_bound = (
+            self.api_max_header_bytes
+            + self.api_max_query_bytes
+            + self.api_max_path_bytes
+        )
+        if (
+            self.api_max_request_body_bytes + metadata_bound
+            > self.api_max_request_bytes
+        ):
+            raise ValueError(
+                "API total-request bound is smaller than its component bounds"
+            )
+        if not 1_024 <= self.api_max_header_bytes <= 65_536:
+            raise ValueError("API header bound must be between 1 KiB and 64 KiB")
+        if not 256 <= self.api_max_query_bytes <= 16_384:
+            raise ValueError("API query bound must be between 256 bytes and 16 KiB")
+        if not 256 <= self.api_max_path_bytes <= 8_192:
+            raise ValueError("API path bound must be between 256 bytes and 8 KiB")
+        if (
+            not 1_024
+            <= self.api_max_case_payload_bytes
+            <= self.api_max_request_body_bytes
+        ):
+            raise ValueError("API case-payload bound must fit inside the request body")
+        if not 1 <= self.api_max_case_facts <= 256:
+            raise ValueError("API case fact count must be between 1 and 256")
+        if (
+            self.api_lifecycle_actor_requests_per_minute
+            > self.api_lifecycle_tenant_requests_per_minute
+            or self.api_lifecycle_actor_requests_per_day
+            > self.api_lifecycle_tenant_requests_per_day
+            or self.api_lifecycle_actor_storage_bytes
+            > self.api_lifecycle_tenant_storage_bytes
+            or self.api_lifecycle_actor_max_concurrent
+            > self.api_lifecycle_tenant_max_concurrent
+        ):
+            raise ValueError("API actor limits cannot exceed tenant limits")
+        if self.api_lifecycle_request_lease_s > 900:
+            raise ValueError("API lifecycle request lease cannot exceed 15 minutes")
+        if self.api_lifecycle_retention_days is not None and not (
+            1 <= self.api_lifecycle_retention_days <= 3_650
+        ):
+            raise ValueError("API lifecycle retention must be between 1 and 3650 days")
         configured_database_urls = tuple(
             value for value in (self.database_url, self.worker_database_url) if value
         )
@@ -380,6 +481,37 @@ class Settings(BaseSettings):
                 raise ValueError("API and worker database URLs require explicit users")
             if api_url.username == worker_url.username:
                 raise ValueError("API and worker database users must be distinct")
+        if self.api_lifecycle_enabled:
+            if not self.database_url or not make_url(
+                self.database_url
+            ).drivername.startswith("postgresql"):
+                raise ValueError("API lifecycle activation requires PostgreSQL")
+            if not self.database_rls_scope_enabled:
+                raise ValueError(
+                    "API lifecycle activation requires transaction-scoped database authority"
+                )
+            policy_values = (
+                self.api_lifecycle_policy_authority_ref,
+                self.api_lifecycle_purpose_version,
+                self.api_lifecycle_consent_version,
+            )
+            if any(
+                value is None
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/~-]{2,127}", value) is None
+                for value in policy_values
+            ):
+                raise ValueError(
+                    "API lifecycle activation requires bounded external policy references"
+                )
+            receipt_secret = (
+                self.api_lifecycle_receipt_hmac_secret.get_secret_value()
+                if self.api_lifecycle_receipt_hmac_secret is not None
+                else ""
+            )
+            if len(receipt_secret.encode("utf-8")) < 32:
+                raise ValueError(
+                    "API lifecycle activation requires a receipt HMAC secret of at least 32 bytes"
+                )
         if self.provider_requests_enabled:
             if not self.database_url:
                 raise ValueError(

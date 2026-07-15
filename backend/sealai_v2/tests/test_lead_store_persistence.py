@@ -16,6 +16,7 @@ def test_unresolved_legacy_lead_is_never_returned(tmp_path):
 
     lead_id = store.store(
         Lead(
+            admission_request_id="00000000-0000-0000-0000-000000000001",
             partner_id="acme",
             firmenname="ACME",
             lead_email="routing@example.test",
@@ -26,6 +27,12 @@ def test_unresolved_legacy_lead_is_never_returned(tmp_path):
             case_revision=3,
             briefing_title="RFQ",
             briefing_body="Exact case snapshot",
+            policy_authority_ref="authority:test-v1",
+            purpose_version="purpose:test-v1",
+            consent_version="consent:test-v1",
+            handoff_confirmed=True,
+            pii_classification="none_declared",
+            prompt_trust="untrusted",
             created_at="2026-07-15T00:00:00Z",
         )
     )

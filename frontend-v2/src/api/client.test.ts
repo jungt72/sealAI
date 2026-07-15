@@ -125,7 +125,7 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
   });
 
   it("chatStream: 404 (older backend without /chat/stream) falls back to plain /chat once", async () => {
-    const fetchFn = vi.fn((input: RequestInfo | URL) =>
+    const fetchFn = vi.fn((input: RequestInfo | URL, _init?: RequestInit) =>
       Promise.resolve(
         String(input).endsWith("/chat/stream")
           ? new Response("not found", { status: 404 })
@@ -276,15 +276,58 @@ describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
   });
 
   it("anfrage cannot serialize client-authored briefing text", async () => {
-    const fetchFn = mockFetch(200, {});
+    const fetchFn = vi.fn((input: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            String(input).endsWith("/contribute/policy")
+              ? {
+                  enabled: true,
+                  tenant_id: "tenant-a",
+                  policy_authority_ref: "authority:test-v1",
+                  purpose_version: "purpose:test-v1",
+                  consent_version: "consent:test-v1",
+                  retention: { mode: "human_authority_required", days: null },
+                  prompt_trust: "untrusted",
+                  initial_state: "quarantined",
+                }
+              : {},
+          ),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchFn);
     const client = new ApiClient(() => "tok", () => undefined);
-    await client.anfrage("partner-1", "case-42", 7);
-    const [, init] = fetchFn.mock.calls[0];
+    await client.anfrage(
+      "partner-1",
+      "case-42",
+      7,
+      {
+        handoff_confirmed: true,
+        pii_classification: "none_declared",
+        prompt_trust: "untrusted",
+      },
+      "lead-idempotency-test-0001",
+    );
+    const [, init] = fetchFn.mock.calls[1];
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       partner_id: "partner-1",
       case_id: "case-42",
       case_revision: 7,
+      governance: {
+        tenant_id: "tenant-a",
+        policy_authority_ref: "authority:test-v1",
+        purpose_version: "purpose:test-v1",
+        consent_version: "consent:test-v1",
+        handoff_confirmed: true,
+        pii_classification: "none_declared",
+        prompt_trust: "untrusted",
+      },
     });
+    expect(new Headers((init as RequestInit).headers).get("Idempotency-Key")).toBe(
+      "lead-idempotency-test-0001",
+    );
   });
 });
 

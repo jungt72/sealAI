@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import (
@@ -20,6 +20,7 @@ from sealai_v2.api.deps import (
     get_partner_registry,
     require_manufacturer,
 )
+from sealai_v2.api.pagination import InvalidCursor, decode_cursor
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.leads import LeadStore
 from sealai_v2.knowledge.hersteller_partner import HerstellerPartner
@@ -109,10 +110,20 @@ def update_me(
 def my_leads(
     identity: VerifiedIdentity = Depends(require_manufacturer),
     leads: LeadStore = Depends(get_lead_store),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
 ) -> dict:
     """The manufacturer's OWN leads (the RFQ briefings routed to them), newest first. The user's
     internal tenant/session ids are NOT exposed — only the briefing + metadata."""
-    rows = leads.list_for_partner(identity.hersteller_id)
+    try:
+        before_id = decode_cursor(cursor)
+    except InvalidCursor:
+        raise HTTPException(status_code=400, detail="invalid cursor") from None
+    page = leads.page(
+        partner_id=identity.hersteller_id,
+        before_id=before_id,
+        limit=limit,
+    )
     return {
         "leads": [
             {
@@ -123,6 +134,8 @@ def my_leads(
                 "created_at": ld.created_at,
                 "status": ld.status,
             }
-            for ld in rows
-        ]
+            for ld in page.items
+        ],
+        "next_cursor": page.next_cursor,
+        "has_more": page.has_more,
     }

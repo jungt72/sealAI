@@ -114,3 +114,37 @@ waehlen. Der Aktivierungsschalter bleibt default-off. Bis echte ephemere Postgre
 Produktionsprofil, Restore-Beleg, geprueftes Mapping, Rollen/Grants und Exact-Image-Deploy vorliegen,
 bleibt RLS-Cutover GATE-07/GATE-08-blockiert; API und Worker duerfen niemals Tabellenowner oder
 `BYPASSRLS` besitzen.
+
+## Kontrollierter Beitrags- und Lead-Lebenszyklus
+
+Beitrags- und Hersteller-Lead-Schreibpfade bilden eine separate, standardmaessig deaktivierte
+Lifecycle-Ebene. Die Edge begrenzt Bodies auf 128 KiB; die Anwendung begrenzt unabhaengig Body,
+gesamten Request-Umschlag, Header, Query, Pfad, Fallbytes und Anzahl der Fallfakten. Jeder aktivierte
+Schreibvorgang verlangt einen begrenzten `Idempotency-Key`, exakten Tenant-Abgleich sowie die extern
+autorisierten Policy-, Zweck- und Consent-Versionsbezeichner. Actor- und Tenant-Minuten-, Tages-,
+Speicher- und Parallelitaetsentscheidungen werden in PostgreSQL serialisiert. Speicherreservierungen
+sind konservativ und nicht erstattbar; wiederaufgenommene Leases nutzen ein Completion-Fencing,
+damit ein spaeter Vorgaenger neuere Arbeit nicht finalisieren kann.
+
+Beitragsdeklarationen binden Provenienz, Dokumenttyp, Rechtebasis, Lizenzbezeichner,
+PII-Klassifikation und einen explizit untrusted Promptstatus. Jeder Beitrag beginnt in der
+Review-Quarantaene und kann durch seinen Queue-Status niemals Antwortautoritaet erhalten. Leads
+tragen eine ausdrueckliche Handoff-Bestaetigung und bleiben fuer Hersteller unsichtbar, wenn PII
+vorhanden/unbekannt ist oder ein Injection-Signal erkannt wurde. Owner-Queues verwenden begrenzte,
+opake Keyset-Cursor; Owner- und Partneransichten behalten Tenant-/Actor-Pruefungen bei.
+
+Withdrawal und Lead-Cancellation versetzen die Ressource atomar in Quarantaene und schreiben in
+derselben Datenbanktransaktion einen HMAC-gebundenen unveraenderlichen Receipt plus Audit-Event.
+Sie loeschen den Datensatz nie. Eine extern genehmigte Retention-Dauer kann einen begrenzten Uebergang
+in die Retention-Review-Quarantaene terminieren; eine leere Dauer autorisiert weder Ablauf noch
+Hard-Delete. Die UI zeigt nur freigegebene Versionsreferenzen und sachlich korrekte Erfassungs-/
+Quarantaene-Texte; Rechtstext und Dauer bleiben menschliche Autoritaet ausserhalb des Repositories.
+
+Migration `20260715_0014` ergaenzt nullable Lifecycle-Spalten sowie gemeinsame Quota-, Admission-,
+Receipt- und Eventtabellen ohne Legacy-Daten umzuschreiben. Migration `20260715_0015` ergaenzt sechs
+PostgreSQL-`NOT VALID`-Checks. Legacy-Profiling und -Disposition, Constraint-Validierung,
+Rollen-/Grant-Aenderungen sowie RLS/FORCE RLS bleiben GATE-07-Arbeit. Aktivierung verlangt zusaetzlich
+PostgreSQL, den transaktionsgebundenen RLS-Adapter, begrenzte externe Autoritaetsreferenzen und ein
+Runtime-Receipt-Secret mit mindestens 32 Bytes. Menschliche GATE-06-Autoritaet und
+GATE-08-Exact-Artifact-Deploy-Evidenz sind zwingend; lokale Implementierung ist niemals
+Produktionsverifikation.

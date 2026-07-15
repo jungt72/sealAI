@@ -14,8 +14,12 @@ import type {
   ChatResponse,
   ComputeResponse,
   ConfirmationResponse,
+  ContributionGovernanceSelection,
   ContributePayload,
+  ContributionResponse,
   ConversationMemory,
+  HandoffGovernanceSelection,
+  LifecycleReceiptResponse,
   NextQuestionPayload,
   ParamItem,
   Turn,
@@ -242,6 +246,7 @@ export function ChatPane({
   onAnfrage,
   onDownloadPdf,
   onContribute,
+  onWithdrawContribution,
 }: {
   /** `onToken(text, draft)` — Phase 3A (`draft=false`, smalltalk only, text IS the final answer) /
    * Phase 3B (`draft=true`, every other route, text is a non-authoritative preview only). `draft`
@@ -268,11 +273,15 @@ export function ChatPane({
   compute?: ComputeResponse | null;
   onConfirmUnit?: (feld: string, value: string) => void;
   /** Modus F lead-gen: route the server-authorized snapshot of the active case revision. */
-  onAnfrage?: (partnerId: string) => Promise<AnfrageResponse>;
+  onAnfrage?: (
+    partnerId: string,
+    governance: HandoffGovernanceSelection,
+  ) => Promise<AnfrageResponse>;
   /** Download the server-authorized case snapshot as a PDF without sending an RFQ. */
   onDownloadPdf?: () => Promise<void>;
   /** Wissens-Beitrag: the user shares their solution + outcome to improve sealingAI (untrusted DRAFT). */
-  onContribute?: (payload: ContributePayload) => Promise<{ hinweis: string }>;
+  onContribute?: (payload: ContributePayload) => Promise<ContributionResponse>;
+  onWithdrawContribution?: (id: number) => Promise<LifecycleReceiptResponse>;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   // "Fälle"-Sidebar: hydrate from the case's persisted history exactly ONCE per mount (App remounts
@@ -559,13 +568,18 @@ export function ChatPane({
   const panelOnContribute = useMemo(
     () =>
       onContribute
-        ? (anonym: boolean, outcome: string) =>
+        ? (
+            anonym: boolean,
+            outcome: string,
+            governance: ContributionGovernanceSelection,
+          ) =>
             onContribute({
               anonym,
               situation: lastUserMessage,
               recommendation: lastAnswer,
               outcome,
               case_state: memory.case_state.map((f) => ({ feld: f.feld, wert: f.wert })),
+              governance,
             })
         : undefined,
     [onContribute, lastUserMessage, lastAnswer, memory.case_state],
@@ -847,7 +861,12 @@ export function ChatPane({
             <span className="cockpit-section-title">Hersteller/RFQ</span>
             <p className="right-rail-main">{rfqStatus}</p>
             {briefingButton}
-            {panelOnContribute ? <ContributePanel onContribute={panelOnContribute} /> : null}
+            {panelOnContribute ? (
+              <ContributePanel
+                onContribute={panelOnContribute}
+                onWithdraw={onWithdrawContribution}
+              />
+            ) : null}
           </section>
         </section>
       </div>

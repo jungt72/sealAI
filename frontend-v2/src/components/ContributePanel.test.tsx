@@ -15,25 +15,59 @@ afterEach(cleanup);
 
 describe("ContributePanel (Wissens-Beitrag)", () => {
   it("opens the form, submits anonym + outcome, shows the confirmation", async () => {
-    const onContribute = vi.fn().mockResolvedValue({ hinweis: "Danke — geht in die Review-Queue." });
+    const onContribute = vi.fn().mockResolvedValue({
+      status: "captured",
+      id: 1,
+      anonym: true,
+      lifecycle_state: "quarantined",
+      prompt_trust: "untrusted",
+      idempotent_replay: false,
+      hinweis: "Der Beitrag liegt in Review-Quarantäne.",
+    });
     render(<ContributePanel onContribute={onContribute} />);
     fireEvent.click(screen.getByTestId("contrib-open"));
     fireEvent.change(screen.getByTestId("contrib-outcome"), {
       target: { value: "FKM-AS hat bei 150°C gehalten" },
     });
+    fireEvent.change(screen.getByTestId("contrib-provenance"), {
+      target: { value: "eigene Felderfahrung" },
+    });
+    fireEvent.click(screen.getByTestId("contrib-rights-confirmed"));
     fireEvent.click(screen.getByTestId("contrib-submit"));
     await waitFor(() => expect(screen.getByTestId("contrib-done")).toBeInTheDocument());
-    expect(onContribute).toHaveBeenCalledWith(true, "FKM-AS hat bei 150°C gehalten"); // anonym default
-    expect(screen.getByText(/Review-Queue/)).toBeInTheDocument();
+    expect(onContribute).toHaveBeenCalledWith(true, "FKM-AS hat bei 150°C gehalten", {
+      rights_confirmed: true,
+      rights_basis: "review_required",
+      license_id: "review_required",
+      provenance: "eigene Felderfahrung",
+      document_type: "other_review_required",
+      pii_classification: "unknown",
+      prompt_trust: "untrusted",
+    });
+    expect(screen.getByText(/Review-Quarantäne/)).toBeInTheDocument();
   });
 
   it("can opt out of anonymity", async () => {
-    const onContribute = vi.fn().mockResolvedValue({ hinweis: "ok" });
+    const onContribute = vi.fn().mockResolvedValue({
+      status: "captured",
+      id: 2,
+      anonym: false,
+      lifecycle_state: "quarantined",
+      prompt_trust: "untrusted",
+      idempotent_replay: false,
+      hinweis: "ok",
+    });
     render(<ContributePanel onContribute={onContribute} />);
     fireEvent.click(screen.getByTestId("contrib-open"));
     fireEvent.click(screen.getByTestId("contrib-anonym")); // toggle off
+    fireEvent.change(screen.getByTestId("contrib-provenance"), {
+      target: { value: "documented source" },
+    });
+    fireEvent.click(screen.getByTestId("contrib-rights-confirmed"));
     fireEvent.click(screen.getByTestId("contrib-submit"));
-    await waitFor(() => expect(onContribute).toHaveBeenCalledWith(false, ""));
+    await waitFor(() => expect(onContribute).toHaveBeenCalled());
+    expect(onContribute.mock.calls[0][0]).toBe(false);
+    expect(onContribute.mock.calls[0][1]).toBe("");
   });
 });
 

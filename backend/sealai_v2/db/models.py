@@ -344,6 +344,9 @@ class V2Lead(Base):
     __tablename__ = "v2_leads"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    admission_request_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, unique=True
+    )
     partner_id: Mapped[str] = mapped_column(String(255), nullable=False)
     firmenname: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     lead_email: Mapped[str] = mapped_column(String(320), default="", nullable=False)
@@ -359,8 +362,27 @@ class V2Lead(Base):
     )
     briefing_title: Mapped[str] = mapped_column(Text, default="", nullable=False)
     briefing_body: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    briefing_provenance_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    briefing_wissensstand: Mapped[str | None] = mapped_column(Text, nullable=True)
+    briefing_risk_flags_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    policy_authority_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purpose_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consent_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    handoff_confirmed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    pii_classification: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    prompt_trust: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    prompt_injection_signal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
+    # API-001 staged lifecycle fields. Nullable preserves legacy rows for explicit GATE-07
+    # profiling; new writes are complete and list paths reject rows without a lifecycle state.
+    lifecycle_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    content_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    retention_review_after: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    cancelled_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class V2ManufacturerCapabilityProfile(Base):
@@ -426,13 +448,19 @@ class V2ManufacturerCapabilityReview(Base):
 
 
 class V2Contribution(Base):
-    """Wissens-Beitrag (user opts to share a worked-out situation + outcome to improve sealingAI). DRAFT in
-    the owner REVIEW QUEUE — NEVER auto-feeds the trust spine; promotion to knowledge is the review gate.
-    Anonymous → tenant_ref='anon', subject_ref='' (no identity); the structured case-state is technical."""
+    """Governed contribution held outside the trust spine in review quarantine.
+
+    Anonymous presentation clears ``subject_ref`` only. The verified tenant and a one-way actor
+    ownership reference remain so tenant isolation and owner-authorized withdrawal still work. No
+    review status in this table promotes content into authoritative knowledge.
+    """
 
     __tablename__ = "v2_contributions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    admission_request_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, unique=True
+    )
     anonym: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     tenant_ref: Mapped[str] = mapped_column(String(255), default="anon", nullable=False)
     subject_ref: Mapped[str] = mapped_column(String(255), default="", nullable=False)
@@ -443,6 +471,133 @@ class V2Contribution(Base):
     created_at: Mapped[str] = mapped_column(String(32), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="neu", nullable=False)
     review_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Verified subject ownership is retained as a one-way reference even for an anonymous owner
+    # view. ``subject_ref`` stays empty for anonymous contributions; withdrawal authorization never
+    # relies on that display/provenance field.
+    owner_subject_ref: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    policy_authority_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    purpose_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consent_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    rights_basis: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    license_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provenance: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    document_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pii_classification: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    prompt_trust: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    prompt_injection_signal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    lifecycle_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    quarantine_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    retention_review_after: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    withdrawn_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class V2ApiLifecycleWindow(Base):
+    """Atomic per-actor/per-tenant request and conservative storage reservations."""
+
+    __tablename__ = "v2_api_lifecycle_windows"
+
+    quota_group: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scope_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    scope_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    window_start: Mapped[str] = mapped_column(String(32), primary_key=True)
+    admitted_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    denied_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2ApiLifecycleAdmission(Base):
+    """Idempotent lifecycle admission plus expiring cross-worker concurrency lease."""
+
+    __tablename__ = "v2_api_lifecycle_admissions"
+    __table_args__ = (
+        UniqueConstraint(
+            "action",
+            "tenant_ref",
+            "actor_ref",
+            "idempotency_key_hash",
+            name="uq_v2_api_lifecycle_admission_idempotency",
+        ),
+        Index(
+            "ix_v2_api_lifecycle_admission_actor_active",
+            "actor_ref",
+            "released_at",
+            "expires_at",
+        ),
+        Index(
+            "ix_v2_api_lifecycle_admission_tenant_active",
+            "tenant_ref",
+            "released_at",
+            "expires_at",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    quota_group: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    tenant_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    estimated_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    started_at: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    expires_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    released_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    resource_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class V2ApiLifecycleReceipt(Base):
+    """Append-only server-signed withdrawal/cancellation receipt."""
+
+    __tablename__ = "v2_api_lifecycle_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_type",
+            "resource_id",
+            "idempotency_key_hash",
+            name="uq_v2_api_lifecycle_receipt_idempotency",
+        ),
+    )
+
+    receipt_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_authority_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    issued_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    receipt_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+
+
+class V2ApiLifecycleEvent(Base):
+    """Append-only audit event bound to exactly one immutable receipt."""
+
+    __tablename__ = "v2_api_lifecycle_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    receipt_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    resource_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    actor_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    from_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_state: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_authority_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
 
 
 class V2MemoryItem(Base):

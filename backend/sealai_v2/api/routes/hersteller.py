@@ -11,7 +11,7 @@ capability fit). The owner manages MEMBERSHIP; the pool ranks itself.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from sealai_v2.api.deps import (
@@ -19,6 +19,7 @@ from sealai_v2.api.deps import (
     get_partner_registry,
     require_platform_owner,
 )
+from sealai_v2.api.pagination import InvalidCursor, decode_cursor
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.leads import LeadStore
 from sealai_v2.knowledge.hersteller_partner import HerstellerPartner
@@ -128,11 +129,27 @@ def delete_partner(
 def list_leads(
     _: VerifiedIdentity = Depends(require_platform_owner),
     leads: LeadStore = Depends(get_lead_store),
-    partner_id: str | None = None,
+    partner_id: str | None = Query(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._~-]+$",
+    ),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
 ) -> dict:
     """The captured Anfragen (owner surface) — newest first. Optionally filtered to one partner. The
     full briefing + the routing ``lead_email`` are included so the owner can forward / track each lead."""
-    rows = leads.list_for_partner(partner_id) if partner_id else leads.list_all()
+    try:
+        before_id = decode_cursor(cursor)
+    except InvalidCursor:
+        raise HTTPException(status_code=400, detail="invalid cursor") from None
+    page = leads.page(
+        partner_id=partner_id,
+        before_id=before_id,
+        limit=limit,
+        include_quarantined=True,
+    )
     return {
         "leads": [
             {
@@ -146,7 +163,13 @@ def list_leads(
                 "briefing_body": ld.briefing_body,
                 "created_at": ld.created_at,
                 "status": ld.status,
+                "lifecycle_state": ld.lifecycle_state,
+                "pii_classification": ld.pii_classification,
+                "prompt_trust": ld.prompt_trust,
+                "prompt_injection_signal": ld.prompt_injection_signal,
             }
-            for ld in rows
-        ]
+            for ld in page.items
+        ],
+        "next_cursor": page.next_cursor,
+        "has_more": page.has_more,
     }

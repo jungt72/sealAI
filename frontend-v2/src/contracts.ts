@@ -138,13 +138,47 @@ export interface Alternativen {
 // The lead-gen action (POST /api/v2/anfrage): a structured RFQ briefing routed to the chosen partner.
 // The briefing preview is returned so the user transparently sees what was sent; lead_email never is.
 export interface AnfrageResponse {
-  status: string;
+  status: "captured" | "review_quarantined";
   lead_id: number;
   partner: { hersteller: string; firmenname: string };
-  briefing: { title: string; body: string; provenance: string[] };
+  briefing: {
+    title: string;
+    body: string;
+    provenance: string[];
+    wissensstand: string;
+    risk_flags: string[];
+  };
   case_id: string;
   case_revision: number;
   read_only: true;
+  lifecycle_state: "active" | "review_quarantined";
+  prompt_trust: "untrusted";
+  idempotent_replay: boolean;
+  hinweis: string;
+}
+export type PiiClassification = "none_declared" | "present" | "unknown";
+export interface HandoffGovernanceSelection {
+  handoff_confirmed: true;
+  pii_classification: PiiClassification;
+  prompt_trust: "untrusted";
+}
+export interface LifecyclePolicyResponse {
+  enabled: boolean;
+  tenant_id: string;
+  policy_authority_ref: string | null;
+  purpose_version: string | null;
+  consent_version: string | null;
+  retention: { mode: "human_authority_configured" | "human_authority_required"; days: number | null };
+  prompt_trust: "untrusted";
+  initial_state: "quarantined";
+}
+export interface LifecycleReceiptResponse {
+  status: "withdrawn_quarantined" | "cancelled_quarantined";
+  receipt_id: string;
+  receipt_digest: string;
+  issued_at: string;
+  policy_authority_ref: string;
+  idempotent_replay: boolean;
   hinweis: string;
 }
 // Platform-owner surface (/api/v2/admin/*, role-gated). The FULL editable partner record — incl.
@@ -176,6 +210,10 @@ export interface AdminLead {
   briefing_body: string;
   created_at: string;
   status: string;
+  lifecycle_state: string;
+  pii_classification: PiiClassification;
+  prompt_trust: "untrusted";
+  prompt_injection_signal: boolean;
 }
 // Manufacturer SELF-SERVICE (/api/v2/partner/me). The GET returns the full AdminPartner record; the
 // PUT body is only the manufacturer-editable subset (aktiv/plan/partner_seit stay owner-controlled).
@@ -209,6 +247,35 @@ export interface ContributePayload {
   recommendation: string;
   outcome: string;
   case_state: { feld: string; wert: string }[];
+  governance: ContributionGovernanceSelection;
+}
+export interface ContributionGovernanceSelection {
+  rights_confirmed: true;
+  rights_basis: "owner_supplied" | "documented_permission" | "review_required";
+  license_id:
+    | "owner_supplied"
+    | "documented_permission"
+    | "cc-by-4.0"
+    | "cc0-1.0"
+    | "review_required";
+  provenance: string;
+  document_type: "field_outcome" | "technical_note" | "test_report" | "other_review_required";
+  pii_classification: PiiClassification;
+  prompt_trust: "untrusted";
+}
+export interface ContributionResponse {
+  status: "captured";
+  id: number;
+  anonym: boolean;
+  lifecycle_state: "quarantined";
+  prompt_trust: "untrusted";
+  idempotent_replay: boolean;
+  hinweis: string;
+}
+export interface KeysetPage<T> {
+  next_cursor: string | null;
+  has_more: boolean;
+  items?: T[];
 }
 export interface AdminContribution {
   id: number;
@@ -222,6 +289,12 @@ export interface AdminContribution {
   created_at: string;
   status: string;
   review_note: string;
+  lifecycle_state: string;
+  document_type: string;
+  pii_classification: PiiClassification;
+  prompt_trust: "untrusted";
+  prompt_injection_signal: boolean;
+  quarantine_reason: string;
 }
 // Modus E (Gegencheck): a DISQUALIFY-ONLY verdict (owner doctrine E4-1) — `disqualified`/`basis` are
 // always present when the object exists at all; `reason`/`source` only accompany a disqualification,

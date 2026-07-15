@@ -529,8 +529,8 @@ export function App() {
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}
           compute={compute}
-          onAnfrage={(partnerId) =>
-            api.anfrage(partnerId, caseId, memory.case_revision ?? 0)
+          onAnfrage={(partnerId, governance) =>
+            api.anfrage(partnerId, caseId, memory.case_revision ?? 0, governance)
           }
           onDownloadPdf={async () => {
             const [result, pdf] = await Promise.all([
@@ -540,6 +540,7 @@ export function App() {
             pdf.downloadBriefingPdf(result);
           }}
           onContribute={(payload) => api.contribute(payload)}
+          onWithdrawContribution={(id) => api.withdrawContribution(id)}
         />
         )}
         </Suspense>

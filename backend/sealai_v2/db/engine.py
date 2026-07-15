@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from enum import Enum
+from hashlib import sha256
 import re
 
 from sqlalchemy import create_engine, event, text
@@ -178,17 +179,30 @@ def _apply_runtime_scope(connection, scope: DatabaseRuntimeScope) -> None:
 
     scope.validated()
     connection.exec_driver_sql(_ROLE_SQL[scope.role])
+    tenant_ref = sha256(
+        f"sealai-api-lifecycle-tenant-v1\x00{scope.tenant_id}".encode()
+    ).hexdigest()
+    actor_ref = sha256(
+        (
+            "sealai-api-lifecycle-actor-v1\x00"
+            f"{scope.tenant_id}\x00{scope.subject_id}"
+        ).encode()
+    ).hexdigest()
     connection.execute(
         text(
             "SELECT "
             "set_config('app.tenant_id', :tenant_id, true), "
             "set_config('app.subject_id', :subject_id, true), "
-            "set_config('app.case_id', :case_id, true)"
+            "set_config('app.case_id', :case_id, true), "
+            "set_config('app.tenant_ref', :tenant_ref, true), "
+            "set_config('app.actor_ref', :actor_ref, true)"
         ),
         {
             "tenant_id": scope.tenant_id,
             "subject_id": scope.subject_id,
             "case_id": scope.case_id,
+            "tenant_ref": tenant_ref,
+            "actor_ref": actor_ref,
         },
     )
     actual_role = connection.scalar(text("SELECT current_role"))

@@ -14,10 +14,14 @@ import type {
   ComputeResponse,
   ConfirmationResponse,
   ContributePayload,
+  ContributionResponse,
   ConversationMemory,
+  HandoffGovernanceSelection,
   InterviewRefreshResponse,
   LegalAcceptancePayload,
   LegalAcceptanceStatus,
+  LifecyclePolicyResponse,
+  LifecycleReceiptResponse,
   ParamItem,
   SelfLead,
   SelfPartnerUpdate,
@@ -56,6 +60,27 @@ export class ApiClient {
     }
     if (!res.ok) throw new ApiError(res.status, `request failed (${res.status})`);
     return (await res.json()) as T;
+  }
+
+  private newIdempotencyKey(): string {
+    return globalThis.crypto.randomUUID();
+  }
+
+  lifecyclePolicy(): Promise<LifecyclePolicyResponse> {
+    return this.req("/contribute/policy");
+  }
+
+  private async activeLifecyclePolicy(): Promise<LifecyclePolicyResponse> {
+    const policy = await this.lifecyclePolicy();
+    if (
+      !policy.enabled ||
+      !policy.policy_authority_ref ||
+      !policy.purpose_version ||
+      !policy.consent_version
+    ) {
+      throw new ApiError(503, "API lifecycle policy is unavailable");
+    }
+    return policy;
   }
 
   chat(message: string, caseId?: string): Promise<ChatResponse> {
@@ -213,14 +238,40 @@ export class ApiClient {
     });
   }
   /** Modus F lead-gen: route the read-only projection of one exact authorized case revision. */
-  anfrage(partnerId: string, caseId: string, caseRevision: number): Promise<AnfrageResponse> {
+  async anfrage(
+    partnerId: string,
+    caseId: string,
+    caseRevision: number,
+    governance: HandoffGovernanceSelection,
+    idempotencyKey = this.newIdempotencyKey(),
+  ): Promise<AnfrageResponse> {
+    const policy = await this.activeLifecyclePolicy();
     return this.req("/anfrage", {
       method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({
         partner_id: partnerId,
         case_id: caseId,
         case_revision: caseRevision,
+        governance: {
+          tenant_id: policy.tenant_id,
+          policy_authority_ref: policy.policy_authority_ref,
+          purpose_version: policy.purpose_version,
+          consent_version: policy.consent_version,
+          ...governance,
+        },
       }),
+    });
+  }
+
+  cancelLead(
+    leadId: number,
+    idempotencyKey = this.newIdempotencyKey(),
+  ): Promise<LifecycleReceiptResponse> {
+    return this.req(`/leads/${leadId}/cancel`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ reason_code: "lead_cancelled" }),
     });
   }
 
@@ -242,9 +293,15 @@ export class ApiClient {
       method: "DELETE",
     });
   }
-  adminListLeads(partnerId?: string): Promise<{ leads: AdminLead[] }> {
-    const q = partnerId ? `?partner_id=${encodeURIComponent(partnerId)}` : "";
-    return this.req(`/admin/leads${q}`);
+  adminListLeads(
+    partnerId?: string,
+    cursor?: string,
+    limit = 50,
+  ): Promise<{ leads: AdminLead[]; next_cursor: string | null; has_more: boolean }> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (partnerId) query.set("partner_id", partnerId);
+    if (cursor) query.set("cursor", cursor);
+    return this.req(`/admin/leads?${query.toString()}`);
   }
 
   // ── Manufacturer self-service (role-gated + scoped to the token's hersteller_id, server-side) ──
@@ -254,16 +311,53 @@ export class ApiClient {
   partnerSelfUpdate(body: SelfPartnerUpdate): Promise<AdminPartner> {
     return this.req("/partner/me", { method: "PUT", body: JSON.stringify(body) });
   }
-  partnerSelfLeads(): Promise<{ leads: SelfLead[] }> {
-    return this.req("/partner/me/leads");
+  partnerSelfLeads(
+    cursor?: string,
+    limit = 50,
+  ): Promise<{ leads: SelfLead[]; next_cursor: string | null; has_more: boolean }> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.req(`/partner/me/leads?${query.toString()}`);
   }
 
-  // ── Wissens-Beitrag: a user shares their solution (→ untrusted DRAFT in the owner review queue) ──
-  contribute(body: ContributePayload): Promise<{ status: string; id: number; hinweis: string }> {
-    return this.req("/contribute", { method: "POST", body: JSON.stringify(body) });
+  // ── Wissens-Beitrag: explicit governance declaration → untrusted review quarantine ──
+  async contribute(
+    body: ContributePayload,
+    idempotencyKey = this.newIdempotencyKey(),
+  ): Promise<ContributionResponse> {
+    const policy = await this.activeLifecyclePolicy();
+    return this.req("/contribute", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({
+        ...body,
+        governance: {
+          tenant_id: policy.tenant_id,
+          policy_authority_ref: policy.policy_authority_ref,
+          purpose_version: policy.purpose_version,
+          consent_version: policy.consent_version,
+          ...body.governance,
+        },
+      }),
+    });
   }
-  adminListContributions(): Promise<{ contributions: AdminContribution[] }> {
-    return this.req("/admin/contributions");
+  withdrawContribution(
+    id: number,
+    idempotencyKey = this.newIdempotencyKey(),
+  ): Promise<LifecycleReceiptResponse> {
+    return this.req(`/contributions/${id}/withdrawal`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ reason_code: "user_withdrawal" }),
+    });
+  }
+  adminListContributions(
+    cursor?: string,
+    limit = 50,
+  ): Promise<{ contributions: AdminContribution[]; next_cursor: string | null; has_more: boolean }> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (cursor) query.set("cursor", cursor);
+    return this.req(`/admin/contributions?${query.toString()}`);
   }
   adminSetContributionStatus(id: number, status: string, reviewNote: string): Promise<unknown> {
     return this.req(`/admin/contributions/${id}/status`, {

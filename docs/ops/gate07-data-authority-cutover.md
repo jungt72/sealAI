@@ -1,7 +1,8 @@
 # GATE-07 — Datenautorität, Ownership, Constraints und RLS
 
 Status: **VORBEREITET, NICHT AUSGEFÜHRT, BLOCKIERT**. Dieses Runbook autorisiert keine
-Produktionsänderung. Migration 0012/0013 ist additiv; Profiling, Quarantäne-Markierung, Backfill,
+Produktionsänderung. Migration 0012/0013 und API-001-Migration 0014/0015 sind additiv; Profiling,
+Quarantäne-Markierung, Backfill,
 Constraint-Validierung, Rollenwechsel und RLS/FORCE RLS sind getrennte Freigabeschritte.
 
 ```yaml
@@ -16,7 +17,7 @@ current_state: >-
   belegt. Der transaction-scoped Runtime-GUC/Role-Adapter und getrennte API-/Worker-DSNs sind lokal
   implementiert, default-off und nicht deployt. GATE-07 bleibt geschlossen.
 exact_actions:
-  - 0012/0013 in einer isolierten, produktionsähnlichen PostgreSQL-Kopie migrieren
+  - 0012/0013/0014/0015 in einer isolierten, produktionsähnlichen PostgreSQL-Kopie migrieren
   - ausschließlich aggregiertes Profiling erzeugen und peer-reviewen
   - unveränderliches, restore-getestetes PostgreSQL-Backup erstellen
   - mehrdeutige Legacy-Zeilen ohne Owner-Zuweisung oder Löschung quarantänisieren
@@ -45,7 +46,7 @@ preconditions:
   - separate schriftliche GATE-07-Freigabe mit Zeitfenster und Befehlsumfang
   - GATE-06-Freigabe für produktive Auth-/Realm-Rollenänderungen
   - exakter Produktionsfingerprint erneut read-only verifiziert
-  - 0012/0013 erfolgreich in Restore-Kopie getestet
+  - 0012/0013/0014/0015 erfolgreich in Restore-Kopie getestet
   - aggregiertes Profil ohne ungelöste Verletzung für den jeweiligen Schritt
   - immutable Backup vorhanden und Restore in isolierter DB erfolgreich
   - Legacy-Mapping von zwei Menschen geprüft; keine automatische Zuweisung
@@ -55,8 +56,8 @@ preconditions:
 backup_status: "NICHT BELEGT; Produktionsbackup/Restore ist Pflicht vor Mutation"
 verification:
   - Profiling erneut ausführen; nur aggregierte Zähler speichern
-  - pg_constraint.convalidated für alle neun Constraints prüfen
-  - pg_class.relrowsecurity und relforcerowsecurity für alle acht Tabellen prüfen
+  - pg_constraint.convalidated für alle fünfzehn Constraints prüfen
+  - pg_class.relrowsecurity und relforcerowsecurity für alle dreizehn Tabellen prüfen
   - pg_roles auf NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOBYPASSRLS prüfen
   - Cross-Tenant-, Cross-Owner-, stale-case- und quarantined-row-Negativtests
   - API-, Memory-Worker- und Knowledge-Worker-Smokes mit getrennten Rollen
@@ -82,7 +83,9 @@ stop_conditions:
 
 1. **Additive Schema-Stufe:** `20260715_0012` ergänzt nullable Ownership-/Case-Grenzen,
    Authority-Epoch und die fingerprint-basierte Quarantänetabelle. `20260715_0013` installiert nur
-   PostgreSQL-`NOT VALID`-Constraints. Keine Migration validiert Constraints oder aktiviert RLS.
+   PostgreSQL-`NOT VALID`-Constraints. `20260715_0014` ergänzt nullable Governance-/Lifecycle-
+   Felder sowie Quota-, Admission-, Receipt- und Eventtabellen; `20260715_0015` ergänzt sechs
+   weitere `NOT VALID`-Checks. Keine Migration validiert Constraints oder aktiviert RLS.
 2. **Profiling:**
    [gate07-data-authority-profile.sql](../../ops/postgres/gate07-data-authority-profile.sql) läuft
    `READ ONLY` und gibt ausschließlich Zähler aus. Ausgaben bleiben trotzdem zugriffsbeschränkte
@@ -95,13 +98,15 @@ stop_conditions:
 4. **Backfill:** Ein Mapping darf nur aus beweisbarer Identität/Provenienz stammen. Zwei Reviewer
    signieren Record-Fingerprint, Ziel-Subject, Quelle, Ablauf und Change-Ticket. Mehrdeutige Zeilen
    bleiben quarantänisiert. Ein heuristischer Tenant- oder „erster Nutzer“-Backfill ist verboten.
-5. **Validierung:** Jeder der neun Constraints wird separat mit `VALIDATE CONSTRAINT` ausgeführt.
+5. **Validierung:** Jeder der fünfzehn Constraints wird separat mit `VALIDATE CONSTRAINT`
+   ausgeführt.
    Nach jedem Befehl folgen Profil und Service-Smoke; der nächste Befehl benötigt einen sauberen
    Beleg. Diese Befehle stehen absichtlich nicht in Alembic.
 6. **Rollen/RLS:**
    [gate07-rls-cutover.sql](../../ops/postgres/gate07-rls-cutover.sql) bleibt unerreichbar, bis der
-   Runtime-Adapter pro Transaktion eine verifizierte Rolle sowie `app.tenant_id`/`app.subject_id`
-   setzt und Connection-Pool-Resettests bestanden hat. FORCE RLS verhindert den Tabellenowner-
+   Runtime-Adapter pro Transaktion eine verifizierte Rolle, `app.tenant_id`/`app.subject_id` sowie
+   die aus verifizierter Identität abgeleiteten `app.tenant_ref`/`app.actor_ref` setzt und
+   Connection-Pool-Resettests bestanden hat. FORCE RLS verhindert den Tabellenowner-
    Bypass; API und Worker dürfen niemals Tabellenowner sein.
 
 ## Lokal implementierter Runtime-Vertrag
@@ -110,7 +115,8 @@ stop_conditions:
   `sealai_worker`, `sealai_tenant_admin`, `sealai_platform_owner` und `sealai_system_operator`.
   Rollenbezeichner stammen nie aus JWT, Request oder Environment.
 - Jede PostgreSQL-Root-Transaktion setzt die Rolle per statischem `SET LOCAL ROLE` und bindet
-  `app.tenant_id`, `app.subject_id` und `app.case_id` ausschließlich als Parameter an
+  `app.tenant_id`, `app.subject_id`, `app.case_id`, `app.tenant_ref` und `app.actor_ref`
+  ausschließlich als Parameter an
   `set_config(..., true)`. Fehlender Scope, fremde Prozessrolle oder Rollenaktivierungsfehler brechen
   vor Application-SQL ab. Commit/Rollback entfernt Rolle und GUCs vor Pool-Reuse.
 - API und Worker haben getrennte Konfigurationswerte und Credentials. Der Worker-Container
@@ -121,9 +127,9 @@ stop_conditions:
   Prüfung erfolgen.
 - Der opt-in Integrationstest migriert eine nach Name und Bestätigung geschützte, leere ephemere
   PostgreSQL-Datenbank mit den echten Alembic-Revisionen, validiert die Shadow-Constraints, führt
-  den exakten Transaktionskörper des Cutover-Skripts aus und prüft Cross-Tenant/Cross-Owner sowie
-  Pool-Reuse. Ohne expliziten Test-DSN wird er sichtbar übersprungen; SQLite oder Mocks zählen nie
-  als RLS-Beleg.
+  den exakten Transaktionskörper des Cutover-Skripts aus und prüft Cross-Tenant/Cross-Owner,
+  Lifecycle-Actor/Tenant-Races sowie Pool-Reuse. Ohne expliziten Test-DSN wird er sichtbar
+  übersprungen; SQLite oder Mocks zählen nie als RLS-Beleg.
 
 ## Derzeitige harte Blocker
 
@@ -138,3 +144,6 @@ stop_conditions:
 Deshalb lautet der zulässige DATA-001-Status: **IMPLEMENTED_NOT_DEPLOYED / GATE-07 BLOCKED**, niemals
 `VERIFIED`. Der lokale Adapter und die Cutover-Artefakte ersetzen weder Produktionsprofil, Backup,
 Restore, menschlich geprüftes Mapping, echte PostgreSQL-Laufevidenz noch einen Deploy-/RLS-Nachweis.
+Dasselbe gilt für API-001: Die lokale Lifecycle-Ebene bleibt default-off und
+**IMPLEMENTED_NOT_DEPLOYED / GATE-06/07/08 BLOCKED**; Details stehen im
+[API-Lifecycle-Cutover-Vertrag](gate06-08-api-lifecycle-cutover.md).

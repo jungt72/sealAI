@@ -1,6 +1,11 @@
 import { useState } from "react";
 
-import type { Alternativen, AnfrageResponse } from "../contracts";
+import type {
+  Alternativen,
+  AnfrageResponse,
+  HandoffGovernanceSelection,
+  PiiClassification,
+} from "../contracts";
 import { GELTUNGSRAHMEN } from "../framing";
 
 /**
@@ -27,13 +32,18 @@ export function AlternativenPanel({
 }: {
   data: Alternativen;
   /** Fire the Anfrage for one partner using the server-authorized active case revision. */
-  onAnfrage?: (partnerId: string) => Promise<AnfrageResponse>;
+  onAnfrage?: (
+    partnerId: string,
+    governance: HandoffGovernanceSelection,
+  ) => Promise<AnfrageResponse>;
   /** Download the Anfrage briefing as a PDF WITHOUT sending it (the host fetches it + builds the PDF). */
   onDownloadPdf?: () => void | Promise<void>;
 }) {
   const partners = data.grounded_data && data.hersteller ? data.hersteller : [];
   const grounded = partners.length > 0;
   const [states, setStates] = useState<Record<string, AnfrageState>>({});
+  const [handoffConfirmed, setHandoffConfirmed] = useState<Record<string, boolean>>({});
+  const [pii, setPii] = useState<Record<string, PiiClassification>>({});
   const [pdfBusy, setPdfBusy] = useState(false);
 
   async function downloadPdf() {
@@ -47,10 +57,14 @@ export function AlternativenPanel({
   }
 
   async function fire(partnerId: string) {
-    if (!onAnfrage) return;
+    if (!onAnfrage || !handoffConfirmed[partnerId]) return;
     setStates((s) => ({ ...s, [partnerId]: { phase: "sending" } }));
     try {
-      const res = await onAnfrage(partnerId);
+      const res = await onAnfrage(partnerId, {
+        handoff_confirmed: true,
+        pii_classification: pii[partnerId] ?? "unknown",
+        prompt_trust: "untrusted",
+      });
       setStates((s) => ({ ...s, [partnerId]: { phase: "sent", res } }));
     } catch {
       setStates((s) => ({ ...s, [partnerId]: { phase: "error" } }));
@@ -128,25 +142,60 @@ export function AlternativenPanel({
                   <div className="alt-partner-action">
                     {st.phase === "sent" ? (
                       <div className="alt-anfrage-done" data-testid="anfrage-done">
-                        <strong className="alt-anfrage-ok">✓ Anfrage übermittelt</strong>
+                        <strong className="alt-anfrage-ok">✓ Anfrage erfasst</strong>
                         <p className="alt-anfrage-hinweis">{st.res.hinweis}</p>
                         <details className="alt-anfrage-briefing">
-                          <summary>Übermitteltes Briefing ansehen</summary>
+                          <summary>Erfasstes Briefing ansehen</summary>
                           <pre className="alt-anfrage-briefing-body">
                             {st.res.briefing.body}
                           </pre>
                         </details>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        className="alt-anfrage-btn"
-                        data-testid={`anfrage-${h.id}`}
-                        disabled={st.phase === "sending"}
-                        onClick={() => void fire(h.id)}
-                      >
-                        {st.phase === "sending" ? "Wird gesendet…" : "Anfrage senden"}
-                      </button>
+                      <>
+                        <label className="contrib-field">
+                          <span>Personenbezogene Daten im Briefing</span>
+                          <select
+                            value={pii[h.id] ?? "unknown"}
+                            onChange={(event) =>
+                              setPii((current) => ({
+                                ...current,
+                                [h.id]: event.target.value as PiiClassification,
+                              }))
+                            }
+                          >
+                            <option value="unknown">Unbekannt – Review-Quarantäne</option>
+                            <option value="none_declared">Keine deklariert</option>
+                            <option value="present">Enthalten – Review-Quarantäne</option>
+                          </select>
+                        </label>
+                        <label className="contrib-check">
+                          <input
+                            type="checkbox"
+                            checked={handoffConfirmed[h.id] ?? false}
+                            data-testid={`anfrage-confirm-${h.id}`}
+                            onChange={(event) =>
+                              setHandoffConfirmed((current) => ({
+                                ...current,
+                                [h.id]: event.target.checked,
+                              }))
+                            }
+                          />
+                          <span>
+                            Übergabe dieses Briefings ausdrücklich bestätigen. Maßgeblich ist die
+                            extern bereitgestellte Governance-Fassung.
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          className="alt-anfrage-btn"
+                          data-testid={`anfrage-${h.id}`}
+                          disabled={st.phase === "sending" || !handoffConfirmed[h.id]}
+                          onClick={() => void fire(h.id)}
+                        >
+                          {st.phase === "sending" ? "Wird erfasst…" : "Anfrage kontrolliert erfassen"}
+                        </button>
+                      </>
                     )}
                     {st.phase === "error" ? (
                       <p className="alt-anfrage-error">

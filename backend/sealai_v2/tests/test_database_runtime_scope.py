@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 from sqlalchemy import create_engine
@@ -77,10 +78,14 @@ def test_runtime_scope_uses_only_fixed_role_sql_and_bound_gucs(
     assert "set_config('app.tenant_id', :tenant_id, true)" in guc_sql
     assert "set_config('app.subject_id', :subject_id, true)" in guc_sql
     assert "set_config('app.case_id', :case_id, true)" in guc_sql
+    assert "set_config('app.tenant_ref', :tenant_ref, true)" in guc_sql
+    assert "set_config('app.actor_ref', :actor_ref, true)" in guc_sql
     assert parameters == {
         "tenant_id": "tenant-a'; RESET ROLE; --",
         "subject_id": "subject-a",
         "case_id": "case-a",
+        "tenant_ref": "aebf1117c1ef3efd604f01e6f2918d8d3012306f32e7d23bae343ea1712353e6",
+        "actor_ref": "37fadfb208ba167f7bd46b6afe85b1048cd4c674944e99bce32baf238c629d0f",
     }
     assert "RESET ROLE" not in connection.driver_sql[0]
 
@@ -171,4 +176,28 @@ def test_cutover_contract_is_adapter_gated_and_adds_tenant_scoped_worker_policy(
     assert "tenant_id = current_setting('app.tenant_id', true)" in source
     assert "GRANT SELECT, INSERT, UPDATE, DELETE ON" in source
     assert "TO sealai_worker;" in source
-    assert source.count("FORCE ROW LEVEL SECURITY") >= 8
+    assert "current_setting('app.actor_ref', true)" in source
+    assert "current_setting('app.tenant_ref', true)" in source
+    assert source.count("FORCE ROW LEVEL SECURITY") >= 13
+    grants = re.findall(r"\bGRANT\s+(.+?)\s+TO\s+\w+\s*;", source, re.DOTALL)
+    no_delete = (
+        "v2_leads",
+        "v2_contributions",
+        "v2_api_lifecycle_windows",
+        "v2_api_lifecycle_admissions",
+        "v2_api_lifecycle_receipts",
+        "v2_api_lifecycle_events",
+    )
+    for grant in grants:
+        privileges = grant.split(" ON", 1)[0]
+        if "DELETE" in privileges:
+            assert all(table not in grant for table in no_delete)
+        if "UPDATE" in privileges:
+            assert "v2_api_lifecycle_receipts" not in grant
+            assert "v2_api_lifecycle_events" not in grant
+    assert re.search(
+        r"GRANT SELECT, INSERT ON\s+"
+        r"v2_api_lifecycle_receipts, v2_api_lifecycle_events\s+"
+        r"TO sealai_api;",
+        source,
+    )

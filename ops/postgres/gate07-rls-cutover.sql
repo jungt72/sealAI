@@ -35,7 +35,7 @@ SELECT current_database() = :'target_database' AS target_database_matches \gset
   \quit 3
 \endif
 
-SELECT count(*) = 9 AND bool_and(convalidated) AS shadow_constraints_ready
+SELECT count(*) = 15 AND bool_and(convalidated) AS shadow_constraints_ready
   FROM pg_constraint
  WHERE conname IN (
      'ck_v2_sessions_boundary_shadow',
@@ -46,11 +46,17 @@ SELECT count(*) = 9 AND bool_and(convalidated) AS shadow_constraints_ready
      'fk_v2_facts_session_shadow',
      'fk_v2_derived_session_shadow',
      'fk_v2_interview_state_session_shadow',
-     'fk_v2_leads_case_shadow'
+     'fk_v2_leads_case_shadow',
+     'ck_v2_contributions_lifecycle_shadow',
+     'ck_v2_leads_lifecycle_shadow',
+     'ck_v2_api_lifecycle_windows_nonnegative_shadow',
+     'ck_v2_api_lifecycle_admission_bytes_shadow',
+     'ck_v2_api_lifecycle_receipt_digest_shadow',
+     'ck_v2_api_lifecycle_event_digest_shadow'
  ) \gset
 \if :shadow_constraints_ready
 \else
-  \echo 'all nine shadow constraints must be validated in an earlier approved stage'
+  \echo 'all fifteen shadow constraints must be validated in an earlier approved stage'
   \quit 3
 \endif
 
@@ -87,22 +93,42 @@ ALTER TABLE v2_interview_state OWNER TO sealai_migration_owner;
 ALTER TABLE v2_durable_facts OWNER TO sealai_migration_owner;
 ALTER TABLE v2_memory_items OWNER TO sealai_migration_owner;
 ALTER TABLE v2_leads OWNER TO sealai_migration_owner;
+ALTER TABLE v2_contributions OWNER TO sealai_migration_owner;
+ALTER TABLE v2_api_lifecycle_windows OWNER TO sealai_migration_owner;
+ALTER TABLE v2_api_lifecycle_admissions OWNER TO sealai_migration_owner;
+ALTER TABLE v2_api_lifecycle_receipts OWNER TO sealai_migration_owner;
+ALTER TABLE v2_api_lifecycle_events OWNER TO sealai_migration_owner;
+
+-- Re-runs must remove any broader historic grant before installing the least-privilege contract.
+-- The API has no delete path for leads/contributions and receipts/events are append-only at runtime.
+REVOKE ALL ON
+  v2_leads, v2_contributions, v2_api_lifecycle_windows,
+  v2_api_lifecycle_admissions, v2_api_lifecycle_receipts, v2_api_lifecycle_events
+FROM sealai_api;
+REVOKE ALL ON v2_leads FROM sealai_tenant_admin;
+REVOKE ALL ON v2_contributions FROM sealai_platform_owner;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   v2_sessions, v2_messages, v2_facts, v2_derived, v2_interview_state,
-  v2_durable_facts, v2_memory_items, v2_leads
+  v2_durable_facts, v2_memory_items
 TO sealai_api;
 -- SET LOCAL ROLE drops the login role's incidental privileges. Keep the application grant
 -- explicit so enabling the adapter cannot break an unrelated V2 repository or rely on table
 -- ownership. RLS remains the second boundary on the protected tables below.
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-  v2_case_records, v2_case_snapshots, v2_contributions, v2_decision_approvals,
+  v2_case_records, v2_case_snapshots, v2_decision_approvals,
   v2_decision_records, v2_hersteller_partner, v2_interview_shadow_decisions,
   v2_knowledge_authority_epochs, v2_knowledge_claims, v2_knowledge_documents,
   v2_knowledge_outbox, v2_knowledge_reviews, v2_legal_acceptance,
   v2_manufacturer_capability_profiles, v2_manufacturer_capability_reviews,
   v2_memory_events, v2_memory_outbox, v2_memory_sources,
   v2_provider_admissions, v2_provider_quota_windows
+TO sealai_api;
+GRANT SELECT, INSERT, UPDATE ON
+  v2_leads, v2_contributions, v2_api_lifecycle_windows, v2_api_lifecycle_admissions
+TO sealai_api;
+GRANT SELECT, INSERT ON
+  v2_api_lifecycle_receipts, v2_api_lifecycle_events
 TO sealai_api;
 GRANT SELECT, UPDATE ON v2_knowledge_claims, v2_knowledge_outbox TO sealai_worker;
 GRANT SELECT, DELETE ON v2_memory_items, v2_memory_sources TO sealai_worker;
@@ -112,16 +138,19 @@ GRANT SELECT, INSERT, UPDATE ON
 TO sealai_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
   v2_sessions, v2_messages, v2_facts, v2_derived, v2_interview_state,
-  v2_durable_facts, v2_memory_items, v2_leads
+  v2_durable_facts, v2_memory_items
 TO sealai_tenant_admin;
+GRANT SELECT, INSERT, UPDATE ON v2_leads TO sealai_tenant_admin;
 GRANT SELECT ON v2_leads TO sealai_platform_owner;
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-  v2_contributions, v2_hersteller_partner, v2_manufacturer_capability_profiles,
+  v2_hersteller_partner, v2_manufacturer_capability_profiles,
   v2_manufacturer_capability_reviews
 TO sealai_platform_owner;
+GRANT SELECT, INSERT, UPDATE ON v2_contributions TO sealai_platform_owner;
 GRANT SELECT ON
   v2_interview_shadow_decisions, v2_memory_outbox, v2_knowledge_outbox,
-  v2_provider_admissions, v2_provider_quota_windows
+  v2_provider_admissions, v2_provider_quota_windows,
+  v2_api_lifecycle_admissions, v2_api_lifecycle_windows
 TO sealai_system_operator;
 DO $sequence_grants$
 BEGIN
@@ -141,6 +170,11 @@ ALTER TABLE v2_interview_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE v2_durable_facts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE v2_memory_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE v2_leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE v2_contributions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_windows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_admissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_events ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS api_owner ON v2_sessions;
 CREATE POLICY api_owner ON v2_sessions TO sealai_api
@@ -248,6 +282,66 @@ DROP POLICY IF EXISTS platform_owner_read ON v2_leads;
 CREATE POLICY platform_owner_read ON v2_leads FOR SELECT TO sealai_platform_owner
   USING (true);
 
+DROP POLICY IF EXISTS api_owner ON v2_contributions;
+CREATE POLICY api_owner ON v2_contributions TO sealai_api
+  USING (
+    tenant_ref = current_setting('app.tenant_id', true)
+    AND owner_subject_ref = current_setting('app.actor_ref', true)
+  )
+  WITH CHECK (
+    tenant_ref = current_setting('app.tenant_id', true)
+    AND owner_subject_ref = current_setting('app.actor_ref', true)
+  );
+DROP POLICY IF EXISTS platform_owner_review ON v2_contributions;
+CREATE POLICY platform_owner_review ON v2_contributions TO sealai_platform_owner
+  USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS api_scope ON v2_api_lifecycle_windows;
+CREATE POLICY api_scope ON v2_api_lifecycle_windows TO sealai_api
+  USING (
+    (scope_kind = 'actor' AND scope_ref = current_setting('app.actor_ref', true))
+    OR (scope_kind = 'tenant' AND scope_ref = current_setting('app.tenant_ref', true))
+  )
+  WITH CHECK (
+    (scope_kind = 'actor' AND scope_ref = current_setting('app.actor_ref', true))
+    OR (scope_kind = 'tenant' AND scope_ref = current_setting('app.tenant_ref', true))
+  );
+DROP POLICY IF EXISTS system_operator_read ON v2_api_lifecycle_windows;
+CREATE POLICY system_operator_read ON v2_api_lifecycle_windows FOR SELECT TO sealai_system_operator
+  USING (true);
+
+-- Tenant-wide visibility is deliberate only on privacy-minimized admissions: the atomic API
+-- authority must count every active actor lease in the tenant to enforce tenant concurrency.
+DROP POLICY IF EXISTS api_tenant_scope ON v2_api_lifecycle_admissions;
+CREATE POLICY api_tenant_scope ON v2_api_lifecycle_admissions TO sealai_api
+  USING (tenant_ref = current_setting('app.tenant_ref', true))
+  WITH CHECK (tenant_ref = current_setting('app.tenant_ref', true));
+DROP POLICY IF EXISTS system_operator_read ON v2_api_lifecycle_admissions;
+CREATE POLICY system_operator_read ON v2_api_lifecycle_admissions FOR SELECT TO sealai_system_operator
+  USING (true);
+
+DROP POLICY IF EXISTS api_actor_scope ON v2_api_lifecycle_receipts;
+CREATE POLICY api_actor_scope ON v2_api_lifecycle_receipts TO sealai_api
+  USING (
+    tenant_ref = current_setting('app.tenant_ref', true)
+    AND actor_ref = current_setting('app.actor_ref', true)
+  )
+  WITH CHECK (
+    tenant_ref = current_setting('app.tenant_ref', true)
+    AND actor_ref = current_setting('app.actor_ref', true)
+  );
+
+DROP POLICY IF EXISTS api_actor_scope ON v2_api_lifecycle_events;
+CREATE POLICY api_actor_scope ON v2_api_lifecycle_events TO sealai_api
+  USING (
+    tenant_id = current_setting('app.tenant_id', true)
+    AND actor_ref = current_setting('app.actor_ref', true)
+  )
+  WITH CHECK (
+    tenant_id = current_setting('app.tenant_id', true)
+    AND actor_ref = current_setting('app.actor_ref', true)
+  );
+
 ALTER TABLE v2_sessions FORCE ROW LEVEL SECURITY;
 ALTER TABLE v2_messages FORCE ROW LEVEL SECURITY;
 ALTER TABLE v2_facts FORCE ROW LEVEL SECURITY;
@@ -256,15 +350,23 @@ ALTER TABLE v2_interview_state FORCE ROW LEVEL SECURITY;
 ALTER TABLE v2_durable_facts FORCE ROW LEVEL SECURITY;
 ALTER TABLE v2_memory_items FORCE ROW LEVEL SECURITY;
 ALTER TABLE v2_leads FORCE ROW LEVEL SECURITY;
+ALTER TABLE v2_contributions FORCE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_windows FORCE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_admissions FORCE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_receipts FORCE ROW LEVEL SECURITY;
+ALTER TABLE v2_api_lifecycle_events FORCE ROW LEVEL SECURITY;
 
-SELECT count(*) = 8 AND bool_and(c.relrowsecurity AND c.relforcerowsecurity)
+SELECT count(*) = 13 AND bool_and(c.relrowsecurity AND c.relforcerowsecurity)
        AS rls_contract_installed
   FROM pg_class c
   JOIN pg_namespace n ON n.oid = c.relnamespace
  WHERE n.nspname = current_schema()
    AND c.relname IN (
      'v2_sessions', 'v2_messages', 'v2_facts', 'v2_derived',
-     'v2_interview_state', 'v2_durable_facts', 'v2_memory_items', 'v2_leads'
+     'v2_interview_state', 'v2_durable_facts', 'v2_memory_items', 'v2_leads',
+     'v2_contributions', 'v2_api_lifecycle_windows',
+     'v2_api_lifecycle_admissions', 'v2_api_lifecycle_receipts',
+     'v2_api_lifecycle_events'
    ) \gset
 \if :rls_contract_installed
 \else

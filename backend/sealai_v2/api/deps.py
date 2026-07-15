@@ -22,6 +22,7 @@ from sealai_v2.pipeline.pipeline import Pipeline, build_pipeline
 from sealai_v2.security.auth import KeycloakJwtValidator
 from sealai_v2.security.control_metrics import record_auth_denial, record_quota_denial
 from sealai_v2.security.cost_control import CostControlPolicy, PostgresCostControlStore
+from sealai_v2.security.lifecycle_control import PostgresLifecycleControlStore
 
 _COST_LOG = logging.getLogger("sealai_v2.provider_admission")
 
@@ -285,6 +286,28 @@ def get_contribution_store():
     from sealai_v2.db.contributions import build_contribution_store
 
     return build_contribution_store(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_lifecycle_control_store():
+    """Shared API-001 quota/idempotency authority; never falls back to process memory."""
+    settings = get_settings()
+    if not settings.api_lifecycle_enabled or not settings.database_url:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "api_lifecycle_unavailable",
+                "message": "lifecycle-controlled write paths are disabled",
+            },
+        )
+    try:
+        from sealai_v2.db.engine import make_api_sessionmaker
+
+        return PostgresLifecycleControlStore(make_api_sessionmaker(settings))
+    except Exception:
+        raise HTTPException(
+            status_code=503, detail="API lifecycle control unavailable"
+        ) from None
 
 
 @lru_cache(maxsize=1)

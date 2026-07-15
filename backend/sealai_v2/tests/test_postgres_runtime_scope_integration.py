@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from sqlalchemy import inspect, text
@@ -23,6 +25,11 @@ from sealai_v2.db.engine import (
 )
 from sealai_v2.db.migrate import _upgrade_engine, down, migration_status
 from sealai_v2.db.models import V2MemoryItem
+from sealai_v2.core.contracts import VerifiedIdentity
+from sealai_v2.security.lifecycle_control import (
+    LifecyclePolicy,
+    PostgresLifecycleControlStore,
+)
 
 _DSN_ENV = "SEALAI_TEST_POSTGRES_DSN"
 _CONFIRM_ENV = "SEALAI_TEST_POSTGRES_CONFIRM"
@@ -37,6 +44,11 @@ _PROTECTED_TABLES = (
     "v2_durable_facts",
     "v2_memory_items",
     "v2_leads",
+    "v2_contributions",
+    "v2_api_lifecycle_windows",
+    "v2_api_lifecycle_admissions",
+    "v2_api_lifecycle_receipts",
+    "v2_api_lifecycle_events",
 )
 _CONSTRAINT_TABLES = {
     "ck_v2_sessions_boundary_shadow": "v2_sessions",
@@ -48,6 +60,12 @@ _CONSTRAINT_TABLES = {
     "fk_v2_derived_session_shadow": "v2_derived",
     "fk_v2_interview_state_session_shadow": "v2_interview_state",
     "fk_v2_leads_case_shadow": "v2_leads",
+    "ck_v2_contributions_lifecycle_shadow": "v2_contributions",
+    "ck_v2_leads_lifecycle_shadow": "v2_leads",
+    "ck_v2_api_lifecycle_windows_nonnegative_shadow": "v2_api_lifecycle_windows",
+    "ck_v2_api_lifecycle_admission_bytes_shadow": "v2_api_lifecycle_admissions",
+    "ck_v2_api_lifecycle_receipt_digest_shadow": "v2_api_lifecycle_receipts",
+    "ck_v2_api_lifecycle_event_digest_shadow": "v2_api_lifecycle_events",
 }
 _ROLES = (
     "sealai_migration_owner",
@@ -82,7 +100,7 @@ def _cutover_transaction_body() -> str:
     # Psql's gate checks and post-COMMIT verification are control-plane statements. Execute the
     # exact repository transaction between BEGIN and the verification query; no policy/grant SQL is
     # copied into this test, so drift is exercised rather than mirrored.
-    body = source.split("BEGIN;", 1)[1].split("SELECT count(*) = 8 AND bool_and", 1)[0]
+    body = source.split("BEGIN;", 1)[1].split("SELECT count(*) = 13 AND bool_and", 1)[0]
     assert "SET LOCAL ROLE" not in body
     assert "FORCE ROW LEVEL SECURITY" in body
     return f"BEGIN;{body}COMMIT;"
@@ -119,7 +137,7 @@ def migrated_gate07_engine():
                 )
 
         _upgrade_engine(engine)
-        assert migration_status(engine) == ("20260715_0013", "20260715_0013")
+        assert migration_status(engine) == ("20260715_0015", "20260715_0015")
         with engine.begin() as connection:
             not_valid = set(
                 connection.scalars(
@@ -317,6 +335,51 @@ def test_exact_cutover_sets_force_rls_and_non_bypass_roles(
         ).all()
         assert {row[0] for row in role_flags} == set(_ROLES)
         assert all(tuple(row[1:]) == (False, False, False, False) for row in role_flags)
+
+
+def test_real_postgres_lifecycle_concurrency_race_admits_one(
+    migrated_gate07_engine,
+) -> None:
+    engine = migrated_gate07_engine
+    factory = make_runtime_sessionmaker(
+        engine, allowed_roles=frozenset({DatabaseRuntimeRole.API})
+    )
+    identity = VerifiedIdentity("tenant-race", "session-race", "actor-race")
+    policy = LifecyclePolicy(
+        actor_per_minute=100,
+        tenant_per_minute=100,
+        actor_per_day=100,
+        tenant_per_day=100,
+        actor_storage_bytes=100_000,
+        tenant_storage_bytes=100_000,
+        actor_max_concurrent=1,
+        tenant_max_concurrent=5,
+        lease_s=60,
+    )
+    barrier = Barrier(2)
+
+    def compete(index: int):
+        barrier.wait()
+        with bind_database_scope(
+            tenant_id=identity.tenant_id,
+            subject_id=identity.subject,
+            case_id=identity.session_id,
+        ):
+            return PostgresLifecycleControlStore(factory).admit(
+                identity,
+                policy,
+                action="contribution.create",
+                idempotency_key=f"postgres-race-{index:04d}",
+                request_digest=f"{'a' if index == 0 else 'b'}" * 64,
+                estimated_bytes=1,
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        decisions = list(executor.map(compete, range(2)))
+    assert sum(decision.allowed for decision in decisions) == 1
+    assert next(decision for decision in decisions if not decision.allowed).reason == (
+        "actor_concurrency"
+    )
 
 
 def test_exact_worker_role_is_tenant_bounded_on_destructive_memory_table(
