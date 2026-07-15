@@ -112,6 +112,22 @@ retired V1/development environment and are not installed by backend-v2 or its
 CI. `seo/pyproject.toml` declares no dependencies. Re-activating any excluded
 environment requires adding its generated lock and audit scope before use.
 
+Those three inactive Python manifests are excluded from the repository Trivy
+traversal only through the exact path/classification/SHA-256 inventory in
+`security/supply-chain-policy.json`. The policy gate inventories every tracked
+`requirements*.txt`, rejects hash drift, and rejects any Dockerfile or workflow
+that references an excluded manifest. `AGENTS.md` is likewise hash-bound as a
+documented loose-file license-scanner false positive; it is not a dependency or
+license artifact. Adding a new exclusion requires changing the hard-coded gate
+contract and its adversarial tests, not merely editing Trivy configuration.
+
+The exclusion boundary does not waive Node license findings. Trivy's remaining
+UNKNOWN/HIGH results (including conditional Strapi terms and bundled libvips
+terms) continue to fail the repository license job until an independently
+reviewed, exact package/version decision and its distribution obligations are
+recorded. A red license job is therefore an intentional external legal-review
+blocker, not permission to publish or deploy the affected artifacts.
+
 Container/registry evidence still requires the relevant external CI or runtime.
 Local work must not claim those executions as complete. Publication and deploy
 remain disabled until their independent controls exist.

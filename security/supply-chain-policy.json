@@ -36,6 +36,28 @@
       "name": "security-control-tools"
     }
   ],
+  "trivy_excluded_files": [
+    {
+      "classification": "inactive_python_host_snapshot",
+      "path": "requirements.txt",
+      "sha256": "502ffe01d68b784e32a665f5bc355f3c7019eac9575a1ed7fd8397d0ce89b10d"
+    },
+    {
+      "classification": "inactive_python_v1_runtime",
+      "path": "backend/requirements.txt",
+      "sha256": "aa3b1dee682d0115c940e7786507fb6d24f81b173102bb74523d28ed48abc6b4"
+    },
+    {
+      "classification": "inactive_python_v1_development",
+      "path": "backend/requirements-dev.txt",
+      "sha256": "8bd2149e3ccf1617aa552743130bf2f9be120bc9af66cb0430c24f93372c3e0a"
+    },
+    {
+      "classification": "license_scanner_false_positive_non_license",
+      "path": "AGENTS.md",
+      "sha256": "33b55edde967c1532d34efe792f5308019e6e412134dc8b223b8f31103023b04"
+    }
+  ],
   "node_projects": [
     {
       "name": "repository-tooling",

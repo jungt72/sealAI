@@ -46,6 +46,12 @@ INTERNAL_IMAGE_REPOSITORIES = {
     "ghcr.io/jungt72/sealai-keycloak",
 }
 BLOCKED_EXTERNAL = "BLOCKED_EXTERNAL"
+TRIVY_EXCLUDED_FILES = {
+    "requirements.txt": "inactive_python_host_snapshot",
+    "backend/requirements.txt": "inactive_python_v1_runtime",
+    "backend/requirements-dev.txt": "inactive_python_v1_development",
+    "AGENTS.md": "license_scanner_false_positive_non_license",
+}
 REQUIRED_SECURITY_CHECKS = (
     "backend-contracts",
     "backend ruff-format (re-debt guard)",
@@ -147,6 +153,7 @@ def load_policy(path: Path = POLICY_PATH) -> dict[str, Any]:
             "schema_version",
             "lock_generator",
             "python_locks",
+            "trivy_excluded_files",
             "node_projects",
             "dockerfiles",
             "production_manifests",
@@ -190,6 +197,7 @@ def load_policy(path: Path = POLICY_PATH) -> dict[str, Any]:
         isinstance(policy.get(key), list) and policy[key]
         for key in (
             "python_locks",
+            "trivy_excluded_files",
             "node_projects",
             "dockerfiles",
             "production_manifests",
@@ -389,6 +397,87 @@ def verify_python_locks(root: Path, policy: dict[str, Any]) -> None:
             if locked.get(package) != version:
                 raise SupplyChainError(
                     f"Python direct dependency is absent from lock: {package}"
+                )
+    process = subprocess.run(
+        ["git", "ls-files", "*requirements*.txt"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        raise SupplyChainError("cannot inventory tracked Python dependency files")
+    tracked = {line for line in process.stdout.splitlines() if line}
+    governed = {
+        str(item["input"])
+        for item in policy["python_locks"]
+        if isinstance(item, dict) and isinstance(item.get("input"), str)
+    }
+    excluded = {
+        str(item["path"])
+        for item in policy["trivy_excluded_files"]
+        if isinstance(item, dict)
+        and str(item.get("classification", "")).startswith("inactive_python_")
+    }
+    if tracked != governed | excluded:
+        raise SupplyChainError("Python dependency manifest inventory is incomplete")
+
+
+def verify_trivy_exclusions(root: Path, policy: dict[str, Any]) -> None:
+    exclusions = policy["trivy_excluded_files"]
+    if not isinstance(exclusions, list) or len(exclusions) != len(TRIVY_EXCLUDED_FILES):
+        raise SupplyChainError("Trivy exclusion inventory is invalid")
+    observed: dict[str, str] = {}
+    for item in exclusions:
+        if not isinstance(item, dict):
+            raise SupplyChainError("Trivy exclusion entries must be objects")
+        _exact_keys(item, {"classification", "path", "sha256"}, "Trivy exclusion")
+        path_value = item.get("path")
+        classification = item.get("classification")
+        digest = item.get("sha256")
+        if (
+            not isinstance(path_value, str)
+            or path_value in observed
+            or TRIVY_EXCLUDED_FILES.get(path_value) != classification
+            or not isinstance(digest, str)
+            or not SHA256_RE.fullmatch(digest)
+        ):
+            raise SupplyChainError("Trivy exclusion inventory is invalid")
+        path = _safe_path(root, path_value, "Trivy excluded file")
+        if _sha256(path) != digest:
+            raise SupplyChainError("Trivy excluded file drifted")
+        observed[path_value] = str(classification)
+    if observed != TRIVY_EXCLUDED_FILES:
+        raise SupplyChainError("Trivy exclusion inventory is incomplete")
+
+    deployment_surfaces = [
+        *(_safe_path(root, path, "Dockerfile") for path in policy["dockerfiles"]),
+        *sorted((root / ".github" / "workflows").glob("*.y*ml")),
+    ]
+    inactive_python = [
+        path
+        for path, classification in TRIVY_EXCLUDED_FILES.items()
+        if classification.startswith("inactive_python_")
+    ]
+    for surface in deployment_surfaces:
+        text = surface.read_text(encoding="utf-8")
+        for excluded_path in inactive_python:
+            excluded = PurePosixPath(excluded_path)
+            candidates = {excluded_path}
+            if (
+                PurePosixPath(surface.relative_to(root).as_posix()).parent
+                == excluded.parent
+            ):
+                candidates.add(excluded.name)
+            if any(
+                re.search(
+                    rf"(?<![A-Za-z0-9_.-]){re.escape(candidate)}(?![A-Za-z0-9_.-])",
+                    text,
+                )
+                for candidate in candidates
+            ):
+                raise SupplyChainError(
+                    "inactive Python manifest is referenced by a deployment surface"
                 )
 
 
@@ -981,6 +1070,13 @@ def verify_ci_workflows(root: Path) -> None:
             raise SupplyChainError(
                 f"workflow checkout retains credentials: {path.name}"
             )
+        if path.name in {"dependency-audit.yml", "secret-scan.yml"} and not all(
+            marker in text
+            for marker in ("  push:\n    branches: [main]\n", "  pull_request:\n")
+        ):
+            raise SupplyChainError(
+                f"security workflow trigger boundary drifted: {path.name}"
+            )
         for raw in text.splitlines():
             if "pip install" in raw and not re.search(
                 r"pip install --require-hashes -r \S+\.lock", raw
@@ -1016,6 +1112,12 @@ def verify_trivy_config(root: Path) -> None:
     except (OSError, UnicodeDecodeError) as exc:
         raise SupplyChainError("Trivy policy config is missing") from exc
     if lines != [
+        "scan:",
+        "  skip-files:",
+        "    - requirements.txt",
+        "    - backend/requirements.txt",
+        "    - backend/requirements-dev.txt",
+        "    - AGENTS.md",
         "license:",
         "  confidenceLevel: 0.9",
         "  full: true",
@@ -1112,6 +1214,7 @@ def verify_repository(
 ) -> None:
     policy = load_policy(policy_path)
     verify_python_locks(root, policy)
+    verify_trivy_exclusions(root, policy)
     verify_node_locks(root, policy)
     verify_dockerfiles(root, policy)
     verify_production_manifests(root, policy)
@@ -1149,6 +1252,52 @@ def _npm_versions(
     if not versions:
         raise SupplyChainError(f"npm report package is absent from lock: {package}")
     return versions
+
+
+def _trivy_license_identities(
+    root: Path, result: dict[str, Any], license_item: dict[str, Any]
+) -> set[tuple[str, str]]:
+    """Return exact, repository-bound identities for a Trivy license finding."""
+
+    package = license_item.get("PkgName")
+    version = license_item.get("Version") or license_item.get("InstalledVersion")
+    if isinstance(package, str) and package and isinstance(version, str) and version:
+        return {(package, version)}
+
+    file_path = license_item.get("FilePath")
+    path = _safe_path(root, file_path, "Trivy license file")
+    if isinstance(package, str) and package:
+        if path.name != "package-lock.json":
+            raise SupplyChainError(
+                "versionless Trivy package license is not bound to an npm lock"
+            )
+        lock = _load_json(path)
+        packages = lock.get("packages")
+        if not isinstance(packages, dict):
+            raise SupplyChainError("Trivy license npm lock is malformed")
+        versions = {
+            str(value["version"])
+            for key, value in packages.items()
+            if isinstance(key, str)
+            and (
+                key == f"node_modules/{package}"
+                or key.endswith(f"/node_modules/{package}")
+            )
+            and isinstance(value, dict)
+            and isinstance(value.get("version"), str)
+            and value["version"]
+        }
+        if not versions:
+            raise SupplyChainError(
+                "Trivy package license cannot be resolved in its exact npm lock"
+            )
+        return {(package, item) for item in versions}
+
+    target = result.get("Target")
+    if target != "Loose File License(s)":
+        raise SupplyChainError("Trivy license finding lacks an exact package identity")
+    relative = PurePosixPath(str(file_path)).as_posix()
+    return {(f"file:{relative}", f"sha256:{_sha256(path)}")}
 
 
 def findings_from_report(
@@ -1343,20 +1492,18 @@ def findings_from_report(
                 if not isinstance(license_item, dict):
                     raise SupplyChainError("Trivy license finding is malformed")
                 if str(license_item.get("Severity", "")).upper() in license_fail:
-                    version = (
-                        license_item.get("Version")
-                        or license_item.get("InstalledVersion")
-                        or f"target:{result.get('Target', '')}"
-                    )
-                    findings.add(
-                        Finding(
-                            "license",
-                            scope,
-                            str(license_item.get("Name", "")),
-                            str(license_item.get("PkgName", "")),
-                            str(version),
+                    for package, version in _trivy_license_identities(
+                        root, result, license_item
+                    ):
+                        findings.add(
+                            Finding(
+                                "license",
+                                scope,
+                                str(license_item.get("Name", "")),
+                                package,
+                                version,
+                            )
                         )
-                    )
     else:
         raise SupplyChainError("unsupported scanner")
     if any(not all(finding.key()) for finding in findings):
