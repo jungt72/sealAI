@@ -433,12 +433,20 @@ class OpenAiEmbedder:
     took chat down), strong on German, reuses the existing OPENAI_API_KEY. Drop-in for FastEmbed's
     ``embed``: returns numpy arrays (the retriever/ingestor call ``.tolist()`` on each)."""
 
+    provider_is_remote = True
+
     def __init__(
-        self, model: str, *, api_key: str, base_url: str | None = None
+        self,
+        model: str,
+        *,
+        api_key: str,
+        base_url: str | None = None,
+        max_retries: int | None = None,
     ) -> None:
         from openai import OpenAI  # lazy
 
-        self._client = OpenAI(api_key=api_key, base_url=base_url)
+        retry_args = {} if max_retries is None else {"max_retries": max_retries}
+        self._client = OpenAI(api_key=api_key, base_url=base_url, **retry_args)
         self._model = model
 
     def embed(self, texts):
@@ -451,7 +459,7 @@ class OpenAiEmbedder:
         return [np.array(d.embedding) for d in resp.data]
 
 
-def _make_embedder(settings: "Settings"):
+def _make_embedder(settings: "Settings", *, max_retries: int | None = None):
     if (
         getattr(settings, "embed_provider", "fastembed") or "fastembed"
     ).lower() == "openai":
@@ -463,7 +471,10 @@ def _make_embedder(settings: "Settings"):
                 "embed_provider=openai but no OPENAI_API_KEY in the environment"
             )
         return OpenAiEmbedder(
-            settings.embed_model, api_key=key, base_url=os.getenv("OPENAI_BASE_URL")
+            settings.embed_model,
+            api_key=key,
+            base_url=os.getenv("OPENAI_BASE_URL"),
+            max_retries=max_retries,
         )
     from fastembed import (
         TextEmbedding,

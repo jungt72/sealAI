@@ -13,10 +13,14 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# A config-provided digest cannot observe mutable ledger transitions. Keep the
-# serving cache unreachable until an atomic ledger epoch is checked on every
-# get/put and covered by lifecycle integration tests.
-EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED = False
+# Cache activation is implemented only through the request-bound Postgres authority store. The
+# legacy config digest remains release-evidence metadata and is never trusted as runtime authority.
+EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED = True
+# Monetary provider ceilings are implemented, but production activation remains mechanically
+# unavailable until the externally maintained provider prices plus maximum call/retry/token graph
+# have been reviewed into a worst-case reservation contract. This prevents an arbitrary digest or
+# underestimated reservation from being used as a paper-only bypass of the hard budget.
+PROVIDER_BUDGET_ACTIVATION_IMPLEMENTED = False
 
 
 class Settings(BaseSettings):
@@ -55,6 +59,41 @@ class Settings(BaseSettings):
     auth_issuer: str | None = None
     auth_audience: str | None = None
     auth_tenant_claim: str = "tenant_id"
+    # AUTH-002: bounded signing-key freshness. Cache-Control may shorten these values but can never
+    # extend beyond auth_jwks_max_ttl_s (the key-revocation SLA attributable to this service).
+    auth_jwks_ttl_s: float = 300.0
+    auth_jwks_max_ttl_s: float = 600.0
+    auth_jwks_unknown_kid_refresh_interval_s: float = 5.0
+    auth_jwks_negative_kid_ttl_s: float = 30.0
+    auth_jwks_max_negative_kids: int = 256
+    # Stateless access-token/session revocation cannot be instantaneous without a Keycloak
+    # introspection/event integration. Independently cap token age so a realm/client drift cannot
+    # silently widen the local revocation exposure beyond five minutes.
+    auth_max_token_age_s: int = 300
+    auth_clock_skew_s: int = 30
+
+    # AUTH-001: provider-backed product actions are default-DENY until GATE-06 explicitly enables
+    # this kill switch with a migrated shared Postgres quota store. Limits are server authority;
+    # browser values and provider-side soft limits are never trusted as the primary control.
+    provider_requests_enabled: bool = False
+    provider_subject_requests_per_minute: int = 6
+    provider_tenant_requests_per_minute: int = 30
+    provider_subject_requests_per_day: int = 100
+    provider_tenant_requests_per_day: int = 1000
+    provider_tenant_requests_per_month: int = 20000
+    provider_subject_max_concurrent: int = 2
+    provider_tenant_max_concurrent: int = 10
+    provider_request_lease_s: int = 300
+    # Conservative, non-refundable upper-bound reservation for one product request. Budgets are
+    # integer micro-currency units to avoid floating-point bypasses.
+    provider_request_reservation_micros: int = 250_000
+    provider_daily_budget_micros: int = 10_000_000
+    provider_monthly_budget_micros: int = 100_000_000
+    # Enabling paid-provider work requires a reviewed, release-bound calculation proving that the
+    # reservation above covers the maximum cost of one bounded request (all calls/retries/models).
+    # The hash is evidence identity, not a secret; an empty value keeps the kill switch closed.
+    provider_budget_contract_sha256: str | None = None
+    api_max_request_body_bytes: int = 131_072
 
     # --- model tiers: Small 4 standard, current broadly available OpenAI frontier for complex cases ---
     standard_model: str = "mistral-small-2603"
@@ -217,9 +256,8 @@ class Settings(BaseSettings):
     exact_answer_cache_max_entries: int = 512
     exact_answer_cache_max_entries_per_tenant: int = 64
     exact_answer_cache_ttl_s: float = 3600.0
-    # Canonical digest of the complete active claim-authority set. Any approval,
-    # quarantine, revocation, expiry, or authority-relevant edit must roll it.
-    # Exact-answer caching fails closed unless this release-bound digest exists.
+    # Optional release-evidence expectation only. Runtime/cache authority is always read from
+    # Postgres twice per request; this value can never authorize a cache hit or response.
     knowledge_authority_epoch: str | None = None
     # SSoT M15/G8: general sealing knowledge, material knowledge, and material
     # comparison are a separately activated product mode. The mode remains
@@ -245,14 +283,108 @@ class Settings(BaseSettings):
     def validate_product_mode_dependencies(self) -> "Settings":
         if not 1024 <= self.outbox_metrics_port <= 65535:
             raise ValueError("outbox metrics port must be an unprivileged TCP port")
+        privileged_roles = (
+            self.auth_tenant_admin_role,
+            self.auth_platform_owner_role,
+            self.auth_system_operator_role,
+            self.auth_knowledge_contributor_role,
+            self.auth_manufacturer_role,
+            self.auth_capability_reviewer_role,
+            self.auth_knowledge_reviewer_role,
+            self.auth_knowledge_approver_role,
+            self.auth_decision_reviewer_role,
+        )
+        normalized_roles = tuple(role.strip() for role in privileged_roles)
+        if any(not role for role in normalized_roles):
+            raise ValueError("privileged role names must not be empty")
+        if len(set(normalized_roles)) != len(normalized_roles):
+            raise ValueError("privileged role names must be pairwise distinct")
+        if "admin" in normalized_roles:
+            raise ValueError("the ambiguous legacy admin role is not accepted")
+        if not (
+            0 < self.auth_jwks_ttl_s <= self.auth_jwks_max_ttl_s <= 900
+            and 0
+            < self.auth_jwks_unknown_kid_refresh_interval_s
+            <= self.auth_jwks_max_ttl_s
+            and 0 < self.auth_jwks_negative_kid_ttl_s <= self.auth_jwks_max_ttl_s
+            and 1 <= self.auth_jwks_max_negative_kids <= 4096
+        ):
+            raise ValueError("JWKS cache bounds are invalid")
+        if not 60 <= self.auth_max_token_age_s <= 900:
+            raise ValueError(
+                "access-token maximum age must be between 60 and 900 seconds"
+            )
+        if not 0 <= self.auth_clock_skew_s <= 60:
+            raise ValueError("auth clock skew must be between 0 and 60 seconds")
+        positive_cost_limits = (
+            self.provider_subject_requests_per_minute,
+            self.provider_tenant_requests_per_minute,
+            self.provider_subject_requests_per_day,
+            self.provider_tenant_requests_per_day,
+            self.provider_tenant_requests_per_month,
+            self.provider_subject_max_concurrent,
+            self.provider_tenant_max_concurrent,
+            self.provider_request_lease_s,
+            self.provider_request_reservation_micros,
+            self.provider_daily_budget_micros,
+            self.provider_monthly_budget_micros,
+            self.api_max_request_body_bytes,
+        )
+        if any(value <= 0 for value in positive_cost_limits):
+            raise ValueError("provider cost-control limits must be positive")
+        if (
+            self.provider_subject_requests_per_minute
+            > self.provider_tenant_requests_per_minute
+        ):
+            raise ValueError("subject minute limit cannot exceed tenant minute limit")
+        if (
+            self.provider_subject_requests_per_day
+            > self.provider_tenant_requests_per_day
+        ):
+            raise ValueError("subject daily quota cannot exceed tenant daily quota")
+        if (
+            self.provider_tenant_requests_per_day
+            > self.provider_tenant_requests_per_month
+        ):
+            raise ValueError("tenant daily quota cannot exceed tenant monthly quota")
+        if self.provider_subject_max_concurrent > self.provider_tenant_max_concurrent:
+            raise ValueError("subject concurrency cannot exceed tenant concurrency")
+        if self.provider_request_lease_s > 900:
+            raise ValueError("provider request lease cannot exceed 15 minutes")
+        if self.provider_request_reservation_micros > min(
+            self.provider_daily_budget_micros, self.provider_monthly_budget_micros
+        ):
+            raise ValueError("provider request reservation exceeds a hard budget")
+        if self.provider_daily_budget_micros > self.provider_monthly_budget_micros:
+            raise ValueError("daily provider budget cannot exceed monthly budget")
+        if not 1024 <= self.api_max_request_body_bytes <= 1_048_576:
+            raise ValueError("API request-body bound must be between 1 KiB and 1 MiB")
+        if self.provider_requests_enabled:
+            if not self.database_url:
+                raise ValueError(
+                    "provider requests require the shared Postgres quota store"
+                )
+            if self.provider_budget_contract_sha256 is None or not re.fullmatch(
+                r"sha256:[0-9a-f]{64}", self.provider_budget_contract_sha256
+            ):
+                raise ValueError(
+                    "provider requests require a reviewed provider budget contract digest"
+                )
+            if not PROVIDER_BUDGET_ACTIVATION_IMPLEMENTED:
+                raise ValueError(
+                    "provider request activation is unavailable until the worst-case cost "
+                    "contract is externally validated"
+                )
         if self.exact_answer_cache_enabled:
             if not self.execution_policy_enabled:
                 raise ValueError("exact answer cache requires execution_policy_enabled")
-            if self.knowledge_authority_epoch is None or not re.fullmatch(
-                r"sha256:[0-9a-f]{64}", self.knowledge_authority_epoch
-            ):
+            if not self.database_url:
                 raise ValueError(
-                    "exact answer cache requires a canonical knowledge_authority_epoch"
+                    "exact answer cache requires the Postgres knowledge authority"
+                )
+            if self.retriever_backend != "qdrant" or not self.qdrant_url:
+                raise ValueError(
+                    "exact answer cache requires the Postgres-revalidated Qdrant path"
                 )
             if not EXACT_ANSWER_CACHE_ACTIVATION_IMPLEMENTED:
                 raise ValueError(
@@ -365,9 +497,12 @@ class Settings(BaseSettings):
     # swap behind the same Protocols (M3 lazy-adapter pattern); value is never logged.
     # Env: SEALAI_V2_DATABASE_URL (e.g. postgresql+psycopg2://…@postgres:5432/sealai_v2).
     database_url: str | None = None
-    # Keycloak realm role that gates the owner/admin surface (Hersteller-Partner CRUD + lead retrieval).
-    # Env: SEALAI_V2_AUTH_ADMIN_ROLE. Additive gate — tenant isolation is untouched.
-    auth_admin_role: str = "admin"
+    # AUTH-003/GOV-001: disjoint role names. No legacy ``admin`` alias is accepted at runtime;
+    # production mapping/cutover remains an explicit GATE-06/GATE-07 operation.
+    auth_tenant_admin_role: str = "tenant_admin"
+    auth_platform_owner_role: str = "platform_owner"
+    auth_system_operator_role: str = "system_operator"
+    auth_knowledge_contributor_role: str = "knowledge_contributor"
     # Keycloak realm role for the manufacturer SELF-SERVICE surface (manage own partner record + leads).
     # Env: SEALAI_V2_AUTH_MANUFACTURER_ROLE.
     auth_manufacturer_role: str = "manufacturer"
@@ -376,6 +511,8 @@ class Settings(BaseSettings):
     auth_capability_reviewer_role: str = "capability_reviewer"
     # Independent human domain/evidence reviewer for technical claims.
     auth_knowledge_reviewer_role: str = "knowledge_reviewer"
+    # A separate approver performs the second decision after an independent review.
+    auth_knowledge_approver_role: str = "knowledge_approver"
     # Human review role for decision records. This records an internal technical
     # review only; manufacturer/component release remains external.
     auth_decision_reviewer_role: str = "decision_reviewer"
@@ -404,10 +541,10 @@ class Settings(BaseSettings):
     # Two impls of the SAME Protocol: the in-process keyword matcher (CI/eval MEASUREMENT instrument —
     # deterministic, hermetic, no network) and the QdrantFachkartenRetriever (semantic, production).
     # This flips between them as pure config. Default "in_process" keeps offline eval/CI byte-stable;
-    # "qdrant" requires ``qdrant_url`` set, else the factory fails safe back to in-process.
+    # an explicit "qdrant" selection requires both data services and fails closed if unavailable.
     retriever_backend: str = "in_process"  # "in_process" | "qdrant"
     qdrant_url: str | None = (
-        None  # e.g. http://qdrant:6333; UNSET → in-process forced (fail-safe)
+        None  # e.g. http://qdrant:6333; required for explicit Qdrant
     )
     qdrant_collection: str = "sealai_v2_knowledge_v1"  # ledger-derived index; legacy direct-write collection stays rollback-only
     # Memory uses the same embedding provider but a physically separate, tenant-scoped index. Keep
@@ -435,8 +572,8 @@ class Settings(BaseSettings):
     )
     # Embedding provider: "openai" (API text-embedding-3 — the RAM-safe PROD default) | "fastembed"
     # (local ONNX e5-large — offline, but OOM'd this host). Defaulting to openai makes _make_embedder
-    # raise without OPENAI_API_KEY; on serve _build_retriever fail-safes to the in-process keyword
-    # retriever, and the ingestion CLI requires the key explicitly.
+    # raise without OPENAI_API_KEY; an explicit Qdrant runtime fails closed rather than silently
+    # changing retrieval implementations, and the ingestion CLI requires the key explicitly.
     embed_provider: str = "openai"
     # e5 needs the "query:"/"passage:" asymmetry; openai/jina/MiniLM use "" (raw text). Empty by default
     # (the openai prod path); set the e5 prefixes only when switching to the fastembed offline option.

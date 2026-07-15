@@ -2,8 +2,10 @@
 set -euo pipefail
 readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
-BIND_EVAL=0
-[ "${1:-}" = "--bind-eval" ] && BIND_EVAL=1
+[ "${1:-}" != "--bind-eval" ] || {
+  echo "GATE-FAIL: --bind-eval is retired; production binding requires the fixed root-trusted evidence bundle and Gate-10 hashes"
+  exit 2
+}
 [ -d backend/sealai_v2 ] || { echo "GATE-FAIL: nicht im Repo-Root"; exit 1; }
 export PYTHONPATH="backend${PYTHONPATH:+:$PYTHONPATH}"
 if   [ -x .venv/bin/python ] && .venv/bin/python -c '' 2>/dev/null; then PY=.venv/bin/python
@@ -26,11 +28,20 @@ $PY -m pytest backend/tests/architecture --noconftest -q || fail "Architektur-En
 step "4/5  V2-Offline-Suite (sealai_v2)"
 $PY -m pytest backend/sealai_v2 --noconftest -q || fail "V2-Offline-Suite rot"
 
-step "5/5  Eval<->Tree-Bindung"
+step "5/5  Produktions-Eval-Gate-Contract (exact RC evidence; offline)"
 TREE="$(/bin/bash -p ops/tree-hash.sh)"
-if $PY ops/v2_deploy_gate.py backend/sealai_v2/eval/runs "$TREE" >/tmp/gate_bind.txt 2>&1; then
-  echo "  OK: adjudizierter REPLAY für $TREE vorhanden."
-elif [ "$BIND_EVAL" = 1 ]; then cat /tmp/gate_bind.txt; fail "Kein adjudizierter REPLAY ($TREE) [--bind-eval]"
-else printf '  \033[1;33mWARN\033[0m: kein adjudizierter REPLAY für %s. Final-Deploy blockt; Nonprod-Candidate oder expliziter Owner-Waiver bleiben möglich.\n' "$TREE"; fi
+SERVED_L1="$("$PY" -c 'from sealai_v2.config.settings import Settings; s = Settings(); print(f"{s.l1_provider or s.provider}/{s.l1_model}")')" \
+  || fail "Served-L1-Bindung konnte nicht ermittelt werden"
+RUNTIME_PROFILE_HASH="$("$PY" -m sealai_v2.config.runtime_profile --hash)" \
+  || fail "Runtime-Profil-Bindung konnte nicht ermittelt werden"
+[[ "${SERVED_L1}" == */* && -n "${SERVED_L1%%/*}" && -n "${SERVED_L1#*/}" ]] \
+  || fail "Served-L1-Bindung ist ungültig"
+[[ "${RUNTIME_PROFILE_HASH}" =~ ^[0-9a-f]{64}$ ]] \
+  || fail "Runtime-Profil-Bindung ist ungültig"
+"$PY" -m pytest backend/tests/test_v2_deploy_gate.py -q \
+  || fail "Production-RC-Gate-Contract rot"
+printf '  OK: production authorization is not inferred from local runs (%s / %s / %s); only release-backend-v2 supplies the fixed external evidence and all Gate-10 hashes.\n' \
+  "$TREE" "$SERVED_L1" "$RUNTIME_PROFILE_HASH"
+echo "  targeted/chained Evidence und Owner-Waiver autorisieren keine Promotion."
 
 echo; echo "GATE: grün"; exit 0

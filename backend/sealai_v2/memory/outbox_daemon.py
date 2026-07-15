@@ -17,7 +17,6 @@ from threading import Event
 from sqlalchemy import text
 
 from sealai_v2.config.settings import Settings
-from sealai_v2.obs.log_redaction import configure_safe_logging
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.knowledge.qdrant_retrieval import _make_client, _make_sparse_embedder
 from sealai_v2.knowledge.outbox_worker import (
@@ -29,7 +28,13 @@ from sealai_v2.memory.outbox_worker import (
     drain_outbox,
     ensure_memory_collection,
 )
+from sealai_v2.obs.log_redaction import configure_safe_logging
 from sealai_v2.obs.outbox_metrics import collect_outbox_metrics
+from sealai_v2.security.cost_control import (
+    build_embedding_service_admission,
+    remote_embedding_enabled,
+    validate_embedding_worker_limits,
+)
 
 _LOG = logging.getLogger("sealai_v2.outbox_daemon")
 _HEARTBEAT_PATH = Path("/tmp/sealai-v2-outbox-heartbeat")
@@ -79,15 +84,78 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
 
     stop_event = stop or Event()
     session_factory = make_sessionmaker(make_engine(settings.database_url))
+    remote = remote_embedding_enabled(settings)
+    validate_embedding_worker_limits(
+        settings.outbox_batch_size,
+        settings.outbox_max_attempts,
+        remote=False,
+    )
     client = _make_client(settings)
-    embedder = _make_memory_embedder(settings)
+    embedder = None
+    memory_admission = None
+    knowledge_admission = None
+    memory_admission_ready = False
+    knowledge_admission_ready = False
     sparse_embedder = (
         _make_sparse_embedder(settings) if settings.qdrant_hybrid_enabled else None
     )
-    ensure_memory_collection(
-        client, embedder, collection=settings.memory_qdrant_collection
-    )
-    ensure_knowledge_collection(client, settings, embedder)
+    memory_collection_ready = False
+    knowledge_collection_ready = False
+
+    def prepare_memory_embeddings():
+        nonlocal embedder, memory_admission, memory_admission_ready
+        nonlocal memory_collection_ready
+        validate_embedding_worker_limits(
+            settings.outbox_batch_size,
+            settings.outbox_max_attempts,
+            remote=remote,
+        )
+        if not memory_admission_ready:
+            memory_admission = build_embedding_service_admission(
+                settings, session_factory, service="memory_outbox"
+            )
+            memory_admission_ready = True
+        if embedder is None:
+            embedder = _make_memory_embedder(settings)
+        if memory_collection_ready:
+            return embedder, memory_admission
+        ensure_memory_collection(
+            client,
+            embedder,
+            collection=settings.memory_qdrant_collection,
+            remote_embeddings=remote,
+            service_admission=memory_admission,
+        )
+        memory_collection_ready = True
+        return embedder, memory_admission
+
+    def prepare_knowledge_embeddings():
+        nonlocal embedder, knowledge_admission, knowledge_admission_ready
+        nonlocal knowledge_collection_ready
+        validate_embedding_worker_limits(
+            settings.outbox_batch_size,
+            settings.outbox_max_attempts,
+            remote=remote,
+        )
+        if not knowledge_admission_ready:
+            knowledge_admission = build_embedding_service_admission(
+                settings, session_factory, service="knowledge_outbox"
+            )
+            knowledge_admission_ready = True
+        if embedder is None:
+            embedder = _make_memory_embedder(settings)
+        if knowledge_collection_ready:
+            return embedder, knowledge_admission
+        ensure_knowledge_collection(
+            client,
+            settings,
+            embedder,
+            remote_embeddings=remote,
+            service_admission=knowledge_admission,
+        )
+        knowledge_collection_ready = True
+        return embedder, knowledge_admission
+
     _write_heartbeat()
     _LOG.info(
         "outbox worker started (poll=%ss batch=%s max_attempts=%s claim_timeout=%ss)",
@@ -108,6 +176,9 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
                 batch_size=settings.outbox_batch_size,
                 max_attempts=settings.outbox_max_attempts,
                 claim_timeout_seconds=settings.outbox_claim_timeout_s,
+                remote_embeddings=remote,
+                service_admission=memory_admission,
+                prepare_embeddings=prepare_memory_embeddings,
             )
             if result.claimed or result.failed_permanently:
                 _LOG.info("memory outbox pass: %s", result)
@@ -122,6 +193,9 @@ def run(settings: Settings, *, stop: Event | None = None) -> None:
                 batch_size=settings.outbox_batch_size,
                 max_attempts=settings.outbox_max_attempts,
                 claim_timeout_seconds=settings.outbox_claim_timeout_s,
+                remote_embeddings=remote,
+                service_admission=knowledge_admission,
+                prepare_embeddings=prepare_knowledge_embeddings,
             )
             if knowledge_result.claimed or knowledge_result.failed_permanently:
                 _LOG.info("knowledge outbox pass: %s", knowledge_result)

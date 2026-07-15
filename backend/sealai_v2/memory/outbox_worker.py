@@ -35,6 +35,7 @@ this drain ever been exercised with one). Now branches on ``row.event_type``: "d
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -46,6 +47,16 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     _make_client,
     _make_embedder,
     ensure_collection,
+)
+from sealai_v2.security.cost_control import (
+    EmbeddingServiceAdmission,
+    ProviderServiceUnavailable,
+    build_embedding_service_admission,
+    classify_outbox_failure,
+    embed_with_service_admission,
+    remote_embedding_enabled,
+    validate_remote_embedding_inputs,
+    validate_embedding_worker_limits,
 )
 
 MEMORY_COLLECTION = "sealai_v2_memory"
@@ -65,17 +76,32 @@ def _make_memory_embedder(settings):
     # Reuses the SAME embedder factory as Fachkarten retrieval (OpenAI text-embedding-3-small by
     # default — RAM-safe, no local model) — deliberately NOT a separate embedding config surface for
     # a second content type; one embedding provider decision for the whole backend.
-    return _make_embedder(settings)
+    # The worker owns retries explicitly: every later attempt receives a fresh durable admission.
+    # Disable SDK-internal retries so one admission can never hide multiple paid HTTP attempts.
+    return _make_embedder(settings, max_retries=0)
 
 
 def ensure_memory_collection(
-    client, embedder, *, collection: str = MEMORY_COLLECTION
+    client,
+    embedder,
+    *,
+    collection: str = MEMORY_COLLECTION,
+    remote_embeddings: bool = False,
+    service_admission: EmbeddingServiceAdmission | None = None,
 ) -> None:
     """Dense-only (no sparse/BM25) — memory items are short personal/case notes, not long technical
     documents where lexical exact-term recall mattered enough to justify hybrid (see
     knowledge/qdrant_retrieval.py's hybrid mode, built for Fachkarten specifically). Revisit if
     memory retrieval quality ever needs it; don't import that complexity speculatively."""
-    dim = len(next(iter(embedder.embed(["_warmup_"]))).tolist())
+    vectors = embed_with_service_admission(
+        embedder,
+        ("_warmup_",),
+        remote=remote_embeddings,
+        admission=service_admission,
+    )
+    if len(vectors) != 1:
+        raise RuntimeError("embedding provider returned an incomplete warmup batch")
+    dim = len(vectors[0].tolist())
     ensure_collection(client, collection, dim, sparse=False)
 
 
@@ -146,13 +172,11 @@ def _mark_done(s, row: V2MemoryOutbox, *, now: str) -> None:
 
 
 def _mark_retry_or_failed(
-    s, row: V2MemoryOutbox, *, now: str, error: str, max_attempts: int
+    s, row: V2MemoryOutbox, *, now: str, error: BaseException, max_attempts: int
 ) -> bool:
     """Returns True if this was the FINAL attempt (now permanently failed)."""
     row.attempts += 1
-    row.last_error = error[
-        :2000
-    ]  # bound: last_error is Text but a runaway traceback shouldn't grow unbounded
+    row.last_error = classify_outbox_failure(error)
     row.processed_at = now
     if row.attempts >= max_attempts:
         row.status = "failed"
@@ -177,12 +201,21 @@ def drain_outbox(
     batch_size: int = 50,
     max_attempts: int = 5,
     claim_timeout_seconds: int = 300,
+    remote_embeddings: bool = False,
+    service_admission: EmbeddingServiceAdmission | None = None,
+    prepare_embeddings: Callable[
+        [], tuple[object, EmbeddingServiceAdmission | None] | None
+    ]
+    | None = None,
 ) -> DrainResult:
     """One drain pass: claim up to ``batch_size`` pending rows whose backoff window (if any) has
     elapsed, sync each to Qdrant from its own snapshotted ``payload``, mark done/retry/failed. Safe
     to call repeatedly (e.g. from a periodic CLI invocation — this codebase has no always-on task
     scheduler; matches the ``ops/`` script convention of periodic invocation over inventing new
     background-process infra)."""
+    # Positivity is always invalid. Remote-only cost bounds are checked after claim so a daemon can
+    # still service an empty or delete-only queue without opening the paid-provider control path.
+    validate_embedding_worker_limits(batch_size, max_attempts, remote=False)
     claimed = synced = failed_permanently = 0
     with session_factory() as s:
         rows = _claim_pending_with_timeout(
@@ -192,46 +225,99 @@ def drain_outbox(
             claim_timeout_seconds=claim_timeout_seconds,
         )
         claimed = len(rows)
+        upsert_rows: list[V2MemoryOutbox] = []
         for row in rows:
             payload = row.payload or {}
             point_id = payload.get("id", row.memory_item_id)
+            if row.event_type != "delete":
+                upsert_rows.append(row)
+                continue
             try:
-                if row.event_type == "delete":
-                    qdrant_client.delete(collection, points_selector=[point_id])
-                else:
-                    from qdrant_client.models import (
-                        PointStruct,
-                    )  # lazy, mirrors qdrant_retrieval.py
-
-                    vec = next(
-                        iter(embedder.embed([payload.get("content", "")]))
-                    ).tolist()
-                    qdrant_client.upsert(
-                        collection,
-                        points=[
-                            PointStruct(
-                                id=point_id,
-                                vector={_DENSE: vec},
-                                payload={
-                                    "tenant_id": payload.get("tenant_id"),
-                                    "owner_subject": payload.get("owner_subject"),
-                                    "scope": payload.get("scope"),
-                                    "scope_id": payload.get("scope_id"),
-                                    "status": payload.get("status"),
-                                    "version": payload.get("version"),
-                                    "type": payload.get("type"),
-                                    "semantic_key": payload.get("semantic_key"),
-                                },
-                            )
-                        ],
-                    )
+                qdrant_client.delete(collection, points_selector=[point_id])
                 synced += 1
                 _mark_done(s, row, now=now)
-            except Exception as exc:  # noqa: BLE001 — any Qdrant/network failure is a retry candidate
+            except Exception as exc:  # noqa: BLE001 - infrastructure failures are retried
                 if _mark_retry_or_failed(
-                    s, row, now=now, error=repr(exc), max_attempts=max_attempts
+                    s, row, now=now, error=exc, max_attempts=max_attempts
                 ):
                     failed_permanently += 1
+
+        if upsert_rows:
+            payloads = [dict(row.payload or {}) for row in upsert_rows]
+            texts = tuple(payload.get("content", "") for payload in payloads)
+            try:
+                validate_embedding_worker_limits(
+                    batch_size, max_attempts, remote=remote_embeddings
+                )
+                if remote_embeddings:
+                    # Reject corrupt/oversize payloads before a lazy collection warmup can consume
+                    # an admission or construct the paid adapter.
+                    validate_remote_embedding_inputs(texts)
+                # Collection discovery itself embeds a warmup input.  Keep it lazy so an empty or
+                # delete-only queue performs neither provider admission nor provider I/O.
+                batch_embedder = embedder
+                batch_admission = service_admission
+                if prepare_embeddings is not None:
+                    prepared = prepare_embeddings()
+                    if prepared is not None:
+                        batch_embedder, batch_admission = prepared
+                if batch_embedder is None:
+                    raise ProviderServiceUnavailable(
+                        "outbox embedding adapter is unavailable"
+                    )
+                vectors = embed_with_service_admission(
+                    batch_embedder,
+                    texts,
+                    remote=remote_embeddings,
+                    admission=batch_admission,
+                )
+                if len(vectors) != len(upsert_rows):
+                    raise RuntimeError(
+                        "embedding provider returned an incomplete memory batch: "
+                        f"{len(vectors)}/{len(upsert_rows)}"
+                    )
+            except Exception as exc:  # noqa: BLE001 - provider/control failures are retried
+                for row in upsert_rows:
+                    if _mark_retry_or_failed(
+                        s, row, now=now, error=exc, max_attempts=max_attempts
+                    ):
+                        failed_permanently += 1
+            else:
+                from qdrant_client.models import PointStruct
+
+                for row, payload, vector in zip(upsert_rows, payloads, vectors):
+                    point_id = payload.get("id", row.memory_item_id)
+                    try:
+                        qdrant_client.upsert(
+                            collection,
+                            points=[
+                                PointStruct(
+                                    id=point_id,
+                                    vector={_DENSE: vector.tolist()},
+                                    payload={
+                                        "tenant_id": payload.get("tenant_id"),
+                                        "owner_subject": payload.get("owner_subject"),
+                                        "scope": payload.get("scope"),
+                                        "scope_id": payload.get("scope_id"),
+                                        "status": payload.get("status"),
+                                        "version": payload.get("version"),
+                                        "type": payload.get("type"),
+                                        "semantic_key": payload.get("semantic_key"),
+                                    },
+                                )
+                            ],
+                        )
+                        synced += 1
+                        _mark_done(s, row, now=now)
+                    except Exception as exc:  # noqa: BLE001 - infrastructure failures are retried
+                        if _mark_retry_or_failed(
+                            s,
+                            row,
+                            now=now,
+                            error=exc,
+                            max_attempts=max_attempts,
+                        ):
+                            failed_permanently += 1
     return DrainResult(
         claimed=claimed,
         synced=synced,
@@ -286,11 +372,41 @@ def main(argv: list[str] | None = None) -> int:
 
     if not settings.qdrant_url:
         sys.exit("SEALAI_V2_QDRANT_URL not set — cannot sync to Qdrant")
-    client = _make_client(settings)
-    embedder = _make_memory_embedder(settings)
-    ensure_memory_collection(
-        client, embedder, collection=settings.memory_qdrant_collection
+    remote = remote_embedding_enabled(settings)
+    validate_embedding_worker_limits(
+        args.batch_size, settings.outbox_max_attempts, remote=False
     )
+    client = _make_client(settings)
+    embedder = None
+    service_admission = None
+    admission_ready = False
+    collection_ready = False
+
+    def prepare_embeddings() -> tuple[object, EmbeddingServiceAdmission | None]:
+        nonlocal admission_ready, collection_ready, embedder, service_admission
+        validate_embedding_worker_limits(
+            args.batch_size, settings.outbox_max_attempts, remote=remote
+        )
+        if not admission_ready:
+            service_admission = build_embedding_service_admission(
+                settings, sm, service="memory_outbox"
+            )
+            admission_ready = True
+        if embedder is None:
+            # Paid adapter/key construction stays behind the kill switch and durable authority.
+            embedder = _make_memory_embedder(settings)
+        if collection_ready:
+            return embedder, service_admission
+        ensure_memory_collection(
+            client,
+            embedder,
+            collection=settings.memory_qdrant_collection,
+            remote_embeddings=remote,
+            service_admission=service_admission,
+        )
+        collection_ready = True
+        return embedder, service_admission
+
     result = drain_outbox(
         sm,
         qdrant_client=client,
@@ -298,9 +414,14 @@ def main(argv: list[str] | None = None) -> int:
         now=datetime.now(timezone.utc).isoformat(),
         collection=settings.memory_qdrant_collection,
         batch_size=args.batch_size,
+        max_attempts=settings.outbox_max_attempts,
+        claim_timeout_seconds=settings.outbox_claim_timeout_s,
+        remote_embeddings=remote,
+        service_admission=service_admission,
+        prepare_embeddings=prepare_embeddings,
     )
     print(result)
-    return 0
+    return 1 if result.synced != result.claimed or result.failed_permanently else 0
 
 
 if __name__ == "__main__":

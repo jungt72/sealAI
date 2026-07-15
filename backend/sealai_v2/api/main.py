@@ -19,6 +19,7 @@ from sealai_v2.api.routes import (
     chat,
     compute,
     contribute,
+    cost_control,
     conversations,
     framing,
     hersteller,
@@ -33,11 +34,19 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.obs.log_redaction import configure_safe_logging
 from sealai_v2.obs.request_context import RequestIdMiddleware
 from sealai_v2.pipeline.timing import configure_timing_logging
+from sealai_v2.security.control_metrics import configure_provider_cost_metrics
+from sealai_v2.security.request_limits import RequestBoundaryMiddleware
 
 configure_safe_logging()
+settings = Settings()
 configure_timing_logging()  # per-turn timing lines → stdout (visible in docker logs)
 app = FastAPI(title="sealai_v2", docs_url=None, redoc_url=None, openapi_url=None)
 install_safe_exception_mapper(app)
+app.add_middleware(
+    RequestBoundaryMiddleware, max_body_bytes=settings.api_max_request_body_bytes
+)
+# FastAPI prepends newly added middleware. Register request correlation last so even boundary
+# rejections receive a server-generated request ID and remain traceable without trusting callers.
 app.add_middleware(RequestIdMiddleware)
 app.include_router(chat.router)
 app.include_router(adaptive_interview.router)
@@ -53,10 +62,20 @@ app.include_router(anfrage.router)
 app.include_router(hersteller.router)
 app.include_router(partner_self.router)
 app.include_router(contribute.router)
+app.include_router(cost_control.router)
 app.include_router(rag_ingest.router)
 app.include_router(memory_v2.router)
 app.include_router(meta.router)
-if Settings().metrics_enabled:
+if settings.metrics_enabled:
+    # The supplier is evaluated at scrape time. Database/migration failure therefore omits the
+    # cost families and trips the monitoring missing-signal alert instead of publishing a false 0.
+    from sealai_v2.api.deps import get_cost_control_store
+
+    configure_provider_cost_metrics(
+        store_supplier=get_cost_control_store,
+        daily_budget_micros=settings.provider_daily_budget_micros,
+        monthly_budget_micros=settings.provider_monthly_budget_micros,
+    )
     Instrumentator(
         excluded_handlers=["/health", "/api/v2/health", "/metrics"],
     ).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

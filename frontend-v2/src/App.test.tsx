@@ -5,6 +5,7 @@ import { fakeJwt } from "../tests/jwt";
 import { App } from "./App";
 import { clearAccessToken, setAccessToken } from "./auth/oidc";
 import type { ConversationMemory } from "./contracts";
+import { setCaseIdInUrl } from "./lib/caseId";
 
 afterEach(() => {
   cleanup();
@@ -35,12 +36,10 @@ function stubApi(memoryRef: { current: ConversationMemory }) {
       new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
     );
   };
-  const fn = vi.fn((input: RequestInfo | URL) => {
+  const fn = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     calls.push(url);
-    // "Fälle"-Sidebar: every conversations/chat call now carries ?case_id=... — match the PATH
-    // only (everything before "?"), same as a real router would, not the full querystring.
-    const path = url.split("?")[0];
+    const path = url;
     if (path.endsWith("/framing")) return json({});
     if (path.endsWith("/conversations/current/memory")) return json(memoryRef.current);
     if (path.endsWith("/conversations")) return json({ cases: [] });
@@ -156,24 +155,37 @@ describe("URL normalization (cutover 1b: nginx try_files serves the SPA for ever
 });
 
 describe("\"Fälle\"-Sidebar: a hard reload must not lose the current case", () => {
-  it("writes the auto-generated caseId into the URL once authed (so a reload finds it)", async () => {
-    window.history.pushState({}, "", "/dashboard/"); // no ?case= yet — matches a first-ever visit
+  it("persists the auto-generated caseId without putting it in the URL", async () => {
+    window.history.pushState({}, "", "/dashboard/");
     const memoryRef = { current: { case_state: [], history: [] } as ConversationMemory };
     stubApi(memoryRef);
     setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
     render(<App />);
-    await waitFor(() => expect(window.location.search).toMatch(/case=[^&]+/));
+    await waitFor(() => expect(window.history.state?.sealaiCaseId).toBeTruthy());
+    expect(window.location.search).toBe("");
     window.history.pushState({}, "", "/");
   });
 
-  it("does not overwrite an existing ?case= from the URL (reload keeps the SAME case)", async () => {
+  it("imports a legacy ?case= once, scrubs it, and sends the case only as a header", async () => {
     window.history.pushState({}, "", "/dashboard/?case=existing-case-id");
     const memoryRef = { current: { case_state: [], history: [] } as ConversationMemory };
-    const { calls } = stubApi(memoryRef);
+    const { fn } = stubApi(memoryRef);
     setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
     render(<App />);
-    await waitFor(() => expect(calls.some((u) => u.includes("case_id=existing-case-id"))).toBe(true));
-    expect(window.location.search).toBe("?case=existing-case-id");
+    await waitFor(() =>
+      expect(
+        fn.mock.calls.some((call) =>
+          new Headers((call[1] as RequestInit | undefined)?.headers).has("X-SealAI-Case-Id"),
+        ),
+      ).toBe(true),
+    );
+    const selected = fn.mock.calls.find((call) =>
+      new Headers((call[1] as RequestInit | undefined)?.headers).has("X-SealAI-Case-Id"),
+    );
+    expect(new Headers((selected?.[1] as RequestInit).headers).get("X-SealAI-Case-Id")).toBe(
+      "existing-case-id",
+    );
+    expect(window.location.search).toBe("");
     window.history.pushState({}, "", "/");
   });
 });
@@ -181,12 +193,12 @@ describe("\"Fälle\"-Sidebar: a hard reload must not lose the current case", () 
 
 describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages (2026-07-04 audit fix)', () => {
   function stubCaseAwareMemory(byCase: Record<string, ConversationMemory>) {
-    const fetchFn = vi.fn((input: RequestInfo | URL) => {
+    const fetchFn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const path = url.split("?")[0];
       if (path.endsWith("/framing")) return Promise.resolve(new Response("{}", { status: 200 }));
       if (path.endsWith("/conversations/current/memory")) {
-        const caseId = new URL(url, "http://x").searchParams.get("case_id") ?? "case-a";
+        const caseId = new Headers(init?.headers).get("X-SealAI-Case-Id") ?? "case-a";
         // Real network latency: the fetch resolves AFTER the synchronous remount + first paint,
         // which is exactly the window the stale-hydration race lived in.
         return new Promise((resolve) =>
@@ -218,12 +230,13 @@ describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages
       "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
       "case-b": { case_state: [], history: [{ role: "user", text: "B-ONLY-MESSAGE" }] },
     });
-    window.history.pushState({}, "", "/dashboard/?case=case-a");
+    window.history.pushState({}, "", "/dashboard/");
+    setCaseIdInUrl("case-a");
     setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
     render(<App />);
     await waitFor(() => expect(screen.queryByText("A-ONLY-MESSAGE")).toBeInTheDocument());
 
-    window.history.pushState({}, "", "/dashboard/?case=case-b");
+    setCaseIdInUrl("case-b", { replace: false });
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     await waitFor(() => expect(screen.queryByText("B-ONLY-MESSAGE")).toBeInTheDocument());
@@ -237,7 +250,7 @@ describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages
       "case-c": { case_state: [], history: [{ role: "user", text: "C-ONLY-MESSAGE" }] },
     });
     // override just the /conversations route so the drawer has a real, clickable case-c entry
-    fetchFn.mockImplementation((input: RequestInfo | URL) => {
+    fetchFn.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const path = url.split("?")[0];
       if (path.endsWith("/conversations") && !path.includes("/current")) {
@@ -252,7 +265,7 @@ describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages
       }
       if (path.endsWith("/framing")) return Promise.resolve(new Response("{}", { status: 200 }));
       if (path.endsWith("/conversations/current/memory")) {
-        const caseId = new URL(url, "http://x").searchParams.get("case_id") ?? "case-a";
+        const caseId = new Headers(init?.headers).get("X-SealAI-Case-Id") ?? "case-a";
         const byCase: Record<string, ConversationMemory> = {
           "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
           "case-c": { case_state: [], history: [{ role: "user", text: "C-ONLY-MESSAGE" }] },
@@ -274,7 +287,8 @@ describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages
         new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
       );
     });
-    window.history.pushState({}, "", "/dashboard/?case=case-a");
+    window.history.pushState({}, "", "/dashboard/");
+    setCaseIdInUrl("case-a");
     setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
     render(<App />);
     await waitFor(() => expect(screen.queryByText("A-ONLY-MESSAGE")).toBeInTheDocument());
@@ -293,12 +307,13 @@ describe('"Fälle"-Sidebar: switching cases never shows a stale case\'s messages
       "case-a": { case_state: [], history: [{ role: "user", text: "A-ONLY-MESSAGE" }] },
       // "case-fresh" deliberately absent from byCase -> the stub's default empty history
     });
-    window.history.pushState({}, "", "/dashboard/?case=case-a");
+    window.history.pushState({}, "", "/dashboard/");
+    setCaseIdInUrl("case-a");
     setAccessToken(fakeJwt({ sid: "s1", sub: "u1" }), 3600);
     render(<App />);
     await waitFor(() => expect(screen.queryByText("A-ONLY-MESSAGE")).toBeInTheDocument());
 
-    window.history.pushState({}, "", "/dashboard/?case=case-fresh");
+    setCaseIdInUrl("case-fresh", { replace: false });
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     // give the (empty) fetch time to land, then confirm the OLD message never lingers

@@ -13,6 +13,9 @@ acquire_production_storage_lease
 
 cd /home/thorsten/sealai
 
+/bin/bash -p "${SCRIPT_DIR}/validate-production-compose-security.sh" \
+  /home/thorsten/sealai/.env.prod
+
 COMPOSE_ARGS=(
   --env-file .env.prod
   -f docker-compose.yml
@@ -105,25 +108,15 @@ if PUSH_OUTPUT="$(docker push "${FRONTEND_IMAGE_TAG}" 2>&1)"; then
   echo ">> New pinned image: ${FRONTEND_IMAGE_REF}"
 else
   echo "${PUSH_OUTPUT}" >&2
-  if [[ "${ALLOW_LOCAL_FRONTEND_IMAGE_FALLBACK:-0}" != "1" ]]; then
-    echo "!! GHCR push failed. Fix package write permissions or rerun with ALLOW_LOCAL_FRONTEND_IMAGE_FALLBACK=1 for this VPS-only deploy." >&2
-    exit 1
-  fi
-
-  FRONTEND_IMAGE_REF="${FRONTEND_IMAGE_TAG}"
-  FRONTEND_PULL_POLICY="never"
-  echo "!! GHCR push failed; using VPS-local frontend image fallback: ${FRONTEND_IMAGE_REF}" >&2
+  echo "!! GHCR push failed; mutable/local production image fallbacks are forbidden" >&2
+  exit 1
 fi
 
 set_env_key FRONTEND_IMAGE "${FRONTEND_IMAGE_REF}"
 set_env_key FRONTEND_PULL_POLICY "${FRONTEND_PULL_POLICY}"
 
 echo ">> Validating pinned production refs"
-if [[ "${FRONTEND_PULL_POLICY}" == "always" ]]; then
-  /bin/bash -p ./ops/check-env-drift.sh prod
-else
-  echo "!! Skipping pinned-image drift gate for explicit local frontend fallback"
-fi
+/bin/bash -p ./ops/check-env-drift.sh prod
 
 echo ">> Recreating frontend only"
 compose_prod --profile frontend-container up -d --no-deps --force-recreate frontend

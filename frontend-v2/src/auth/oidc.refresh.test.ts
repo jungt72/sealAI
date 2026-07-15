@@ -13,7 +13,7 @@ import {
 const CFG: OidcConfig = {
   issuer: "https://sealingai.com/realms/sealAI",
   clientId: "sealai-v2",
-  redirectUri: "https://sealingai.com/dashboard/callback",
+  redirectUri: `${location.origin}/dashboard/callback`,
 };
 
 afterEach(() => {
@@ -93,6 +93,85 @@ describe("refreshTokens (rotating silent refresh)", () => {
     await expect(refreshTokens(CFG)).rejects.toThrow();
     expect(hasRefreshToken()).toBe(false);
     await expect(refreshTokens(CFG)).rejects.toThrow(/no refresh token/);
+  });
+
+  it("replaces the complete credential set on a new authorization", async () => {
+    await login("rt-old");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(ok({ access_token: "at-new", expires_in: 1800 })),
+    );
+
+    await exchangeCode(CFG, "new-code", "new-verifier");
+
+    expect(getAccessToken()).toBe("at-new");
+    expect(hasRefreshToken()).toBe(false);
+  });
+
+  it("never republishes tokens when logout clears a refresh already in flight", async () => {
+    await login("rt-1");
+    let resolveRefresh: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      ),
+    );
+
+    const pending = refreshTokens(CFG);
+    clearAccessToken();
+    resolveRefresh?.(
+      ok({ access_token: "late-access", expires_in: 1800, refresh_token: "late-refresh" }),
+    );
+
+    await expect(pending).rejects.toThrow(/superseded/);
+    expect(getAccessToken()).toBeNull();
+    expect(hasRefreshToken()).toBe(false);
+  });
+
+  it("never lets a late failed refresh erase a newly authenticated session", async () => {
+    await login("rt-old");
+    let resolveOldRefresh: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveOldRefresh = resolve;
+          }),
+      ),
+    );
+
+    const oldPending = refreshTokens(CFG);
+    clearAccessToken();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        ok({
+          access_token: "at-new",
+          expires_in: 1800,
+          refresh_token: "rt-new",
+        }),
+      ),
+    );
+    await exchangeCode(CFG, "new-code", "new-verifier");
+
+    resolveOldRefresh?.(new Response("old session revoked", { status: 400 }));
+    await expect(oldPending).rejects.toThrow(/refresh failed/);
+    expect(getAccessToken()).toBe("at-new");
+    expect(hasRefreshToken()).toBe(true);
+
+    const nextRefresh = vi
+      .fn()
+      .mockResolvedValue(
+        ok({ access_token: "at-newer", expires_in: 1800, refresh_token: "rt-newer" }),
+      );
+    vi.stubGlobal("fetch", nextRefresh);
+    await refreshTokens(CFG);
+    expect(refreshTokenOf(nextRefresh)).toBe("rt-new");
   });
 
   it("exposes msUntilExpiry (positive right after login) for the scheduler", async () => {

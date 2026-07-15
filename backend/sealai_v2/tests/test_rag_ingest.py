@@ -12,11 +12,14 @@ import json
 
 from fastapi.testclient import TestClient
 
+from sealai_v2.api import deps
 from sealai_v2.api.main import app
 from sealai_v2.api.routes import rag_ingest
+from sealai_v2.config.settings import Settings
 from sealai_v2.knowledge.ledger import LedgerWriteResult
 from sealai_v2.knowledge.paperless_client import PaperlessConfigError
 from sealai_v2.tests._fakes import ScriptedFakeLlmClient
+from sealai_v2.security.cost_control import InMemoryCostControlStore
 
 _TOKEN = "DUMMY_PAPERLESS_WEBHOOK_TOKEN"
 _EMPTY_CLAIMS = json.dumps({"claims": [], "scope": {}, "titel_vorschlag": "x"})
@@ -45,7 +48,19 @@ def _client(
     add_error=None,
     remove_calls=None,
     remove_error=None,
+    provider_enabled=True,
 ):
+    settings = Settings()
+    if provider_enabled:
+        settings = settings.model_copy(
+            update={
+                "provider_requests_enabled": True,
+                "database_url": "postgresql://quota-authority",
+                "provider_budget_contract_sha256": "sha256:" + "a" * 64,
+            }
+        )
+    app.dependency_overrides[deps.get_settings] = lambda: settings
+    app.dependency_overrides[deps.get_cost_control_store] = InMemoryCostControlStore
     monkeypatch.setenv("PAPERLESS_WEBHOOK_TOKEN", _TOKEN)
     monkeypatch.setattr(rag_ingest, "find_tag_id", lambda name: find_tag_id_result)
 
@@ -130,6 +145,23 @@ def test_missing_token_is_refused_even_if_env_unset(monkeypatch):
     assert r.status_code == 401
 
 
+def test_tagged_ingest_cannot_bypass_default_provider_kill_switch(monkeypatch):
+    client, _ = _client(
+        monkeypatch,
+        provider_enabled=False,
+        fetch_result=(
+            "PTFE ist chemisch sehr bestaendig.",
+            "paperless#5:PTFE",
+            ("sealai:ingest",),
+        ),
+    )
+    response = client.post(
+        "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "provider_kill_switch"
+
+
 # ---------------------------------------------------------------------------
 # no-op paths (not failures — no status-failed tag)
 # ---------------------------------------------------------------------------
@@ -175,18 +207,24 @@ def test_empty_document_is_a_noop_but_tagged_failed(monkeypatch):
     assert add_calls == [("5", 15)]  # tagged sealai:status-failed (id 15 in this test)
 
 
-def test_fetch_failure_retries_then_fails_safe_tagged_failed(monkeypatch):
+def test_fetch_failure_retries_then_fails_safe_tagged_failed(monkeypatch, caplog):
     add_calls = []
     client, _ = _client(
-        monkeypatch, fetch_error=RuntimeError("boom"), add_calls=add_calls
+        monkeypatch,
+        fetch_error=RuntimeError("PRIVATE_EXCEPTION_CANARY"),
+        add_calls=add_calls,
     )
     r = client.post(
-        "/internal/rag/ingest", json={"document_id": "5"}, headers=_headers()
+        "/internal/rag/ingest",
+        json={"document_id": "PRIVATE_DOCUMENT_CANARY"},
+        headers=_headers(),
     )
     assert r.status_code == 200
     body = r.json()
     assert body == {"ingested": False, "reason": "fetch_failed", "attempts": 3}
-    assert add_calls == [("5", 15)]
+    assert add_calls == [("PRIVATE_DOCUMENT_CANARY", 15)]
+    assert "PRIVATE_EXCEPTION_CANARY" not in caplog.text
+    assert "PRIVATE_DOCUMENT_CANARY" not in caplog.text
 
 
 def test_fetch_config_error_fails_closed_without_retry_or_tag(monkeypatch):

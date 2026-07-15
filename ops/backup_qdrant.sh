@@ -78,6 +78,23 @@ publish_no_clobber() {
   TMP_FILE=""
 }
 
+qdrant_api() {
+  # The credential is already present in backend-v2's environment. Feed it to
+  # curl through stdin so it is never present in docker-exec/curl argv, backup
+  # events, or the host environment. The allowlist rejects config-file control
+  # characters before curl parses the generated one-line config.
+  /usr/bin/timeout --signal=TERM --kill-after=30s "${HTTP_TIMEOUT_SECONDS}s" \
+    docker exec "${BACKEND_CONTAINER}" sh -eu -c '
+      key=${SEALAI_V2_QDRANT_API_KEY:-}
+      case "${key}" in
+        ""|*[!A-Za-z0-9._~-]*) exit 64 ;;
+      esac
+      [ "${#key}" -ge 32 ] && [ "${#key}" -le 256 ] || exit 64
+      printf '\''header = "api-key: %s"\n'\'' "${key}" \
+        | curl --config - --connect-timeout 30 --max-time 540 -fsS "$@"
+    ' sh "$@"
+}
+
 cleanup() {
   local rc=$?
   if [[ -n "${TMP_FILE}" ]]; then
@@ -203,8 +220,7 @@ FILE="${BOUND_TARGET_DIR}/${COLLECTION}-${DATE}-${TOKEN}.snapshot"
 chmod 600 "${TMP_FILE}"
 
 event --event backup --status ok --reason snapshot_started
-RESPONSE=$(/usr/bin/timeout --signal=TERM --kill-after=30s "${HTTP_TIMEOUT_SECONDS}s" \
-  docker exec "${BACKEND_CONTAINER}" curl --connect-timeout 30 --max-time 540 -fsS -X POST \
+RESPONSE=$(qdrant_api -X POST \
   "${QDRANT_INTERNAL_URL}/collections/${COLLECTION}/snapshots")
 
 # Parse through stdin; the untrusted API response is never interpolated or logged.
@@ -309,8 +325,7 @@ if [[ -n "${QDRANT_OFFSITE_RECEIPT}" ]]; then
 fi
 
 if "${REMOTE_GATE[@]}" >&2; then
-  DELETE_RESPONSE=$(/usr/bin/timeout --signal=TERM --kill-after=30s "${HTTP_TIMEOUT_SECONDS}s" \
-    docker exec "${BACKEND_CONTAINER}" curl --connect-timeout 30 --max-time 540 -fsS -X DELETE \
+  DELETE_RESPONSE=$(qdrant_api -X DELETE \
     "${QDRANT_INTERNAL_URL}/collections/${COLLECTION}/snapshots/${SNAPSHOT_NAME}")
   if ! printf '%s' "${DELETE_RESPONSE}" \
     | /usr/bin/timeout --signal=TERM --kill-after=5s 60s \

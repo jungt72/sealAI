@@ -267,12 +267,10 @@ export function ChatPane({
   liveStage?: string | null;
   compute?: ComputeResponse | null;
   onConfirmUnit?: (feld: string, value: string) => void;
-  /** Modus F lead-gen: route a structured RFQ briefing to the chosen partner. The host supplies the
-   * session message; the panel passes only the partner id. */
-  onAnfrage?: (partnerId: string, message: string) => Promise<AnfrageResponse>;
-  /** Download the Anfrage briefing as a PDF (no send). The host fetches the briefing for the session
-   * message + builds the PDF; the panel passes nothing. */
-  onDownloadPdf?: (message: string) => Promise<void>;
+  /** Modus F lead-gen: route the server-authorized snapshot of the active case revision. */
+  onAnfrage?: (partnerId: string) => Promise<AnfrageResponse>;
+  /** Download the server-authorized case snapshot as a PDF without sending an RFQ. */
+  onDownloadPdf?: () => Promise<void>;
   /** Wissens-Beitrag: the user shares their solution + outcome to improve sealingAI (untrusted DRAFT). */
   onContribute?: (payload: ContributePayload) => Promise<{ hinweis: string }>;
 }) {
@@ -538,7 +536,8 @@ export function ChatPane({
 
   // The Anfrage briefing is rendered server-side from the SESSION case-state; the message it runs is
   // the user's last substantive question (recalls the worked-out situation). The panel passes only the
-  // partner id — the host injects this message + talks to /api/v2/anfrage.
+  // The last user message remains contribution context only. Artifact routes receive no client text;
+  // they project the exact server-authorized case revision selected by App.
   const lastUserMessage = useMemo(() => {
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i];
@@ -546,27 +545,8 @@ export function ChatPane({
     }
     return "";
   }, [msgs]);
-  const panelOnAnfrage = useMemo(
-    () =>
-      onAnfrage
-        ? (partnerId: string) =>
-            onAnfrage(
-              partnerId,
-              lastUserMessage || "Anfrage zur besprochenen Dichtungslösung",
-            )
-        : undefined,
-    [onAnfrage, lastUserMessage],
-  );
-  const panelOnDownloadPdf = useMemo(
-    () =>
-      onDownloadPdf
-        ? () =>
-            onDownloadPdf(
-              lastUserMessage || "Anfrage zur besprochenen Dichtungslösung",
-            )
-        : undefined,
-    [onDownloadPdf, lastUserMessage],
-  );
+  const panelOnAnfrage = onAnfrage;
+  const panelOnDownloadPdf = onDownloadPdf;
   const lastAnswer = useMemo(() => {
     for (let i = msgs.length - 1; i >= 0; i--) {
       const m = msgs[i];

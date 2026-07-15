@@ -75,6 +75,34 @@ def test_tenant_isolation_no_cross_tenant_read(db_url):
     assert summary == {"total": 0, "by_status": {}, "by_scope": {}}
 
 
+def test_legacy_memory_item_is_hidden_and_cannot_transition(db_url):
+    store = _store(db_url)
+    store.create_candidate(_item(owner_subject="user-a"))
+    session_factory = make_sessionmaker(make_engine(db_url))
+    with session_factory.begin() as session:
+        session.get(V2MemoryItem, "mem-1").ownership_state = None
+
+    assert store.list_items(tenant_id="tenant-a", owner_subject="user-a") == ()
+    assert (
+        store.get_item(tenant_id="tenant-a", item_id="mem-1", owner_subject="user-a")
+        is None
+    )
+    assert store.summary(tenant_id="tenant-a", owner_subject="user-a") == {
+        "total": 0,
+        "by_status": {},
+        "by_scope": {},
+    }
+    with pytest.raises(MemoryItemNotFound):
+        store.transition_status(
+            tenant_id="tenant-a",
+            item_id="mem-1",
+            to_status=MemoryStatus.CONFIRMED,
+            actor="user-a",
+            now="2026-07-03T01:00:00Z",
+            owner_subject="user-a",
+        )
+
+
 def test_list_items_rejects_blank_tenant(db_url):
     store = _store(db_url)
     with pytest.raises(TenantScopeError):

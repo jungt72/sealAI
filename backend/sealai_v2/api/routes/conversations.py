@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from sealai_v2.api.confirmation import build_param_confirmation
@@ -31,7 +31,10 @@ router = APIRouter(prefix="/api/v2/conversations", tags=["conversations"])
 
 # Same width as V2Session.session_id (db/models.py) — an over-long case_id now fails closed with a
 # clean 422 instead of a generic 500 surfaced from the DB column's own length constraint.
-CaseIdParam = Annotated[str | None, Query(max_length=255)]
+CaseIdParam = Annotated[
+    str | None,
+    Header(alias="X-SealAI-Case-Id", max_length=255, pattern=r"^[A-Za-z0-9._~-]+$"),
+]
 
 
 def _memory(pipeline: Pipeline):
@@ -104,17 +107,22 @@ async def view_memory(
     # P2: a background distill may still be in flight — flush first, so the chips re-fetch
     # right after /chat already sees the fresh case-state (and the history shows the turn).
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    cs = mem.case_state(
+    view = mem.recall(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
     )
+    cs = view.case_state
     hist = mem.history(
         tenant_id=identity.tenant_id,
         session_id=session_id,
         owner_subject=identity.subject,
     )
     return {
+        "case_id": session_id,
+        "case_revision": (
+            view.case_state_v2.revision if view.case_state_v2 is not None else 0
+        ),
         "case_state": [
             {"feld": f.feld, "wert": f.wert, "provenance": f.provenance} for f in cs
         ],

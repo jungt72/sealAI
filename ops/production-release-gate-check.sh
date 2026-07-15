@@ -91,7 +91,7 @@ if not isinstance(value, dict):
 base = {"allowed", "operation", "reason", "state_id", "required_gate"}
 mutating = {"build", "pull", "deploy", "migration", "dashboard-publish"}
 if operation in mutating:
-    expected_keys = base | {"source_git_sha"}
+    expected_keys = base | {"source_git_sha", "release_hashes"}
     expected_reason = "gate10_approved_manifest_bound"
     expected_gate = "GATE-10"
 elif operation == "recovery-start-existing":
@@ -120,6 +120,27 @@ if operation in mutating or operation == "remediation-control-install":
         raise SystemExit(78)
     if expected_source and not hmac.compare_digest(source, expected_source):
         raise SystemExit(78)
+if operation in mutating:
+    release_hashes = value.get("release_hashes")
+    expected_release_hashes = {
+        "served_tree_sha256",
+        "backend_image_digest",
+        "frontend_image_digest",
+        "dashboard_artifact_sha256",
+        "database_migration_sha256",
+        "rollback_plan_sha256",
+        "evidence_manifest_sha256",
+    }
+    if not isinstance(release_hashes, dict) or set(release_hashes) != expected_release_hashes:
+        raise SystemExit(78)
+    for name, digest in release_hashes.items():
+        if not isinstance(digest, str):
+            raise SystemExit(78)
+        if name in {"backend_image_digest", "frontend_image_digest"}:
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                raise SystemExit(78)
+        elif not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise SystemExit(78)
 if operation == "remediation-control-install":
     approval_id = value.get("approval_id")
     artifacts = value.get("artifact_sha256")

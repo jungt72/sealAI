@@ -3,8 +3,9 @@
 ## Dashboard chat
 
 - Source of truth: `frontend-v2`.
-- Active production template is the VPS `frontend-v2` dashboard, served from
-  `/home/thorsten/sealai/frontend-v2/dist`; do not polish or deploy the old cockpit/template copies.
+- The SPA source is `frontend-v2`. This historical runbook's former direct deployment target is
+  superseded by `docs/ops/IMMUTABLE_DASHBOARD_RELEASES.md`: builds stay under
+  `.build/dashboard-candidate`, and production serves only the GATE-08-selected immutable release.
 - Conversation width follows the ChatGPT computed-style reference: chat frame, assistant answer,
   markdown, and composer use `--sai-content-max-width: 48rem` (`768px`) plus responsive side padding.
 - UI font is self-hosted IBM Plex Sans via `.woff2` assets under the same `/dashboard/` origin;
@@ -48,6 +49,7 @@
 
 ## Deploy notes
 
-- Dashboard SPA is built from `frontend-v2` and served by nginx from `/home/thorsten/sealai/frontend-v2/dist`.
+- Dashboard SPA is built from `frontend-v2`; Nginx serves the immutable
+  `frontend-v2/dashboard-releases/current` target after GATE-08 selection.
 - Public marketing frontend is the Next.js service `frontend` from the production compose file.
 - Keycloak theme changes require the theme files on the VPS and a Keycloak restart/recreate if the theme cache does not refresh.

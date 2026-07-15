@@ -28,9 +28,9 @@ const parseCsv = (s: string) =>
     .filter(Boolean);
 
 /**
- * Owner/admin dashboard for the Hersteller-Partner pool (Modus F). Manage the PAYING partners (CRUD)
+ * Platform-owner dashboard for the Hersteller-Partner pool (Modus F). Manage the PAYING partners (CRUD)
  * and read the captured leads (the Anfragen routed to the manufacturers). Shown only to a token that
- * carries the admin realm-role; the backend independently re-checks the role on EVERY /admin call, so
+ * carries the platform-owner realm role; the backend re-checks the role on EVERY /admin call, so
  * a tampered token never grants access — this view only decides what the SPA renders. Neutrality:
  * `plan` is editable billing metadata here; it NEVER influences the user-facing pool ranking (which is
  * capability-fit only, §3.9). `lead_email` is the routing target the owner manages.

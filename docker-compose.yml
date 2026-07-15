@@ -67,11 +67,6 @@ services:
     image: qdrant/qdrant:v1.16.0
     container_name: qdrant
     restart: unless-stopped
-    environment:
-      # The write key is consumed by the V2 API/worker; the read-only key is the
-      # single source for Prometheus's file-backed scrape credential below.
-      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY required}
-      QDRANT__SERVICE__READ_ONLY_API_KEY: ${QDRANT_READ_ONLY_API_KEY:?QDRANT_READ_ONLY_API_KEY required}
     expose:
     - '6333'
     - '6334'
@@ -188,7 +183,6 @@ services:
     <<: *exporter-security
     image: ${NODE_EXPORTER_IMAGE:?NODE_EXPORTER_IMAGE required - set a digest-pinned image ref}
     container_name: node-exporter
-    pid: host
     expose:
     - '9100'
     volumes:
@@ -214,8 +208,6 @@ services:
     - /sys:/sys:ro
     - /var/lib/docker:/var/lib/docker:ro
     - /dev/disk:/dev/disk:ro
-    devices:
-    - /dev/kmsg:/dev/kmsg
     networks:
       observability_network: {}
     profiles:

@@ -2,10 +2,11 @@
 
 Every op derives ``tenant_id`` ONLY from the verified token (P0, same discipline as
 ``conversations.py``) — a tenant's token can never read or write another tenant's memory.
-``project_id``/``case_id`` ARE accepted as client-supplied query/body params: they only NARROW an
-already tenant-scoped query, never widen it or bypass the tenant boundary (there is no scope claim
-in the token for project/case yet — the caller, e.g. the dashboard's current case context, supplies
-it; the hard isolation boundary stays server-derived tenant_id).
+``project_id`` and the ``X-SealAI-Case-Id`` header only NARROW an already tenant-scoped query; they
+never widen it or bypass the tenant boundary (there is no scope claim in the token for project/case
+yet — the caller, e.g. the dashboard's current case context, supplies it; the hard isolation
+boundary stays server-derived tenant_id). Case identifiers are deliberately excluded from query
+strings so they do not enter browser history, referrers, or standard proxy request targets.
 
 This is the CURATED memory tier (distinct from ``/api/v2/conversations/current/memory``, which is
 the existing Layer 1-3 session working-window/case-state — untouched by this patch).
@@ -18,7 +19,7 @@ status (``memory.curated.is_valid_transition`` — e.g. a REJECTED item can't be
 Patch 9c reconciliation (against "sealingAI Memory Architecture V1.0 — Finales Konzept", §12): adds
 ``GET /items/{id}`` and a proper ``DELETE /items/{id}`` verb (additive — the existing
 ``POST .../delete`` stays, since nothing has ever depended on only one of the two existing), plus an
-admin-gated ``GET /outbox-health`` wrapping the already-built ``outbox_worker.outbox_health()``.
+system-operator-gated ``GET /outbox-health`` wrapping the existing outbox health calculation.
 Deliberately NOT built here: ``GET /context-sources?message_id=...`` — the final doc's §11 Right Rail
 wants to look up which memory items were used for a SPECIFIC PAST turn, but nothing today persists a
 message_id -> memory_context mapping (Patch 8's ``MemoryContextBundle`` is computed per-request and
@@ -38,10 +39,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from sealai_v2.api.deps import current_identity, get_settings, require_admin
+from sealai_v2.api.deps import current_identity, get_settings, require_system_operator
 from sealai_v2.api.errors import safe_http_error
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.db.memory_store import (
@@ -134,7 +135,13 @@ def list_items(
     scope: MemoryScope | None = None,
     status: MemoryStatus | None = None,
     project_id: str | None = None,
-    case_id: str | None = None,
+    case_id: str | None = Header(
+        default=None,
+        alias="X-SealAI-Case-Id",
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9._~-]+$",
+    ),
     identity: VerifiedIdentity = Depends(current_identity),
     store: MemoryStore = Depends(get_memory_store),
 ) -> dict:
@@ -340,9 +347,9 @@ def delete_item_verb(
 
 @router.get("/outbox-health")
 def outbox_health_endpoint(
-    _identity: VerifiedIdentity = Depends(require_admin),
+    _identity: VerifiedIdentity = Depends(require_system_operator),
 ) -> dict:
-    """Admin-only (Patch 9c): wraps the already-built ``outbox_worker.outbox_health()``. Global
+    """System-operator-only outbox health. Global
     across all tenants by design — this is Qdrant-sync-pipeline observability, not user data."""
     from sealai_v2.memory.outbox_worker import outbox_health
 

@@ -1,5 +1,5 @@
 """Wissens-Beitrag /api/v2/contribute + /admin/contributions. Proves: a user contributes (anonymous DROPS
-identity; named keeps provenance), it lands as an untrusted DRAFT in the owner review queue (admin-only),
+identity; named keeps provenance), it lands as an untrusted DRAFT in the owner review queue (owner-only),
 the owner can set its status; the contribution NEVER touches the pipeline."""
 
 from __future__ import annotations
@@ -14,7 +14,9 @@ from sealai_v2.security.auth import FakeAuthValidator
 
 IDS = {
     "tok-user": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
-    "tok-admin": VerifiedIdentity("tenant-O", "sess-O", "owner", roles=("admin",)),
+    "tok-admin": VerifiedIdentity(
+        "tenant-O", "sess-O", "owner", roles=("platform_owner",)
+    ),
 }
 
 
@@ -73,7 +75,7 @@ def test_contribute_requires_auth():
     assert client.post("/api/v2/contribute", json={"outcome": "x"}).status_code == 401
 
 
-def test_review_queue_is_admin_only():
+def test_review_queue_is_platform_owner_only():
     client, _ = _client()
     assert (
         client.get("/api/v2/admin/contributions", headers=_auth("tok-user")).status_code

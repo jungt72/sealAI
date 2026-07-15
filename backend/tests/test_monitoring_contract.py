@@ -34,6 +34,21 @@ def _render_compose() -> dict:
     assert docker is not None, "docker compose is required for the monitoring contract"
     digest = "a" * 64
     env = os.environ.copy()
+    compose_source = "\n".join(
+        path.read_text(encoding="utf-8") for path in (COMPOSE, COMPOSE_DEPLOY)
+    )
+    required = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*):\?[^}]*}", compose_source))
+    for index, name in enumerate(sorted(required), start=1):
+        if name.endswith("_IMAGE"):
+            env[name] = f"registry.invalid/{name.lower()}@sha256:{index:064x}"
+        elif name.endswith("_MEMORY_LIMIT"):
+            env[name] = "512m"
+        elif name.endswith("_CPU_LIMIT"):
+            env[name] = "1.0"
+        elif name.endswith("_PIDS_LIMIT"):
+            env[name] = "128"
+        else:
+            env[name] = f"DUMMY_{name}"
     for name in (
         "POSTGRES_PASSWORD",
         "REDIS_PASSWORD",
@@ -464,8 +479,8 @@ def test_rendered_compose_contains_isolated_non_published_monitoring_graph() -> 
         assert service["cap_drop"] == ["ALL"]
         assert service["security_opt"] == ["no-new-privileges:true"]
         assert service["logging"] == {
-            "driver": "json-file",
-            "options": {"max-file": "3", "max-size": "10m"},
+            "driver": "local",
+            "options": {"max-file": "5", "max-size": "10m"},
         }
 
     assert set(services["prometheus"]["networks"]) == {
@@ -511,8 +526,8 @@ def test_exporter_image_inputs_fail_closed_until_a_digest_is_supplied() -> None:
 def test_every_rendered_container_has_bounded_log_rotation() -> None:
     for name, service in _render_compose()["services"].items():
         assert service.get("logging") == {
-            "driver": "json-file",
-            "options": {"max-file": "3", "max-size": "10m"},
+            "driver": "local",
+            "options": {"max-file": "5", "max-size": "10m"},
         }, name
 
 

@@ -1,5 +1,10 @@
 # Disaster recovery — Postgres + Qdrant
 
+This file is the component-level emergency reference. The complete host-loss target state,
+encrypted provider-neutral offsite workflow, upload/document/config coverage, secret-recovery
+procedure, RPO/RTO, and isolated recurring drill are defined in
+`docs/runbooks/disaster-recovery.md`. Neither document authorizes a live restore.
+
 Backups run nightly (03:00 UTC, `thorsten`'s crontab) via `ops/backup_run.sh`, which calls
 `ops/backup_postgres.sh` + `ops/backup_qdrant.sh`. Files land in `~/sealai-backups/{postgres,qdrant}/`.
 `RETENTION_DAYS=14` makes an old file eligible for review, but it is deleted only with a matching,

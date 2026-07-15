@@ -3,17 +3,18 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ApiClient } from "./api/client";
 import { fetchFraming } from "./api/framing";
 import {
-  authorizeUrl,
+  beginAuthorization,
   clearAccessToken,
-  exchangeCode,
+  completeAuthorizationCallback,
+  discardAuthorizationTransaction,
   getAccessToken,
   givenNameFromToken,
   herstellerIdFromToken,
   msUntilExpiry,
-  randomVerifier,
   refreshTokens,
   rolesFromToken,
   rpInitiatedLogout,
+  scrubAuthorizationCallback,
   type OidcConfig,
 } from "./auth/oidc";
 import { LegalGate } from "./components/LegalGate";
@@ -37,8 +38,8 @@ import {
 } from "./lib/caseId";
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env ?? {};
-// Realm role that unlocks the owner/admin dashboard (matches the backend's auth_admin_role default).
-const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "admin";
+// Realm role that unlocks the owner dashboard (matches auth_platform_owner_role).
+const ADMIN_ROLE = env.VITE_ADMIN_ROLE ?? "platform_owner";
 // Realm role for the manufacturer self-service dashboard (matches auth_manufacturer_role default).
 const MANUFACTURER_ROLE = env.VITE_MANUFACTURER_ROLE ?? "manufacturer";
 // Legal-by-Design (Phase B): mirrors the backend's SEALAI_V2_LEGAL_GATE_ENABLED — both default OFF
@@ -81,13 +82,10 @@ export function App() {
   const [convKey, setConvKey] = useState(0);
   // P4b: latest stage-start from the /chat/stream progress frames (keys only; labels in ChatPane)
   const [liveStage, setLiveStage] = useState<string | null>(null);
-  // "Fälle"-Sidebar: the active case, persisted in the URL (?case=) so a hard reload keeps it —
-  // generated client-side on first load if the URL has none yet. The backend row is created lazily
-  // on the first real message; nothing here calls the API just to "start" a case. The URL itself is
-  // NOT written here (see the effect below) — this initializer must stay a pure read, because it
-  // also runs during the OIDC callback bootstrap, which needs to scrub ITS OWN query params
-  // (code/state) via a hardcoded replaceState a moment later; writing `?case=` here first would
-  // just get clobbered by that normalization.
+  // "Fälle"-Sidebar: the active case lives in history.state with a tab-scoped sessionStorage
+  // fallback, so reload/back/forward work without putting the identifier in URLs or referrers.
+  // The backend row is created lazily on the first real message; this initializer performs no API
+  // call and remains safe during the OIDC callback's synchronous code/state scrub.
   const [caseId, setCaseId] = useState<string>(() => getCaseIdFromUrl() ?? newCaseId());
   const caseIdRef = useRef(caseId);
   caseIdRef.current = caseId;
@@ -113,7 +111,7 @@ export function App() {
   const api = useMemo(() => new ApiClient(getAccessToken, onUnauthenticated), [onUnauthenticated]);
   // greeting name from the session token's given_name claim — display-only, never logged (PII)
   const greetingName = useMemo(() => (authed ? givenNameFromToken(getAccessToken()) : null), [authed]);
-  // owner/admin gate — display-only (the backend re-checks the role on every /admin call). When false
+  // platform-owner gate — display-only (the backend re-checks every /admin call). When false
   // the dashboard is never rendered AND never offered in the nav.
   const isAdmin = useMemo(
     () => (authed ? rolesFromToken(getAccessToken()).includes(ADMIN_ROLE) : false),
@@ -189,21 +187,21 @@ export function App() {
     // OIDC return — both the explicit login AND the silent prompt=none land on /callback.
     if (isCallback) {
       const code = url.searchParams.get("code");
+      // OAuth parameters are protocol-required in the callback request. Remove them from browser
+      // history synchronously, before validation, token exchange, rendering or any error path.
+      scrubAuthorizationCallback();
       if (code) {
-        const verifier = sessionStorage.getItem("v2_pkce_verifier") ?? "";
-        exchangeCode(CONFIG, code, verifier)
+        completeAuthorizationCallback(CONFIG, url)
           .then(() => {
-            sessionStorage.removeItem("v2_pkce_verifier"); // one-time; token stays in memory
             sessionStorage.removeItem("v2_auth_redirect_at"); // clear the redirect-loop window
             // Restore the case that was active before this redirect (2026-07-04 audit finding):
             // neither Keycloak's fixed redirect_uri nor the OAuth `state` nonce carries app data
             // through the round trip, so the caseId must come back via sessionStorage instead —
             // stashed by every redirect-out call site below. Setting it here, before setAuthed,
-            // means the existing "persist caseId to the URL once authed" effect further down
-            // picks it up and writes it into the now-clean URL — no separate URL-write needed.
+            // means the existing history-state persistence effect further down picks it up after
+            // the callback has been scrubbed — no separate write is needed here.
             const restoredCaseId = takeStashedCaseId();
             if (restoredCaseId) setCaseId(restoredCaseId);
-            window.history.replaceState({}, "", "/dashboard/");
             setAuthed(true);
           })
           .catch(() => setError("Anmeldung fehlgeschlagen — bitte erneut anmelden."))
@@ -212,8 +210,7 @@ export function App() {
       }
       // No code → the silent attempt found NO live SSO session (error=login_required) or was
       // denied. Do NOT retry (would loop) — fall through to the explicit login view.
-      sessionStorage.removeItem("v2_pkce_verifier");
-      window.history.replaceState({}, "", "/dashboard/");
+      discardAuthorizationTransaction();
       setBootstrapping(false);
       return;
     }
@@ -243,11 +240,8 @@ export function App() {
       return;
     }
     sessionStorage.setItem("v2_auth_redirect_at", String(Date.now()));
-    const verifier = randomVerifier();
-    const state = randomVerifier();
-    sessionStorage.setItem("v2_pkce_verifier", verifier);
     stashCaseIdForAuthRedirect(caseId); // survives the full-page round trip; restored above
-    void authorizeUrl(CONFIG, { verifier, state }).then((u) => {
+    void beginAuthorization(CONFIG).then((u) => {
       window.location.href = u;
     });
   }, []);
@@ -276,7 +270,7 @@ export function App() {
   }, [authed, api]);
 
   // "Fälle"-Sidebar: the browser back/forward buttons step between cases too, since switches use
-  // pushState — sync React state when the URL changes from OUTSIDE our own setCaseId calls.
+  // pushState — sync React state when history changes outside our own setCaseId calls.
   useEffect(() => {
     const onPop = () => {
       const id = getCaseIdFromUrl();
@@ -290,11 +284,9 @@ export function App() {
     return () => window.removeEventListener("popstate", onPop);
   }, [caseId]);
 
-  // Persist a freshly-generated caseId into the URL once auth bootstrap has settled — deferred
-  // until `authed` so this never races the OIDC callback's own replaceState calls (which scrub
-  // code/state/verifier right after login and would otherwise clobber an early write). Without
-  // this, a caseId minted in-memory by the useState initializer above never reaches the URL, so a
-  // hard reload finds no ?case= param, mints ANOTHER fresh id, and the chat looks lost.
+  // Persist a freshly generated caseId into history.state once auth bootstrap has settled. The
+  // sessionStorage fallback survives reload; deferring until `authed` avoids racing the callback's
+  // synchronous history scrub.
   useEffect(() => {
     if (!authed) return;
     if (getCaseIdFromUrl() === caseId) return;
@@ -344,11 +336,8 @@ export function App() {
   }, [authed, onUnauthenticated]);
 
   const login = useCallback(async () => {
-    const verifier = randomVerifier();
-    const state = randomVerifier();
-    sessionStorage.setItem("v2_pkce_verifier", verifier);
     stashCaseIdForAuthRedirect(caseId); // survives the full-page round trip; restored above
-    window.location.href = await authorizeUrl(CONFIG, { verifier, state });
+    window.location.href = await beginAuthorization(CONFIG);
   }, [caseId]);
 
   const send = useCallback(
@@ -372,8 +361,11 @@ export function App() {
 
   const makeBriefing = useCallback(() => {
     if (!lastMessage) return;
-    api.briefing(lastMessage).then(setBriefing).catch(() => setError("Briefing fehlgeschlagen."));
-  }, [api, lastMessage]);
+    api
+      .briefing(caseId, memory.case_revision ?? 0)
+      .then(setBriefing)
+      .catch(() => setError("Briefing fehlgeschlagen."));
+  }, [api, caseId, lastMessage, memory.case_revision]);
 
   // R2 live preview: the read-only backend kern over the form DRAFT (no settle, no persist). Returns
   // null on failure (the form keeps its values; never a stale number); a working preview clears a
@@ -537,10 +529,12 @@ export function App() {
           canBriefing={Boolean(lastMessage)}
           briefing={briefing}
           compute={compute}
-          onAnfrage={(partnerId, message) => api.anfrage(partnerId, message)}
-          onDownloadPdf={async (message) => {
+          onAnfrage={(partnerId) =>
+            api.anfrage(partnerId, caseId, memory.case_revision ?? 0)
+          }
+          onDownloadPdf={async () => {
             const [result, pdf] = await Promise.all([
-              api.briefing(message),
+              api.briefing(caseId, memory.case_revision ?? 0),
               import("./lib/pdf"),
             ]);
             pdf.downloadBriefingPdf(result);

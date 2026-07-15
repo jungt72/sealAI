@@ -15,6 +15,9 @@ echo ">> Validating .env.prod and pinned production image refs"
 
 cd "$REPO_ROOT"
 
+/bin/bash -p "${SCRIPT_DIR}/validate-production-compose-security.sh" \
+  "${REPO_ROOT}/.env.prod"
+
 # During the release freeze this path is intentionally limited to starting
 # containers which already exist. `compose start` cannot build, pull, create,
 # recreate, remove or migrate an artifact.

@@ -49,6 +49,11 @@ def make_client(pipeline: Pipeline | None = None, identities: dict | None = None
         identities or IDS
     )
     app.dependency_overrides[deps.get_pipeline] = lambda: pipeline
+    # These route tests exercise product behavior, while dedicated cost-control tests exercise the
+    # provider admission dependency. Preserve the legal gate in this compatibility override.
+    app.dependency_overrides[deps.require_provider_admission] = (
+        deps.require_legal_acceptance
+    )
     return TestClient(app), pipeline
 
 

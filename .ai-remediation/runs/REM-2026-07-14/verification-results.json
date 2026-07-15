@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T23:12:03Z",
+  "updated_at": "2026-07-14T23:27:00Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -128,7 +128,7 @@
       "check_id": "P2-OBSERVABILITY-TESTS-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "The complete 2427-test backend/V2 collection previously passed with 2426 successes and one pre-existing skip. After splitting the apex and www TLS policies, 39 focused monitoring, TLS, and remediation-control tests passed, including exact target, module, status, Location, Nginx policy, no-follow, and fail-closed alert assertions. Pinned Ruff, real daemon-free Compose rendering, YAML semantics, secret scan, and diff checks are retained; native promtool/amtool/blackbox_exporter config loads, loopback route rehearsal, real exporter digests/identities, cAdvisor host compatibility, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
+      "summary": "After the complete DR/P1 stack merge, the full 2715-test backend collection passed with 2713 successes and two expected skips; 173 focused monitoring, TLS, network, logging, DR, backup, and remediation-control tests also passed. The production Compose model renders daemon-free with eight unexposed, digest-bound monitoring services, segmented metrics networks, fail-closed resource inputs, bounded local logs, separate Qdrant write/read-only credentials, and no host-PID or device exception. Pinned Ruff, shell syntax, structured-file checks, secret scan, and diff checks passed; native promtool/amtool/blackbox_exporter loads, real exporter digests/identities, cAdvisor runtime compatibility, loopback alert rehearsal, and missed-heartbeat delivery remain BLOCKED_EXTERNAL."
     },
     {
       "check_id": "P2-TLS-CONTRACT-001",
@@ -140,7 +140,118 @@
       "check_id": "P2-TLS-TESTS-001",
       "scope": "local_worktree",
       "status": "PASSED",
-      "summary": "Thirty-nine focused monitoring, TLS, and remediation-control tests passed after the split-probe correction; the complete 2427-test backend/V2 collection had previously passed with 2426 successes and one pre-existing skip. Exact target/module/status/Location/Nginx policy, negative URL, CA-file, missing-header, redirect-follow, bypass, fail-closed alert, and Nginx inheritance cases are covered, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks. Native blackbox_exporter config loading remains BLOCKED_EXTERNAL; no external endpoint was contacted."
+      "summary": "The split-probe TLS correction is covered inside the 173 focused integration tests and the green 2715-test full backend collection. Exact target/module/status/Location/Nginx policy, negative URL, CA-file, missing-header, redirect-follow, bypass, fail-closed alert, and Nginx inheritance cases are covered, together with Ruff, shell syntax, secret scan, structured-evidence parse, and diff checks. Native blackbox_exporter config loading remains BLOCKED_EXTERNAL; no external endpoint was contacted."
+    },
+    {
+      "check_id": "P2-DR-LOCAL-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Manifest v2 now binds actual file mtime_ns and rejects stale payload even behind freshly self-declared recovery timestamps; Gate-08-bound writers emit only non-authoritative LOCAL_EVIDENCE_ONLY and local verifiers cannot elevate OFFSITE_VERIFIED or RESTORE_VERIFIED without a future trusted external importer. Twenty-seven adversarial DR tests plus 68 existing backup tests, Ruff, Bash syntax, secret scanning, structured-file parsing, and diff checks passed locally. No Restic binary, systemd runtime, Docker daemon, external repository, real recovery material, Gate-08 receipt, cryptographic receipt trust root/importer, or P1-D rebuild command was available; no external check, restore, or authoritative receipt is claimed."
+    },
+    {
+      "check_id": "P2-DR-EXTERNAL-001",
+      "scope": "external_attestation",
+      "status": "BLOCKED_EXTERNAL",
+      "summary": "Authoritative off-site backup and restore verification requires Gate 08, real recovery material, an independent repository, and a cryptographically trusted external receipt importer. None was authorized or available, so local evidence cannot satisfy this check."
+    },
+    {
+      "check_id": "P1-AUTHORITY-EPOCH-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Mutable Postgres knowledge authority is transactionally coupled to claim lifecycle, tenant-bound cache namespaces, response metadata, expiry evaluation, and a final just-before-serve recheck. Qdrant cannot mint authority. The implementation is not deployed and exact-image release evidence remains pending.",
+      "evidence": [
+        "backend/sealai_v2/knowledge/authority.py",
+        "backend/sealai_v2/tests/test_knowledge_authority.py",
+        ".ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority"
+      ]
+    },
+    {
+      "check_id": "P1-CASE-ARTIFACT-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Briefing and RFQ require one authorized case ID and revision, reject stale or unauthorized snapshots, accept no client artifact text, and leave turn/history state unchanged. Backend and frontend production deployment remains gated.",
+      "evidence": [
+        "backend/sealai_v2/api/case_artifacts.py",
+        "backend/sealai_v2/tests/test_api_briefing.py",
+        "backend/sealai_v2/tests/test_api_anfrage.py"
+      ]
+    },
+    {
+      "check_id": "P1-DATA-BOUNDARY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Owner-bound sessions, durable and curated memory, purge, and leads fail closed for unresolved ownership. Additive migrations and guarded aggregate/quarantine/RLS artifacts are prepared, but DATA-001 remains IN_PROGRESS because production data, constraints, runtime role context, and FORCE RLS are unverified.",
+      "evidence": [
+        "docs/ops/gate07-data-authority-cutover.md",
+        "backend/sealai_v2/tests/test_migrations.py",
+        "backend/sealai_v2/tests/test_persistence_store.py"
+      ]
+    },
+    {
+      "check_id": "P1-ROLE-REVIEW-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Application roles are pairwise distinct and knowledge approval requires a different human approver after immutable independent review. Production assignments and authoritative shared-affiliation conflict checks remain absent, so GOV-001 remains IN_PROGRESS.",
+      "evidence": [
+        "backend/sealai_v2/config/settings.py",
+        "backend/sealai_v2/knowledge/ledger.py",
+        "backend/sealai_v2/tests/test_api_knowledge_review.py"
+      ]
+    },
+    {
+      "check_id": "P1-GATE07-POSTGRES-001",
+      "scope": "explicit_ephemeral_postgres",
+      "status": "NOT_AUTHORIZED",
+      "summary": "The opt-in real-PostgreSQL role and FORCE-RLS proof was not run because no explicit test DSN and EPHEMERAL_ONLY confirmation were supplied. No fallback DSN, local daemon, container, or production database was used.",
+      "evidence": [
+        "backend/sealai_v2/tests/test_postgres_gate07_integration.py",
+        "docs/ops/gate07-data-authority-cutover.md"
+      ]
+    },
+    {
+      "check_id": "P1-DATA-AUTHORITY-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Ruff 0.6.9 format/check passed; the full 2615-test backend collection completed with 2613 passed and 2 expected skips; frontend boundary/terminology, TypeScript, 321 tests in 37 files, production build, and zero-vulnerability dependency audit passed.",
+      "evidence": [
+        ".ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority"
+      ]
+    },
+    {
+      "check_id": "P1-RELEASE-INTEGRITY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "The root-trusted promotion transaction binds immutable backend and dashboard artifacts, source/control trees, migration digest, external RC evidence, Nginx exposure, receipts, and rollback state. The release freeze and Gate-10 denial remain active; nothing was installed or deployed."
+    },
+    {
+      "check_id": "P1-RELEASE-INTEGRITY-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Two hundred twenty-one focused release, RC, dashboard, gate, migration, tree-hash, and backup-safety tests passed together with pinned Ruff format/lint, Bash, Compose, secret, frontend, and diff checks."
+    },
+    {
+      "check_id": "P1-NETWORK-HARDENING-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A deny-by-default segmented production target, per-consumer data networks, Qdrant authentication contract, least-privilege container policy, rendered-Compose guard, listener observer, and rollback-capable firewall runbook are implemented. Production topology, credentials, listeners, and firewall remain unchanged behind Gates 02, 05, 07, 08, and 10."
+    },
+    {
+      "check_id": "P1-NETWORK-HARDENING-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Twenty-six adversarial network contract tests plus inherited release regressions passed with pinned Ruff format/lint, production Compose rendering and policy validation, Bash syntax, secret scanning, and diff checks. No Docker daemon or network mutation was used."
+    },
+    {
+      "check_id": "P1-AUTH-COST-CONTROL-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Closed onboarding, bounded fail-closed JWKS validation, OIDC state/nonce/PKCE, atomic shared provider admission, worker cost boundaries, case/query privacy, and RAG log minimization are implemented. Production auth is unchanged; provider requests remain disabled and Gates 06/08 were not executed."
+    },
+    {
+      "check_id": "P1-AUTH-COST-CONTROL-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "The full 2110-test V2 suite, 319 frontend tests, 257 focused stack regressions, TypeScript, production frontend build, pinned Ruff format/lint, Bash, Compose, secret, npm-audit, and diff checks passed. No paid provider was contacted."
     }
   ],
   "production_mutations_performed": false,

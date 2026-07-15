@@ -1,4 +1,4 @@
-"""Admin surface /api/v2/admin/* (Hersteller-Partner CRUD + lead retrieval). Proves: the admin
+"""Owner surface /api/v2/admin/* (Hersteller-Partner CRUD + lead retrieval). Proves: the platform-owner
 realm-role is required (403 without it, 401 without a token); CRUD round-trips; ``plan`` is stored but
 is just metadata; leads are retrievable (with the briefing + routing email — the OWNER surface)."""
 
@@ -14,7 +14,9 @@ from sealai_v2.knowledge.hersteller_partner import InProcessPartnerRegistry
 from sealai_v2.security.auth import FakeAuthValidator
 
 IDS = {
-    "tok-admin": VerifiedIdentity("tenant-A", "sess-A", "owner", roles=("admin",)),
+    "tok-admin": VerifiedIdentity(
+        "tenant-A", "sess-A", "owner", roles=("platform_owner",)
+    ),
     "tok-user": VerifiedIdentity("tenant-B", "sess-B", "user-B"),  # roles=() by default
 }
 
@@ -125,6 +127,9 @@ def test_leads_retrieval_owner_surface():
             lead_email="leads@acme.example",
             tenant_id="tenant-A",
             session_id="sess-A",
+            owner_subject="user-A",
+            case_id="sess-A",
+            case_revision=1,
             briefing_title="Technische Orientierung (Screening)",
             briefing_body="BRIEFING-INHALT",
             created_at="2026-06-27T00:00:00+00:00",
@@ -151,6 +156,9 @@ def test_leads_filter_by_partner():
                 lead_email=f"leads@{pid}",
                 tenant_id="t",
                 session_id="s",
+                owner_subject="user",
+                case_id="s",
+                case_revision=1,
                 briefing_title="t",
                 briefing_body="b",
                 created_at="2026-06-27T00:00:00+00:00",
@@ -163,6 +171,6 @@ def test_leads_filter_by_partner():
     assert len(acme) == 2 and {ld["partner_id"] for ld in acme} == {"acme"}
 
 
-def test_leads_require_admin():
+def test_leads_require_platform_owner():
     client, _, _ = _client()
     assert client.get("/api/v2/admin/leads", headers=_user()).status_code == 403

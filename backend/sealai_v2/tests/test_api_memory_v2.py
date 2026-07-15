@@ -17,7 +17,9 @@ IDS = {
     "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
     "tok-A2": VerifiedIdentity("tenant-A", "sess-A2", "user-A2"),
     "tok-B": VerifiedIdentity("tenant-B", "sess-B", "user-B"),
-    "tok-admin": VerifiedIdentity("tenant-A", "sess-A", "owner", roles=("admin",)),
+    "tok-admin": VerifiedIdentity(
+        "tenant-A", "sess-A", "operator", roles=("system_operator",)
+    ),
 }
 
 
@@ -167,9 +169,8 @@ def test_list_items_filters_by_case_id():
     client.post(
         "/api/v2/memory/candidates", json=_VALID_CANDIDATE, headers=_auth("tok-A")
     )  # session-scoped, not case-1
-    r = client.get(
-        "/api/v2/memory/items", params={"case_id": "case-1"}, headers=_auth("tok-A")
-    )
+    headers = {**_auth("tok-A"), "X-SealAI-Case-Id": "case-1"}
+    r = client.get("/api/v2/memory/items", headers=headers)
     items = r.json()["items"]
     assert len(items) == 1
     assert items[0]["scope"] == "case" and items[0]["scope_id"] == "case-1"

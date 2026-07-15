@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "components": {
+    "configuration": {
+      "backup_last_success_timestamp_seconds": 0,
+      "backup_last_failure_timestamp_seconds": 0,
+      "offsite_backup_last_success_timestamp_seconds": 0,
+      "restore_drill_last_success_timestamp_seconds": 0,
+      "backup_receipt_valid": 0
+    },
+    "documents": {
+      "backup_last_success_timestamp_seconds": 0,
+      "backup_last_failure_timestamp_seconds": 0,
+      "offsite_backup_last_success_timestamp_seconds": 0,
+      "restore_drill_last_success_timestamp_seconds": 0,
+      "backup_receipt_valid": 0
+    },
+    "postgres": {
+      "backup_last_success_timestamp_seconds": 0,
+      "backup_last_failure_timestamp_seconds": 0,
+      "offsite_backup_last_success_timestamp_seconds": 0,
+      "restore_drill_last_success_timestamp_seconds": 0,
+      "backup_receipt_valid": 0
+    },
+    "qdrant": {
+      "backup_last_success_timestamp_seconds": 0,
+      "backup_last_failure_timestamp_seconds": 0,
+      "offsite_backup_last_success_timestamp_seconds": 0,
+      "restore_drill_last_success_timestamp_seconds": 0,
+      "backup_receipt_valid": 0
+    },
+    "uploads": {
+      "backup_last_success_timestamp_seconds": 0,
+      "backup_last_failure_timestamp_seconds": 0,
+      "offsite_backup_last_success_timestamp_seconds": 0,
+      "restore_drill_last_success_timestamp_seconds": 0,
+      "backup_receipt_valid": 0
+    }
+  }
+}
