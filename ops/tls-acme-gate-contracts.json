@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "contract_id": "p0-tls-acme-gates-v1",
+  "gates": [
+    {
+      "gate_id": "GATE-01D0",
+      "operation": "read-only-exposure-correlation",
+      "mutation": false,
+      "allowed_identifiers": [
+        "public_key_fingerprint",
+        "certificate_serial_number",
+        "lineage",
+        "subject_alternative_name",
+        "public_jwk_thumbprint",
+        "acme_account_id"
+      ],
+      "forbidden_inputs": ["private_key_bytes", "acme_account_private_key", "credential_value"],
+      "required_predecessors": []
+    },
+    {
+      "gate_id": "GATE-01D1",
+      "operation": "issue-new-certificate-and-private-key",
+      "mutation": true,
+      "allowed_identifiers": [],
+      "forbidden_inputs": ["old_private_key_reuse"],
+      "required_predecessors": ["GATE-01D0"]
+    },
+    {
+      "gate_id": "GATE-01D2",
+      "operation": "nginx-cutover-and-public-verification",
+      "mutation": true,
+      "allowed_identifiers": ["public_key_fingerprint", "certificate_serial_number", "subject_alternative_name"],
+      "forbidden_inputs": ["unverified_certificate_lineage"],
+      "required_predecessors": ["GATE-01D1", "GATE-02D"]
+    },
+    {
+      "gate_id": "GATE-01D3",
+      "operation": "revoke-old-certificates",
+      "mutation": true,
+      "allowed_identifiers": ["certificate_serial_number", "lineage"],
+      "forbidden_inputs": ["unverified_new_public_endpoint"],
+      "required_predecessors": ["GATE-01D2"]
+    },
+    {
+      "gate_id": "GATE-01D4",
+      "operation": "replace-acme-account-key-if-exposed",
+      "mutation": true,
+      "allowed_identifiers": ["public_jwk_thumbprint", "acme_account_id"],
+      "forbidden_inputs": ["unproven_exposure_assumption"],
+      "required_predecessors": ["GATE-01D0", "GATE-01D3"]
+    },
+    {
+      "gate_id": "GATE-02D",
+      "operation": "harden-new-live-tls-acme-material",
+      "mutation": true,
+      "allowed_identifiers": ["public_key_fingerprint", "certificate_serial_number", "lineage"],
+      "forbidden_inputs": ["recursive_permission_change", "symlink_target"],
+      "required_predecessors": ["GATE-01D1"]
+    }
+  ]
+}
