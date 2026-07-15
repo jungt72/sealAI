@@ -157,6 +157,30 @@ jobs:
         GATE.verify_ci_workflows(tmp_path)
 
 
+def test_security_workflows_scan_pull_requests_and_only_direct_main_pushes(
+    tmp_path: Path,
+):
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    for name in ("dependency-audit.yml", "secret-scan.yml"):
+        (workflows / name).write_text(
+            (REPO / ".github" / "workflows" / name).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    GATE.verify_ci_workflows(tmp_path)
+
+    secret_scan = workflows / "secret-scan.yml"
+    secret_scan.write_text(
+        secret_scan.read_text(encoding="utf-8").replace(
+            "  push:\n    branches: [main]\n", "  push:\n"
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(GATE.SupplyChainError, match="trigger boundary"):
+        GATE.verify_ci_workflows(tmp_path)
+
+
 def test_trivy_license_config_cannot_add_ignored_licenses(tmp_path: Path):
     security = tmp_path / "security"
     security.mkdir()
@@ -178,6 +202,33 @@ def test_policy_cannot_remove_a_blocking_severity(tmp_path: Path):
 
     with pytest.raises(GATE.SupplyChainError, match="weakened or drifted"):
         GATE.load_policy(path)
+
+
+def test_trivy_exclusions_are_hash_bound_and_cannot_enter_deployment(tmp_path: Path):
+    policy = GATE.load_policy()
+    policy["dockerfiles"] = []
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    workflow = workflows / "fixture.yml"
+    workflow.write_text("name: fixture\n", encoding="utf-8")
+    for item in policy["trivy_excluded_files"]:
+        source = REPO / item["path"]
+        target = tmp_path / item["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
+
+    GATE.verify_trivy_exclusions(tmp_path, policy)
+
+    workflow.write_text(
+        "run: python -m pip install -r backend/requirements.txt\n", encoding="utf-8"
+    )
+    with pytest.raises(GATE.SupplyChainError, match="deployment surface"):
+        GATE.verify_trivy_exclusions(tmp_path, policy)
+
+    workflow.write_text("name: fixture\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("drifted\n", encoding="utf-8")
+    with pytest.raises(GATE.SupplyChainError, match="drifted"):
+        GATE.verify_trivy_exclusions(tmp_path, policy)
 
 
 def test_python_lock_requires_a_hash_for_every_entry(tmp_path: Path):
@@ -327,6 +378,63 @@ def test_trivy_critical_cve_and_critical_license_are_blocking_findings():
         "image-vulnerability",
         "license",
     }
+
+
+def test_trivy_versionless_licenses_bind_to_lock_or_file_digest(tmp_path: Path):
+    lock = {
+        "lockfileVersion": 3,
+        "packages": {
+            "": {"name": "fixture"},
+            "node_modules/example": {"version": "1.2.3"},
+        },
+    }
+    _write_json(tmp_path / "package-lock.json", lock)
+    (tmp_path / "NOTICE.txt").write_text("Copyright fixture\n", encoding="utf-8")
+    report = {
+        "SchemaVersion": 2,
+        "ArtifactName": "fixture",
+        "ArtifactType": "filesystem",
+        "Results": [
+            {
+                "Target": "package-lock.json",
+                "Licenses": [
+                    {
+                        "Severity": "HIGH",
+                        "Name": "LGPL-3.0-or-later",
+                        "PkgName": "example",
+                        "FilePath": "package-lock.json",
+                    }
+                ],
+            },
+            {
+                "Target": "Loose File License(s)",
+                "Licenses": [
+                    {
+                        "Severity": "UNKNOWN",
+                        "Name": "Copyright",
+                        "PkgName": "",
+                        "FilePath": "NOTICE.txt",
+                    }
+                ],
+            },
+        ],
+    }
+
+    findings = GATE.findings_from_report(
+        "trivy", report, scope="repository", root=tmp_path, policy=GATE.load_policy()
+    )
+
+    assert ("example", "1.2.3") in {
+        (finding.package, finding.installed_version) for finding in findings
+    }
+    loose = next(
+        finding for finding in findings if finding.package == "file:NOTICE.txt"
+    )
+    assert (
+        loose.installed_version
+        == "sha256:"
+        + hashlib.sha256((tmp_path / "NOTICE.txt").read_bytes()).hexdigest()
+    )
 
 
 def test_npm_emits_only_actual_critical_advisory_not_transitive_echoes():

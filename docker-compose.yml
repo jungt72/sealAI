@@ -187,7 +187,12 @@ services:
     - '9100'
     volumes:
     - /:/host:ro,rslave
-    - ${NODE_EXPORTER_TEXTFILE_DIR:?NODE_EXPORTER_TEXTFILE_DIR required}:/var/lib/node-exporter/textfile:ro
+    - type: bind
+      source: ${NODE_EXPORTER_TEXTFILE_DIR:?NODE_EXPORTER_TEXTFILE_DIR required}
+      target: /var/lib/node-exporter/textfile
+      read_only: true
+      bind:
+        create_host_path: false
     command:
     - --path.rootfs=/host
     - --collector.textfile.directory=/var/lib/node-exporter/textfile

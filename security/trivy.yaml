@@ -1,6 +1,12 @@
 # Full license discovery is mandatory. The machine-readable policy blocks
 # UNKNOWN, HIGH (Restricted) and CRITICAL (Forbidden) license findings; no
 # ignored-license list is permitted.
+scan:
+  skip-files:
+    - requirements.txt
+    - backend/requirements.txt
+    - backend/requirements-dev.txt
+    - AGENTS.md
 license:
   confidenceLevel: 0.9
   full: true
