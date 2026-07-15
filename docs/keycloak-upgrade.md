@@ -26,10 +26,12 @@ Primary references:
 - The shared Postgres credential has one source (`POSTGRES_PASSWORD`) and is
   injected as `KCRAW_DB_PASSWORD`, preserving literal dollar sequences without
   SmallRye Config expression expansion.
-- `mail@thorsten-jung.de` is the permanent owner. The account receives the
-  `sealAI` realm-local `realm-management/realm-admin` role directly, plus the
-  sealingAI product and governance roles through groups. Realm administration
-  is owner-specific so future product admins do not inherit Keycloak control.
+- `mail@thorsten-jung.de` is the permanent realm owner. The recovery routine
+  assigns only the `sealAI` realm-local `realm-management/realm-admin` role
+  directly. Application governance groups are managed separately by the
+  read-only-by-default GATE-06 reconciler and never inferred from realm
+  administration. Future product admins therefore do not inherit Keycloak
+  control, and the realm owner does not automatically inherit review authority.
 - The owner is deliberately **not** a permanent master-realm superadmin. That
   would grant unnecessary cross-realm authority.
 - Password replacement and TOTP enrollment are required before Keycloak issues
@@ -98,6 +100,8 @@ cd /home/thorsten/sealai
 The script performs a fresh full backup, stops Keycloak, uses the official
 `bootstrap-admin user` command, reconciles the realm, assigns the owner, and
 deletes the temporary recovery user. It never prints the generated credential.
+It intentionally leaves application governance roles and memberships unchanged;
+see `keycloak/admin-cli-playbook.md` for the separate GATE-06 census.
 
 At the next login, the owner must replace the password and enroll TOTP. The
 realm admin console is:

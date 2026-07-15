@@ -23,6 +23,22 @@ def test_keycloak_reconciler_cannot_reopen_registration_or_restore_wildcard_call
     assert 'redirectUris=["https://sealingai.com/dashboard/*"]' not in reconciler
 
 
+def test_governance_reconciler_is_separate_read_only_by_default():
+    broad = (ROOT / "ops/keycloak_ensure_roles.sh").read_text()
+    governance = (ROOT / "ops/keycloak_governance_reconcile.py").read_text()
+    manifest = json.loads(
+        (ROOT / "security/keycloak-governance-v1.json").read_text(encoding="utf-8")
+    )
+
+    assert "governance roles unchanged" in broad
+    assert "governance-reviewers" not in broad
+    assert manifest["forbidden_role_names"] == ["admin"]
+    assert manifest["assignment_policy"]["manage_user_memberships"] is False
+    assert 'parser.add_argument("--apply", action="store_true")' in governance
+    assert "if args.apply and not args.expected_manifest_sha256" in governance
+    assert "if args.apply:" in governance
+
+
 def test_nginx_access_log_format_cannot_record_query_strings():
     config = (ROOT / "nginx/default.conf").read_text()
     policy = config.split("server {", 1)[0]

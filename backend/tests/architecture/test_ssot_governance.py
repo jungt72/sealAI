@@ -182,16 +182,24 @@ def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> Non
 
 
 def test_keycloak_provisioning_covers_governed_reviewer_roles() -> None:
-    provisioning = (REPO / "ops" / "keycloak_ensure_roles.sh").read_text(
+    manifest = json.loads(
+        (REPO / "security" / "keycloak-governance-v1.json").read_text(encoding="utf-8")
+    )
+    provisioning = (REPO / "ops" / "keycloak_governance_reconcile.py").read_text(
         encoding="utf-8"
     )
 
+    role_names = {item["name"] for item in manifest["roles"]}
     for role in (
         "capability_reviewer",
         "knowledge_reviewer",
+        "knowledge_approver",
         "decision_reviewer",
     ):
-        assert f'"{role}"' in provisioning
+        assert role in role_names
+    assert manifest["forbidden_role_names"] == ["admin"]
+    assert "--apply" in provisioning
+    assert "manage_user_memberships" in provisioning
 
 
 def test_keycloak_mfa_runs_only_after_user_identification() -> None:

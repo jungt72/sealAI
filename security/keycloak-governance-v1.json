@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "contract_id": "sealai.keycloak.governance-roles",
+  "contract_version": "2026-07-15.1",
+  "realm": "sealAI",
+  "forbidden_role_names": [
+    "admin"
+  ],
+  "roles": [
+    {
+      "name": "tenant_admin",
+      "authority_class": "administrator",
+      "description": "Tenant-scoped administration; never platform-owner authority"
+    },
+    {
+      "name": "platform_owner",
+      "authority_class": "administrator",
+      "description": "Global sealingAI business-owner authority; never Keycloak realm administration"
+    },
+    {
+      "name": "system_operator",
+      "authority_class": "system_operator",
+      "description": "Operational telemetry and runtime-control authority"
+    },
+    {
+      "name": "knowledge_contributor",
+      "authority_class": "contributor",
+      "description": "Submit governed knowledge without review or approval authority"
+    },
+    {
+      "name": "manufacturer",
+      "authority_class": "manufacturer",
+      "description": "Manufacturer self-service scoped by the verified hersteller_id claim"
+    },
+    {
+      "name": "capability_reviewer",
+      "authority_class": "reviewer",
+      "description": "Independent manufacturer-capability reviewer"
+    },
+    {
+      "name": "knowledge_reviewer",
+      "authority_class": "reviewer",
+      "description": "Independent evidence and domain reviewer for technical claims"
+    },
+    {
+      "name": "knowledge_approver",
+      "authority_class": "approver",
+      "description": "Second-person approver for independently reviewed technical claims"
+    },
+    {
+      "name": "decision_reviewer",
+      "authority_class": "reviewer",
+      "description": "Independent reviewer for governed engineering-decision records"
+    }
+  ],
+  "groups": [
+    {
+      "path": "/sealai-tenant-administrators",
+      "roles": [
+        "tenant_admin"
+      ]
+    },
+    {
+      "path": "/sealai-platform-owners",
+      "roles": [
+        "platform_owner"
+      ]
+    },
+    {
+      "path": "/sealai-system-operators",
+      "roles": [
+        "system_operator"
+      ]
+    },
+    {
+      "path": "/sealai-knowledge-contributors",
+      "roles": [
+        "knowledge_contributor"
+      ]
+    },
+    {
+      "path": "/sealai-manufacturers",
+      "roles": [
+        "manufacturer"
+      ]
+    },
+    {
+      "path": "/sealai-capability-reviewers",
+      "roles": [
+        "capability_reviewer"
+      ]
+    },
+    {
+      "path": "/sealai-knowledge-reviewers",
+      "roles": [
+        "knowledge_reviewer"
+      ]
+    },
+    {
+      "path": "/sealai-knowledge-approvers",
+      "roles": [
+        "knowledge_approver"
+      ]
+    },
+    {
+      "path": "/sealai-decision-reviewers",
+      "roles": [
+        "decision_reviewer"
+      ]
+    }
+  ],
+  "incompatibility_sets": [
+    {
+      "id": "knowledge-decision-separation",
+      "maximum_groups_per_subject": 1,
+      "groups": [
+        "/sealai-tenant-administrators",
+        "/sealai-platform-owners",
+        "/sealai-system-operators",
+        "/sealai-knowledge-contributors",
+        "/sealai-knowledge-reviewers",
+        "/sealai-knowledge-approvers"
+      ]
+    },
+    {
+      "id": "capability-review-independence",
+      "maximum_groups_per_subject": 1,
+      "groups": [
+        "/sealai-tenant-administrators",
+        "/sealai-platform-owners",
+        "/sealai-system-operators",
+        "/sealai-manufacturers",
+        "/sealai-capability-reviewers"
+      ]
+    },
+    {
+      "id": "decision-review-independence",
+      "maximum_groups_per_subject": 1,
+      "groups": [
+        "/sealai-tenant-administrators",
+        "/sealai-platform-owners",
+        "/sealai-system-operators",
+        "/sealai-decision-reviewers"
+      ]
+    }
+  ],
+  "assignment_policy": {
+    "manage_user_memberships": false,
+    "managed_group_role_mappings": "exact",
+    "incompatible_membership_overlap": "block_apply",
+    "forbidden_direct_role_assignments": "block_apply"
+  }
+}

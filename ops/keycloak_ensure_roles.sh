@@ -3,9 +3,10 @@ set -euo pipefail
 readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
-# Idempotently reconciles the sealingAI realm through Keycloak's supported
-# Admin CLI. Credentials are accepted only for this process; the script never
-# sources .env.prod and never leaves an authenticated kcadm session behind.
+# Idempotently hardens the sealingAI realm, authentication flows, and OIDC
+# clients through Keycloak's supported Admin CLI. Governance application roles,
+# groups, and memberships are deliberately outside this broad routine; the
+# manifest-bound keycloak_governance_reconcile.py owns that narrower boundary.
 
 KEYCLOAK_CONTAINER="${KEYCLOAK_CONTAINER:-keycloak}"
 KEYCLOAK_SERVER="${KEYCLOAK_SERVER:-http://localhost:8080}"
@@ -25,11 +26,6 @@ KCADM_JSON="/tmp/sealai-kcadm-$$.json"
 PRODUCT_ROLES=(
   user_basic
   user_pro
-  manufacturer
-  admin
-  capability_reviewer
-  knowledge_reviewer
-  decision_reviewer
 )
 
 die() {
@@ -61,15 +57,6 @@ kcadm_update_json() {
   printf '%s' "$payload" | docker exec -i "$KEYCLOAK_CONTAINER" /bin/bash -ec \
     'cat > "$1"' -- "$KCADM_JSON"
   kcadm update "$resource" -r "$KEYCLOAK_REALM" -f "$KCADM_JSON" >/dev/null
-  docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_JSON" >/dev/null
-}
-
-kcadm_create_json() {
-  local resource="$1"
-  local payload="$2"
-  printf '%s' "$payload" | docker exec -i "$KEYCLOAK_CONTAINER" /bin/bash -ec \
-    'cat > "$1"' -- "$KCADM_JSON"
-  kcadm create "$resource" -r "$KEYCLOAK_REALM" -f "$KCADM_JSON" >/dev/null
   docker exec "$KEYCLOAK_CONTAINER" rm -f "$KCADM_JSON" >/dev/null
 }
 
@@ -193,18 +180,6 @@ ensure_realm_role() {
   kcadm create roles -r "$KEYCLOAK_REALM" -s "name=$role" -s "description=$description" >/dev/null
 }
 
-ensure_group() {
-  local name="$1"
-  local groups group_id
-  groups="$(kcadm get groups -r "$KEYCLOAK_REALM" --fields id,name,path)"
-  group_id="$(jq -r --arg name "$name" '.[] | select(.name == $name and .path == ("/" + $name)) | .id' <<<"$groups" | head -n1)"
-  if [[ -z "$group_id" ]]; then
-    group_id="$(kcadm create groups -r "$KEYCLOAK_REALM" -s "name=$name" -i)"
-  fi
-  [[ -n "$group_id" ]] || die "unable to resolve group '$name'"
-  printf '%s' "$group_id"
-}
-
 find_target_user() {
   local users
   users="$(kcadm get users -r "$KEYCLOAK_REALM" -q "email=$KEYCLOAK_TARGET_EMAIL" --fields id,username,email,enabled)"
@@ -312,13 +287,8 @@ kcadm update authentication/required-actions/UPDATE_PASSWORD \
 declare -A role_descriptions=(
   [user_basic]='Base access to sealingAI'
   [user_pro]='Professional sealingAI workspace access'
-  [manufacturer]='Manufacturer partner access'
-  [admin]='sealingAI product administration'
-  [capability_reviewer]='Review sealingAI capability profiles'
-  [knowledge_reviewer]='Review governed sealing knowledge'
-  [decision_reviewer]='Review governed engineering decisions'
 )
-printf 'Reconciling product roles and administrator groups...\n'
+printf 'Reconciling non-governance product roles...\n'
 for role in "${PRODUCT_ROLES[@]}"; do
   ensure_realm_role "$role" "${role_descriptions[$role]}"
 done
@@ -326,18 +296,6 @@ default_role_name="$(jq -r '.defaultRole.name // empty' <<<"$realm_before")"
 [[ -n "$default_role_name" ]] || die "realm default role could not be resolved"
 kcadm add-roles -r "$KEYCLOAK_REALM" --rname "$default_role_name" \
   --rolename user_basic >/dev/null
-printf 'Product roles ready; reconciling groups...\n'
-
-PLATFORM_GROUP='platform-admins'
-GOVERNANCE_GROUP='governance-reviewers'
-platform_group_id="$(ensure_group "$PLATFORM_GROUP")"
-governance_group_id="$(ensure_group "$GOVERNANCE_GROUP")"
-
-printf 'Reconciling group product-role mappings...\n'
-kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$PLATFORM_GROUP" \
-  --rolename admin --rolename user_basic >/dev/null
-kcadm add-roles -r "$KEYCLOAK_REALM" --gname "$GOVERNANCE_GROUP" \
-  --rolename capability_reviewer --rolename knowledge_reviewer --rolename decision_reviewer >/dev/null
 
 printf 'Reconciling the privileged owner...\n'
 target_user="$(find_target_user)"
@@ -372,8 +330,6 @@ else
   kcadm update "users/$target_user_id" -r "$KEYCLOAK_REALM" \
     -s "requiredActions=$required_actions" >/dev/null
 fi
-kcadm update "users/$target_user_id/groups/$platform_group_id" -r "$KEYCLOAK_REALM" >/dev/null
-kcadm update "users/$target_user_id/groups/$governance_group_id" -r "$KEYCLOAK_REALM" >/dev/null
 # Realm administration is intentionally owner-specific instead of inherited
 # from a reusable group: adding a future product admin must not silently grant
 # control over Keycloak itself.
@@ -498,23 +454,11 @@ else
     <<<"$conditional_otp_flow" >/dev/null || die "test profile still enables the OTP subflow"
 fi
 
-user_groups="$(kcadm get "users/$target_user_id/groups" -r "$KEYCLOAK_REALM")"
-jq -e --arg platform "$PLATFORM_GROUP" --arg governance "$GOVERNANCE_GROUP" \
-  '([.[].name] | index($platform)) != null and ([.[].name] | index($governance)) != null' \
-  <<<"$user_groups" >/dev/null || die "privileged group membership read-back failed"
-
 realm_management_id="$(kcadm get clients -r "$KEYCLOAK_REALM" -q clientId=realm-management --fields id,clientId | jq -r '.[] | select(.clientId == "realm-management") | .id' | head -n1)"
 [[ -n "$realm_management_id" ]] || die "realm-management client not found"
 owner_admin_roles="$(kcadm get "users/$target_user_id/role-mappings/clients/$realm_management_id" -r "$KEYCLOAK_REALM")"
 jq -e '([.[].name] | index("realm-admin")) != null' \
   <<<"$owner_admin_roles" >/dev/null || die "realm-admin owner mapping read-back failed"
-
-governance_roles="$(kcadm get "groups/$governance_group_id/role-mappings/realm" -r "$KEYCLOAK_REALM")"
-jq -e \
-  '([.[].name] | index("capability_reviewer")) != null
-   and ([.[].name] | index("knowledge_reviewer")) != null
-   and ([.[].name] | index("decision_reviewer")) != null' \
-  <<<"$governance_roles" >/dev/null || die "governance role mapping read-back failed"
 
 nextauth_state="$(kcadm get "clients/$nextauth_id" -r "$KEYCLOAK_REALM")"
 jq -e \
@@ -546,5 +490,5 @@ kcadm create "users/$target_user_id/logout" -r "$KEYCLOAK_REALM" -b '{}' >/dev/n
 printf 'Deleting the temporary recovery identity...\n'
 delete_temporary_admin_identity
 
-printf 'Keycloak reconciliation complete: user=%s realm=%s groups=/%s,/%s\n' \
-  "$target_username" "$KEYCLOAK_REALM" "$PLATFORM_GROUP" "$GOVERNANCE_GROUP"
+printf 'Keycloak realm hardening complete: user=%s realm=%s; governance roles unchanged\n' \
+  "$target_username" "$KEYCLOAK_REALM"
