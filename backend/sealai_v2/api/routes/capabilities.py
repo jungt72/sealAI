@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.api.deps import (
     get_capability_store,
@@ -55,11 +55,12 @@ class CapabilitySubmission(BaseModel):
 
 
 class CapabilityReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     to_status: Literal["verified", "quarantined", "expired", "rejected"]
     note: str = ""
     evidence: list[dict] = Field(default_factory=list)
     review_expires_at: str = ""
-    conflict_of_interest: Literal["none_declared", "connected", "unknown"]
 
 
 def _profile_dict(profile: ManufacturerCapabilityProfile) -> dict:
@@ -152,7 +153,12 @@ def submit_own_capability(
         change_reason=body.change_reason,
     )
     try:
-        submitted = store.submit(profile, actor=identity.subject, now=now)
+        submitted = store.submit(
+            profile,
+            actor=identity.subject,
+            actor_roles=identity.roles,
+            now=now,
+        )
     except ManufacturerCapabilityError as exc:
         raise safe_http_error(400, "capability_submission_invalid") from exc
     return _profile_dict(submitted)
@@ -187,13 +193,19 @@ def review_capability(
             manufacturer_id,
             to_status=body.to_status,
             actor=identity.subject,
+            actor_roles=identity.roles,
             actor_relation="independent_reviewer",
             now=datetime.now(timezone.utc).isoformat(),
             note=body.note,
             evidence=tuple(body.evidence),
             review_expires_at=body.review_expires_at,
-            conflict_of_interest=body.conflict_of_interest,
-            reviewer_manufacturer_id=identity.hersteller_id,
+            required_reviewer_role=settings.auth_capability_reviewer_role,
+            incompatible_reviewer_roles=(
+                settings.auth_manufacturer_role,
+                settings.auth_tenant_admin_role,
+                settings.auth_platform_owner_role,
+                settings.auth_system_operator_role,
+            ),
         )
     except ManufacturerCapabilityError as exc:
         raise safe_http_error(400, "capability_review_invalid") from exc

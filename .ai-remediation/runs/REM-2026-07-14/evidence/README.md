@@ -35,3 +35,36 @@ Sanitized local verification summary, 2026-07-15:
 
 This summary is local implementation evidence only. It does not change production state and cannot
 support `VERIFIED` without the gated production-equivalent and post-deployment checks.
+
+## P1 reviewer governance
+
+Sanitized local verification summary, 2026-07-15:
+
+- Scope: the locally implementable AUTH-003 and GOV-001 controls only.
+- The final hermetic backend collection contained 2,803 tests: 2,801 passed and
+  2 expected tests skipped (the explicit-DSN PostgreSQL proof and Linux-only
+  storage-lease lane).
+- A final 138-test focused role, affiliation, COI, capability, knowledge,
+  migration, cutover, remediation-control, and architecture run passed.
+- Ruff 0.6.9 reported all 28 changed Python files formatted and lint-clean;
+  Bash syntax, JSON/YAML parsing, remediation controls, supply-chain policy,
+  and `git diff --check` passed.
+- `ops/check-secret-hygiene.py --worktree` passed. Keycloak and cutover receipts
+  contain counts and hashes only; legacy quarantine identifiers are HMACed with
+  an externally injected key.
+- The Keycloak reconciler was exercised only with synthetic offline state and
+  mocked command responses. No Docker, Keycloak, provider, role, group, or user
+  assignment mutation ran.
+- Migration and transactional tests used local hermetic SQLite databases. No
+  production or production-like PostgreSQL migration, constraint validation,
+  authority import, legacy quarantine write, backfill, feature activation,
+  container recreation, deployment, push, or PR ran.
+
+Closure remains externally blocked. GATE-06 requires a human-owned production
+role/group census and explicit membership decisions. GATE-07 requires an
+access-controlled, peer-reviewed, versioned human affiliation bundle sourced
+from an owner-attested identity roster, independent HR register, or contractual
+affiliation register, plus isolated-restore schema/import/quarantine evidence.
+GATE-08 requires exact-image deployment with both review features still off,
+production-equivalent negative tests, and a separate activation decision.
+AUTH-003 and GOV-001 therefore remain `BLOCKED_EXTERNAL`, never `VERIFIED`.

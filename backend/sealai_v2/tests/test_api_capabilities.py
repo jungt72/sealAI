@@ -10,6 +10,7 @@ from sealai_v2.knowledge.manufacturer_capability import (
     InProcessManufacturerCapabilityStore,
 )
 from sealai_v2.security.auth import FakeAuthValidator
+from sealai_v2.tests.affiliation_fixtures import affiliation
 
 IDENTITIES = {
     "manufacturer": VerifiedIdentity(
@@ -32,6 +33,18 @@ IDENTITIES = {
         roles=("manufacturer", "capability_reviewer"),
         hersteller_id="acme",
     ),
+    "connected-reviewer": VerifiedIdentity(
+        "tenant-r",
+        "session-connected",
+        "connected-reviewer-user",
+        roles=("capability_reviewer",),
+    ),
+    "operator-reviewer": VerifiedIdentity(
+        "tenant-r",
+        "session-operator",
+        "operator-reviewer-user",
+        roles=("capability_reviewer", "system_operator"),
+    ),
     "admin": VerifiedIdentity(
         "tenant-a", "session-a", "owner-user", roles=("platform_owner",)
     ),
@@ -39,7 +52,15 @@ IDENTITIES = {
 
 
 def _client():
-    store = InProcessManufacturerCapabilityStore()
+    store = InProcessManufacturerCapabilityStore(
+        affiliation_records=(
+            affiliation("manufacturer-user", "acme"),
+            affiliation("manufacturer-reviewer-user", "acme"),
+            affiliation("reviewer-user", "reviewer-org"),
+            affiliation("connected-reviewer-user", "acme"),
+            affiliation("operator-reviewer-user", "operator-org"),
+        )
+    )
     app.dependency_overrides.clear()
     app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(IDENTITIES)
     app.dependency_overrides[deps.get_capability_store] = lambda: store
@@ -83,7 +104,6 @@ def test_submission_and_independent_review_are_separate_roles() -> None:
             "to_status": "verified",
             "evidence": [{"citation": "audit report"}],
             "review_expires_at": "2027-07-11T20:00:00Z",
-            "conflict_of_interest": "none_declared",
         },
     )
     assert denied.status_code == 403
@@ -95,7 +115,6 @@ def test_submission_and_independent_review_are_separate_roles() -> None:
             "to_status": "verified",
             "evidence": [{"citation": "audit report"}],
             "review_expires_at": "2027-07-11T20:00:00Z",
-            "conflict_of_interest": "none_declared",
         },
     )
     assert reviewed.status_code == 200
@@ -126,11 +145,62 @@ def test_manufacturer_with_reviewer_role_cannot_self_verify() -> None:
             "to_status": "verified",
             "evidence": [{"citation": "self-issued statement"}],
             "review_expires_at": "2027-07-11T20:00:00Z",
-            "conflict_of_interest": "none_declared",
         },
     )
 
     assert response.status_code == 403
+
+
+def test_client_coi_attestation_is_rejected_and_server_relationship_blocks() -> None:
+    client, _ = _client()
+    client.put(
+        "/api/v2/partner/me/capability",
+        headers=_auth("manufacturer"),
+        json={"company_name": "ACME"},
+    )
+
+    client_assertion = client.post(
+        "/api/v2/admin/manufacturer-capabilities/acme/review",
+        headers=_auth("reviewer"),
+        json={
+            "to_status": "verified",
+            "evidence": [{"citation": "audit report"}],
+            "review_expires_at": "2027-07-11T20:00:00Z",
+            "conflict_of_interest": "none_declared",
+        },
+    )
+    assert client_assertion.status_code == 422
+
+    connected = client.post(
+        "/api/v2/admin/manufacturer-capabilities/acme/review",
+        headers=_auth("connected-reviewer"),
+        json={
+            "to_status": "verified",
+            "evidence": [{"citation": "audit report"}],
+            "review_expires_at": "2027-07-11T20:00:00Z",
+        },
+    )
+    assert connected.status_code == 400
+    assert connected.json() == {"detail": {"code": "capability_review_invalid"}}
+
+    incompatible = client.post(
+        "/api/v2/admin/manufacturer-capabilities/acme/review",
+        headers=_auth("operator-reviewer"),
+        json={"to_status": "quarantined"},
+    )
+    assert incompatible.status_code == 403
+
+    independent = client.post(
+        "/api/v2/admin/manufacturer-capabilities/acme/review",
+        headers=_auth("reviewer"),
+        json={
+            "to_status": "verified",
+            "evidence": [{"citation": "independent audit"}],
+            "review_expires_at": "2027-07-11T20:00:00Z",
+        },
+    )
+    assert independent.status_code == 200
+    assert independent.json()["status"] == "verified"
 
 
 def test_capability_surface_is_default_off() -> None:

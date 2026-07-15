@@ -8,6 +8,7 @@ from sqlalchemy import select
 import sealai_v2.db.models  # noqa: F401
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
 from sealai_v2.db.models import (
+    V2GovernanceDecision,
     V2KnowledgeClaim,
     V2KnowledgeDocument,
     V2KnowledgeOutbox,
@@ -20,6 +21,7 @@ from sealai_v2.knowledge.ledger import (
     KnowledgeLedgerError,
     PostgresKnowledgeLedger,
 )
+from sealai_v2.tests.affiliation_fixtures import affiliation, persist_affiliations
 
 NOW = "2026-07-10T10:00:00Z"
 
@@ -28,6 +30,11 @@ def _ledger(tmp_path):
     engine = make_engine(f"sqlite:///{tmp_path / 'knowledge.db'}")
     Base.metadata.create_all(engine)
     sf = make_sessionmaker(engine)
+    persist_affiliations(
+        sf,
+        affiliation("domain-reviewer:alice", "reviewer-org"),
+        affiliation("domain-approver:bob", "approver-org"),
+    )
     return PostgresKnowledgeLedger(sf), sf
 
 
@@ -102,6 +109,7 @@ def _review_and_approve(
         claim_id=claim_id,
         to_status="reviewed",
         actor=reviewer,
+        actor_roles=("knowledge_reviewer",),
         now=now,
         evidence=evidence,
         applicability=applicability or {"material": ["PTFE"]},
@@ -115,6 +123,7 @@ def _review_and_approve(
         claim_id=claim_id,
         to_status="approved",
         actor=approver,
+        actor_roles=("knowledge_approver",),
         now=now,
     )
 
@@ -215,6 +224,9 @@ def test_human_review_survives_unchanged_claim_contract_revision(tmp_path):
         reviews = session.scalars(
             select(V2KnowledgeReview).order_by(V2KnowledgeReview.id)
         ).all()
+        decisions = session.scalars(
+            select(V2GovernanceDecision).order_by(V2GovernanceDecision.resource_version)
+        ).all()
         assert row.review_status == "approved"
         assert row.review_origin == "human_api"
         assert row.reviewed_by == "domain-reviewer:alice"
@@ -222,6 +234,10 @@ def test_human_review_survives_unchanged_claim_contract_revision(tmp_path):
         assert [(item.from_status, item.to_status) for item in reviews] == [
             ("draft", "reviewed"),
             ("reviewed", "approved"),
+        ]
+        assert [(item.resource_version, item.reason_code) for item in decisions] == [
+            (3, "no_shared_affiliation"),
+            (4, "unchanged_authority_contract_carry_forward"),
         ]
     assert claim_id in ledger.resolve_claims((claim_id,), tenant_id="customer-a")
 
@@ -326,6 +342,7 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
         claim_id=claim_id,
         to_status="reviewed",
         actor="domain-reviewer:alice",
+        actor_roles=("knowledge_reviewer",),
         now=NOW,
         evidence=("DIN EN ISO 1, reviewer checked",),
         applicability={"material": ["PTFE"]},
@@ -339,6 +356,7 @@ def test_review_is_append_only_and_postgres_controls_retrieval_status(tmp_path):
             claim_id=claim_id,
             to_status="approved",
             actor="domain-reviewer:alice",
+            actor_roles=("knowledge_approver",),
             now=NOW,
         )
 
@@ -397,6 +415,51 @@ def test_expired_approved_claim_is_not_resolved(tmp_path):
     with sf() as session:
         row = session.get(V2KnowledgeClaim, claim_id)
         row.review_expires_at = "2020-01-01T00:00:00Z"
+        session.commit()
+
+    assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}
+
+
+def test_human_api_approval_without_server_coi_decision_is_not_resolved(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
+    with sf() as session:
+        claim_id = session.scalar(select(V2KnowledgeClaim.id))
+    _review_and_approve(ledger, claim_id)
+    with sf() as session:
+        session.query(V2GovernanceDecision).delete()
+        session.commit()
+
+    assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}
+
+
+def test_human_api_approval_with_stale_server_decision_is_not_resolved(tmp_path):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
+    with sf() as session:
+        claim_id = session.scalar(select(V2KnowledgeClaim.id))
+    _review_and_approve(ledger, claim_id)
+    with sf() as session:
+        decision = session.scalar(select(V2GovernanceDecision))
+        assert decision is not None
+        decision.resource_version -= 1
+        session.commit()
+
+    assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}
+
+
+def test_human_api_approval_with_mismatched_contract_binding_is_not_resolved(
+    tmp_path,
+):
+    ledger, sf = _ledger(tmp_path)
+    ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="webhook")
+    with sf() as session:
+        claim_id = session.scalar(select(V2KnowledgeClaim.id))
+    _review_and_approve(ledger, claim_id)
+    with sf() as session:
+        row = session.get(V2KnowledgeClaim, claim_id)
+        assert row is not None
+        row.authority_fingerprint = "0" * 64
         session.commit()
 
     assert ledger.resolve_claims((claim_id,), tenant_id="customer-a") == {}

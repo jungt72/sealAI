@@ -26,6 +26,9 @@ from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.auth import FakeAuthValidator
 from sealai_v2.tests._fakes import FakeLlmClient
+from sealai_v2.tests.affiliation_fixtures import (
+    governed_verified_capability_store,
+)
 
 IDS = {
     "tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A"),
@@ -96,7 +99,11 @@ def _client(*partners, handoff_enabled=True, capability_status="verified"):
         )
         for partner in partners
     )
-    capability_store = InProcessManufacturerCapabilityStore(profiles)
+    capability_store = (
+        governed_verified_capability_store(*profiles)
+        if capability_status == "verified"
+        else InProcessManufacturerCapabilityStore(profiles)
+    )
     store = InProcessLeadStore()
     app.dependency_overrides.clear()
     app.dependency_overrides[deps.get_validator] = lambda: FakeAuthValidator(IDS)

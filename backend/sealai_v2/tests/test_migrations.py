@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import sqlite3
 from pathlib import Path
+import sys
 
 import pytest
 from sqlalchemy import inspect, select
@@ -10,7 +12,10 @@ import sealai_v2.db.models  # noqa: F401
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
 from sealai_v2.db.migrate import _upgrade_engine, migration_status, up, validate_schema
 from sealai_v2.db.models import (
+    V2GovernanceDecision,
+    V2GovernanceSnapshot,
     V2HerstellerPartner,
+    V2IdentityAffiliationRevision,
     V2InterviewShadowDecision,
     V2InterviewState,
     V2KnowledgeAuthorityEpoch,
@@ -28,7 +33,7 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260715_0013"
+    assert current == head == "20260715_0015"
     indexes = {
         item["name"]
         for item in inspect(engine).get_indexes("v2_interview_shadow_decisions")
@@ -42,6 +47,10 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     } <= {item["name"] for item in inspect(engine).get_columns("v2_leads")}
     assert "v2_ownership_quarantine" in tables
     assert "v2_knowledge_authority_epochs" in tables
+    assert "v2_identity_affiliation_revisions" in tables
+    assert "v2_governance_snapshots" in tables
+    assert "v2_governance_decisions" in tables
+    assert "v2_governance_quarantine" in tables
     sf = make_sessionmaker(engine)
     with sf() as session:
         epoch = session.get(V2KnowledgeAuthorityEpoch, "knowledge")
@@ -64,6 +73,77 @@ def test_shadow_constraint_migration_is_gate07_safe_contract() -> None:
     assert "VALIDATE CONSTRAINT" not in upgrade_source
     assert "ROW LEVEL SECURITY" not in upgrade_source
     assert "FORCE ROW LEVEL SECURITY" not in upgrade_source
+
+
+def test_reviewer_governance_migrations_are_additive_and_gate07_safe() -> None:
+    versions = Path(__file__).parents[1] / "db/migrations/versions"
+    foundation = (
+        versions / "20260715_0014_reviewer_governance_foundation.py"
+    ).read_text(encoding="utf-8")
+    shadow = (
+        versions / "20260715_0015_reviewer_governance_shadow_constraints.py"
+    ).read_text(encoding="utf-8")
+    foundation_upgrade = foundation.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+    shadow_upgrade = shadow.split("def upgrade() -> None:", 1)[1].split(
+        "def downgrade() -> None:", 1
+    )[0]
+
+    assert "UPDATE " not in foundation_upgrade
+    assert "DELETE " not in foundation_upgrade
+    assert "INSERT " not in foundation_upgrade
+    assert "v2_governance_quarantine" in foundation_upgrade
+    assert 'dialect.name != "postgresql"' in shadow_upgrade
+    assert "NOT VALID" in shadow_upgrade
+    assert "FOREIGN KEY" in shadow_upgrade
+    assert "owner_attested_identity_roster" in shadow
+    assert "BEFORE UPDATE OR DELETE" in shadow_upgrade
+    assert (
+        "reviewer-governance authority and audit rows are append-only" in shadow_upgrade
+    )
+    assert "VALIDATE CONSTRAINT" not in shadow_upgrade
+    assert "ROW LEVEL SECURITY" not in shadow_upgrade
+
+
+def test_reviewer_governance_models_are_in_fresh_schema(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'reviewer-governance.db'}")
+    up(engine)
+    sf = make_sessionmaker(engine)
+
+    with sf() as session:
+        assert session.scalars(select(V2IdentityAffiliationRevision)).all() == []
+        assert session.scalars(select(V2GovernanceSnapshot)).all() == []
+        assert session.scalars(select(V2GovernanceDecision)).all() == []
+
+
+def test_reviewer_governance_adoption_rejects_missing_unique_constraints(
+    tmp_path,
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'reviewer-governance-drift.db'}")
+    Base.metadata.create_all(engine)
+    migration_path = (
+        Path(__file__).parents[1]
+        / "db/migrations/versions/20260715_0014_reviewer_governance_foundation.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "reviewer_governance_0014", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    inspector = inspect(engine)
+
+    class MissingUniques:
+        def __getattr__(self, name):
+            return getattr(inspector, name)
+
+        def get_unique_constraints(self, table):
+            return []
+
+    with pytest.raises(RuntimeError, match="unique-constraint drift"):
+        module._adopt_complete_precreated_schema(MissingUniques())
 
 
 def test_rwdr_pack_cutover_clears_only_1_0_0_ephemeral_state(tmp_path) -> None:

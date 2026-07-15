@@ -6,6 +6,15 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Protocol
 
+from sealai_v2.governance.affiliations import (
+    AffiliationGovernanceError,
+    AffiliationRecord,
+    AffiliationSnapshot,
+    capture_affiliation_snapshot,
+    require_governed_role,
+    resolve_independence,
+)
+
 CAPABILITY_STATUSES = frozenset(
     {"draft", "submitted", "verified", "quarantined", "expired", "rejected"}
 )
@@ -72,6 +81,7 @@ class ManufacturerCapabilityStore(Protocol):
         profile: ManufacturerCapabilityProfile,
         *,
         actor: str,
+        actor_roles: tuple[str, ...],
         now: str,
     ) -> ManufacturerCapabilityProfile: ...
 
@@ -81,29 +91,106 @@ class ManufacturerCapabilityStore(Protocol):
         *,
         to_status: str,
         actor: str,
+        actor_roles: tuple[str, ...],
         actor_relation: str,
         now: str,
         note: str = "",
         evidence: tuple[dict, ...] = (),
         review_expires_at: str = "",
-        conflict_of_interest: str = "not_assessed",
-        reviewer_manufacturer_id: str = "",
+        required_reviewer_role: str = "capability_reviewer",
+        incompatible_reviewer_roles: tuple[str, ...] = (
+            "manufacturer",
+            "tenant_admin",
+            "platform_owner",
+            "system_operator",
+        ),
     ) -> ManufacturerCapabilityProfile: ...
 
 
 class InProcessManufacturerCapabilityStore:
     def __init__(
-        self, profiles: tuple[ManufacturerCapabilityProfile, ...] = ()
+        self,
+        profiles: tuple[ManufacturerCapabilityProfile, ...] = (),
+        affiliation_records: tuple[AffiliationRecord, ...] = (),
     ) -> None:
         self._profiles = {profile.manufacturer_id: profile for profile in profiles}
+        self._affiliation_records = affiliation_records
+        self._snapshots: dict[tuple[str, int, str], AffiliationSnapshot] = {}
+        self._verified_versions: set[tuple[str, int]] = set()
         self.events: list[dict] = []
 
+    def _governed_profile(
+        self, profile: ManufacturerCapabilityProfile
+    ) -> ManufacturerCapabilityProfile:
+        if (
+            profile.status != "verified"
+            or (
+                profile.manufacturer_id,
+                profile.version,
+            )
+            in self._verified_versions
+        ):
+            return profile
+        return replace(
+            profile,
+            status="quarantined",
+            verified_at="",
+            verified_by="",
+            review_expires_at="",
+        )
+
+    def _snapshot(
+        self,
+        *,
+        subject_ref: str,
+        roles: tuple[str, ...],
+        captured_at: str,
+        purpose: str,
+        manufacturer_id: str,
+        version: int,
+        expected_organization: str = "",
+    ) -> AffiliationSnapshot:
+        key = (manufacturer_id, version, purpose)
+        existing = self._snapshots.get(key)
+        if existing is not None:
+            if existing.subject_ref != subject_ref or set(existing.roles) != set(roles):
+                raise ManufacturerCapabilityError(
+                    "capability version is already bound to another governance actor"
+                )
+            return existing
+        try:
+            snapshot = capture_affiliation_snapshot(
+                (
+                    record
+                    for record in self._affiliation_records
+                    if record.subject_ref == subject_ref
+                ),
+                subject_ref=subject_ref,
+                roles=roles,
+                captured_at=captured_at,
+                purpose=purpose,
+                resource_type="manufacturer_capability",
+                resource_ref=manufacturer_id,
+                resource_version=version,
+                expected_organization=expected_organization,
+            )
+        except AffiliationGovernanceError as exc:
+            raise ManufacturerCapabilityError(
+                "human-authoritative affiliation is unavailable"
+            ) from exc
+        self._snapshots[key] = snapshot
+        return snapshot
+
     def get(self, manufacturer_id: str) -> ManufacturerCapabilityProfile | None:
-        return self._profiles.get(manufacturer_id)
+        profile = self._profiles.get(manufacturer_id)
+        return self._governed_profile(profile) if profile is not None else None
 
     def list_all(self) -> tuple[ManufacturerCapabilityProfile, ...]:
         return tuple(
-            sorted(self._profiles.values(), key=lambda item: item.company_name)
+            self._governed_profile(profile)
+            for profile in sorted(
+                self._profiles.values(), key=lambda item: item.company_name
+            )
         )
 
     def submit(
@@ -111,6 +198,7 @@ class InProcessManufacturerCapabilityStore:
         profile: ManufacturerCapabilityProfile,
         *,
         actor: str,
+        actor_roles: tuple[str, ...],
         now: str,
     ) -> ManufacturerCapabilityProfile:
         if (
@@ -122,6 +210,34 @@ class InProcessManufacturerCapabilityStore:
                 "manufacturer_id, company_name, and actor are required"
             )
         previous = self._profiles.get(profile.manufacturer_id)
+        version = previous.version + 1 if previous else 1
+        submission_snapshot = self._snapshot(
+            subject_ref=actor,
+            roles=actor_roles,
+            captured_at=now,
+            purpose="capability_submission",
+            manufacturer_id=profile.manufacturer_id,
+            version=version,
+            expected_organization=profile.manufacturer_id,
+        )
+        try:
+            require_governed_role(
+                submission_snapshot,
+                required_role="manufacturer",
+                incompatible_roles=(
+                    "capability_reviewer",
+                    "tenant_admin",
+                    "platform_owner",
+                    "system_operator",
+                ),
+            )
+        except AffiliationGovernanceError as exc:
+            self._snapshots.pop(
+                (profile.manufacturer_id, version, "capability_submission"), None
+            )
+            raise ManufacturerCapabilityError(
+                "manufacturer submission authority is incompatible"
+            ) from exc
         submitted = replace(
             profile,
             status="submitted",
@@ -131,7 +247,7 @@ class InProcessManufacturerCapabilityStore:
             verified_by="",
             review_expires_at="",
             evidence=(),
-            version=(previous.version + 1 if previous else 1),
+            version=version,
         )
         self._profiles[profile.manufacturer_id] = submitted
         self.events.append(
@@ -141,6 +257,7 @@ class InProcessManufacturerCapabilityStore:
                 "to_status": "submitted",
                 "actor": actor,
                 "actor_relation": "manufacturer",
+                "submission_snapshot_sha256": submission_snapshot.snapshot_sha256,
                 "created_at": now,
             }
         )
@@ -152,19 +269,23 @@ class InProcessManufacturerCapabilityStore:
         *,
         to_status: str,
         actor: str,
+        actor_roles: tuple[str, ...],
         actor_relation: str,
         now: str,
         note: str = "",
         evidence: tuple[dict, ...] = (),
         review_expires_at: str = "",
-        conflict_of_interest: str = "not_assessed",
-        reviewer_manufacturer_id: str = "",
+        required_reviewer_role: str = "capability_reviewer",
+        incompatible_reviewer_roles: tuple[str, ...] = (
+            "manufacturer",
+            "tenant_admin",
+            "platform_owner",
+            "system_operator",
+        ),
     ) -> ManufacturerCapabilityProfile:
         profile = self._profiles.get(manufacturer_id)
         if profile is None:
             raise ManufacturerCapabilityError("capability profile not found")
-        if reviewer_manufacturer_id and reviewer_manufacturer_id == manufacturer_id:
-            raise ManufacturerCapabilityError("a manufacturer cannot self-verify")
         _validate_review(
             to_status=to_status,
             actor=actor,
@@ -172,8 +293,43 @@ class InProcessManufacturerCapabilityStore:
             now=now,
             evidence=evidence,
             review_expires_at=review_expires_at,
-            conflict_of_interest=conflict_of_interest,
         )
+        resolution_reason = "not_applicable"
+        reviewer_snapshot_sha256 = ""
+        submission_snapshot_sha256 = ""
+        if to_status == "verified":
+            submission_snapshot = self._snapshots.get(
+                (manufacturer_id, profile.version, "capability_submission")
+            )
+            if submission_snapshot is None:
+                raise ManufacturerCapabilityError(
+                    "immutable capability submission snapshot is unavailable"
+                )
+            reviewer_snapshot = self._snapshot(
+                subject_ref=actor,
+                roles=actor_roles,
+                captured_at=now,
+                purpose="capability_reviewer",
+                manufacturer_id=manufacturer_id,
+                version=profile.version + 1,
+            )
+            resolution = resolve_independence(
+                submission_snapshot,
+                reviewer_snapshot,
+                required_second_role=required_reviewer_role,
+                incompatible_second_roles=incompatible_reviewer_roles,
+            )
+            if not resolution.allowed:
+                self._snapshots.pop(
+                    (manufacturer_id, profile.version + 1, "capability_reviewer"),
+                    None,
+                )
+                raise ManufacturerCapabilityError(
+                    f"server conflict check blocked verification: {resolution.reason_code}"
+                )
+            resolution_reason = resolution.reason_code
+            reviewer_snapshot_sha256 = reviewer_snapshot.snapshot_sha256
+            submission_snapshot_sha256 = submission_snapshot.snapshot_sha256
         reviewed = replace(
             profile,
             status=to_status,
@@ -186,6 +342,8 @@ class InProcessManufacturerCapabilityStore:
             version=profile.version + 1,
         )
         self._profiles[manufacturer_id] = reviewed
+        if to_status == "verified":
+            self._verified_versions.add((manufacturer_id, reviewed.version))
         self.events.append(
             {
                 "manufacturer_id": manufacturer_id,
@@ -195,7 +353,9 @@ class InProcessManufacturerCapabilityStore:
                 "actor_relation": actor_relation,
                 "note": note,
                 "evidence": list(evidence),
-                "conflict_of_interest": conflict_of_interest,
+                "conflict_resolution": resolution_reason,
+                "submission_snapshot_sha256": submission_snapshot_sha256,
+                "reviewer_snapshot_sha256": reviewer_snapshot_sha256,
                 "created_at": now,
             }
         )
@@ -210,7 +370,6 @@ def _validate_review(
     now: str,
     evidence: tuple[dict, ...],
     review_expires_at: str,
-    conflict_of_interest: str,
 ) -> None:
     if to_status not in REVIEW_STATUSES:
         raise ManufacturerCapabilityError(f"invalid review status: {to_status}")
@@ -219,10 +378,6 @@ def _validate_review(
     if to_status == "verified":
         if actor_relation != "independent_reviewer":
             raise ManufacturerCapabilityError("a manufacturer cannot self-verify")
-        if conflict_of_interest != "none_declared":
-            raise ManufacturerCapabilityError(
-                "verification requires a no-conflict attestation"
-            )
         if not evidence:
             raise ManufacturerCapabilityError("verification requires evidence")
         if not review_expires_at:

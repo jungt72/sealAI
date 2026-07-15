@@ -16,7 +16,6 @@ from sealai_v2.knowledge.hersteller_partner import (
 )
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.knowledge.manufacturer_capability import (
-    InProcessManufacturerCapabilityStore,
     ManufacturerCapabilityProfile,
 )
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -25,6 +24,9 @@ from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.auth import FakeAuthValidator
 from sealai_v2.tests._apiutil import auth, make_client
 from sealai_v2.tests._fakes import FakeLlmClient
+from sealai_v2.tests.affiliation_fixtures import (
+    governed_verified_capability_store,
+)
 
 _IDS = {"tok-A": VerifiedIdentity("tenant-A", "sess-A", "user-A")}
 
@@ -105,17 +107,15 @@ def test_anfrage_response_briefing_carries_risk_flags():
         facts=(RememberedFact(feld="medium", wert="Luft"),),
         expected_case_revision=0,
     )
-    capability_store = InProcessManufacturerCapabilityStore(
-        (
-            ManufacturerCapabilityProfile(
-                manufacturer_id="acme",
-                company_name="ACME Dichtungen GmbH",
-                status="verified",
-                seal_types=("RWDR",),
-                materials=("FKM",),
-                evidence=({"citation": "reviewed test evidence"},),
-                review_expires_at="2099-01-01T00:00:00Z",
-            ),
+    capability_store = governed_verified_capability_store(
+        ManufacturerCapabilityProfile(
+            manufacturer_id="acme",
+            company_name="ACME Dichtungen GmbH",
+            status="verified",
+            seal_types=("RWDR",),
+            materials=("FKM",),
+            evidence=({"citation": "reviewed test evidence"},),
+            review_expires_at="2099-01-01T00:00:00Z",
         )
     )
     app.dependency_overrides.clear()

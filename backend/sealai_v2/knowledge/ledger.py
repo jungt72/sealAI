@@ -19,7 +19,14 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from sealai_v2.db.governance import (
+    capture_snapshot,
+    carry_forward_allow_decision,
+    load_snapshot,
+    record_decision,
+)
 from sealai_v2.db.models import (
+    V2GovernanceDecision,
     V2KnowledgeClaim,
     V2KnowledgeDocument,
     V2KnowledgeOutbox,
@@ -27,6 +34,11 @@ from sealai_v2.db.models import (
 )
 from sealai_v2.knowledge.authority import bump_authority_epoch
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog
+from sealai_v2.governance.affiliations import (
+    AffiliationGovernanceError,
+    require_governed_role,
+    resolve_independence,
+)
 
 GLOBAL_KNOWLEDGE_TENANT = "sealai"
 _ID_NAMESPACE = uuid.UUID("32288829-9179-5be3-8864-3a5858e78cc6")
@@ -713,6 +725,21 @@ class PostgresKnowledgeLedger:
                 for key, value in desired.items():
                     setattr(row, key, value)
                 if changed:
+                    if (
+                        preserve_human_review
+                        and row.review_origin == "human_api"
+                        and desired_status == "approved"
+                    ):
+                        carry_forward_allow_decision(
+                            session,
+                            decision_type="knowledge_approval",
+                            resource_type="knowledge_claim",
+                            resource_ref=row.id,
+                            from_version=row.version,
+                            to_version=row.version + 1,
+                            binding_sha256=authority_fingerprint,
+                            created_at=now,
+                        )
                     row.version += 1
                     row.updated_at = now
                     updated += 1
@@ -795,11 +822,33 @@ class PostgresKnowledgeLedger:
                     )
                 ).all()
             }
+            governed_human_api_claims = {
+                (
+                    item.resource_ref,
+                    item.resource_version,
+                    str((item.decision_json or {}).get("binding_sha256", "")),
+                )
+                for item in session.scalars(
+                    select(V2GovernanceDecision).where(
+                        V2GovernanceDecision.decision_type == "knowledge_approval",
+                        V2GovernanceDecision.resource_type == "knowledge_claim",
+                        V2GovernanceDecision.outcome == "allow",
+                        V2GovernanceDecision.resource_ref.in_(
+                            {row.id for row in rows if row.review_origin == "human_api"}
+                        ),
+                    )
+                ).all()
+            }
             return {
                 row.id: _claim_payload(row, documents[row.document_id])
                 for row in rows
                 if row.document_id in documents
                 and (row.review_status == "draft" or _approved_claim_is_current(row))
+                and (
+                    row.review_origin != "human_api"
+                    or (row.id, row.version, row.authority_fingerprint)
+                    in governed_human_api_claims
+                )
             }
 
     def list_claims(
@@ -842,6 +891,7 @@ class PostgresKnowledgeLedger:
         to_status: str,
         actor: str,
         now: str,
+        actor_roles: tuple[str, ...] = (),
         note: str = "",
         evidence: tuple[str | dict, ...] = (),
         applicability: dict | None = None,
@@ -850,6 +900,22 @@ class PostgresKnowledgeLedger:
         review_expires_at: str | None = None,
         conflicts: tuple[str, ...] = (),
         change_reason: str = "",
+        required_reviewer_role: str = "knowledge_reviewer",
+        required_approver_role: str = "knowledge_approver",
+        reviewer_incompatible_roles: tuple[str, ...] = (
+            "tenant_admin",
+            "platform_owner",
+            "system_operator",
+            "knowledge_contributor",
+            "knowledge_approver",
+        ),
+        approver_incompatible_roles: tuple[str, ...] = (
+            "tenant_admin",
+            "platform_owner",
+            "system_operator",
+            "knowledge_contributor",
+            "knowledge_reviewer",
+        ),
     ) -> dict:
         if to_status not in _REVIEW_STATES:
             raise KnowledgeLedgerError(f"invalid review status: {to_status}")
@@ -928,6 +994,65 @@ class PostgresKnowledgeLedger:
                 raise KnowledgeLedgerError(
                     "review requires a draft or quarantined claim"
                 )
+            try:
+                if to_status == "reviewed":
+                    reviewer_snapshot = capture_snapshot(
+                        session,
+                        subject_ref=actor,
+                        roles=actor_roles,
+                        captured_at=now,
+                        purpose="knowledge_reviewer",
+                        resource_type="knowledge_claim",
+                        resource_ref=claim_id,
+                        resource_version=row.version + 1,
+                    )
+                    require_governed_role(
+                        reviewer_snapshot,
+                        required_role=required_reviewer_role,
+                        incompatible_roles=reviewer_incompatible_roles,
+                    )
+                elif to_status == "approved":
+                    reviewer_snapshot = load_snapshot(
+                        session,
+                        resource_type="knowledge_claim",
+                        resource_ref=claim_id,
+                        resource_version=row.version,
+                        purpose="knowledge_reviewer",
+                    )
+                    approver_snapshot = capture_snapshot(
+                        session,
+                        subject_ref=actor,
+                        roles=actor_roles,
+                        captured_at=now,
+                        purpose="knowledge_approver",
+                        resource_type="knowledge_claim",
+                        resource_ref=claim_id,
+                        resource_version=row.version + 1,
+                    )
+                    resolution = resolve_independence(
+                        reviewer_snapshot,
+                        approver_snapshot,
+                        required_second_role=required_approver_role,
+                        incompatible_second_roles=approver_incompatible_roles,
+                    )
+                    if not resolution.allowed:
+                        raise KnowledgeLedgerError(
+                            "server conflict check blocked knowledge approval"
+                        )
+                    record_decision(
+                        session,
+                        decision_type="knowledge_approval",
+                        resource_type="knowledge_claim",
+                        resource_ref=claim_id,
+                        resource_version=row.version + 1,
+                        resolution=resolution,
+                        created_at=now,
+                        binding_sha256=row.authority_fingerprint,
+                    )
+            except AffiliationGovernanceError as exc:
+                raise KnowledgeLedgerError(
+                    "human-authoritative conflict resolution is unavailable"
+                ) from exc
             if previous == to_status and not metadata_change:
                 document = session.get(V2KnowledgeDocument, row.document_id)
                 return _claim_payload(row, document)

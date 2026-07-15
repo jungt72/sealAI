@@ -15,6 +15,7 @@ from sealai_v2.knowledge.ledger import (
     PostgresKnowledgeLedger,
 )
 from sealai_v2.security.auth import FakeAuthValidator
+from sealai_v2.tests.affiliation_fixtures import affiliation, persist_affiliations
 
 NOW = "2026-07-11T10:00:00Z"
 
@@ -22,7 +23,14 @@ NOW = "2026-07-11T10:00:00Z"
 def _client(tmp_path, *, review_enabled: bool = True):
     engine = make_engine(f"sqlite:///{tmp_path / 'knowledge-review.db'}")
     Base.metadata.create_all(engine)
-    ledger = PostgresKnowledgeLedger(make_sessionmaker(engine))
+    sf = make_sessionmaker(engine)
+    persist_affiliations(
+        sf,
+        affiliation("human-reviewer", "reviewer-org"),
+        affiliation("human-approver", "approver-org"),
+        affiliation("connected-approver", "reviewer-org"),
+    )
+    ledger = PostgresKnowledgeLedger(sf)
     catalog = FachkartenCatalog(
         cards=(
             _card(
@@ -70,6 +78,18 @@ def _client(tmp_path, *, review_enabled: bool = True):
             "human-approver",
             roles=("knowledge_approver",),
         ),
+        "connected-approver": VerifiedIdentity(
+            "review-tenant",
+            "connected-session",
+            "connected-approver",
+            roles=("knowledge_approver",),
+        ),
+        "operator-approver": VerifiedIdentity(
+            "review-tenant",
+            "operator-session",
+            "operator-approver",
+            roles=("knowledge_approver", "system_operator"),
+        ),
         "dual": VerifiedIdentity(
             "review-tenant",
             "dual-session",
@@ -107,14 +127,14 @@ def test_review_queue_requires_two_roles_and_two_human_actors(tmp_path) -> None:
     reviewer_cannot_approve = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("reviewer"),
-        json={"to_status": "approved", "independent_review_attested": True},
+        json={"to_status": "approved"},
     )
     assert reviewer_cannot_approve.status_code == 403
 
     approver_cannot_skip_review = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("approver"),
-        json={"to_status": "approved", "independent_review_attested": True},
+        json={"to_status": "approved"},
     )
     assert approver_cannot_skip_review.status_code == 400
     assert approver_cannot_skip_review.json() == {
@@ -141,7 +161,7 @@ def test_review_queue_requires_two_roles_and_two_human_actors(tmp_path) -> None:
     same_actor = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("dual"),
-        json={"to_status": "approved", "independent_review_attested": True},
+        json={"to_status": "approved"},
     )
     assert same_actor.status_code == 403
     assert "separate identities" in same_actor.text
@@ -152,17 +172,33 @@ def test_review_queue_requires_two_roles_and_two_human_actors(tmp_path) -> None:
     assert reviewed_queue.status_code == 200
     assert reviewed_queue.json()["claims"][0]["claim_id"] == claim_id
 
-    missing_attestation = client.post(
+    client_attestation = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("approver"),
+        json={"to_status": "approved", "independent_review_attested": True},
+    )
+    assert client_attestation.status_code == 422
+
+    connected = client.post(
+        f"/api/v2/admin/knowledge/claims/{claim_id}/review",
+        headers=_auth("connected-approver"),
         json={"to_status": "approved"},
     )
-    assert missing_attestation.status_code == 400
+    assert connected.status_code == 400
+    assert connected.json() == {"detail": {"code": "knowledge_review_invalid"}}
+
+    incompatible = client.post(
+        f"/api/v2/admin/knowledge/claims/{claim_id}/review",
+        headers=_auth("operator-approver"),
+        json={"to_status": "approved"},
+    )
+    assert incompatible.status_code == 403
+    assert "separate identities" in incompatible.text
 
     approved = client.post(
         f"/api/v2/admin/knowledge/claims/{claim_id}/review",
         headers=_auth("approver"),
-        json={"to_status": "approved", "independent_review_attested": True},
+        json={"to_status": "approved"},
     )
     assert approved.status_code == 200
     assert approved.json()["claim"]["review_status"] == "approved"

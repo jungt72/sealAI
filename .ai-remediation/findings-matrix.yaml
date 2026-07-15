@@ -384,25 +384,30 @@ findings:
     root_cause: A single realm role is interpreted as both tenant-local and platform-global authority.
     dependencies: [production role-assignment census, explicit role model, tenant-scoped queries]
     remediation_type: [code, configuration, data_migration, governance]
-    implementation_status: IMPLEMENTED_NOT_DEPLOYED
+    implementation_status: BLOCKED_EXTERNAL
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#AUTH-003
       - Code collision confirmed; current customer-facing admin role assignments remain unverified.
     changes:
       - Replaced the ambiguous application role with pairwise-distinct tenant-admin, platform-owner, system-operator, contributor, manufacturer, capability-reviewer, knowledge-reviewer, knowledge-approver, and decision-reviewer settings.
       - Global business, operational telemetry, tenant decision, manufacturer self-service, and technical-review routes now enforce their dedicated role and reject the legacy literal admin role.
+      - Added an exact versioned Keycloak role/group manifest and a narrow reconciler that is read-only by default, never changes user memberships, emits aggregate receipts only, and requires --apply plus approved manifest and membership-bound census hashes for managed-role drift.
+      - Removed legacy admin/reviewer provisioning from the broad realm-hardening routine; incompatible group overlap and direct legacy admin assignments block governance apply.
     tests:
       - Settings reject empty, duplicate, or legacy admin role names; endpoint tests cover platform-owner, system-operator, reviewer, approver, manufacturer, and ordinary-user denials.
+      - Reconciler tests cover exact paginated role/group inventory, idempotency, legacy mapping removal, direct/group overlap blocking, membership-bound PII-free receipts, offline-apply denial, and separation from realm hardening.
     production_action_required: true
-    approval_gate: GATE-07
-    rollback: Permit time-bounded dual-read only during migration and retain a separately controlled break-glass role.
+    approval_gate: GATE-06
+    rollback: Keep the new role mappings unapplied or restore the prior approved mapping manifest; realm-admin recovery remains owner-specific and separate. Any time-bounded dual-read requires its own reviewed migration window.
     evidence_after:
       - backend/sealai_v2/api/deps.py
       - backend/sealai_v2/config/settings.py
       - docker-compose.deploy.yml
-      - docs/ops/gate07-data-authority-cutover.md
-      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
-    residual_risk: Production role assignments are still unknown and unchanged. A sanitized census, deny-by-default Keycloak mapping migration, DB-role cutover, and negative production-equivalent tests remain GATE-06/GATE-07 work.
+      - security/keycloak-governance-v1.json
+      - ops/keycloak_governance_reconcile.py
+      - docs/ops/gate06-07-reviewer-governance-cutover.md
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-reviewer-governance
+    residual_risk: Production role assignments are unknown and unchanged. A human-owned sanitized census and membership decision remain GATE-06; database authority cutover remains GATE-07; deployment and production-equivalent negative tests remain GATE-08. The local manifest cannot prove any provider assignment.
 
   - finding_id: GOV-001
     title: Review independence and conflicts of interest are not server-verifiable
@@ -414,24 +419,34 @@ findings:
     root_cause: Creator, reviewer, and affiliation relationships are incomplete and conflict claims are self-attested.
     dependencies: [identity and affiliation authority, DATA-001]
     remediation_type: [code, data_migration, governance]
-    implementation_status: IN_PROGRESS
+    implementation_status: BLOCKED_EXTERNAL
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#GOV-001
     changes:
       - Split knowledge review into reviewer and approver roles and enforce a draft/quarantined to reviewed to approved two-person transition with immutable reviewed evidence and append-only actor logs.
       - Contributor, platform-owner, tenant-admin, system-operator, reviewer, and approver roles are incompatible on knowledge decisions; manufacturer capability self-review is denied by verified manufacturer identity.
+      - Added append-only versioned human-authority affiliations, immutable resource-version submission/reviewer/approver snapshots, and transactional server-side shared-affiliation/self-review/incompatible-role resolution for knowledge and capability approval.
+      - Removed client COI attestation authority, added append-only decision records and HMAC-only quarantine fingerprints, additive migrations plus NOT VALID shadow constraints, and dry-run-first hash-bound authority import/quarantine tooling.
     tests:
       - Negative tests cover same-actor approval, approver metadata mutation, skipped review, conflicting roles, non-human actors, missing evidence/applicability/expiry, and manufacturer self-review.
+      - Affiliation tests cover missing/tampered/untrusted authority, shared affiliation, self-review, incompatible role overlap, immutable snapshot hashes, append-only decisions, client-assertion rejection, staged migrations, idempotent authority import, and fingerprint-only legacy quarantine.
     production_action_required: true
     approval_gate: GATE-07
-    rollback: Add schema fields first and retain server-side self-review denial even if presentation changes are rolled back.
+    rollback: Keep both review surfaces disabled, roll application containers back, and retain additive affiliation/snapshot/decision/quarantine audit tables. Never delete or rewrite authority history; supersede errors with a reviewed higher revision.
     evidence_after:
       - backend/sealai_v2/knowledge/ledger.py
+      - backend/sealai_v2/governance/affiliations.py
+      - backend/sealai_v2/db/governance.py
       - backend/sealai_v2/api/routes/knowledge_review.py
+      - backend/sealai_v2/api/routes/capabilities.py
+      - backend/sealai_v2/db/migrations/versions/20260715_0014_reviewer_governance_foundation.py
+      - backend/sealai_v2/db/migrations/versions/20260715_0015_reviewer_governance_shadow_constraints.py
+      - ops/reviewer_governance_cutover.py
+      - docs/ops/gate06-07-reviewer-governance-cutover.md
       - backend/sealai_v2/tests/test_knowledge_ledger.py
       - backend/sealai_v2/tests/test_api_knowledge_review.py
-      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
-    residual_risk: Role and subject separation is implemented locally, but authoritative organization/affiliation data and a server-verifiable shared-affiliation conflict graph do not exist. Review and capability features must remain disabled until that dependency and production role census pass GATE-07.
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-reviewer-governance
+    residual_risk: The server conflict graph is implemented locally, but no production human-authority affiliation bundle, peer approval, legacy quarantine result, PostgreSQL constraint validation, or deployed runtime evidence exists. Role census/membership requires GATE-06, authority/schema/quarantine requires GATE-07, and deploy/activation evidence requires GATE-08; review surfaces must remain disabled.
 
   - finding_id: DR-001
     title: Backups share the production failure domain and complete restore is unproven

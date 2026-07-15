@@ -228,6 +228,17 @@ def require_capability_reviewer(
     """Independent technical-review role; admin/manufacturer alone is insufficient."""
     if settings.auth_capability_reviewer_role not in identity.roles:
         raise HTTPException(status_code=403, detail="capability reviewer role required")
+    incompatible = {
+        settings.auth_manufacturer_role,
+        settings.auth_tenant_admin_role,
+        settings.auth_platform_owner_role,
+        settings.auth_system_operator_role,
+    }
+    if not incompatible.isdisjoint(identity.roles):
+        raise HTTPException(
+            status_code=403,
+            detail="capability reviewer authority is incompatible with another held role",
+        )
     return identity
 
 

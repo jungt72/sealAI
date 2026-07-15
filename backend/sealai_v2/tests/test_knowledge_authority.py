@@ -7,7 +7,11 @@ from sqlalchemy import select
 
 import sealai_v2.db.models  # noqa: F401
 from sealai_v2.db.engine import Base, make_engine, make_sessionmaker
-from sealai_v2.db.models import V2KnowledgeClaim, V2KnowledgeOutbox
+from sealai_v2.db.models import (
+    V2GovernanceDecision,
+    V2KnowledgeClaim,
+    V2KnowledgeOutbox,
+)
 from sealai_v2.knowledge.authority import (
     KnowledgeAuthorityChanged,
     PostgresKnowledgeAuthority,
@@ -19,6 +23,7 @@ from sealai_v2.knowledge.ledger import (
     KnowledgeDocumentInput,
     PostgresKnowledgeLedger,
 )
+from sealai_v2.tests.affiliation_fixtures import affiliation, persist_affiliations
 
 NOW = "2026-07-15T10:00:00Z"
 EXPIRY = "2026-07-16T10:00:00Z"
@@ -63,6 +68,11 @@ def _fixture(tmp_path, *, clock=None):
     engine = make_engine(f"sqlite:///{tmp_path / 'authority.db'}")
     Base.metadata.create_all(engine)
     sf = make_sessionmaker(engine)
+    persist_affiliations(
+        sf,
+        affiliation("domain-reviewer:alice", "reviewer-org"),
+        affiliation("domain-approver:bob", "approver-org"),
+    )
     ledger = PostgresKnowledgeLedger(sf)
     ledger.replace_catalog(_document(), _catalog(), now=NOW, actor="ingest-service")
     with sf() as session:
@@ -81,6 +91,7 @@ def _review(ledger, claim_id: str) -> None:
         claim_id=claim_id,
         to_status="reviewed",
         actor="domain-reviewer:alice",
+        actor_roles=("knowledge_reviewer",),
         now=NOW,
         evidence=("ISO test reference",),
         applicability={"material": ["PTFE"]},
@@ -97,6 +108,7 @@ def _approve(ledger, claim_id: str) -> None:
         claim_id=claim_id,
         to_status="approved",
         actor="domain-approver:bob",
+        actor_roles=("knowledge_approver",),
         now=NOW,
     )
 
@@ -185,6 +197,42 @@ def test_projection_sync_and_rebuild_metadata_cannot_mint_authority(tmp_path) ->
 
     after = authority.capture(tenant_id="tenant-a")
     assert after == before
+
+
+def test_missing_server_coi_decision_removes_human_api_claim_from_epoch(
+    tmp_path,
+) -> None:
+    ledger, authority, sf, claim_id = _fixture(tmp_path)
+    _review(ledger, claim_id)
+    _approve(ledger, claim_id)
+    before = authority.capture(tenant_id="tenant-a")
+
+    with sf() as session:
+        session.query(V2GovernanceDecision).delete()
+        session.commit()
+
+    after = authority.capture(tenant_id="tenant-a")
+    assert after.sequence == before.sequence
+    assert after.value != before.value
+
+
+def test_stale_server_coi_decision_removes_human_api_claim_from_epoch(
+    tmp_path,
+) -> None:
+    ledger, authority, sf, claim_id = _fixture(tmp_path)
+    _review(ledger, claim_id)
+    _approve(ledger, claim_id)
+    before = authority.capture(tenant_id="tenant-a")
+
+    with sf() as session:
+        decision = session.scalar(select(V2GovernanceDecision))
+        assert decision is not None
+        decision.resource_version -= 1
+        session.commit()
+
+    after = authority.capture(tenant_id="tenant-a")
+    assert after.sequence == before.sequence
+    assert after.value != before.value
 
 
 def test_request_guard_rejects_inflight_quarantine(tmp_path) -> None:

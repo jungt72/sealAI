@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealingai.com/schemas/affiliation-authority-bundle-v1.json",
+  "title": "sealingAI human affiliation authority bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "contract_id",
+    "authority_version",
+    "approved_at",
+    "approved_by",
+    "records"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "contract_id": {
+      "const": "sealai.affiliation-authority-import"
+    },
+    "authority_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "approved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "approved_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "record_id",
+          "subject_ref",
+          "organization_ref",
+          "relationship",
+          "authority_source",
+          "authority_reference",
+          "authority_version",
+          "effective_from",
+          "effective_to",
+          "status",
+          "revision",
+          "recorded_at",
+          "recorded_by",
+          "record_sha256"
+        ],
+        "properties": {
+          "record_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "subject_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "organization_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "relationship": {
+            "enum": [
+              "employee",
+              "owner",
+              "board_member",
+              "contractor",
+              "advisor",
+              "auditor"
+            ]
+          },
+          "authority_source": {
+            "enum": [
+              "owner_attested_identity_roster",
+              "independent_hr_register",
+              "contractual_affiliation_register"
+            ]
+          },
+          "authority_reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "authority_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "effective_to": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked",
+              "quarantined"
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recorded_by": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "record_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

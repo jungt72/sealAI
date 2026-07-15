@@ -20,7 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from sealai_v2.db.models import V2KnowledgeAuthorityEpoch, V2KnowledgeClaim
+from sealai_v2.db.models import (
+    V2GovernanceDecision,
+    V2KnowledgeAuthorityEpoch,
+    V2KnowledgeClaim,
+)
 
 AUTHORITY_SCOPE = "knowledge"
 GLOBAL_KNOWLEDGE_TENANT = "sealai"
@@ -64,11 +68,14 @@ def _human_actor(value: str | None) -> bool:
     )
 
 
-def _approved_is_current(row: V2KnowledgeClaim, *, at: datetime) -> bool:
+def _approved_is_current(
+    row: V2KnowledgeClaim, *, at: datetime, server_governed: bool
+) -> bool:
     expiry = _parse_timestamp(row.review_expires_at)
     return bool(
         row.review_status == "approved"
         and row.review_origin in _HUMAN_REVIEW_ORIGINS
+        and (row.review_origin != "human_api" or server_governed)
         and row.sources_json
         and row.evidence_json
         and row.applicability_json
@@ -141,14 +148,45 @@ class PostgresKnowledgeAuthority:
                         V2KnowledgeClaim.review_status.in_(("approved", "draft")),
                     )
                 ).all()
+                governed_human_api_claims = {
+                    (
+                        item.resource_ref,
+                        item.resource_version,
+                        str((item.decision_json or {}).get("binding_sha256", "")),
+                    )
+                    for item in session.scalars(
+                        select(V2GovernanceDecision).where(
+                            V2GovernanceDecision.decision_type == "knowledge_approval",
+                            V2GovernanceDecision.resource_type == "knowledge_claim",
+                            V2GovernanceDecision.outcome == "allow",
+                            V2GovernanceDecision.resource_ref.in_(
+                                {
+                                    row.id
+                                    for row in claims
+                                    if row.review_origin == "human_api"
+                                }
+                            ),
+                        )
+                    ).all()
+                }
                 at = self._clock()
                 usable = [
                     row
                     for row in claims
-                    if row.review_status == "draft" or _approved_is_current(row, at=at)
+                    if row.review_status == "draft"
+                    or _approved_is_current(
+                        row,
+                        at=at,
+                        server_governed=(
+                            row.id,
+                            row.version,
+                            row.authority_fingerprint,
+                        )
+                        in governed_human_api_claims,
+                    )
                 ]
                 material = {
-                    "schema": 1,
+                    "schema": 2,
                     "scope": AUTHORITY_SCOPE,
                     "tenant": tenant_id,
                     "sequence": epoch_row.sequence,

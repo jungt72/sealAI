@@ -748,6 +748,113 @@ class V2KnowledgeAuthorityEpoch(Base):
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
+class V2IdentityAffiliationRevision(Base):
+    """Append-only human-authoritative subject/organization affiliation."""
+
+    __tablename__ = "v2_identity_affiliation_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "subject_ref",
+            "organization_ref",
+            "relationship",
+            "revision",
+            name="uq_v2_affiliation_subject_org_relation_revision",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject_ref: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    organization_ref: Mapped[str] = mapped_column(
+        String(255), nullable=False, index=True
+    )
+    relationship: Mapped[str] = mapped_column(String(32), nullable=False)
+    authority_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    authority_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    authority_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    effective_from: Mapped[str] = mapped_column(String(32), nullable=False)
+    effective_to: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    recorded_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    recorded_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    record_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class V2GovernanceSnapshot(Base):
+    """Immutable affiliation and verified-token-role snapshot bound to a resource version."""
+
+    __tablename__ = "v2_governance_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_type",
+            "resource_ref",
+            "resource_version",
+            "purpose",
+            name="uq_v2_governance_snapshot_resource_purpose",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject_ref: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resource_ref: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    resource_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2GovernanceDecision(Base):
+    """Append-only server conflict decision; never a client attestation."""
+
+    __tablename__ = "v2_governance_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "decision_type",
+            "resource_type",
+            "resource_ref",
+            "resource_version",
+            name="uq_v2_governance_decision_resource_version",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    decision_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resource_ref: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    resource_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    first_snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    second_snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2GovernanceQuarantine(Base):
+    """PII-free queue for legacy governance rows that cannot be bound automatically."""
+
+    __tablename__ = "v2_governance_quarantine"
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_type",
+            "record_fingerprint",
+            "reason_code",
+            name="uq_v2_governance_quarantine_record_reason",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    record_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    detected_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    resolution_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="unresolved"
+    )
+    resolution_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class V2OwnershipQuarantine(Base):
     """Privacy-minimized audit record for ambiguous legacy ownership.
 

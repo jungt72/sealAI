@@ -191,11 +191,14 @@
       "check_id": "P1-ROLE-REVIEW-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "Application roles are pairwise distinct and knowledge approval requires a different human approver after immutable independent review. Production assignments and authoritative shared-affiliation conflict checks remain absent, so GOV-001 remains IN_PROGRESS.",
+      "summary": "Application roles are pairwise distinct and manifest-bound; knowledge and capability approval now require immutable human-authority affiliation snapshots and server-side self/shared-affiliation and incompatible-role resolution. No production role census, human affiliation bundle, migration, quarantine, deployment, or activation evidence exists, so AUTH-003 and GOV-001 remain BLOCKED_EXTERNAL.",
       "evidence": [
-        "backend/sealai_v2/config/settings.py",
+        "security/keycloak-governance-v1.json",
+        "ops/keycloak_governance_reconcile.py",
+        "backend/sealai_v2/governance/affiliations.py",
         "backend/sealai_v2/knowledge/ledger.py",
-        "backend/sealai_v2/tests/test_api_knowledge_review.py"
+        "backend/sealai_v2/tests/test_api_knowledge_review.py",
+        "docs/ops/gate06-07-reviewer-governance-cutover.md"
       ]
     },
     {

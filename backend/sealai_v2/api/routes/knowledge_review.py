@@ -29,7 +29,6 @@ class ClaimReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     to_status: Literal["reviewed", "approved", "quarantined", "rejected"]
-    independent_review_attested: bool = False
     note: str = Field(default="", max_length=4000)
     evidence: list[dict] = Field(default_factory=list, max_length=100)
     applicability: dict = Field(default_factory=dict)
@@ -138,20 +137,14 @@ def review_claim(
 ) -> dict:
     _require_review_surface(settings)
     _require_review_role(identity, settings, approval=body.to_status == "approved")
-    if body.to_status == "approved" and not body.independent_review_attested:
-        raise HTTPException(
-            status_code=400,
-            detail="approval requires an independent human review attestation",
-        )
     note = body.note.strip()
-    if body.independent_review_attested:
-        note = f"{note}\nIndependent human review attested.".strip()
     try:
         claim = ledger.review_claim(
             tenant_id=GLOBAL_KNOWLEDGE_TENANT,
             claim_id=claim_id,
             to_status=body.to_status,
             actor=identity.subject,
+            actor_roles=identity.roles,
             now=datetime.now(timezone.utc).isoformat(),
             note=note,
             evidence=tuple(body.evidence),
@@ -161,6 +154,22 @@ def review_claim(
             review_expires_at=body.review_expires_at or None,
             conflicts=tuple(body.conflicts),
             change_reason=body.change_reason,
+            required_reviewer_role=settings.auth_knowledge_reviewer_role,
+            required_approver_role=settings.auth_knowledge_approver_role,
+            reviewer_incompatible_roles=(
+                settings.auth_tenant_admin_role,
+                settings.auth_platform_owner_role,
+                settings.auth_system_operator_role,
+                settings.auth_knowledge_contributor_role,
+                settings.auth_knowledge_approver_role,
+            ),
+            approver_incompatible_roles=(
+                settings.auth_tenant_admin_role,
+                settings.auth_platform_owner_role,
+                settings.auth_system_operator_role,
+                settings.auth_knowledge_contributor_role,
+                settings.auth_knowledge_reviewer_role,
+            ),
         )
     except KnowledgeClaimNotFound as exc:
         raise HTTPException(status_code=404, detail="claim not found") from exc
