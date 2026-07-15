@@ -42,13 +42,20 @@ their real, non-symlinked execution path equals the corresponding fixed path.
 
 ## Trust transition and rollback
 
-The bootstrap is first copied as non-executable data by the owner-controlled
-loader, compared with the approval hash, made executable, and then invoked as
-root. It clones the supplied local repository with fixed Git configuration into
-a root-owned `0700` directory below `/run`, verifies the exact commit, rejects
-submodules and unsafe paths, and verifies every artifact hash. It then copies
-the complete fixed set into a second root-private stage and re-hashes that
-stage before executing the GATE-08 decision.
+The already hash-bound remediation GATE-08 installer installs
+`ops/hash_verified_python_loader.py` at the fixed root-owned path
+`/usr/local/libexec/sealai/hash-verified-python-loader.py` with mode `0755`.
+The operational wrapper calls only that installed loader. The loader opens the
+candidate bootstrap without following symlinks, hashes its open descriptor
+against the private approval, copies only those verified bytes into a new
+root-private `/run` stage, re-hashes the stage, and only then invokes it with
+`/usr/bin/python3 -I`. The loader stage is removed on every exit path.
+
+The verified bootstrap clones the supplied local repository with fixed Git
+configuration into a root-owned `0700` directory below `/run`, verifies the
+exact commit, rejects submodules and unsafe paths, and verifies every artifact
+hash. It then copies the complete fixed set into a second root-private stage
+and re-hashes that stage before executing the GATE-08 decision.
 
 Before installation, all four target preconditions are checked as one batch.
 Existing bytes are copied to a private rollback directory below

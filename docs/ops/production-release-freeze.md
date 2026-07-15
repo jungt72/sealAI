@@ -82,6 +82,13 @@ expiry no later than four hours after approval. Every receipt-path ancestor
 must also be a root-owned, non-group/other-writable real directory; symlinks are
 rejected.
 
+The exact remediation artifact set includes
+`ops/hash_verified_python_loader.py`. The remediation installer copies it from
+its already hash-verified private stage to
+`/usr/local/libexec/sealai/hash-verified-python-loader.py` as `root:root 0755`
+and verifies the installed SHA-256. This fixed loader is the only permitted
+pre-execution boundary for the later operational-control bootstrap.
+
 The separate `operational-control-install` operation installs only the two
 already reviewed GATE-01/GATE-02 programs and their schemas at four fixed
 root-owned paths. It uses

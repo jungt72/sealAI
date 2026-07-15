@@ -42,6 +42,7 @@ def test_gate_bootstrap_and_installer_share_the_exact_artifact_set():
 
     assert _bash_array(installer, "ARTIFACTS") == expected
     assert "ops/bootstrap_gate08_remediation_control.py" in expected
+    assert "ops/hash_verified_python_loader.py" in expected
     assert "ops/production-release-state.json" in expected
     assert root_bootstrap.SELF_ARTIFACT in expected
     assert root_bootstrap.GATE_ARTIFACT in expected

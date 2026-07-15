@@ -39,6 +39,7 @@ readonly -a ARTIFACTS=(
   ops/docker-disk-guard.sh
   ops/docker_disk_guard.py
   ops/gate08_legacy_unit_retirement.py
+  ops/hash_verified_python_loader.py
   ops/install-disk-guard.sh
   ops/production-deploy-remote-entrypoint.sh
   ops/production-release-gate-check.sh
@@ -244,6 +245,9 @@ install -m 0755 -o root -g root \
 install -m 0755 -o root -g root \
   "${STAGE_DIR}/ops/production-deploy-remote-entrypoint.sh" \
   /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh
+install -m 0755 -o root -g root \
+  "${STAGE_DIR}/ops/hash_verified_python_loader.py" \
+  /usr/local/libexec/sealai/hash-verified-python-loader.py
 
 for trusted_path in /usr/local /usr/local/libexec /usr/local/libexec/sealai; do
   [[ "$(stat -Lc '%F:%a:%U:%G' "${trusted_path}")" == 'directory:755:root:root' ]] || {
@@ -261,6 +265,14 @@ done
   'regular file:755:root:root' ]] || exit 78
 [[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh)" == \
   'regular file:755:root:root' ]] || exit 78
+[[ ! -L /usr/local/libexec/sealai/hash-verified-python-loader.py ]] || exit 78
+[[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/hash-verified-python-loader.py)" == \
+  'regular file:755:root:root' ]] || exit 78
+[[ "$(sha256sum "${STAGE_DIR}/ops/hash_verified_python_loader.py" | awk '{print $1}')" == \
+  "$(sha256sum /usr/local/libexec/sealai/hash-verified-python-loader.py | awk '{print $1}')" ]] || {
+  printf 'disk-guard installer: trusted loader hash verification failed\n' >&2
+  exit 78
+}
 
 install -d -m 0700 -o root -g root /etc/sealai
 if [[ -L /etc/sealai/disk-guard.json ]]; then
@@ -290,6 +302,7 @@ test -x /usr/local/libexec/sealai/docker-disk-guard.sh
 test -r /usr/local/libexec/sealai/production-storage-lease.sh
 test -x /usr/local/libexec/sealai/production-release-gate-check.sh
 test -x /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh
+test -x /usr/local/libexec/sealai/hash-verified-python-loader.py
 /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py --help >/dev/null
 systemd-tmpfiles --create /etc/tmpfiles.d/sealai-storage-mutation.conf
 test "$(stat -Lc '%F:%a:%U:%G' /run/lock/sealai-storage-mutation.lock)" = \

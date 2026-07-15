@@ -70,6 +70,7 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
         "ops/docker-disk-guard.sh",
         "ops/docker_disk_guard.py",
         "ops/gate08_legacy_unit_retirement.py",
+        "ops/hash_verified_python_loader.py",
         "ops/install-disk-guard.sh",
         "ops/production-deploy-remote-entrypoint.sh",
         "ops/production-release-gate-check.sh",

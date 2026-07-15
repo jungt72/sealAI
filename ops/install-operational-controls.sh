@@ -33,9 +33,35 @@ fi
 
 readonly SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 readonly BOOTSTRAP="${SOURCE_DIR}/bootstrap_gate08_operational_controls.py"
+readonly LOADER=/usr/local/libexec/sealai/hash-verified-python-loader.py
 [[ -f "${BOOTSTRAP}" && ! -L "${BOOTSTRAP}" ]] || {
   printf 'operational-control installer: bootstrap path is unsafe\n' >&2
   exit 78
 }
-exec /usr/bin/python3 -I "${BOOTSTRAP}" \
-  --source-repository "$2" --apply
+for trusted_path in /usr /usr/local /usr/local/libexec /usr/local/libexec/sealai; do
+  [[ ! -L "${trusted_path}" ]] || {
+    printf 'operational-control installer: trusted loader unavailable\n' >&2
+    exit 78
+  }
+  [[ "$(stat -Lc '%F:%a:%U:%G' "${trusted_path}" 2>/dev/null)" == \
+    'directory:755:root:root' ]] || {
+    printf 'operational-control installer: trusted loader unavailable\n' >&2
+    exit 78
+  }
+done
+[[ -f "${LOADER}" && ! -L "${LOADER}" ]] || {
+  printf 'operational-control installer: trusted loader unavailable\n' >&2
+  exit 78
+}
+[[ "$(stat -Lc '%F:%a:%U:%G' "${LOADER}" 2>/dev/null)" == \
+  'regular file:755:root:root' ]] || {
+  printf 'operational-control installer: trusted loader unavailable\n' >&2
+  exit 78
+}
+exec "${LOADER}" \
+  --approval /etc/sealai/approvals/gate-08-operational-controls.json \
+  --artifact-key ops/bootstrap_gate08_operational_controls.py \
+  --candidate "${BOOTSTRAP}" \
+  -- \
+  --source-repository "$2" \
+  --apply
