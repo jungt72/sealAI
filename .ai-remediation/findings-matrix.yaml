@@ -289,7 +289,7 @@ findings:
     root_cause: Cache and release evidence bind code or seed state, not the mutable active-claim authority epoch.
     dependencies: [authority epoch contract, ledger and Qdrant reconciliation, production-faithful release evidence]
     remediation_type: [code, configuration, data_migration, governance]
-    implementation_status: IN_PROGRESS
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#RAG-001
     changes:
@@ -329,10 +329,12 @@ findings:
       - Added nullable ownership/case boundaries, a privacy-minimized quarantine ledger, and PostgreSQL NOT VALID checks and composite foreign keys without validating or rewriting legacy rows.
       - Owner-bound session, durable-memory, curated-memory, purge, and RFQ-lead paths now require owned state and never implicitly claim or automatically delete ambiguous legacy rows.
       - Added aggregate-only profiling, guarded HMAC quarantine, staged validation, role/RLS/FORCE template, rollback and stop conditions for GATE-07.
+      - Added a central transaction-scoped PostgreSQL adapter with a closed role enum, static SET LOCAL ROLE statements, parameter-bound tenant/subject/case GUCs, missing-scope denial, role activation verification, and pool-reset semantics.
+      - Routed production API repositories through the scoped factory and separated the outbox/purge worker onto a worker-only URL and fixed role; RLS activation remains default-off pending GATE-07/GATE-08.
     tests:
       - SQLite migration/source-contract tests prove 0012/0013 are additive and contain no validation or RLS activation.
       - Negative tests cover ownerless, quarantined, orphan-child, cross-owner, cross-tenant, lead, durable-memory, curated-memory, and purge boundaries.
-      - A guarded opt-in real-PostgreSQL role/FORCE-RLS test exists but was not executed in this run.
+      - A guarded opt-in real-PostgreSQL test applies the real Alembic chain and exact cutover transaction, then checks owner/tenant isolation and pooled-connection reset; it was not executed because no explicit ephemeral DSN was supplied.
     production_action_required: true
     approval_gate: GATE-07
     rollback: Preserve immutable backup and mapping table; enable constraints and policies separately for scoped rollback.
@@ -341,9 +343,12 @@ findings:
       - ops/postgres/gate07-data-authority-profile.sql
       - ops/postgres/gate07-quarantine-ambiguous.sql
       - ops/postgres/gate07-rls-cutover.sql
+      - backend/sealai_v2/db/engine.py
+      - backend/sealai_v2/tests/test_database_runtime_scope.py
       - backend/sealai_v2/tests/test_postgres_gate07_integration.py
+      - backend/sealai_v2/tests/test_postgres_runtime_scope_integration.py
       - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority
-    residual_risk: Application paths fail closed locally, but production legacy counts, an immutable restore proof, reviewed ownership mappings, constraint validation, the transaction-scoped role/GUC adapter, and deployed FORCE RLS are absent. GATE-07 remains closed.
+    residual_risk: The runtime adapter and repository routing exist only in the local branch. Production legacy counts, immutable restore proof, reviewed ownership mappings, real PostgreSQL execution evidence, constraint validation, credential/role provisioning, exact-image deployment, and FORCE RLS remain absent. GATE-07/GATE-08 stay closed.
 
   - finding_id: APP-001
     title: Briefing and RFQ lose the active case identifier and may process the wrong case

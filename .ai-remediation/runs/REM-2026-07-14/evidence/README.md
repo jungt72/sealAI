@@ -17,21 +17,24 @@ Sanitized local verification summary, 2026-07-15:
 
 - Scope: RAG-001, DATA-001, APP-001, AUTH-003, and the locally implementable part of GOV-001.
 - `ruff 0.6.9 format backend/` completed; `ruff 0.6.9 check backend/` passed.
-- Full hermetic backend collection contained 2,615 tests. The run completed with 2,613 passed and
-  2 expected skips: the explicit-DSN PostgreSQL GATE-07 proof and a Linux-only storage-lease test.
+- Full hermetic backend collection contained 2,788 tests. The run completed with 2,783 passed and
+  5 expected skips: four explicit-DSN PostgreSQL GATE-07 cases and one Linux-only storage-lease
+  test. No SQLite or mock result was counted as PostgreSQL/RLS evidence.
 - `npm run verify` in `frontend-v2` passed boundary and terminology checks, TypeScript, 321 tests
   in 37 files, and the production build. The dependency audit reported zero vulnerabilities.
-- Focused authority, ledger, cache, ownership, Briefing/RFQ, role, migration, and legal-gate tests
-  are included in that green full run.
+- Focused authority, ledger, cache, ownership, Briefing/RFQ, role, migration, worker-separation,
+  transaction-scope, pool-reset, and legal-gate tests are included in that green full run.
 - `ops/check-secret-hygiene.py --worktree` passed without finding a secret artifact.
 - The combined base/deployment Compose model validated successfully with non-secret test-only
   placeholders; no daemon operation or container start was performed.
 - Structured remediation JSON/YAML parsed successfully, remediation-control tests passed, and
   `git diff --check` reported no whitespace error.
 - No external provider, daemon, production database, production container, deployment, schema
-  validation, RLS/FORCE operation, role change, data backfill, data deletion, commit, or push ran.
-- `backend/sealai_v2/tests/test_postgres_gate07_integration.py` remains opt-in and was not executed;
-  no explicit ephemeral PostgreSQL DSN was supplied. This is a hard GATE-07 evidence gap.
+  validation, RLS/FORCE operation, role change, data backfill, data deletion, or push ran.
+- `test_postgres_gate07_integration.py` and `test_postgres_runtime_scope_integration.py` remain
+  opt-in and were not executed because no explicit empty ephemeral PostgreSQL DSN was supplied.
+  The latter is wired to apply the real Alembic chain and exact cutover transaction; its skip is a
+  hard GATE-07 evidence gap, not a local pass.
 
 This summary is local implementation evidence only. It does not change production state and cannot
 support `VERIFIED` without the gated production-equivalent and post-deployment checks.

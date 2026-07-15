@@ -180,9 +180,12 @@
       "check_id": "P1-DATA-BOUNDARY-001",
       "scope": "local_worktree",
       "status": "PASSED_WITH_RISK",
-      "summary": "Owner-bound sessions, durable and curated memory, purge, and leads fail closed for unresolved ownership. Additive migrations and guarded aggregate/quarantine/RLS artifacts are prepared, but DATA-001 remains IN_PROGRESS because production data, constraints, runtime role context, and FORCE RLS are unverified.",
+      "summary": "Owner-bound sessions, durable and curated memory, purge, and leads fail closed for unresolved ownership. The local runtime now binds a closed fixed-role set plus parameterized tenant/subject/case GUCs per transaction, denies missing scope, separates API/worker URLs, and tests pool reset. DATA-001 is IMPLEMENTED_NOT_DEPLOYED: production data, restore, mappings, credentials, constraints, exact-image deployment, and FORCE RLS remain unverified.",
       "evidence": [
         "docs/ops/gate07-data-authority-cutover.md",
+        "backend/sealai_v2/db/engine.py",
+        "backend/sealai_v2/tests/test_database_runtime_scope.py",
+        "backend/sealai_v2/tests/test_postgres_runtime_scope_integration.py",
         "backend/sealai_v2/tests/test_migrations.py",
         "backend/sealai_v2/tests/test_persistence_store.py"
       ]
@@ -202,9 +205,10 @@
       "check_id": "P1-GATE07-POSTGRES-001",
       "scope": "explicit_ephemeral_postgres",
       "status": "NOT_AUTHORIZED",
-      "summary": "The opt-in real-PostgreSQL role and FORCE-RLS proof was not run because no explicit test DSN and EPHEMERAL_ONLY confirmation were supplied. No fallback DSN, local daemon, container, or production database was used.",
+      "summary": "The opt-in real-PostgreSQL role/FORCE-RLS and real-migration/pool-reset proofs were not run because no explicit empty test DSN and EPHEMERAL_ONLY confirmation were supplied. No fallback DSN, local daemon, container, or production database was used.",
       "evidence": [
         "backend/sealai_v2/tests/test_postgres_gate07_integration.py",
+        "backend/sealai_v2/tests/test_postgres_runtime_scope_integration.py",
         "docs/ops/gate07-data-authority-cutover.md"
       ]
     },
@@ -212,7 +216,7 @@
       "check_id": "P1-DATA-AUTHORITY-TESTS-001",
       "scope": "local_worktree",
       "status": "PASSED",
-      "summary": "Ruff 0.6.9 format/check passed; the full 2615-test backend collection completed with 2613 passed and 2 expected skips; frontend boundary/terminology, TypeScript, 321 tests in 37 files, production build, and zero-vulnerability dependency audit passed.",
+      "summary": "Ruff 0.6.9 format/check passed; the full 2788-test backend collection completed with 2783 passed and 5 expected skips (four explicit-DSN PostgreSQL cases and one Linux-only lease case); frontend boundary/terminology, TypeScript, 321 tests in 37 files, production build, and zero-vulnerability dependency audit passed.",
       "evidence": [
         ".ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-data-authority"
       ]

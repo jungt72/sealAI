@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "recorded_at": "2026-07-14T23:27:00Z",
+  "recorded_at": "2026-07-15T01:13:40Z",
   "release_freeze": {
     "status": "ACTIVE",
     "deployment_status": "IMPLEMENTED_NOT_DEPLOYED",
@@ -19,9 +19,9 @@
   },
   "repository": {
     "authoritative_path": "/Users/thorstenjung/Documents/New project/sealai-reconcile",
-    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p1-data",
-    "remediation_branch": "remediation/p1-data-authority",
-    "implementation_parent_commit": "cfb0502122f29898e53af5cdb2cc219e7606d18d",
+    "remediation_worktree": "/Users/thorstenjung/Documents/New project/sealai-remediation-p1-data-runtime",
+    "remediation_branch": "remediation/p1-data-runtime-authority",
+    "implementation_parent_commit": "916204a8e7a30337fc02491fd823df331650f395",
     "integrated_p0a_commit": "9d822aca296d3dc79349a538aa8e4ecb3f0a9b97",
     "origin_main_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
     "production_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
@@ -50,8 +50,8 @@
     "confirmed": 22,
     "partially_confirmed": 1,
     "remediation_verified_in_production": 0,
-    "implemented_not_deployed": 10,
-    "implementation_in_progress": 6,
+    "implemented_not_deployed": 11,
+    "implementation_in_progress": 5,
     "implementation_confirmed_unstarted": 7,
     "closed": 0
   },
@@ -90,13 +90,14 @@
     "p1-data-authority": {
       "local_status": "IN_PROGRESS_WITH_IMPLEMENTED_SUBSCOPES",
       "production_status": "UNCHANGED",
-      "tests_status": "PASSED_WITH_TWO_EXPECTED_SKIPS",
+      "tests_status": "PASSED_WITH_FIVE_EXPECTED_SKIPS",
       "postgres_role_test_status": "NOT_AUTHORIZED_NO_EXPLICIT_TEST_DSN",
       "external_dependencies": [
         "aggregate production ownership profile",
         "immutable restore proof",
         "dual-reviewed legacy ownership mapping",
-        "transaction-scoped database role and GUC adapter",
+        "explicit ephemeral PostgreSQL migration/RLS execution evidence",
+        "GATE-07 role and credential provisioning plus GATE-08 exact-image deployment",
         "authoritative identity affiliation graph",
         "production role-assignment census"
       ],

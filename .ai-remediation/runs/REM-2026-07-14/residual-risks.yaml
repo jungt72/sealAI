@@ -40,8 +40,8 @@ risks:
     blocked_by: [GATE-05, GATE-06, GATE-07, GATE-08]
   - risk_id: RISK-P1-DATA-RLS
     severity: HIGH
-    summary: Legacy ownership counts and mappings are unknown, shadow constraints are unvalidated, and production lacks a verified transaction-scoped role/GUC adapter plus FORCE RLS. The prepared scripts were not executed.
-    blocked_by: [aggregate production profile, immutable restore proof, dual-reviewed ownership mapping, runtime role/GUC adapter, opt-in PostgreSQL proof, GATE-07]
+    summary: A fixed-role, transaction-scoped role/GUC adapter and separate API/worker credential paths are implemented and unit-tested locally, but not deployed or exercised against an explicitly supplied ephemeral PostgreSQL engine. Legacy ownership counts/mappings, restore evidence, productive credentials, constraint validation, and FORCE RLS remain absent; no prepared production script was executed.
+    blocked_by: [aggregate production profile, immutable restore proof, dual-reviewed ownership mapping, opt-in PostgreSQL proof, role and credential provisioning, GATE-07, GATE-08]
   - risk_id: RISK-P1-CASE-ARTIFACT-DEPLOYMENT
     severity: HIGH
     summary: Exact read-only Briefing/RFQ contracts pass locally, but production remains vulnerable until backend and frontend are promoted together and stale clients are rejected.
