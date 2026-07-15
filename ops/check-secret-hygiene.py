@@ -66,6 +66,33 @@ ASSIGNMENT_RE = re.compile(
 )
 SQL_DATA_DUMP_RE = re.compile(r"^COPY\s+.+\s+FROM\s+stdin;\s*$", re.MULTILINE)
 
+RAW_PEM_PRIVATE_KEY_RE = re.compile(
+    rb"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----", re.IGNORECASE
+)
+RAW_JWT_RE = re.compile(
+    rb"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\b"
+)
+RAW_BEARER_RE = re.compile(rb"\bbearer[ \t]+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE)
+RAW_PROVIDER_TOKEN_RES = (
+    re.compile(rb"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(rb"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+    re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
+)
+RAW_CONNECTION_RE = re.compile(
+    rb"\b(?:postgres(?:ql)?|redis|rediss|mysql|mariadb|mongodb(?:\+srv)?|"
+    rb"amqp|amqps|https?)://([^:\s/@]+):([^@\s/]+)@",
+    re.IGNORECASE,
+)
+RAW_ASSIGNMENT_RE = re.compile(
+    rb"(?im)(?<![A-Za-z0-9_.-])(?:export[ \t]+)?[\"']?"
+    rb"([A-Za-z_][A-Za-z0-9_.-]*)[\"']?[ \t]*[:=][ \t]*"
+    rb"([\"']?)([A-Za-z0-9._~+/=@:$%!-]{1,4096})\2"
+)
+RAW_SENSITIVE_MARKER_RE = re.compile(
+    rb"(?im)(?<![A-Za-z0-9_.-])(?:export[ \t]+)?[\"']?"
+    rb"([A-Za-z_][A-Za-z0-9_.-]*)[\"']?[ \t]*[:=]"
+)
 ZERO_OID_RE = re.compile(r"^0+$")
 
 
@@ -315,6 +342,10 @@ def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+def raw_line_number(content: bytes, offset: int) -> int:
+    return content.count(b"\n", 0, offset) + 1
+
+
 def filename_findings(path: str, source: str) -> list[Finding]:
     findings: list[Finding] = []
     pure_path = PurePosixPath(path)
@@ -405,17 +436,107 @@ def json_findings(path: str, text: str, source: str) -> list[Finding]:
     return findings
 
 
-def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
-    findings = filename_findings(path, source)
-    texts = decode_scan_candidates(content)
+def scan_raw_bytes(path: str, content: bytes, source: str) -> list[Finding]:
+    """Scan contiguous ASCII secret signatures without decoding the full blob."""
 
-    for text in texts:
-        findings.extend(_scan_text(path, text, source))
+    findings: list[Finding] = []
+
+    def add_matches(rule: str, pattern: re.Pattern[bytes]) -> None:
+        for match in pattern.finditer(content):
+            findings.append(
+                Finding(
+                    rule,
+                    path,
+                    source=source,
+                    line_number=raw_line_number(content, match.start()),
+                )
+            )
+
+    add_matches("content.private-key-pem", RAW_PEM_PRIVATE_KEY_RE)
+    add_matches("content.jwt", RAW_JWT_RE)
+    add_matches("content.bearer-token", RAW_BEARER_RE)
+    for pattern in RAW_PROVIDER_TOKEN_RES:
+        add_matches("content.api-token", pattern)
+
+    for match in RAW_CONNECTION_RE.finditer(content):
+        try:
+            embedded_password = match.group(2).decode("ascii", errors="strict")
+        except UnicodeError:
+            embedded_password = ""
+        if embedded_password and not placeholderish(embedded_password):
+            findings.append(
+                Finding(
+                    "content.connection-string",
+                    path,
+                    source=source,
+                    line_number=raw_line_number(content, match.start()),
+                )
+            )
+
+    try:
+        content.decode("utf-8-sig", errors="strict")
+        invalid_utf8 = False
+    except UnicodeError:
+        invalid_utf8 = True
+
+    if invalid_utf8:
+        handled_sensitive_markers: set[int] = set()
+        for match in RAW_ASSIGNMENT_RE.finditer(content):
+            key = match.group(1).decode("ascii", errors="strict")
+            if not is_sensitive_key(key):
+                continue
+            handled_sensitive_markers.add(match.start())
+            quote = match.group(2).decode("ascii", errors="strict")
+            value = match.group(3).decode("ascii", errors="strict")
+            scalar = normalized_scalar(f"{quote}{value}{quote}")
+            if secretish_scalar(scalar):
+                findings.append(
+                    Finding(
+                        "content.sensitive-assignment",
+                        path,
+                        source=source,
+                        line_number=raw_line_number(content, match.start()),
+                    )
+                )
+
+        unhandled_sensitive_marker = False
+        for match in RAW_SENSITIVE_MARKER_RE.finditer(content):
+            key = match.group(1).decode("ascii", errors="strict")
+            if is_sensitive_key(key) and match.start() not in handled_sensitive_markers:
+                unhandled_sensitive_marker = True
+                break
+        if not findings and unhandled_sensitive_marker:
+            findings.append(
+                Finding(
+                    "content.unscannable-sensitive-data",
+                    path,
+                    source=source,
+                    line_number=1,
+                )
+            )
 
     if content.startswith((b"PGDMP", b"REDIS")):
         findings.append(
             Finding("content.database-dump", path, source=source, line_number=1)
         )
+
+    return findings
+
+
+def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
+    findings = filename_findings(path, source)
+    raw_findings = scan_raw_bytes(path, content, source)
+    findings.extend(raw_findings)
+    try:
+        texts = decode_scan_candidates(content)
+    except ScannerError:
+        if raw_findings:
+            texts = ()
+        else:
+            raise
+
+    for text in texts:
+        findings.extend(_scan_text(path, text, source))
 
     unique: dict[tuple[str, str, int | None, str], Finding] = {}
     for finding in findings:

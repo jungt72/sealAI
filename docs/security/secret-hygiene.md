@@ -13,11 +13,21 @@ private JWK fields, JWTs, Bearer headers, provider/API tokens, sensitive
 assignments, credentialed connection strings, env files, and database/cache
 dumps.
 
-Text scanning uses strict UTF-8/UTF-8-BOM decoding plus BOM-bound or
-structure-confirmed UTF-16LE/BE decoding. Clearly text-like ambiguous NUL-wide
-content receives an additional bounded byte-normalized view; arbitrary binary
-payloads are not treated as text. Assignment and JSON keys share one
+Contiguous ASCII secret signatures are scanned directly in raw bytes before
+and independently of text decoding. This covers private-key markers, JWTs,
+Bearer and provider tokens, credentialed connection strings, sensitive
+assignments and JSON fields, and database-dump magic even when invalid bytes
+surround otherwise intact signatures. Recognizable sensitive markers with a
+damaged value produce a redacted `content.unscannable-sensitive-data` finding.
+
+Structured text scanning additionally uses strict UTF-8/UTF-8-BOM decoding plus
+BOM-bound or structure-confirmed UTF-16LE/BE decoding. Clearly text-like
+ambiguous NUL-wide content receives a bounded byte-normalized view. Genuine
+binary files without a supported secret signature remain clean rather than
+being rejected solely for being binary. Assignment and JSON keys share one
 plural-aware classifier with narrow exclusions for technical token counters.
+Encrypted or compressed secrets cannot be detected without decryption or
+unpacking and remain outside this repository scanner's contract.
 
 The scanner has two output invariants:
 

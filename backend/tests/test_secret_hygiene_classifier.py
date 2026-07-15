@@ -284,12 +284,9 @@ def test_utf8_behavior_is_unchanged_and_binary_data_stays_quiet() -> None:
 def test_textlike_unsupported_encoding_fails_closed() -> None:
     module = _module()
     content = b"OPENAI_API_KEY=synthetic_fixture_value_12345\xff"
-    try:
-        module.scan_blob("fixture.conf", content, source="test")
-    except module.ScannerError as exc:
-        assert "synthetic_fixture_value" not in str(exc)
-    else:
-        raise AssertionError("text-like invalid encoding must fail closed")
+    findings = module.scan_blob("fixture.conf", content, source="test")
+    assert "content.sensitive-assignment" in {item.rule for item in findings}
+    assert "synthetic_fixture_value" not in module.render_findings(findings)
 
 
 def test_inconsistent_wide_character_data_fails_closed() -> None:
