@@ -14,8 +14,9 @@ import os
 import re
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, NamedTuple
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -87,13 +88,28 @@ RAW_CONNECTION_RE = re.compile(
 RAW_ASSIGNMENT_RE = re.compile(
     rb"(?im)(?<![A-Za-z0-9_.-])(?:export[ \t]+)?[\"']?"
     rb"([A-Za-z_][A-Za-z0-9_.-]*)[\"']?[ \t]*[:=][ \t]*"
-    rb"([\"']?)([A-Za-z0-9._~+/=@:$%!-]{1,4096})\2"
+    rb"([\"']?)([A-Za-z0-9._~+/=@:$%!{}-]{1,4096})\2"
 )
 RAW_SENSITIVE_MARKER_RE = re.compile(
     rb"(?im)(?<![A-Za-z0-9_.-])(?:export[ \t]+)?[\"']?"
     rb"([A-Za-z_][A-Za-z0-9_.-]*)[\"']?[ \t]*[:=]"
 )
 ZERO_OID_RE = re.compile(r"^0+$")
+
+
+class RawMarkerStatus(Enum):
+    DETECTED = "DETECTED"
+    COVERED_BY_FINDING = "COVERED_BY_FINDING"
+    SAFE_PLACEHOLDER = "SAFE_PLACEHOLDER"
+    UNSCANNABLE_FINDING = "UNSCANNABLE_FINDING"
+
+
+class RawSensitiveMarker(NamedTuple):
+    marker_id: str
+    kind: str
+    start: int
+    end: int
+    line_number: int
 
 
 class ScannerError(RuntimeError):
@@ -108,11 +124,13 @@ class Finding:
         *,
         source: str,
         line_number: int | None = None,
+        marker_id: str | None = None,
     ) -> None:
         self.rule = rule
         self.path = path
         self.source = source
         self.line_number = line_number
+        self.marker_id = marker_id
 
     def line(self) -> str:
         location = f" line={self.line_number}" if self.line_number is not None else ""
@@ -121,11 +139,17 @@ class Finding:
             f"source={self.source} value=[REDACTED]"
         )
 
-    def sort_key(self) -> tuple[str, str, int, str]:
-        return (self.path, self.rule, self.line_number or 0, self.source)
+    def sort_key(self) -> tuple[str, str, int, str, str]:
+        return (
+            self.path,
+            self.rule,
+            self.line_number or 0,
+            self.source,
+            self.marker_id or "",
+        )
 
-    def identity(self) -> tuple[str, str, int | None, str]:
-        return (self.rule, self.path, self.line_number, self.source)
+    def identity(self) -> tuple[str, str, int | None, str, str | None]:
+        return (self.rule, self.path, self.line_number, self.source, self.marker_id)
 
 
 def run_git(*args: str) -> bytes:
@@ -436,42 +460,147 @@ def json_findings(path: str, text: str, source: str) -> list[Finding]:
     return findings
 
 
+def detect_fragmented_token_markers(
+    content: bytes,
+) -> tuple[RawSensitiveMarker, ...]:
+    """Return strong token-prefix markers split by an interior invalid byte."""
+
+    token_specs = (
+        (
+            "jwt_prefix",
+            re.compile(rb"\beyJ"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.",
+            16,
+        ),
+        (
+            "bearer_prefix",
+            re.compile(rb"\bbearer[ \t]+", re.IGNORECASE),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-",
+            16,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bsk-"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+            20,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bgh[pousr]_"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            20,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bxox[baprs]-"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-",
+            20,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bAKIA"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            16,
+        ),
+    )
+    markers: list[RawSensitiveMarker] = []
+    for kind, prefix_pattern, allowed, minimum_token_bytes in token_specs:
+        allowed_bytes = frozenset(allowed)
+        for prefix in prefix_pattern.finditer(content):
+            token_start = prefix.end()
+            limit = min(len(content), token_start + 128)
+            cursor = token_start
+            while cursor < limit and content[cursor] in allowed_bytes:
+                cursor += 1
+            prefix_token_length = cursor - token_start
+            if cursor >= limit or content[cursor] < 0x80 or prefix_token_length < 4:
+                continue
+            suffix_start = cursor + 1
+            suffix_end = suffix_start
+            while suffix_end < limit and content[suffix_end] in allowed_bytes:
+                suffix_end += 1
+            suffix_token_length = suffix_end - suffix_start
+            if (
+                suffix_token_length < 4
+                or prefix_token_length + suffix_token_length < minimum_token_bytes
+            ):
+                continue
+            markers.append(
+                RawSensitiveMarker(
+                    marker_id=f"{kind}:{prefix.start()}",
+                    kind=kind,
+                    start=prefix.start(),
+                    end=suffix_end,
+                    line_number=raw_line_number(content, prefix.start()),
+                )
+            )
+    return tuple(markers)
+
+
+def raw_assignment_value_is_fragmented(content: bytes, match: re.Match[bytes]) -> bool:
+    """Return whether invalid bytes split an otherwise token-like raw value."""
+
+    if match.group(2):
+        return False
+    boundary = match.end()
+    if boundary >= len(content) or content[boundary] < 0x80:
+        return False
+    suffix_start = boundary + 1
+    if suffix_start >= len(content):
+        return False
+    return content[suffix_start] in frozenset(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=@:$%!{}-"
+    )
+
+
 def scan_raw_bytes(path: str, content: bytes, source: str) -> list[Finding]:
-    """Scan contiguous ASCII secret signatures without decoding the full blob."""
+    """Resolve every recognized raw marker to a safe, redacted outcome."""
 
     findings: list[Finding] = []
+    markers: dict[str, RawSensitiveMarker] = {}
+    marker_status: dict[str, RawMarkerStatus] = {}
 
-    def add_matches(rule: str, pattern: re.Pattern[bytes]) -> None:
-        for match in pattern.finditer(content):
-            findings.append(
-                Finding(
-                    rule,
-                    path,
-                    source=source,
-                    line_number=raw_line_number(content, match.start()),
-                )
+    def register_marker(kind: str, start: int, end: int) -> RawSensitiveMarker:
+        marker_id = f"{kind}:{start}"
+        marker = markers.get(marker_id)
+        if marker is None:
+            marker = RawSensitiveMarker(
+                marker_id=marker_id,
+                kind=kind,
+                start=start,
+                end=end,
+                line_number=raw_line_number(content, start),
             )
+            markers[marker_id] = marker
+            marker_status[marker_id] = RawMarkerStatus.DETECTED
+        return marker
 
-    add_matches("content.private-key-pem", RAW_PEM_PRIVATE_KEY_RE)
-    add_matches("content.jwt", RAW_JWT_RE)
-    add_matches("content.bearer-token", RAW_BEARER_RE)
+    def cover_with_finding(marker: RawSensitiveMarker, rule: str) -> None:
+        findings.append(
+            Finding(
+                rule,
+                path,
+                source=source,
+                line_number=marker.line_number,
+            )
+        )
+        marker_status[marker.marker_id] = RawMarkerStatus.COVERED_BY_FINDING
+
+    for match in RAW_PEM_PRIVATE_KEY_RE.finditer(content):
+        marker = register_marker("pem_marker", match.start(), match.end())
+        cover_with_finding(marker, "content.private-key-pem")
+    for match in RAW_JWT_RE.finditer(content):
+        marker = register_marker("jwt_prefix", match.start(), match.end())
+        cover_with_finding(marker, "content.jwt")
+    for match in RAW_BEARER_RE.finditer(content):
+        marker = register_marker("bearer_prefix", match.start(), match.end())
+        cover_with_finding(marker, "content.bearer-token")
     for pattern in RAW_PROVIDER_TOKEN_RES:
-        add_matches("content.api-token", pattern)
-
-    for match in RAW_CONNECTION_RE.finditer(content):
-        try:
-            embedded_password = match.group(2).decode("ascii", errors="strict")
-        except UnicodeError:
-            embedded_password = ""
-        if embedded_password and not placeholderish(embedded_password):
-            findings.append(
-                Finding(
-                    "content.connection-string",
-                    path,
-                    source=source,
-                    line_number=raw_line_number(content, match.start()),
-                )
+        for match in pattern.finditer(content):
+            marker = register_marker(
+                "provider_token_prefix", match.start(), match.end()
             )
+            cover_with_finding(marker, "content.api-token")
 
     try:
         content.decode("utf-8-sig", errors="strict")
@@ -479,41 +608,63 @@ def scan_raw_bytes(path: str, content: bytes, source: str) -> list[Finding]:
     except UnicodeError:
         invalid_utf8 = True
 
+    connection_matches: dict[int, re.Match[bytes]] = {
+        match.start(): match for match in RAW_CONNECTION_RE.finditer(content)
+    }
+    for match in connection_matches.values():
+        marker = register_marker("credentialed_connection", match.start(), match.end())
+        try:
+            embedded_password = match.group(2).decode("ascii", errors="strict")
+        except UnicodeError:
+            continue
+        if placeholderish(embedded_password):
+            marker_status[marker.marker_id] = RawMarkerStatus.SAFE_PLACEHOLDER
+        elif embedded_password:
+            cover_with_finding(marker, "content.connection-string")
+
     if invalid_utf8:
-        handled_sensitive_markers: set[int] = set()
+        for match in RAW_SENSITIVE_MARKER_RE.finditer(content):
+            key = match.group(1).decode("ascii", errors="strict")
+            if is_sensitive_key(key):
+                register_marker("sensitive_assignment", match.start(), match.end())
+
         for match in RAW_ASSIGNMENT_RE.finditer(content):
             key = match.group(1).decode("ascii", errors="strict")
             if not is_sensitive_key(key):
                 continue
-            handled_sensitive_markers.add(match.start())
+            marker = register_marker("sensitive_assignment", match.start(), match.end())
             quote = match.group(2).decode("ascii", errors="strict")
             value = match.group(3).decode("ascii", errors="strict")
             scalar = normalized_scalar(f"{quote}{value}{quote}")
-            if secretish_scalar(scalar):
-                findings.append(
-                    Finding(
-                        "content.sensitive-assignment",
-                        path,
-                        source=source,
-                        line_number=raw_line_number(content, match.start()),
-                    )
-                )
+            if raw_assignment_value_is_fragmented(content, match):
+                continue
+            if placeholderish(scalar):
+                marker_status[marker.marker_id] = RawMarkerStatus.SAFE_PLACEHOLDER
+            elif secretish_scalar(scalar):
+                cover_with_finding(marker, "content.sensitive-assignment")
 
-        unhandled_sensitive_marker = False
-        for match in RAW_SENSITIVE_MARKER_RE.finditer(content):
-            key = match.group(1).decode("ascii", errors="strict")
-            if is_sensitive_key(key) and match.start() not in handled_sensitive_markers:
-                unhandled_sensitive_marker = True
-                break
-        if not findings and unhandled_sensitive_marker:
+        for fragmented_marker in detect_fragmented_token_markers(content):
+            register_marker(
+                fragmented_marker.kind,
+                fragmented_marker.start,
+                fragmented_marker.end,
+            )
+
+    for marker in markers.values():
+        if marker_status[marker.marker_id] is RawMarkerStatus.DETECTED:
             findings.append(
                 Finding(
                     "content.unscannable-sensitive-data",
                     path,
                     source=source,
-                    line_number=1,
+                    line_number=marker.line_number,
+                    marker_id=marker.marker_id,
                 )
             )
+            marker_status[marker.marker_id] = RawMarkerStatus.UNSCANNABLE_FINDING
+
+    if any(status is RawMarkerStatus.DETECTED for status in marker_status.values()):
+        raise ScannerError("raw sensitive marker did not reach a safe state")
 
     if content.startswith((b"PGDMP", b"REDIS")):
         findings.append(
@@ -538,7 +689,7 @@ def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
     for text in texts:
         findings.extend(_scan_text(path, text, source))
 
-    unique: dict[tuple[str, str, int | None, str], Finding] = {}
+    unique: dict[tuple[str, str, int | None, str, str | None], Finding] = {}
     for finding in findings:
         unique[finding.identity()] = finding
     return sorted(unique.values(), key=Finding.sort_key)

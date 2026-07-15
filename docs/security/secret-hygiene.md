@@ -17,8 +17,18 @@ Contiguous ASCII secret signatures are scanned directly in raw bytes before
 and independently of text decoding. This covers private-key markers, JWTs,
 Bearer and provider tokens, credentialed connection strings, sensitive
 assignments and JSON fields, and database-dump magic even when invalid bytes
-surround otherwise intact signatures. Recognizable sensitive markers with a
-damaged value produce a redacted `content.unscannable-sensitive-data` finding.
+surround otherwise intact signatures.
+
+Raw-byte handling is marker-specific and fail-closed. Every recognized
+sensitive marker is resolved independently to exactly one safe state: a
+redacted concrete finding, a narrowly recognized safe placeholder, or a
+redacted `content.unscannable-sensitive-data` finding. A finding for one marker
+does not suppress an unresolved marker elsewhere on the same line or in the
+same file. Damaged sensitive assignments and credentialed URLs therefore do
+not disappear when an invalid byte interrupts their value. Known JWT, Bearer,
+OpenAI/provider, GitHub, Slack, and AWS token prefixes also fail closed when an
+interior invalid byte splits an otherwise token-like bounded sequence. Bare
+short prefixes without token-like context are not treated as credentials.
 
 Structured text scanning additionally uses strict UTF-8/UTF-8-BOM decoding plus
 BOM-bound or structure-confirmed UTF-16LE/BE decoding. Clearly text-like
@@ -26,8 +36,14 @@ ambiguous NUL-wide content receives a bounded byte-normalized view. Genuine
 binary files without a supported secret signature remain clean rather than
 being rejected solely for being binary. Assignment and JSON keys share one
 plural-aware classifier with narrow exclusions for technical token counters.
-Encrypted or compressed secrets cannot be detected without decryption or
-unpacking and remain outside this repository scanner's contract.
+The scanner's threat model covers accidentally committed usable credentials,
+contiguous supported signatures in text or binary blobs, supported UTF-8 and
+UTF-16 content, readable text with binary prefix or suffix, and damaged content
+where a sensitive key, credential URL, or known token prefix remains
+recognizable. Encrypted, compressed, fully fragmented, steganographically
+hidden, arbitrarily transformed, or otherwise no-longer-recognizable secrets
+cannot be detected without the corresponding decoding or reconstruction and
+remain outside this repository scanner's contract.
 
 The scanner has two output invariants:
 

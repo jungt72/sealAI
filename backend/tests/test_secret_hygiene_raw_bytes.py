@@ -163,3 +163,122 @@ def test_deterministic_prefix_suffix_mutations_preserve_detection() -> None:
                     assert module.scan_blob(
                         "fixtures/mutated.conf", mutated, source="mutation-test"
                     )
+
+
+def test_each_damaged_assignment_marker_has_a_safe_outcome() -> None:
+    module = _module()
+    samples = (
+        b"DB_PASSWORD=abc" + b"\xff",
+        b"DB_PASSWORD=Sup3rSec" + b"\xff" + b"ret",
+        b"API_TOKENS=short" + b"\x80",
+        b'CLIENT_SECRETS="abc' + b"\xff" + b'"',
+    )
+    for content in samples:
+        findings = module.scan_blob(
+            "config/damaged.conf", content, source="assignment-marker-test"
+        )
+        assert {item.rule for item in findings} == {
+            "content.unscannable-sensitive-data"
+        }
+
+    complete = b"AUTH_SECRETS=" + b"synthetic_complete_fixture_123456" + b"\xff"
+    assert "content.sensitive-assignment" in _rules(module, complete)
+
+    for placeholder in (b"${DB_PASSWORD}", b"INJECT_AT_RUNTIME", b"REPLACE_ME"):
+        assert (
+            module.scan_blob(
+                "config/placeholder.conf",
+                b"DB_PASSWORD=" + placeholder,
+                source="assignment-placeholder-test",
+            )
+            == []
+        )
+
+
+def test_each_damaged_connection_marker_fails_closed() -> None:
+    module = _module()
+    samples = (
+        b"post" + b"gresql://user:abc" + b"\xff" + b"def@db/example",
+        b"red" + b"is://user:Sup3r" + b"\x80" + b"Secret@redis/0",
+        b"htt" + b"ps://user:abc" + b"\xff" + b"@example.test/",
+        b"am" + b"qp://user:pass" + b"\x80" + b"word@queue/vhost",
+    )
+    for content in samples:
+        findings = module.scan_blob(
+            "config/damaged-url.conf", content, source="connection-marker-test"
+        )
+        assert {item.rule for item in findings} == {
+            "content.unscannable-sensitive-data"
+        }
+
+    placeholder = b"post" + b"gresql://user:${DB_PASSWORD}@db/example"
+    assert (
+        module.scan_blob(
+            "config/placeholder-url.conf",
+            placeholder,
+            source="connection-placeholder-test",
+        )
+        == []
+    )
+
+
+def test_fragmented_token_prefixes_fail_closed_without_broad_prefix_blocking() -> None:
+    module = _module()
+    samples = (
+        b"sk-abcdefghij" + b"\xff" + b"klmnopqrstuvwxyz123456",
+        b"Authoriz" + b"ation: Bearer abcdefgh" + b"\xff" + b"ijklmnopqrstuv",
+        b"eyJabcdef." + b"\xff" + b"ghijklmnop.qrstuvwxyz123456",
+        b"ghp_abcdefghij" + b"\x80" + b"klmnopqrstuvwxyz",
+        b"xoxb-1234567890-" + b"\xff" + b"abcdefghijklmnop",
+        b"AKIA12345678" + b"\xff" + b"90ABCDEF",
+    )
+    for content in samples:
+        findings = module.scan_blob(
+            "fixtures/damaged-token.bin", content, source="token-marker-test"
+        )
+        assert {item.rule for item in findings} == {
+            "content.unscannable-sensitive-data"
+        }
+
+    for negative in (b"sk-", b"eyJ", b"Bearer", b"AKIA"):
+        assert _rules(module, negative) == set()
+
+
+def test_marker_coverage_is_per_marker_not_global_or_per_line() -> None:
+    module = _module()
+    pem_and_assignment = b"-----BEGIN " + b"PRIVATE KEY-----\nDB_PASSWORD=abc" + b"\xff"
+    rules = [
+        item.rule
+        for item in module.scan_blob(
+            "fixtures/multiple.bin", pem_and_assignment, source="marker-coverage-test"
+        )
+    ]
+    assert "content.private-key-pem" in rules
+    assert "content.unscannable-sensitive-data" in rules
+
+    token_and_connection = (
+        b"sk-"
+        + (b"a" * 24)
+        + b"\npost"
+        + b"gresql://user:abc"
+        + b"\xff"
+        + b"@db/example"
+    )
+    rules = [
+        item.rule
+        for item in module.scan_blob(
+            "fixtures/multiple.bin", token_and_connection, source="marker-coverage-test"
+        )
+    ]
+    assert "content.api-token" in rules
+    assert "content.unscannable-sensitive-data" in rules
+
+    same_line = b"DB_PASSWORD=abc" + b"\xff" + b" API_TOKEN=short" + b"\x80"
+    findings = module.scan_blob(
+        "fixtures/same-line.bin", same_line, source="marker-coverage-test"
+    )
+    unresolved = [
+        item for item in findings if item.rule == "content.unscannable-sensitive-data"
+    ]
+    assert len(unresolved) == 2
+    assert {item.line_number for item in unresolved} == {1}
