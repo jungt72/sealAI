@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T23:27:00Z",
+  "updated_at": "2026-07-15T02:20:09Z",
   "overall_status": "IN_PROGRESS",
   "checks": [
     {
@@ -256,6 +256,38 @@
       "scope": "local_worktree",
       "status": "PASSED",
       "summary": "The full 2110-test V2 suite, 319 frontend tests, 257 focused stack regressions, TypeScript, production frontend build, pinned Ruff format/lint, Bash, Compose, secret, npm-audit, and diff checks passed. No paid provider was contacted."
+    },
+    {
+      "check_id": "P1-API-LIFECYCLE-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "API-001 request/case bounds, shared actor/tenant admission, keyset pagination, strict versioned governance, untrusted/PII quarantine, fenced idempotency, immutable withdrawal/cancellation receipts, and no-delete retention review are implemented default-off. Production is unchanged and the upload contract activates no endpoint or storage.",
+      "evidence": [
+        "docs/ops/gate06-08-api-lifecycle-cutover.md",
+        "backend/sealai_v2/security/lifecycle_control.py",
+        "backend/sealai_v2/security/lifecycle_receipts.py",
+        "backend/sealai_v2/api/lifecycle_schemas.py",
+        "backend/sealai_v2/db/migrations/versions/20260715_0014_api_lifecycle_foundation.py",
+        "backend/sealai_v2/db/migrations/versions/20260715_0015_api_lifecycle_shadow_constraints.py"
+      ]
+    },
+    {
+      "check_id": "P1-API-LIFECYCLE-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "The full 2181-test V2 collection completed with 2176 passes and five expected explicit-DSN PostgreSQL skips; the focused lifecycle run completed with 50 passes and four explicit-DSN PostgreSQL skips. All 22 architecture tests, Ruff over 455 files, frontend TypeScript, 321 frontend tests in 37 files, the production build, combined Compose rendering, secret scan, structured-file parsing, and diff checks passed.",
+      "evidence": [
+        ".ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-api-lifecycle"
+      ]
+    },
+    {
+      "check_id": "P1-API-LIFECYCLE-EXTERNAL-001",
+      "scope": "external_attestation",
+      "status": "BLOCKED_EXTERNAL",
+      "summary": "Human-approved policy/purpose/consent references, retention decision, receipt-key lifecycle, quota capacity, privacy/role census, restore proof, legacy profile, explicit ephemeral PostgreSQL/RLS execution, migration validation, exact-image deployment, and post-deploy observation remain unavailable behind Gates 06, 07, and 08.",
+      "evidence": [
+        "docs/ops/gate06-08-api-lifecycle-cutover.md"
+      ]
     }
   ],
   "production_mutations_performed": false,

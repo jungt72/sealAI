@@ -50,4 +50,8 @@ risks:
     severity: HIGH
     summary: Two-person subject and role separation is local, while authoritative organization affiliations and shared-affiliation conflict checks remain unavailable; review features must stay disabled.
     blocked_by: [identity affiliation authority, sanitized production role census, GATE-07]
+  - risk_id: RISK-P1-API-LIFECYCLE
+    severity: HIGH
+    summary: API-001 hard limits, shared admission, bounded pagination, strict governance records, quarantine, and lifecycle receipts are implemented and tested locally but default-off and undeployed. Legal/privacy authority, retention duration, receipt-key lifecycle, quota capacity, legacy disposition, real PostgreSQL/RLS evidence, migration validation, and exact-image deployment are unproven; production remains in the audited state.
+    blocked_by: [human policy/purpose/consent authority, retention decision, receipt-key custody and rotation, quota capacity approval, production role/privacy census, immutable restore proof, aggregate legacy profile, explicit ephemeral PostgreSQL proof, GATE-06, GATE-07, GATE-08]
 accepted_risks: []

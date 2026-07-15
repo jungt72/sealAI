@@ -38,3 +38,35 @@ Sanitized local verification summary, 2026-07-15:
 
 This summary is local implementation evidence only. It does not change production state and cannot
 support `VERIFIED` without the gated production-equivalent and post-deployment checks.
+
+## P1 API lifecycle
+
+Sanitized local verification summary, 2026-07-15:
+
+- Scope: API-001 only; production, external providers, legal authority, secret custody, and data
+  retention decisions were not accessed or changed.
+- The full V2 backend collection contained 2,181 tests: 2,176 passed and five explicit-DSN
+  PostgreSQL cases were visibly skipped. No SQLite or mock result is counted as PostgreSQL/RLS
+  evidence.
+- The focused lifecycle collection contained 54 cases: 50 passed and four explicit-DSN
+  PostgreSQL cases were skipped. It covers request/case limits, strict schemas, actor/tenant quotas,
+  concurrency races, non-refundable storage admission, idempotency conflict/replay, expired-lease
+  recovery, stale-completion fencing, keyset pagination, quarantine, receipts, retention, IDOR, and
+  additive migrations.
+- All 22 architecture tests passed. Ruff check and format-check passed for all 455 backend and test
+  files.
+- Frontend TypeScript passed; 321 tests in 37 files passed; boundary/terminology checks and the
+  production Vite build passed.
+- The combined base/deployment Compose model rendered successfully without interpolation or a
+  daemon operation. Nginx and Compose preserve the default-off feature and hard limits.
+- `ops/check-secret-hygiene.py --worktree` passed without a secret finding after the implementation
+  and sanitized evidence were complete.
+- No image build/push/pull, provider call, external message, production connection, production data
+  read/write, migration, backfill, constraint validation, RLS/FORCE action, role change, deletion,
+  deployment, or remote Git operation ran.
+- Policy/purpose/consent authority, retention duration, receipt-HMAC lifecycle, quota capacity,
+  role/privacy approval, restore proof, legacy profile, explicit ephemeral PostgreSQL execution,
+  and exact-image deployment remain external Gate-06/07/08 requirements.
+
+This package is `IMPLEMENTED_NOT_DEPLOYED`. Gate-06, Gate-07, and Gate-08 remain
+`BLOCKED_EXTERNAL`; local evidence must never be reported as production verification.

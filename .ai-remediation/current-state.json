@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "recorded_at": "2026-07-15T01:13:40Z",
+  "recorded_at": "2026-07-15T02:20:09Z",
   "release_freeze": {
     "status": "ACTIVE",
     "deployment_status": "IMPLEMENTED_NOT_DEPLOYED",
@@ -50,9 +50,9 @@
     "confirmed": 22,
     "partially_confirmed": 1,
     "remediation_verified_in_production": 0,
-    "implemented_not_deployed": 11,
+    "implemented_not_deployed": 12,
     "implementation_in_progress": 5,
-    "implementation_confirmed_unstarted": 7,
+    "implementation_confirmed_unstarted": 6,
     "closed": 0
   },
   "packages": {
@@ -100,6 +100,26 @@
         "GATE-07 role and credential provisioning plus GATE-08 exact-image deployment",
         "authoritative identity affiliation graph",
         "production role-assignment census"
+      ],
+      "required_gates": ["GATE-06", "GATE-07", "GATE-08"]
+    },
+    "p1-api-lifecycle": {
+      "local_status": "IMPLEMENTED_NOT_DEPLOYED",
+      "production_status": "UNCHANGED",
+      "tests_status": "PASSED_WITH_FIVE_EXPECTED_POSTGRES_SKIPS",
+      "postgres_role_test_status": "NOT_AUTHORIZED_NO_EXPLICIT_TEST_DSN",
+      "feature_default": "DISABLED",
+      "retention_authority_default": "UNSET_NO_AUTOMATED_DELETE",
+      "external_dependencies": [
+        "human-approved policy, purpose, and consent references plus user-facing wording",
+        "human retention decision",
+        "receipt HMAC custody, rotation, and historical verification policy",
+        "quota capacity and abuse model",
+        "production role and privacy-purpose census",
+        "aggregate legacy contribution and lead profile",
+        "immutable restore proof",
+        "explicit ephemeral PostgreSQL migration, race, and RLS execution evidence",
+        "GATE-07 constraint/RLS cutover and GATE-08 exact-image deployment"
       ],
       "required_gates": ["GATE-06", "GATE-07", "GATE-08"]
     }

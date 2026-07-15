@@ -41,6 +41,17 @@ suites:
     - role matrix for tenant admin, platform owner, system operator, contributor, manufacturer, capability reviewer, knowledge reviewer, knowledge approver, and decision reviewer
     - two-person knowledge review including same-actor, skipped-review, metadata-mutation, non-human, and incomplete-evidence denials
     - opt-in real PostgreSQL proof applies the real Alembic chain and exact cutover transaction, then verifies FORCE-RLS, cross-tenant/cross-owner denial, and pool reuse only with an explicit empty test DSN and nonproduction guard
+  p1-api-lifecycle:
+    - independent request body, complete-envelope, header, query, path, case-byte, and case-fact boundaries at and beyond each limit
+    - strict extra-forbid governance schemas with exact tenant/policy/purpose/consent versions, rights/license pairing, provenance, document type, PII class, and untrusted prompt state
+    - PostgreSQL-only actor/tenant minute, daily, storage, and concurrency admission with non-refundable reservation and fail-closed construction
+    - idempotent success replay, changed-payload conflict, active-request conflict, expired-lease recovery without double charging, and stale-completion fencing
+    - bounded opaque keyset pagination, invalid/tampered cursor denial, and tenant/owner/manufacturer visibility boundaries
+    - contribution quarantine, no queue-status trust promotion, PII/injection quarantine, owner-only withdrawal, owner-only lead cancellation, stable receipts, and atomic audit events
+    - retention-review quarantine in batches of at most 100 with no automated hard-delete path and no duration when human authority is unset
+    - additive Alembic 0014/0015 upgrade with no backfill, constraint validation, RLS/FORCE activation, role change, quarantine mutation, or deletion
+    - opt-in real PostgreSQL lifecycle race and RLS proof only with an explicit empty test DSN and nonproduction guard; SQLite and mocks do not count
+    - frontend wording and confirmations match API capture/quarantine semantics and contain no repository-authored legal terms
   regression:
     - backend lint and focused tests
     - frontend lint, typecheck, and focused tests when touched

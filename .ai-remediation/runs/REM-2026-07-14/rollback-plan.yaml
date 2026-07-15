@@ -36,6 +36,16 @@ packages:
       - roll backend and frontend case-artifact contracts together; stale or mixed clients must remain rejected
       - never remove quarantine markers, assign an owner, validate a constraint, or disable RLS/FORCE outside the separately authorized GATE-07 rollback commands
       - restore ownership or integrity data only from the named immutable backup and dual-reviewed mapping evidence
+  p1-api-lifecycle:
+    reversible:
+      - keep or return SEALAI_V2_API_LIFECYCLE_ENABLED to false through the approved configuration rollback
+      - re-promote backend, dashboard, Nginx, and Compose as one previously attested compatible release
+      - nullable 0014 columns/tables and 0015 NOT VALID constraints may remain during application rollback
+    recovery:
+      - preserve hard request/case limits, receipts, audit events, quota evidence, and every quarantine marker
+      - never hard-delete a contribution or lead, invalidate a historical receipt, refund conservative storage admission, or promote quarantined content during rollback
+      - validate or remove RLS/FORCE only through separately approved Gate-07 commands after exact restore evidence
+      - supersede governance versions prospectively; never rewrite a historical resource or receipt to a new authority reference
   production_deployment:
     recovery:
       - re-promote the previously attested backend digest and dashboard artifact

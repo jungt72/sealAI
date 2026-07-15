@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "run_id": "REM-2026-07-14",
-  "updated_at": "2026-07-14T23:27:00Z",
+  "updated_at": "2026-07-15T02:20:09Z",
   "artifacts": [
     {
       "name": "production-sensitive-file-metadata.jsonl",
@@ -64,7 +64,23 @@
     {
       "name": "evidence/README.md#p1-data-authority",
       "classification": "SANITIZED_VERSIONED_TEST_SUMMARY",
-      "sha256": "6725c4da253d9489bc38e20e58b7c0b9d3a43d3e291140959f6dce30c0067835",
+      "sha256": "d57ad7de30edfe78fe7a07c368b1d36bbc11498f714802132573950bcc885beb",
+      "mode": "0644",
+      "content_values_collected": false,
+      "production_mutation_performed": false
+    },
+    {
+      "name": "evidence/README.md#p1-api-lifecycle",
+      "classification": "SANITIZED_VERSIONED_TEST_SUMMARY",
+      "sha256": "d57ad7de30edfe78fe7a07c368b1d36bbc11498f714802132573950bcc885beb",
+      "mode": "0644",
+      "content_values_collected": false,
+      "production_mutation_performed": false
+    },
+    {
+      "name": "docs/ops/gate06-08-api-lifecycle-cutover.md",
+      "classification": "SANITIZED_VERSIONED_GATE_CONTRACT",
+      "sha256": "670d7c79d705ccaa8f01f7a3303b51ad9d8711ef0300ef80b30bbb3c79ddee29",
       "mode": "0644",
       "content_values_collected": false,
       "production_mutation_performed": false

@@ -681,18 +681,32 @@ findings:
     root_cause: MVP queues lack quotas, aggregate bounds, cursor pagination, and a versioned purpose, consent, license, retention, withdrawal, and PII model.
     dependencies: [AUTH-001, AUTH-003, DATA-001]
     remediation_type: [code, configuration, data_migration, governance]
-    implementation_status: CONFIRMED
+    implementation_status: IMPLEMENTED_NOT_DEPLOYED
     evidence_before:
       - audit/2026-07-14-vps-deep-audit/12-findings.md#API-001
     changes:
-      - Add aggregate bounds, rate and storage quotas, cursor pagination, versioned governance records, retention and withdrawal, and PII quarantine.
+      - Added independent edge/application body and complete-request limits plus hard case byte/fact bounds; lifecycle writes remain default-off.
+      - Added PostgreSQL-serialized actor/tenant minute, daily, storage, and concurrency admission with conservative non-refundable reservation, idempotent replay, payload-conflict denial, expired-lease recovery, and stale-completion fencing.
+      - Added bounded keyset pagination, strict versioned governance declarations, untrusted review quarantine, PII/injection quarantine, owner/tenant-scoped withdrawal and lead cancellation, immutable receipt/event digests, and retention-review quarantine without a delete path.
+      - Added additive nullable migrations 0014/0015 and extended the Gate-07 RLS template; no backfill, validation, role change, RLS activation, deletion, or production write ran.
     tests:
-      - Boundary, isolated load, pagination, PII quarantine, consent-version, and withdrawal lifecycle tests.
+      - Full 2,181-test V2 collection passed with 2,176 successes and five expected explicit-DSN PostgreSQL skips; 50 focused lifecycle tests passed with four explicit-DSN PostgreSQL skips.
+      - Boundary, aggregate-limit, actor/tenant race, non-refundable quota, idempotency, recovery-fencing, pagination, tenant/owner IDOR, PII/injection quarantine, governance-version, withdrawal/cancellation receipt, retention quarantine, and additive-migration cases passed.
+      - Frontend TypeScript, 321 tests in 37 files, production build, architecture tests, Ruff, and combined Compose rendering passed.
     production_action_required: true
     approval_gate: GATE-07
     rollback: Version APIs additively; retain server-side maxima and privacy quarantine if UI consent rollout is paused.
-    evidence_after: []
-    residual_risk: Abuse can expand data and owner responses while unstructured personal data lacks reliable lifecycle control.
+    evidence_after:
+      - docs/ops/gate06-08-api-lifecycle-cutover.md
+      - backend/sealai_v2/security/lifecycle_control.py
+      - backend/sealai_v2/security/lifecycle_receipts.py
+      - backend/sealai_v2/api/lifecycle_schemas.py
+      - backend/sealai_v2/db/migrations/versions/20260715_0014_api_lifecycle_foundation.py
+      - backend/sealai_v2/db/migrations/versions/20260715_0015_api_lifecycle_shadow_constraints.py
+      - backend/sealai_v2/tests/test_api_lifecycle_control.py
+      - backend/sealai_v2/tests/test_api_lifecycle_schemas.py
+      - .ai-remediation/runs/REM-2026-07-14/evidence/README.md#p1-api-lifecycle
+    residual_risk: Production remains in the audited state. Human-approved policy/purpose/consent authority, retention decision, receipt-key lifecycle, quota capacity model, role/privacy census, real ephemeral PostgreSQL/RLS proof, legacy profile, restore evidence, constraint validation, exact-image deployment, and post-deploy observation remain BLOCKED_EXTERNAL behind Gates 06, 07, and 08.
 
   - finding_id: TLS-001
     title: WWW DNS and certificate state plus TLS and header smoke checks are incomplete
