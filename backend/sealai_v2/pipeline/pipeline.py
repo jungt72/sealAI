@@ -20,11 +20,12 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import build_prompt_cache_key
 from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
 from sealai_v2.pipeline.routing import (
+    RouteDecision,
     RouteName,
     classify_route,
     classify_route_deterministic,
     is_explicit_knowledge_overview,
-    resolve_material_comparison_followup,
+    resolve_comparison_followup,
     requests_calculation,
 )
 from sealai_v2.orchestration.execution_policy import (
@@ -717,17 +718,24 @@ class Pipeline:
                 session=session,
                 question=question,
             )
-        comparison_followup = resolve_material_comparison_followup(
+        comparison_followup = resolve_comparison_followup(
             question,
             mem.window,
             material_terms=self.knowledge_material_terms,
         )
-        # A canonical, context-enriched query is used only by deterministic
-        # routing, retrieval and answer planning. The generator still receives
-        # the user's exact current question and never the raw prior transcript.
+        context_clarification = (
+            comparison_followup.clarification
+            if comparison_followup is not None
+            and comparison_followup.needs_clarification
+            else ""
+        )
+        # A canonical, context-enriched request is the sole input to routing,
+        # retrieval, answer planning, generation and verification. Raw prior
+        # transcript text never enters those stages.
         knowledge_question = (
             comparison_followup.resolved_question
             if comparison_followup is not None
+            and not comparison_followup.needs_clarification
             else question
         )
         effective_case_id = (
@@ -861,6 +869,29 @@ class Pipeline:
                 gegencheck_verdict=gegencheck_verdict,
                 material_terms=self.knowledge_material_terms,
             )
+            if comparison_followup is not None and (
+                comparison_followup.needs_clarification
+                or policy_route_decision.route
+                in {
+                    RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+                    RouteName.GENERAL_SEALING_KNOWLEDGE,
+                    RouteName.MATERIAL_KNOWLEDGE,
+                    RouteName.MATERIAL_COMPARISON,
+                }
+            ):
+                policy_route_decision = RouteDecision(
+                    route=RouteName.MATERIAL_COMPARISON,
+                    reason=(
+                        "context_comparison_needs_clarification"
+                        if comparison_followup.needs_clarification
+                        else "context_comparison_resolved"
+                    ),
+                    confidence=1.0,
+                    forced_full_pipeline=True,
+                    deterministic_signal_count=(
+                        0 if comparison_followup.needs_clarification else 1
+                    ),
+                )
             # Known engineering signals and validated fast paths remain deterministic. The model
             # is consulted only where the current router would otherwise emit the generic
             # ambiguity response. Any model failure returns this exact fallback decision.
@@ -877,6 +908,44 @@ class Pipeline:
                         knowledge_question,
                         fallback=policy_route_decision,
                         case_active=case_active,
+                    )
+            # The semantic router can recognise comparison paraphrases that no
+            # finite phrase list covers.  It still cannot authorize an answer:
+            # every comparison route must pass through the typed, user-authored
+            # reference resolver before retrieval or generation.
+            if (
+                policy_route_decision.route is RouteName.MATERIAL_COMPARISON
+                and comparison_followup is None
+            ):
+                comparison_followup = resolve_comparison_followup(
+                    question,
+                    mem.window,
+                    material_terms=self.knowledge_material_terms,
+                    comparison_intent=True,
+                )
+                if comparison_followup is not None:
+                    context_clarification = (
+                        comparison_followup.clarification
+                        if comparison_followup.needs_clarification
+                        else ""
+                    )
+                    knowledge_question = (
+                        question
+                        if comparison_followup.needs_clarification
+                        else comparison_followup.resolved_question
+                    )
+                    policy_route_decision = RouteDecision(
+                        route=RouteName.MATERIAL_COMPARISON,
+                        reason=(
+                            "semantic_comparison_needs_clarification"
+                            if comparison_followup.needs_clarification
+                            else "semantic_comparison_context_resolved"
+                        ),
+                        confidence=1.0,
+                        forced_full_pipeline=True,
+                        deterministic_signal_count=(
+                            0 if comparison_followup.needs_clarification else 1
+                        ),
                     )
         activation_route_decision = (
             policy_route_decision
@@ -895,9 +964,12 @@ class Pipeline:
         ):
             raise ProductModeUnavailable("knowledge", "pilot_not_activated")
         early_clarification = bool(
-            policy_route_decision is not None
-            and policy_route_decision.forced_full_pipeline
-            and case_state_v2.required_missing
+            context_clarification
+            or (
+                policy_route_decision is not None
+                and policy_route_decision.forced_full_pipeline
+                and case_state_v2.required_missing
+            )
         )
         cache_key: str | None = None
         cached_answer: Answer | None = None
@@ -1233,7 +1305,11 @@ class Pipeline:
                 # Treating that generic list as intake requirements made valid grounded questions
                 # stop at D1 (for example, asking about FKM in steam requested shaft diameter and
                 # O-ring groove depth). Calculation transparency remains in ``calc.not_computed``.
-                policy_missing_fields = case_state_v2.required_missing
+                policy_missing_fields = (
+                    ("zwei eindeutig benannte Vergleichsgegenstände",)
+                    if context_clarification
+                    else case_state_v2.required_missing
+                )
                 source_ids = {
                     source for fact in l1_grounding for source in fact.sources if source
                 }
@@ -1310,6 +1386,7 @@ class Pipeline:
                     subject_order=(
                         comparison_followup.subjects
                         if comparison_followup is not None
+                        and not comparison_followup.needs_clarification
                         else ()
                     ),
                 )
@@ -1351,11 +1428,18 @@ class Pipeline:
                 # prompt) is completely untouched below -- every route except a fully-qualified
                 # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
                 # EXACT same call it always has.
-                if cached_answer is not None:
+                if context_clarification:
+                    answer = Answer(
+                        text=context_clarification,
+                        model="deterministic-context-clarification",
+                        grounding_facts=(),
+                    )
+                elif cached_answer is not None:
                     answer = cached_answer
                 elif active_generator is None and execution_decision is not None:
                     answer = Answer(
-                        text=deterministic_response(
+                        text=context_clarification
+                        or deterministic_response(
                             execution_decision,
                             missing_fields=policy_missing_fields,
                             conflicts=policy_conflicts,
@@ -1392,7 +1476,7 @@ class Pipeline:
                     # through the unchanged output_guard + L3 verify pipeline below.
                     answer = await self._l1_generate(
                         active_generator or self.generator,
-                        question,
+                        knowledge_question,
                         token_sink=token_sink,
                         draft_stream_active=draft_stream_active,
                         flags=flags,
@@ -1450,7 +1534,7 @@ class Pipeline:
                 )
 
                 _check_sentence_coverage = contract is not None
-                _kv, _km = _guard_known(question)
+                _kv, _km = _guard_known(knowledge_question)
                 if material_params:
                     from sealai_v2.core.engineering_answer import numeric_tokens
                     from sealai_v2.knowledge.material_parameters import parameter_text
@@ -1478,7 +1562,7 @@ class Pipeline:
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
                         answer = await self._l1_generate(
                             active_generator or self.generator,
-                            question,
+                            knowledge_question,
                             token_sink=token_sink,
                             draft_stream_active=draft_stream_active,
                             flags=flags,
@@ -1525,7 +1609,7 @@ class Pipeline:
                     if _gr2.action == "BLOCK":
                         answer = Answer(
                             text=_guard_fallback(
-                                _effective_contract, question=question
+                                _effective_contract, question=knowledge_question
                             ),
                             model="deterministic-output-guard",
                             grounding_facts=l1_grounding,
@@ -1538,13 +1622,14 @@ class Pipeline:
                 self.verifier is not None
                 and self.catalog is not None
                 and not skip_l3_for_route
+                and not context_clarification
             ):
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = await stages.verify(
                         self.verifier,
                         active_generator or self.generator,
                         self.catalog,
-                        question,
+                        knowledge_question,
                         answer,
                         flags=flags,
                         grounding_facts=grounding_facts,

@@ -46,7 +46,7 @@ ANSWER_FACETS = frozenset(
 SUBJECT_TYPES = frozenset({"material", "medium", "seal_type", "method", "general"})
 
 _COMPARISON_RE = re.compile(
-    r"\b(vergleich\w*|unterschied\w*|gegenüber|gegenueber|besser|schlechter|"
+    r"\b(vergleich\w*|unterschied\w*|unterscheid\w*|gegenüber|gegenueber|besser|schlechter|"
     r"vor-\s*und\s*nachteile|vs\.?|versus)\b",
     re.IGNORECASE,
 )
@@ -431,6 +431,17 @@ def _detected_seals(tokens: set[str], normalized: str) -> tuple[str, ...]:
         for canonical, aliases in _SEAL_ALIASES.items()
         if any(_contains_alias(alias, tokens, normalized) for alias in aliases)
     )
+
+
+def detected_seal_subjects(text: str) -> tuple[str, ...]:
+    """Return canonical seal-type subjects explicitly named in ``text``.
+
+    Follow-up resolution uses the same vocabulary as answer planning.  Keeping
+    this boundary public prevents a second, drifting list of seal aliases in the
+    conversation layer.
+    """
+    normalized = (text or "").lower()
+    return _detected_seals(query_tokens(text or ""), normalized)
 
 
 def _fallback_facets(claim_kind: str) -> tuple[str, ...]:

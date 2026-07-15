@@ -37,8 +37,11 @@ from dataclasses import dataclass
 from enum import Enum
 
 from sealai_v2.core.contracts import Intent
-from sealai_v2.core.knowledge_answer import detected_material_subjects
-from sealai_v2.core.medium_extract import extract_medium_facts
+from sealai_v2.core.knowledge_answer import (
+    detected_material_subjects,
+    detected_seal_subjects,
+)
+from sealai_v2.core.medium_extract import extract_media, extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.pipeline.stages import is_alternativen_request
@@ -78,10 +81,22 @@ class RouteDecision:
 
 @dataclass(frozen=True)
 class MaterialComparisonFollowup:
-    """A comparison whose omitted first subject was resolved from user-authored session context."""
+    """Typed resolution of a comparison reference in the current user turn.
+
+    ``resolved`` is the only state allowed to reach retrieval or generation.
+    ``needs_clarification`` is a deterministic abstention: it prevents a fluent
+    but unrelated comparison when words such as "beide" have no provable pair.
+    """
 
     resolved_question: str
-    subjects: tuple[str, str]
+    subjects: tuple[str, ...]
+    subject_type: str = "material"
+    status: str = "resolved"
+    clarification: str = ""
+
+    @property
+    def needs_clarification(self) -> bool:
+        return self.status != "resolved"
 
 
 # --- Stage-1 signal regexes (deliberately explicit + narrow; each is independently testable) -----
@@ -142,7 +157,7 @@ _RESISTANCE_CLAIM_RE = re.compile(
 )
 
 _COMPARISON_RE = re.compile(
-    r"\b(vergleich\w*|unterschied\w*|besser|schlechter|\bvs\.?\b|\bversus\b|gegenüber|gegenueber|vor-\s*und\s*nachteile)\b",
+    r"\b(vergleich\w*|unterschied\w*|unterscheid\w*|besser|schlechter|\bvs\.?\b|\bversus\b|gegenüber|gegenueber|vor-\s*und\s*nachteile)\b",
     re.IGNORECASE,
 )
 
@@ -345,66 +360,135 @@ def is_explicit_knowledge_overview(
     )
 
 
-def resolve_material_comparison_followup(
+def resolve_comparison_followup(
     question: str,
     previous_turns: tuple[object, ...],
     *,
     material_terms: tuple[str, ...] = (),
+    comparison_intent: bool = False,
 ) -> MaterialComparisonFollowup | None:
-    """Resolve ``vergleiche mit PTFE`` against the recent user-authored subject.
+    """Resolve contextual comparisons against recent user-authored subjects.
 
-    The raw transcript remains outside the production prompt.  Only canonical
-    material names survive this boundary, and only for a pure knowledge
-    comparison without values, incidents, suitability claims or case language.
-    Assistant messages are never trusted as the source of a subject.
+    Supported subject namespaces are materials, seal types and media.  Raw
+    transcript text never crosses this boundary: only canonical entities from
+    the shared domain vocabularies survive.  Assistant messages are ignored.
+
+    A contextual comparison has exactly two safe outcomes:
+
+    * two provable, same-type subjects -> an explicit canonical request;
+    * anything else -> a deterministic clarification, never generation.
     """
     text = (question or "").strip()
-    current = detected_material_subjects(text, material_terms=material_terms)
-    if len(current) != 1 or not _COMPARISON_RE.search(text):
-        return None
-    if not is_explicit_knowledge_overview(text, material_terms=material_terms):
-        return None
-    if any(
-        blocker
-        for blocker in (
-            _ENGINEERING_VALUE_RE.search(text),
-            _RFQ_RE.search(text),
-            _LEAKAGE_RE.search(text),
-            _CASE_LANGUAGE_RE.search(text),
-            _CONCRETE_CASE_REFERENCE_RE.search(text),
-            _SUITABILITY_QUESTION_RE.search(text),
-            _META_INSTRUCTION_RE.search(text),
-            _RESISTANCE_CLAIM_RE.search(text),
-            is_alternativen_request(text),
-            requests_calculation(text),
-        )
-    ):
+    if not comparison_intent and not _COMPARISON_RE.search(text):
         return None
 
-    # The memory window is already tenant/session scoped. Inspect at most three
-    # recent user turns and stop at an explicit technical topic change.
+    def subject_groups(value: str) -> dict[str, tuple[str, ...]]:
+        groups = {
+            "material": detected_material_subjects(
+                value, material_terms=material_terms
+            ),
+            "seal_type": detected_seal_subjects(value),
+            "medium": extract_media(value),
+        }
+        return {kind: subjects for kind, subjects in groups.items() if subjects}
+
+    current_groups = subject_groups(text)
+    current_count = sum(len(subjects) for subjects in current_groups.values())
+    # A self-contained comparison already names both sides and needs no context
+    # resolution.  Cross-type comparisons remain on the ordinary route, where
+    # the answer planner can decide whether the request is meaningful.
+    if current_count >= 2:
+        return None
+    # A comparison with no explicitly named side is itself a contextual request
+    # ("Was ist der Unterschied?", "Welcher ist besser?", "vergleiche beide").
+    # This also covers natural paraphrases without a pronoun.  With no provable
+    # pair below, the result is a clarification rather than a guessed answer.
+    if current_count == 1 and len(current_groups) != 1:
+        return None
+
+    expected_type = next(iter(current_groups), None)
+    recent_blocks: list[tuple[str, tuple[str, ...]]] = []
     inspected = 0
     for turn in reversed(previous_turns):
         if getattr(turn, "role", None) != "user":
             continue
         inspected += 1
         prior_text = str(getattr(turn, "text", "") or "")
-        prior = detected_material_subjects(prior_text, material_terms=material_terms)
-        candidates = tuple(subject for subject in prior if subject != current[0])
-        if len(prior) == 1 and len(candidates) == 1:
-            subjects = (candidates[0], current[0])
-            return MaterialComparisonFollowup(
-                resolved_question=(
-                    f"{text}\nAufgeloester Werkstoffvergleich: "
-                    f"{subjects[0]} und {subjects[1]}."
-                ),
-                subjects=subjects,
-            )
-        if prior or _DOMAIN_KNOWLEDGE_RE.search(prior_text):
+        groups = subject_groups(prior_text)
+        if not groups:
+            if _DOMAIN_KNOWLEDGE_RE.search(prior_text):
+                break
+            if inspected >= 4:
+                break
+            continue
+        if len(groups) != 1:
+            recent_blocks.append(("mixed", tuple()))
             break
-        if inspected >= 3:
+        kind, subjects = next(iter(groups.items()))
+        if expected_type is not None and kind != expected_type:
             break
-    return None
+        expected_type = expected_type or kind
+        recent_blocks.append((kind, subjects))
+        if inspected >= 4:
+            break
+
+    candidates: list[str] = []
+    # Restore chronological order while preserving the order inside one turn.
+    for kind, subjects in reversed(recent_blocks):
+        if kind == "mixed" or (expected_type is not None and kind != expected_type):
+            continue
+        for subject in subjects:
+            if subject not in candidates:
+                candidates.append(subject)
+    for subjects in current_groups.values():
+        for subject in subjects:
+            if subject not in candidates:
+                candidates.append(subject)
+
+    if len(candidates) == 2 and expected_type is not None:
+        pair = tuple(candidates)
+        return MaterialComparisonFollowup(
+            resolved_question=(
+                f"{text}\nVerbindlich aufgelöste Vergleichsgegenstände "
+                f"({expected_type}): {pair[0]} und {pair[1]}."
+            ),
+            subjects=pair,
+            subject_type=expected_type,
+        )
+
+    type_label = {
+        "material": "Werkstoffe",
+        "seal_type": "Dichtungsarten",
+        "medium": "Medien",
+    }.get(expected_type or "", "Gegenstände")
+    if len(candidates) == 1:
+        clarification = (
+            f"Ich kann im bisherigen Gespräch nur {candidates[0]} eindeutig "
+            f"zuordnen. Welche zweite Position möchtest du damit vergleichen?"
+        )
+    elif len(candidates) > 2:
+        clarification = (
+            f"Im bisherigen Gespräch sind mehr als zwei mögliche {type_label} "
+            f"genannt: {', '.join(candidates)}. Bitte nenne genau die zwei, "
+            "die ich vergleichen soll."
+        )
+    else:
+        clarification = (
+            f"Welche zwei {type_label} möchtest du vergleichen? Bitte nenne "
+            "beide ausdrücklich, damit ich keinen falschen Bezug herstelle."
+        )
+    return MaterialComparisonFollowup(
+        resolved_question="",
+        subjects=tuple(candidates),
+        subject_type=expected_type or "unknown",
+        status="needs_clarification",
+        clarification=clarification,
+    )
+
+
+# Compatibility name for older call sites/tests.  The resolver now handles all
+# governed comparison subject types, not only materials.
+resolve_material_comparison_followup = resolve_comparison_followup
 
 
 def detect_engineering_signals(

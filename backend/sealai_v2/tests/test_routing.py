@@ -32,27 +32,32 @@ def test_material_comparison_followup_resolves_prior_user_subject() -> None:
 
 
 def test_material_comparison_followup_does_not_trust_assistant_subjects() -> None:
-    assert (
-        resolve_material_comparison_followup(
-            "Bitte vergleiche mit PTFE",
-            (Turn(role="assistant", text="NBR waere eine Option"),),
-        )
-        is None
+    resolution = resolve_material_comparison_followup(
+        "Bitte vergleiche mit PTFE",
+        (Turn(role="assistant", text="NBR waere eine Option"),),
     )
 
+    assert resolution is not None
+    assert resolution.needs_clarification
+    assert resolution.subjects == ("PTFE",)
+    assert "NBR" not in resolution.clarification
 
-def test_material_comparison_followup_rejects_case_bound_or_complete_queries() -> None:
+
+def test_material_comparison_followup_preserves_case_qualifiers_and_skips_complete_queries() -> (
+    None
+):
     prior = (Turn(role="user", text="Details zu NBR"),)
 
     assert (
         resolve_material_comparison_followup("Vergleiche NBR und PTFE", prior) is None
     )
-    assert (
-        resolve_material_comparison_followup(
-            "Vergleiche mit PTFE bei 130 °C in meiner Anwendung", prior
-        )
-        is None
+    resolution = resolve_material_comparison_followup(
+        "Vergleiche mit PTFE bei 130 °C in meiner Anwendung", prior
     )
+    assert resolution is not None
+    assert resolution.subjects == ("NBR", "PTFE")
+    assert "130 °C" in resolution.resolved_question
+    assert "meiner Anwendung" in resolution.resolved_question
 
 
 def test_material_comparison_followup_stops_at_explicit_topic_change() -> None:
@@ -63,9 +68,90 @@ def test_material_comparison_followup_stops_at_explicit_topic_change() -> None:
         Turn(role="assistant", text="O-Ring-Fachantwort"),
     )
 
-    assert (
-        resolve_material_comparison_followup("Bitte vergleiche mit PTFE", turns) is None
+    resolution = resolve_material_comparison_followup(
+        "Bitte vergleiche mit PTFE", turns
     )
+
+    assert resolution is not None
+    assert resolution.needs_clarification
+    assert resolution.subjects == ("PTFE",)
+
+
+def test_plural_comparison_resolves_two_recent_user_materials() -> None:
+    resolution = resolve_material_comparison_followup(
+        "bitte vergleiche nun beide",
+        (
+            Turn(role="user", text="Bitte gib mir nur Infos zu PTFE"),
+            Turn(role="assistant", text="PTFE-Fachantwort"),
+            Turn(role="user", text="Jetzt bitte ueber NBR"),
+            Turn(role="assistant", text="NBR-Fachantwort"),
+        ),
+    )
+
+    assert resolution is not None
+    assert not resolution.needs_clarification
+    assert resolution.subject_type == "material"
+    assert resolution.subjects == ("PTFE", "NBR")
+    assert "PTFE und NBR" in resolution.resolved_question
+
+
+def test_natural_comparison_paraphrase_resolves_two_recent_materials() -> None:
+    resolution = resolve_material_comparison_followup(
+        "Was unterscheidet sie?",
+        (
+            Turn(role="user", text="Details zu PTFE"),
+            Turn(role="assistant", text="PTFE-Fachantwort"),
+            Turn(role="user", text="Details zu NBR"),
+            Turn(role="assistant", text="NBR-Fachantwort"),
+        ),
+    )
+
+    assert resolution is not None
+    assert not resolution.needs_clarification
+    assert resolution.subjects == ("PTFE", "NBR")
+
+
+def test_plural_comparison_resolves_two_recent_seal_types() -> None:
+    resolution = resolve_material_comparison_followup(
+        "Vergleiche bitte beide miteinander",
+        (
+            Turn(role="user", text="Erklaere mir einen RWDR"),
+            Turn(role="assistant", text="RWDR-Fachantwort"),
+            Turn(role="user", text="Und nun einen O-Ring"),
+            Turn(role="assistant", text="O-Ring-Fachantwort"),
+        ),
+    )
+
+    assert resolution is not None
+    assert resolution.subject_type == "seal_type"
+    assert resolution.subjects == ("RWDR", "O-Ring")
+
+
+def test_plural_comparison_abstains_when_reference_has_three_candidates() -> None:
+    resolution = resolve_material_comparison_followup(
+        "Vergleiche bitte beide",
+        (
+            Turn(role="user", text="Details zu PTFE"),
+            Turn(role="user", text="Details zu FKM"),
+            Turn(role="user", text="Details zu NBR"),
+        ),
+    )
+
+    assert resolution is not None
+    assert resolution.needs_clarification
+    assert resolution.subjects == ("PTFE", "FKM", "NBR")
+    assert "mehr als zwei" in resolution.clarification
+
+
+def test_plural_comparison_abstains_without_user_authored_candidates() -> None:
+    resolution = resolve_material_comparison_followup(
+        "Vergleiche bitte beide",
+        (Turn(role="assistant", text="PTFE und NBR koennten passen"),),
+    )
+
+    assert resolution is not None
+    assert resolution.needs_clarification
+    assert resolution.subjects == ()
 
 
 class TestSmalltalkNavigation:
