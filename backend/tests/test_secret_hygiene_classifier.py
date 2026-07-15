@@ -174,3 +174,13 @@ def test_confirmed_credentials_and_raw_auth_evidence_are_absent() -> None:
         assert not directory.exists() or not any(
             path.is_file() for path in directory.rglob("*")
         )
+
+
+def test_push_scan_handles_force_rebases_without_scanning_main_history() -> None:
+    root = Path(__file__).resolve().parents[2]
+    workflow = (root / ".github" / "workflows" / "secret-scan.yml").read_text()
+
+    assert 'git merge-base --is-ancestor "$BEFORE_SHA" "$AFTER_SHA"' in workflow
+    assert 'if [ "$REF_NAME" = "$DEFAULT_BRANCH" ]' in workflow
+    assert 'base_sha="$(git merge-base "$AFTER_SHA" "$default_ref")"' in workflow
+    assert 'revision_range="$base_sha..$AFTER_SHA"' in workflow
