@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealingai.local/schemas/legacy-inventory-report.schema.json",
+  "title": "Read-only legacy inventory classification report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "inventory_id",
+    "generated_at",
+    "source",
+    "coverage",
+    "summary",
+    "dependencies",
+    "objects",
+    "production_query_performed",
+    "mutation_performed"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "inventory_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "captured_at", "production_query_performed", "mutation_performed", "contains_secret_values"],
+      "properties": {
+        "kind": {"const": "SANITIZED_LOCAL_FIXTURE"},
+        "captured_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "production_query_performed": {"const": false},
+        "mutation_performed": {"const": false},
+        "contains_secret_values": {"const": false}
+      }
+    },
+    "coverage": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "container",
+          "image",
+          "service",
+          "frontend",
+          "feature_flag",
+          "prompt_family",
+          "qdrant_collection",
+          "volume",
+          "pm2_process",
+          "network_workload",
+          "configuration",
+          "backup",
+          "port"
+        ]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ACTIVE",
+        "REQUIRED_FOR_ROLLBACK",
+        "LEGACY_BUT_IN_USE",
+        "ORPHANED",
+        "SAFE_TO_ARCHIVE",
+        "SAFE_TO_DELETE_AFTER_APPROVAL",
+        "UNKNOWN"
+      ],
+      "properties": {
+        "ACTIVE": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "REQUIRED_FOR_ROLLBACK": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "LEGACY_BUT_IN_USE": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "ORPHANED": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "SAFE_TO_ARCHIVE": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "SAFE_TO_DELETE_AFTER_APPROVAL": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "UNKNOWN": {"type": "integer", "minimum": 0, "maximum": 10000}
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "maxItems": 100000,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to"],
+        "properties": {
+          "from": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"},
+          "to": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"}
+        }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "asset_type",
+          "classification",
+          "reason",
+          "dependencies",
+          "dependents",
+          "gate",
+          "candidate_action",
+          "mutation_authorized",
+          "action_taken"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"},
+          "asset_type": {
+            "enum": [
+              "container",
+              "image",
+              "service",
+              "frontend",
+              "feature_flag",
+              "prompt_family",
+              "qdrant_collection",
+              "volume",
+              "pm2_process",
+              "network_workload",
+              "configuration",
+              "backup",
+              "port"
+            ]
+          },
+          "classification": {
+            "enum": [
+              "ACTIVE",
+              "REQUIRED_FOR_ROLLBACK",
+              "LEGACY_BUT_IN_USE",
+              "ORPHANED",
+              "SAFE_TO_ARCHIVE",
+              "SAFE_TO_DELETE_AFTER_APPROVAL",
+              "UNKNOWN"
+            ]
+          },
+          "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+          "dependencies": {
+            "type": "array",
+            "maxItems": 128,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"}
+          },
+          "dependents": {
+            "type": "array",
+            "maxItems": 10000,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"}
+          },
+          "gate": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["backup_ready", "dependency_evidence_complete", "rollback_ready", "approval_status", "approval_ready", "cleanup_ready"],
+            "properties": {
+              "backup_ready": {"type": "boolean"},
+              "dependency_evidence_complete": {"type": "boolean"},
+              "rollback_ready": {"type": "boolean"},
+              "approval_status": {"enum": ["NOT_REQUIRED", "NOT_REQUESTED", "PENDING", "APPROVED"]},
+              "approval_ready": {"type": "boolean"},
+              "cleanup_ready": {"type": "boolean"}
+            }
+          },
+          "candidate_action": {"enum": ["NONE", "ARCHIVE", "DELETE"]},
+          "mutation_authorized": {"const": false},
+          "action_taken": {"const": false}
+        }
+      }
+    },
+    "production_query_performed": {"const": false},
+    "mutation_performed": {"const": false}
+  }
+}

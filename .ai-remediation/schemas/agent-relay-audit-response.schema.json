@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealingai.local/schemas/agent-relay-audit-response.schema.json",
+  "title": "Read-only Claude audit response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "phase",
+    "verdict",
+    "summary",
+    "findings",
+    "resolved_finding_ids",
+    "tools_used",
+    "network_tools_used",
+    "writes_performed",
+    "scope_frozen"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "phase": {"enum": ["CONTRACT_AUDIT", "DIFF_AUDIT"]},
+    "verdict": {"enum": ["PASS", "BLOCK", "LIMIT_REACHED"]},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "findings": {
+      "type": "array",
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "path", "description", "required_action"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_-]{1,31}$"},
+          "severity": {"enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+          "path": {"type": "string", "minLength": 1, "maxLength": 240},
+          "description": {"type": "string", "minLength": 1, "maxLength": 1000},
+          "required_action": {"type": "string", "minLength": 1, "maxLength": 1000}
+        }
+      }
+    },
+    "resolved_finding_ids": {
+      "type": "array",
+      "maxItems": 24,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_-]{1,31}$"}
+    },
+    "tools_used": {
+      "const": []
+    },
+    "network_tools_used": {"const": false},
+    "writes_performed": {"const": false},
+    "scope_frozen": {"const": true}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"verdict": {"const": "BLOCK"}}},
+      "then": {"properties": {"findings": {"minItems": 1}}}
+    },
+    {
+      "if": {"properties": {"verdict": {"const": "PASS"}}},
+      "then": {"properties": {"findings": {"maxItems": 0}}}
+    }
+  ]
+}

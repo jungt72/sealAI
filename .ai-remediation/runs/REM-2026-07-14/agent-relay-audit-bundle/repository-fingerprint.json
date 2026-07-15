@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "captured_at": "2026-07-14T23:29:38Z",
+  "source": "LOCAL_GIT_READ_ONLY",
+  "baseline_commit": "ea0d8bc2b0dd72f87b5fdedbb48c5d26ebc87704",
+  "branch": "remediation/agent-relay",
+  "baseline_worktree_clean": true,
+  "implementation_worktree_dirty_expected": true,
+  "worktree_path_recorded": false,
+  "remote_query_performed": false
+}

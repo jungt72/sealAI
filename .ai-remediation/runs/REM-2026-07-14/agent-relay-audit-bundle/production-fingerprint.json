@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "captured_at": "2026-07-14T11:35:38Z",
+  "host": "ubuntu-8gb-nbg1-1",
+  "repository": {
+    "path": "/home/thorsten/sealai",
+    "branch": "main",
+    "commit": "ab91faf4f3d3ed8fe61dbc9aedab02e966f40856",
+    "working_tree_clean": true
+  },
+  "runtime": {
+    "backend_image_digest": "sha256:1b332d2e9b61efc2de52e5ff63e5973f38b67dffd8fa39854d3eef712b62453a",
+    "backend_and_worker_digest_match": true,
+    "core_services_healthy": true,
+    "parallel_deployment_detected": false
+  },
+  "capacity": {
+    "root_filesystem_percent_used": 82,
+    "data_filesystem_percent_used": 95,
+    "data_filesystem_bytes_available": 5330395136,
+    "redis_used_memory_bytes": 1040601824,
+    "redis_maxmemory_bytes": 1073741824,
+    "redis_keys": 193992,
+    "redis_keys_with_expiry": 2,
+    "redis_policy": "noeviction"
+  },
+  "contains_secret_values": false
+}

@@ -1,0 +1,90 @@
+schema_version: 1
+contract_id: agent-relay-and-legacy-inventory
+run_id: REM-2026-07-14
+objective: >-
+  Add a fail-closed, read-only Claude contract and diff audit relay plus a
+  non-mutating legacy inventory classifier backed only by sanitized local input.
+repository:
+  expected_base_commit: ea0d8bc2b0dd72f87b5fdedbb48c5d26ebc87704
+  base_branch: remediation/p1-auth-cost-control
+  allowed_paths:
+    - .ai-remediation/schemas/agent-relay-*.schema.json
+    - .ai-remediation/schemas/legacy-inventory-*.schema.json
+    - .ai-remediation/runs/REM-2026-07-14/agent-relay-*
+    - .ai-remediation/runs/REM-2026-07-14/legacy-inventory-*
+    - .ai-remediation/current-state.json
+    - .ai-remediation/runs/REM-2026-07-14/evidence-manifest.json
+    - .gitignore
+    - docs/ops/agent-relay.md
+    - docs/ops/legacy-inventory.md
+    - ops/agent_relay.py
+    - ops/legacy_inventory.py
+    - ops/relay.sh
+    - ops/contracts/agent-relay-build-contract.yaml
+    - backend/tests/fixtures/legacy_inventory_*.json
+    - backend/tests/test_agent_relay.py
+    - backend/tests/test_legacy_inventory.py
+prerequisites:
+  release_freeze_respected: true
+  production_mutation_authorized: false
+  required_local_packages:
+    - p0-secret-hygiene
+    - p0-storage-safety
+    - p0-redis-stability
+    - p1-auth-cost-control
+claude_audits:
+  model: claude-sonnet-4-5-20250929
+  allowed_tools: []
+  disallowed_tools: ['*', Write, Edit, Bash, NotebookEdit, WebFetch, WebSearch]
+  max_turns: 6
+  max_budget_usd: 0.5
+  max_review_loops: 2
+  api_fallback_allowed: false
+limits:
+  max_changed_files: 40
+  max_diff_bytes: 1048576
+  max_input_bytes: 524288
+  max_test_seconds: 900
+  max_process_output_bytes: 524288
+deterministic_tests:
+  - name: relay-and-inventory-tests
+    argv:
+      - python3
+      - -m
+      - pytest
+      - -q
+      - backend/tests/test_agent_relay.py
+      - backend/tests/test_legacy_inventory.py
+  - name: relay-and-inventory-ruff
+    argv:
+      - python3
+      - -m
+      - ruff
+      - check
+      - ops/agent_relay.py
+      - ops/legacy_inventory.py
+      - backend/tests/test_agent_relay.py
+      - backend/tests/test_legacy_inventory.py
+migration_plan:
+  status: NOT_APPLICABLE
+  items:
+    - No database, vector-store, cache, or runtime data migration is part of this package.
+security_impact:
+  status: REQUIRED
+  items:
+    - Claude receives the bounded, secret-scanned bundle inline under safe mode with no local, browser, shell, or MCP tools exposed.
+    - All paths, symlinks, process arguments, outputs, baselines, and secret canaries fail closed.
+rollback_plan:
+  status: PLANNED
+  items:
+    - Revert the package commit; the tools perform no automatic rollback, cleanup, merge, or deployment.
+known_risks:
+  status: REQUIRED
+  items:
+    - Claude CLI installation and one-time subscription login remain manual external prerequisites.
+    - A production legacy inventory remains pending a separately authorized sanitized read-only collection.
+draft_pr:
+  title: "ops: add fail-closed agent relay and legacy inventory"
+  body_file: .ai-remediation/relay-runs/agent-relay-and-legacy-inventory/draft-pr.md
+  auto_merge: false
+  auto_deploy: false

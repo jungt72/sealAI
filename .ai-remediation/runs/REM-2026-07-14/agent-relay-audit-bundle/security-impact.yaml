@@ -1,0 +1,4 @@
+items:
+  - Claude receives the bounded, secret-scanned bundle inline under safe mode with no local, browser, shell, or MCP tools exposed.
+  - All paths, symlinks, process arguments, outputs, baselines, and secret canaries fail closed.
+status: REQUIRED

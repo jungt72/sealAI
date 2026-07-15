@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "recorded_at": "2026-07-15T00:18:04Z",
+  "package": "agent-relay",
+  "local_status": "IMPLEMENTED_NOT_DEPLOYED",
+  "baseline_commit": "ea0d8bc2b0dd72f87b5fdedbb48c5d26ebc87704",
+  "branch": "remediation/agent-relay",
+  "build_contract": {
+    "status": "JSON_SCHEMA_VALIDATED",
+    "path": "ops/contracts/agent-relay-build-contract.yaml"
+  },
+  "audit_bundle": {
+    "status": "SANITIZED_LOCAL_EVIDENCE",
+    "path": ".ai-remediation/runs/REM-2026-07-14/agent-relay-audit-bundle",
+    "required_files_present": true
+  },
+  "claude_cli": {
+    "status": "BLOCKED_EXTERNAL_NOT_INSTALLED",
+    "checked_by": "LOCAL_PATH_LOOKUP_ONLY",
+    "invoked": false,
+    "installation_attempted": false,
+    "login_attempted": false,
+    "manual_install_and_one_time_login_required": true
+  },
+  "claude_contract_audit": "NOT_RUN",
+  "claude_diff_audit": "NOT_RUN",
+  "draft_pr": "NOT_RUN",
+  "automatic_merge_performed": false,
+  "deployment_performed": false,
+  "provider_api_calls": 0,
+  "api_fallback_used": false,
+  "production_queries": 0,
+  "production_mutations": 0,
+  "tests": {
+    "focused_tests_status": "PASSED",
+    "focused_tests_passed": 26,
+    "ruff_check_status": "PASSED",
+    "ruff_format_status": "PASSED",
+    "bash_syntax_status": "PASSED",
+    "schema_validation_status": "PASSED"
+  }
+}

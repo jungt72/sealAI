@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "recorded_at": "2026-07-15T00:18:04Z",
+  "package": "legacy-inventory",
+  "local_status": "IMPLEMENTED_NOT_DEPLOYED",
+  "input_mode": "SANITIZED_LOCAL_FIXTURE_ONLY",
+  "synthetic_fixture": {
+    "status": "CLASSIFIED_AND_SCHEMA_VALIDATED",
+    "objects": 13,
+    "required_asset_types_covered": 13,
+    "classification_counts": {
+      "ACTIVE": 2,
+      "REQUIRED_FOR_ROLLBACK": 1,
+      "LEGACY_BUT_IN_USE": 2,
+      "ORPHANED": 5,
+      "SAFE_TO_ARCHIVE": 1,
+      "SAFE_TO_DELETE_AFTER_APPROVAL": 1,
+      "UNKNOWN": 1
+    }
+  },
+  "production_inventory": {
+    "status": "NOT_RUN",
+    "objects_collected": 0,
+    "sanitized_read_only_collection_requires_separate_approval": true
+  },
+  "daemon_queries": 0,
+  "vps_queries": 0,
+  "production_queries": 0,
+  "production_mutations": 0,
+  "archive_actions": 0,
+  "delete_actions": 0,
+  "mutation_interfaces_present": false,
+  "tests": {
+    "focused_tests_status": "PASSED",
+    "included_in_focused_test_count": 26,
+    "ruff_check_status": "PASSED",
+    "schema_validation_status": "PASSED"
+  }
+}

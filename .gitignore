@@ -197,3 +197,9 @@ id_ed25519*
 # Commit only the sanitized evidence policy/README, never raw run evidence.
 .ai-remediation/runs/*/evidence/*
 !.ai-remediation/runs/*/evidence/README.md
+
+# Local relay bundles may contain bounded diffs and reviewer metadata. A
+# deliberately sanitized final audit bundle is versioned separately per run.
+.ai-remediation/relay-runs/
+.ai-remediation/local-contracts/
+.ai-remediation/legacy-inventory/

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-07-15T00:18:04Z",
+  "status": "PASS",
+  "raw_output_persisted": false,
+  "dependency_installation_performed": true,
+  "dependency_runtime": "Dedicated ignored Python 3.11 virtualenv with repository-pinned PyYAML 6.0.3, jsonschema 4.10.3, pytest 8.4.2, and Ruff 0.6.9; no production credential or runtime was used.",
+  "provider_calls": 0,
+  "production_queries": 0,
+  "production_mutations": 0,
+  "implementation_diff_scope": {
+    "changed_files_total": 27,
+    "source_and_status_files_in_diff": 17,
+    "self_referential_audit_bundle_files_excluded_from_diff": 10
+  },
+  "commands": [
+    {
+      "name": "focused-pytest",
+      "status": "PASS",
+      "passed": 26,
+      "failed": 0,
+      "scope": [
+        "backend/tests/test_agent_relay.py",
+        "backend/tests/test_legacy_inventory.py"
+      ]
+    },
+    {
+      "name": "ruff-check",
+      "status": "PASS",
+      "files": 4
+    },
+    {
+      "name": "ruff-format-check",
+      "status": "PASS",
+      "files": 4
+    },
+    {
+      "name": "bash-syntax",
+      "status": "PASS",
+      "file": "ops/relay.sh"
+    },
+    {
+      "name": "python-compile",
+      "status": "PASS",
+      "files": 2
+    },
+    {
+      "name": "json-and-yaml-schema-validation",
+      "status": "PASS",
+      "schemas": 5
+    },
+    {
+      "name": "worktree-secret-scan",
+      "status": "PASS",
+      "scanner": "ops/check-secret-hygiene.py"
+    },
+    {
+      "name": "git-diff-check",
+      "status": "PASS"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+items:
+  - Claude CLI installation and one-time subscription login remain manual external prerequisites.
+  - A production legacy inventory remains pending a separately authorized sanitized read-only collection.
+status: REQUIRED
