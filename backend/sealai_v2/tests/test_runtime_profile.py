@@ -34,6 +34,13 @@ def test_behavior_change_changes_hash_but_operational_change_does_not():
     assert runtime_profile_hash(Settings(outbox_batch_size=5)) == baseline
 
 
+def test_semantic_router_model_and_activation_are_release_bound():
+    baseline = runtime_profile_hash(Settings())
+
+    assert runtime_profile_hash(Settings(semantic_router_enabled=True)) != baseline
+    assert runtime_profile_hash(Settings(router_model="another-router")) != baseline
+
+
 def test_equivalent_provider_override_is_normalized():
     implicit = runtime_profile_hash(Settings(provider="openai", l1_provider=None))
     explicit = runtime_profile_hash(Settings(provider="openai", l1_provider="openai"))

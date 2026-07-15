@@ -42,6 +42,7 @@ from sealai_v2.orchestration.answer_cache import (
     exact_answer_key,
 )
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
+from sealai_v2.pipeline.semantic_router import SemanticRouter
 from sealai_v2.pipeline.adaptive_interview import (
     AdaptiveInterviewEvaluation,
     AdaptiveInterviewService,
@@ -627,6 +628,8 @@ class Pipeline:
     # material_comparison/rfq_manufacturer_brief -- those always force the full pipeline.
     route_optimization_enabled: bool = False
     route_telemetry_sink: "RouteTelemetrySink | None" = None
+    semantic_router_enabled: bool = False
+    semantic_router: SemanticRouter | None = None
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
     # smalltalk_navigation prompt family. None (default) -> nothing to branch to, so
     # route_prompt_families_enabled being True with no generator wired is still a safe no-op
@@ -843,31 +846,43 @@ class Pipeline:
             # are not re-injected into the one-shot production prompt.
             durable_context = []
             conversation_window = []
-        policy_route_decision = (
-            classify_route_deterministic(
+        case_active = bool(
+            case_state_v2.fields
+            or case_state_v2.open_conflicts
+            or case_state_v2.required_missing
+        )
+        policy_route_decision = None
+        if self.execution_policy_enabled:
+            policy_route_decision = classify_route_deterministic(
                 knowledge_question,
-                case_state_nonempty=bool(
-                    case_state_v2.fields
-                    or case_state_v2.open_conflicts
-                    or case_state_v2.required_missing
-                ),
+                case_state_nonempty=case_active,
                 decode_result=decode_result,
                 diagnosis=diagnosis,
                 gegencheck_verdict=gegencheck_verdict,
                 material_terms=self.knowledge_material_terms,
             )
-            if self.execution_policy_enabled
-            else None
-        )
+            # Known engineering signals and validated fast paths remain deterministic. The model
+            # is consulted only where the current router would otherwise emit the generic
+            # ambiguity response. Any model failure returns this exact fallback decision.
+            if (
+                self.semantic_router_enabled
+                and self.semantic_router is not None
+                and policy_route_decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+                and policy_route_decision.deterministic_signal_count == 0
+                and not risk_flags
+                and not untrusted
+            ):
+                with _staged(timer, progress, "route_ms", "route"):
+                    policy_route_decision = await self.semantic_router.classify(
+                        knowledge_question,
+                        fallback=policy_route_decision,
+                        case_active=case_active,
+                    )
         activation_route_decision = (
             policy_route_decision
             or classify_route_deterministic(
                 knowledge_question,
-                case_state_nonempty=bool(
-                    case_state_v2.fields
-                    or case_state_v2.open_conflicts
-                    or case_state_v2.required_missing
-                ),
+                case_state_nonempty=case_active,
                 decode_result=decode_result,
                 diagnosis=diagnosis,
                 gegencheck_verdict=gegencheck_verdict,
@@ -2208,6 +2223,9 @@ def build_pipeline(
     l1_client = resolve(settings.l1_provider or settings.provider)
     verifier_client = resolve(settings.verifier_provider or settings.provider)
     helper_client = resolve(settings.helper_provider or settings.provider)
+    router_client = (
+        resolve(settings.router_provider) if settings.semantic_router_enabled else None
+    )
     standard_client = (
         resolve(settings.standard_provider)
         if settings.execution_policy_enabled
@@ -2240,6 +2258,20 @@ def build_pipeline(
         cache_key="sealai-v2-helper",
         stage="helper",
     )
+    semantic_router = None
+    if router_client is not None:
+        semantic_router = SemanticRouter(
+            router_client,
+            ModelConfig(
+                model=settings.router_model,
+                temperature=settings.router_temperature,
+                max_output_tokens=settings.router_max_output_tokens,
+                cache_key="sealai-v2-semantic-router-v1",
+                stage="semantic-router",
+            ),
+            confidence_threshold=settings.router_confidence_threshold,
+            timeout_s=settings.router_timeout_s,
+        )
     generator = L1Generator(
         l1_client,
         assembler,
@@ -2504,6 +2536,8 @@ def build_pipeline(
         authoritative_knowledge_required=True,
         wissensstand=wissensstand,
         route_optimization_enabled=settings.route_optimization_enabled,
+        semantic_router_enabled=settings.semantic_router_enabled,
+        semantic_router=semantic_router,
         route_telemetry_sink=(
             LoggingRouteTelemetrySink()
             if settings.route_optimization_enabled or settings.execution_policy_enabled

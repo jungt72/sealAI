@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     helper_provider: str | None = (
         None  # backs BOTH understand + distill (one helper knob)
     )
+    # Bounded semantic router for natural-language turns that the deterministic fast paths cannot
+    # classify. It has its own role so routing cost/latency can evolve independently from answer
+    # generation and extraction helpers.
+    router_provider: str = "mistral"
     judge_provider: str | None = (
         None  # eval-only; the matrix holds the judge fixed at baseline
     )
@@ -55,12 +59,17 @@ class Settings(BaseSettings):
     helper_model: str = (
         "gpt-5.4-mini"  # soft `understand` intent — cheap, annotate-only
     )
+    router_model: str = "ministral-8b-2512"
     # L3 verifier (M2): strong-frontier, same as L1 for the FIRST measured L3 (owner decision #1);
     # model is config so a cross-vendor swap is a thin adapter + a config flip, no core change.
     verifier_model: str = "gpt-5.4-mini"
     l1_temperature: float | None = None  # None → omit (max model-family compatibility)
     judge_temperature: float | None = 0.0
     helper_temperature: float | None = 0.0
+    router_temperature: float | None = 0.0
+    router_max_output_tokens: int = 96
+    router_confidence_threshold: float = 0.9
+    router_timeout_s: float = 4.0
     verifier_temperature: float | None = (
         None  # None → omit (model-family compatibility)
     )
@@ -199,6 +208,9 @@ class Settings(BaseSettings):
     # -- both routes stay L3=True). When skipped, the EXISTING deterministic run_parametric_guard
     # fallback (already used when the verifier is disabled) still runs -- no new guard invented.
     route_optimization_enabled: bool = False
+    # Hybrid routing: deterministic engineering guards and known fast paths remain authoritative;
+    # only otherwise-unclassified free language is sent to the bounded semantic classifier.
+    semantic_router_enabled: bool = False
     # Deterministic-first one-shot D1/S0/S1/C1/C2/H1 policy. While false, the
     # legacy single-generator + broad L3 behavior remains available for replay.
     execution_policy_enabled: bool = False
@@ -230,6 +242,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_product_mode_dependencies(self) -> "Settings":
+        if not 0.0 <= self.router_confidence_threshold <= 1.0:
+            raise ValueError("router_confidence_threshold must be between 0 and 1")
+        if self.router_max_output_tokens < 32:
+            raise ValueError("router_max_output_tokens must be at least 32")
+        if self.router_timeout_s <= 0:
+            raise ValueError("router_timeout_s must be positive")
         if (
             self.adaptive_interview_enabled or self.adaptive_interview_shadow_enabled
         ) and not self.adaptive_interview_pack_rwdr_enabled:
