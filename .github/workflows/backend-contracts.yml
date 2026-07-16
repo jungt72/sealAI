@@ -73,6 +73,6 @@ jobs:
 
       - name: Validate Stage-A synthetic root without skip
         run: |
-          python -m pytest \
+          sudo "$(command -v python)" -m pytest \
             backend/tests/test_gate08_stage_a_recovery.py::test_ubuntu_toolchain_verifies_the_synthetic_root \
             --noconftest -q
