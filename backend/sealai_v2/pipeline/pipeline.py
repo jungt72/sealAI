@@ -73,6 +73,7 @@ from sealai_v2.core.contracts import (
     DerivedFact,
     Flags,
     LlmClient,
+    MaterialConstraintResult,
     ModelConfig,
     PipelineResult,
     RetrievalResult,
@@ -543,6 +544,9 @@ class Pipeline:
     matrix: object | None = (
         None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
+    # MAT-GOV-01 canonical result exposure. Default-OFF; the historical
+    # Gegencheck computation and response are unchanged while disabled.
+    material_constraints_enabled: bool = False
     versagensmodi: object | None = None  # Dim. 5 Versagensmodi store (Modus D Diagnose)
     partner_registry: object | None = (
         None  # Dim. 6 Hersteller-Partner pool (Modus F — PartnerRegistry; payment ≠ ranking)
@@ -783,6 +787,11 @@ class Pipeline:
         # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
         # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
         # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
+        material_constraint_result: MaterialConstraintResult | None = None
+        if self.material_constraints_enabled:
+            material_constraint_result = stages.material_constraints(
+                self.matrix, case, tenant_id=scope.tenant_id
+            )
         gegencheck_verdict = stages.gegencheck(
             self.matrix, case, tenant_id=scope.tenant_id
         )
@@ -1920,6 +1929,8 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
+            material_constraints=material_constraint_result,
+            material_constraints_enabled=self.material_constraints_enabled,
             coverage=coverage,
             contract=contract,
             guard=guard,
@@ -2597,6 +2608,7 @@ def build_pipeline(
         catalog=catalog,
         retriever=retriever,
         matrix=matrix,
+        material_constraints_enabled=settings.material_constraints_enabled,
         versagensmodi=versagensmodi,
         partner_registry=partner_registry,
         engine=engine,

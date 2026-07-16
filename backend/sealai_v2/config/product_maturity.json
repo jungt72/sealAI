@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "ssot_version": "2.0",
-  "updated_at": "2026-07-14",
+  "updated_at": "2026-07-16",
   "status_values": [
     "verified_available",
     "beta",
@@ -39,6 +39,20 @@
     "lifecycle": {"horizon": "H5", "status": "planned", "activation_gate": "G8"}
   },
   "capabilities": {
+    "material_constraints": {
+      "horizon": "H3",
+      "status": "in_build",
+      "implementation_status": "contract_only_default_off",
+      "contract_version": "MAT-GOV-01",
+      "activation_gate": "G8",
+      "activation_blockers": [
+        "MAT-GOV-02",
+        "MAT-GOV-03",
+        "material_rule_evidence",
+        "owner_activation"
+      ],
+      "scope_limit": "no_executable_material_rules"
+    },
     "adaptive_interview_rwdr": {
       "horizon": "H2",
       "status": "pilot",

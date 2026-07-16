@@ -87,3 +87,21 @@ must remain cost-neutral, tenant-scoped, pack-versioned, and reversible through
 the documented flags. This decision does not activate another seal type, raise
 the maturity of H2 as a whole, authorize technical release, or waive future
 final-release evidence outside this bounded cutover.
+
+## ODR-11: Material-constraint governance boundary
+
+Decision: on 2026-07-16 the owner authorized MAT-GOV-01 as a default-off typed
+contract only. The existing verdict values remain canonical; `bedingt` remains
+opaque and every applicable condition remains bound by stable rule reference.
+Multiple media with an unresolved relationship fail closed. Internally
+attested cells cannot create a positive compatibility statement, and
+`matrix_compatible` means only that no documented incompatibility was found.
+It cannot alone create `COVERED_RECOMMENDATION`. Conflicts and hard gates always
+precede `unobtainable`.
+
+Consequence: MAT-GOV-02 owns scope, null, unknown, unresolved-relation and
+precedence invariants. MAT-GOV-03 owns ruleset persistence, activation,
+rollback, and snapshot pinning. Produktspec remains default-off and is not
+automatically migrated. Unreviewed LLM material tendencies cannot become
+canonical or positive material statements. Executable RWDR thermal calculation
+remains NO-GO. No material-rule activation follows from MAT-GOV-01.

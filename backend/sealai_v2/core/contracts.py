@@ -324,6 +324,320 @@ class Retriever(Protocol):
     ) -> "RetrievalResult": ...
 
 
+class MaterialConstraintVerdict(str, Enum):
+    """The one canonical material-compatibility verdict vocabulary.
+
+    These values are the existing §4 matrix values.  They are intentionally not
+    translated into a second taxonomy: consumers distinguish resolution,
+    relation, and evaluation through their separate state axes.
+    """
+
+    VERTRAEGLICH = "vertraeglich"
+    UNVERTRAEGLICH = "unvertraeglich"
+    BEDINGT = "bedingt"
+
+
+MATRIX_VERDICTS = tuple(verdict.value for verdict in MaterialConstraintVerdict)
+# Backward-compatible private alias used by existing tests/importers.
+_MATRIX_VERDICTS = MATRIX_VERDICTS
+
+
+class InputResolutionState(str, Enum):
+    """Whether one material-constraint input has a canonical identity."""
+
+    KNOWN = "known"
+    MISSING = "missing"
+    UNKNOWN = "unknown"
+    AMBIGUOUS = "ambiguous"
+
+
+class RelationState(str, Enum):
+    """Resolution of the relationship between relevant medium components."""
+
+    UNDETERMINED = "undetermined"
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class MediumCardinality(str, Enum):
+    """Structurally established count of relevant contact media."""
+
+    NONE = "none"
+    SINGLE = "single"
+    MULTIPLE = "multiple"
+    UNKNOWN = "unknown"
+
+
+class EvaluationState(str, Enum):
+    """Outcome of attempting the material-constraint evaluation."""
+
+    EVALUATED = "evaluated"
+    BLOCKED = "blocked"
+    NO_RULE_DATA = "no_rule_data"
+
+
+def _validate_material_input(
+    name: str, value: str, state: InputResolutionState
+) -> None:
+    present = bool(value.strip())
+    if state is InputResolutionState.MISSING:
+        if present:
+            raise ValueError(f"{name} marked missing must not carry a value")
+        return
+    if not present:
+        raise ValueError(f"{name} state {state.value} requires the observed input")
+
+
+def _validate_medium_relation(
+    medium_state: InputResolutionState,
+    medium_cardinality: MediumCardinality,
+    relation_state: RelationState,
+) -> None:
+    allowed = {
+        InputResolutionState.MISSING: {
+            (MediumCardinality.NONE, RelationState.UNDETERMINED)
+        },
+        InputResolutionState.UNKNOWN: {
+            (MediumCardinality.UNKNOWN, RelationState.UNDETERMINED)
+        },
+        InputResolutionState.AMBIGUOUS: {
+            (MediumCardinality.UNKNOWN, RelationState.UNDETERMINED)
+        },
+        InputResolutionState.KNOWN: {
+            (MediumCardinality.SINGLE, RelationState.NOT_APPLICABLE),
+            (MediumCardinality.MULTIPLE, RelationState.UNRESOLVED),
+            (MediumCardinality.MULTIPLE, RelationState.RESOLVED),
+        },
+    }
+    if (medium_cardinality, relation_state) not in allowed[medium_state]:
+        raise ValueError(
+            "invalid medium_state, medium_cardinality, and relation_state combination"
+        )
+
+
+@dataclass(frozen=True)
+class MaterialConstraintQuery:
+    """Typed input boundary for material-constraint evaluation.
+
+    Material and medium resolution are independent from their relationship.
+    Empty strings are therefore never interpreted as wildcard scope by the
+    canonical evaluator.
+    """
+
+    material: str
+    medium: str
+    material_state: InputResolutionState
+    medium_state: InputResolutionState
+    medium_cardinality: MediumCardinality
+    relation_state: RelationState
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.material_state, InputResolutionState):
+            raise TypeError("material_state must be InputResolutionState")
+        if not isinstance(self.medium_state, InputResolutionState):
+            raise TypeError("medium_state must be InputResolutionState")
+        if not isinstance(self.medium_cardinality, MediumCardinality):
+            raise TypeError("medium_cardinality must be MediumCardinality")
+        if not isinstance(self.relation_state, RelationState):
+            raise TypeError("relation_state must be RelationState")
+        _validate_material_input("material", self.material, self.material_state)
+        _validate_material_input("medium", self.medium, self.medium_state)
+        _validate_medium_relation(
+            self.medium_state, self.medium_cardinality, self.relation_state
+        )
+
+    @property
+    def evaluable(self) -> bool:
+        return (
+            self.material_state is InputResolutionState.KNOWN
+            and self.medium_state is InputResolutionState.KNOWN
+            and self.medium_cardinality is MediumCardinality.SINGLE
+            and self.relation_state is RelationState.NOT_APPLICABLE
+        )
+
+
+@dataclass(frozen=True)
+class MaterialConstraintMatch:
+    """One applicable matrix rule, bound to its stable cell reference."""
+
+    rule_ref: str
+    verdict: MaterialConstraintVerdict
+    statement: str
+    source_ref: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.verdict, MaterialConstraintVerdict):
+            raise TypeError("match verdict must be MaterialConstraintVerdict")
+        if not self.rule_ref.strip():
+            raise ValueError("material-constraint match requires a stable rule_ref")
+        if not self.statement.strip():
+            raise ValueError("material-constraint match requires a rule statement")
+        if not self.source_ref.strip():
+            raise ValueError("material-constraint match requires a neutral source_ref")
+        if self.source_ref != f"matrix-cell:{self.rule_ref}":
+            raise ValueError("source_ref must equal matrix-cell:<rule_ref>")
+
+    @property
+    def evidence_binding_state(self) -> str:
+        """MAT-EVID-01 has not bound this neutral rule reference to evidence."""
+
+        return "unbound"
+
+    def to_dict(self) -> dict:
+        return {
+            "rule_ref": self.rule_ref,
+            "verdict": self.verdict.value,
+            "statement": self.statement,
+            "source_ref": self.source_ref,
+            "evidence_binding_state": self.evidence_binding_state,
+        }
+
+
+_MATERIAL_VERDICT_PRECEDENCE = {
+    MaterialConstraintVerdict.UNVERTRAEGLICH: 0,
+    MaterialConstraintVerdict.BEDINGT: 1,
+    MaterialConstraintVerdict.VERTRAEGLICH: 2,
+}
+
+
+def material_constraint_match_sort_key(
+    match: MaterialConstraintMatch,
+) -> tuple[int, str, str, str]:
+    """Stable serialized order for every canonical material-rule match."""
+
+    return (
+        _MATERIAL_VERDICT_PRECEDENCE[match.verdict],
+        match.rule_ref,
+        match.statement,
+        match.source_ref,
+    )
+
+
+@dataclass(frozen=True)
+class MaterialConstraintResult:
+    """Canonical, disqualify-only result for one material-constraint evaluation.
+
+    ``verdict`` is populated only for ``EVALUATED``.  Orthogonal input,
+    relation, and evaluation states make the absence of a verdict unambiguous.
+    Every applicable ``bedingt`` match remains available through ``conditions``
+    even if an incompatible rule wins the overall precedence.
+    """
+
+    material_state: InputResolutionState
+    medium_state: InputResolutionState
+    medium_cardinality: MediumCardinality
+    relation_state: RelationState
+    evaluation_state: EvaluationState
+    verdict: MaterialConstraintVerdict | None = None
+    matches: tuple[MaterialConstraintMatch, ...] = ()
+    decisive_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.material_state, InputResolutionState):
+            raise TypeError("material_state must be InputResolutionState")
+        if not isinstance(self.medium_state, InputResolutionState):
+            raise TypeError("medium_state must be InputResolutionState")
+        if not isinstance(self.medium_cardinality, MediumCardinality):
+            raise TypeError("medium_cardinality must be MediumCardinality")
+        if not isinstance(self.relation_state, RelationState):
+            raise TypeError("relation_state must be RelationState")
+        if not isinstance(self.evaluation_state, EvaluationState):
+            raise TypeError("evaluation_state must be EvaluationState")
+        if self.verdict is not None and not isinstance(
+            self.verdict, MaterialConstraintVerdict
+        ):
+            raise TypeError("result verdict must be MaterialConstraintVerdict")
+        _validate_medium_relation(
+            self.medium_state, self.medium_cardinality, self.relation_state
+        )
+        inputs_evaluable = (
+            self.material_state is InputResolutionState.KNOWN
+            and self.medium_state is InputResolutionState.KNOWN
+            and self.medium_cardinality is MediumCardinality.SINGLE
+            and self.relation_state is RelationState.NOT_APPLICABLE
+        )
+        if self.evaluation_state is EvaluationState.EVALUATED:
+            if not inputs_evaluable:
+                raise ValueError("evaluated result requires evaluable input states")
+            if self.verdict is None or not self.matches or self.decisive_ref is None:
+                raise ValueError(
+                    "evaluated material-constraint result requires verdict, matches, and decisive_ref"
+                )
+            if self.decisive_ref not in {match.rule_ref for match in self.matches}:
+                raise ValueError("decisive_ref must identify an applicable match")
+            if len({match.rule_ref for match in self.matches}) != len(self.matches):
+                raise ValueError(
+                    "material-constraint matches require unique rule_ref values"
+                )
+            if self.matches != tuple(
+                sorted(self.matches, key=material_constraint_match_sort_key)
+            ):
+                raise ValueError("material-constraint matches must use canonical order")
+            if self.verdict is not self.matches[0].verdict:
+                raise ValueError(
+                    "result verdict must match the strongest canonical match"
+                )
+            if self.decisive_ref != self.matches[0].rule_ref:
+                raise ValueError("decisive_ref must identify the first canonical match")
+            return
+        if (
+            self.evaluation_state is EvaluationState.NO_RULE_DATA
+            and not inputs_evaluable
+        ):
+            raise ValueError("no_rule_data requires otherwise evaluable inputs")
+        if self.evaluation_state is EvaluationState.BLOCKED and inputs_evaluable:
+            raise ValueError(
+                "blocked result requires unresolved input or relation state"
+            )
+        if self.verdict is not None or self.matches or self.decisive_ref is not None:
+            raise ValueError(
+                "non-evaluated material-constraint result cannot carry verdict or rule matches"
+            )
+
+    @property
+    def conditions(self) -> tuple[MaterialConstraintMatch, ...]:
+        """All simultaneously applicable opaque ``bedingt`` rules."""
+
+        return tuple(
+            match
+            for match in self.matches
+            if match.verdict is MaterialConstraintVerdict.BEDINGT
+        )
+
+    @property
+    def disqualified(self) -> bool:
+        return self.verdict is MaterialConstraintVerdict.UNVERTRAEGLICH
+
+    @property
+    def requires_resolution(self) -> bool:
+        return self.evaluation_state is not EvaluationState.EVALUATED or bool(
+            self.conditions
+        )
+
+    @property
+    def positive_statement_allowed(self) -> bool:
+        return False
+
+    def to_dict(self) -> dict:
+        payload = {
+            "material_state": self.material_state.value,
+            "medium_state": self.medium_state.value,
+            "medium_cardinality": self.medium_cardinality.value,
+            "relation_state": self.relation_state.value,
+            "evaluation_state": self.evaluation_state.value,
+            "disqualified": self.disqualified,
+            "requires_resolution": self.requires_resolution,
+            "positive_statement_allowed": self.positive_statement_allowed,
+            "conditions": [condition.to_dict() for condition in self.conditions],
+        }
+        if self.verdict is not None:
+            payload["verdict"] = self.verdict.value
+            payload["decisive_ref"] = self.decisive_ref
+            payload["matches"] = [match.to_dict() for match in self.matches]
+        return payload
+
+
 @dataclass(frozen=True)
 class MatrixCell:
     """One cell of the §4 Verträglichkeitsmatrix (build-spec §4: "relational, abfragbar — Medium ×
@@ -341,7 +655,7 @@ class MatrixCell:
     werkstoff: str  # one canonical material
     medium: str  # canonical medium, or "" for mechanical-condition cells
     bedingung: str  # qualitative condition tag, or ""
-    bewertung: str  # "vertraeglich" | "unvertraeglich" | "bedingt"
+    bewertung: MaterialConstraintVerdict
     begruendung: (
         str  # the grounded verdict text (faithful restatement of the reviewed source)
     )
@@ -351,11 +665,12 @@ class MatrixCell:
     ]  # reviewed source id(s): trap-correct:… / owner:… / eval:… / FK-…
     sources: tuple[str, ...] = ()  # primary citations (norm/datasheet), if any
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.bewertung, MaterialConstraintVerdict):
+            raise TypeError("MatrixCell.bewertung must be MaterialConstraintVerdict")
+
     def quelle(self) -> str:
         return f"Verträglichkeitsmatrix · {self.id} (reviewed; {', '.join(self.provenance)})"
-
-
-_MATRIX_VERDICTS = ("vertraeglich", "unvertraeglich", "bedingt")
 
 
 @runtime_checkable
@@ -820,6 +1135,11 @@ class PipelineResult:
     # material + medium). Backend owns the verdict; never affirms suitability (E4-1). A
     # render/serializer surface only - never injected into L1/L3 (the prompt stays unchanged).
     gegencheck: dict | None = None
+    # MAT-GOV-01 canonical result. Additive and default-off: the legacy Gegencheck
+    # projection above remains the public compatibility field until separately
+    # activated. The serializer omits this key entirely while the flag is off.
+    material_constraints: MaterialConstraintResult | None = None
+    material_constraints_enabled: bool = False
     # V2.2 INC-COVERAGE-GATE (§4): the deterministic case-level coverage_status (IN/PARTIAL/ANALOG/OUT)
     # + per-axis grounding, or None when the gate is OFF. Kernel-owned (I-COV-1); a render/serializer
     # surface that (once coupled, §5) BOUNDS the allowed L1 mode — the LLM never sets it.

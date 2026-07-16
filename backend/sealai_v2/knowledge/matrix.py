@@ -26,9 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sealai_v2.core.contracts import (
-    _MATRIX_VERDICTS,
+    MATRIX_VERDICTS,
     GroundingFact,
     MatrixCell,
+    MaterialConstraintVerdict,
 )
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.security.tenant import TenantContext, require_tenant
@@ -113,9 +114,13 @@ def _cell(raw: dict) -> MatrixCell:
     werkstoff = str(raw.get("werkstoff", "")).strip()
     if not werkstoff:
         raise ValueError(f"{cid}: werkstoff is mandatory")
-    bewertung = str(raw.get("bewertung", "")).strip()
-    if bewertung not in _MATRIX_VERDICTS:
-        raise ValueError(f"{cid}: bewertung {bewertung!r} not in {_MATRIX_VERDICTS}")
+    raw_bewertung = str(raw.get("bewertung", "")).strip()
+    try:
+        bewertung = MaterialConstraintVerdict(raw_bewertung)
+    except ValueError as exc:
+        raise ValueError(
+            f"{cid}: bewertung {raw_bewertung!r} not in {MATRIX_VERDICTS}"
+        ) from exc
     begruendung = str(raw.get("begruendung", "")).strip()
     if not begruendung:
         raise ValueError(f"{cid}: begruendung (grounded verdict text) is mandatory")

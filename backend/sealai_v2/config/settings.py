@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     # Compatibility verdicts are technical claims. The legacy matrix remains
     # inactive until every cell has typed source evidence and applicability.
     compatibility_matrix_enabled: bool = False
+    # MAT-GOV-01 typed material-constraint result. Default-OFF and additive: while
+    # disabled the pipeline emits only the historical Gegencheck field and the
+    # serialized response remains key-for-key unchanged.
+    material_constraints_enabled: bool = False
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
@@ -248,6 +252,10 @@ class Settings(BaseSettings):
             raise ValueError("router_max_output_tokens must be at least 32")
         if self.router_timeout_s <= 0:
             raise ValueError("router_timeout_s must be positive")
+        if self.material_constraints_enabled and not self.compatibility_matrix_enabled:
+            raise ValueError(
+                "material_constraints_enabled requires compatibility_matrix_enabled"
+            )
         if (
             self.adaptive_interview_enabled or self.adaptive_interview_shadow_enabled
         ) and not self.adaptive_interview_pack_rwdr_enabled:
