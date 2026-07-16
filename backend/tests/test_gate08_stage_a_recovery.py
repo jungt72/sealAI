@@ -562,12 +562,6 @@ def test_validate_live_partial_state_never_reads_timer_pid_fields(
         }
 
     def command(arguments):
-        if arguments[:3] == ("/usr/bin/git", "-C", str(repository)):
-            return (
-                recovery.PRODUCTION_SHA
-                if arguments[-2:] == ("rev-parse", "HEAD")
-                else ""
-            )
         if arguments[:2] == ("/usr/bin/docker", "info"):
             return approval["production"]["docker_root_dir"]
         if arguments[:2] == ("/usr/bin/docker", "inspect"):
@@ -587,6 +581,9 @@ def test_validate_live_partial_state_never_reads_timer_pid_fields(
             )
         pytest.fail(f"unexpected command: {arguments}")
 
+    def production_git(*arguments):
+        return recovery.PRODUCTION_SHA if arguments == ("rev-parse", "HEAD") else ""
+
     def process(arguments, **_kwargs):
         if arguments[0] == "/usr/bin/crontab":
             return SimpleNamespace(
@@ -597,6 +594,7 @@ def test_validate_live_partial_state_never_reads_timer_pid_fields(
 
     monkeypatch.setattr(recovery, "_unit_state", unit_state)
     monkeypatch.setattr(recovery, "_command", command)
+    monkeypatch.setattr(recovery, "_production_git", production_git)
     monkeypatch.setattr(recovery, "_read_regular", lambda *_args, **_kwargs: fragment)
     monkeypatch.setattr(
         recovery, "validate_target_preconditions", lambda _targets: None
@@ -643,6 +641,156 @@ def test_observed_production_service_with_zero_pids_is_accepted():
         recovery.LEGACY_SERVICE, command_runner=lambda _arguments: output
     )
     assert state["main_pid"] == state["control_pid"] == 0
+
+
+@pytest.mark.parametrize(
+    "arguments", [("rev-parse", "HEAD"), ("status", "--porcelain=v1")]
+)
+def test_production_git_uses_exact_safe_directory_and_environment(arguments):
+    captured = {}
+
+    def runner(command, **kwargs):
+        captured.update(command=command, **kwargs)
+        return SimpleNamespace(returncode=0, stdout="clean\n", stderr="")
+
+    assert recovery._production_git(*arguments, command_runner=runner) == "clean"
+    assert captured["command"] == [
+        "/usr/bin/git",
+        "-c",
+        f"safe.directory={recovery.PRODUCTION_REPOSITORY}",
+        "-C",
+        str(recovery.PRODUCTION_REPOSITORY),
+        *arguments,
+    ]
+    assert captured["env"] == recovery.PRODUCTION_GIT_ENV
+    assert captured["env"]["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert captured["env"]["GIT_CONFIG_GLOBAL"] == "/dev/null"
+    assert captured["env"]["GIT_OPTIONAL_LOCKS"] == "0"
+    assert not {"SUDO_UID", "SUDO_GID", "SUDO_USER"} & set(captured["env"])
+    assert "safe.directory=*" not in captured["command"]
+    assert captured["check"] is False and captured["capture_output"] is True
+
+
+def test_production_git_rejects_nonzero_and_unapproved_operation():
+    def denied(_command, **_kwargs):
+        return SimpleNamespace(
+            returncode=128,
+            stdout="untrusted stdout",
+            stderr="sensitive repository detail",
+        )
+
+    with pytest.raises(recovery.RecoveryError, match="Git check failed") as error:
+        recovery._production_git("rev-parse", "HEAD", command_runner=denied)
+    assert "sensitive repository detail" not in str(error.value)
+    assert "untrusted stdout" not in str(error.value)
+    with pytest.raises(recovery.RecoveryError, match="unsupported"):
+        recovery._production_git("config", "--global")
+
+
+def test_production_git_removes_only_trailing_newlines_from_stdout():
+    def runner(_command, **_kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=" leading and trailing spaces  \n\n",
+            stderr="ignored stderr",
+        )
+
+    assert (
+        recovery._production_git("rev-parse", "HEAD", command_runner=runner)
+        == " leading and trailing spaces  "
+    )
+
+
+@pytest.mark.parametrize(
+    ("head", "status", "message"),
+    [
+        ("wrong", "", "commit drift"),
+        (recovery.PRODUCTION_SHA, "dirty", "worktree drift"),
+    ],
+)
+def test_production_git_state_remains_fail_closed(
+    monkeypatch: pytest.MonkeyPatch, head: str, status: str, message: str
+):
+    def production_git(*arguments):
+        return head if arguments == ("rev-parse", "HEAD") else status
+
+    monkeypatch.setattr(recovery, "_production_git", production_git)
+    with pytest.raises(recovery.RecoveryError, match=message):
+        recovery._validate_production_git_state()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or os.geteuid() != 0,
+    reason="exact root/UID-1000 Git trust regression runs in Ubuntu CI",
+)
+def test_ubuntu_root_exact_safe_directory_regression():
+    repository = Path("/home/thorsten/sealai")
+    foreign = Path("/home/thorsten/foreign-repository")
+    root_config = Path("/root/.gitconfig")
+    assert not repository.exists() and not foreign.exists()
+    root_config_before = root_config.read_bytes() if root_config.exists() else None
+    try:
+        for path in (repository, foreign):
+            path.mkdir(parents=True)
+            subprocess.run(["/usr/bin/git", "init", "-q", str(path)], check=True)
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(path), "config", "user.email", "ci@invalid"],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(path), "config", "user.name", "CI"],
+                check=True,
+            )
+            (path / "bound.txt").write_text("bound\n", encoding="utf-8")
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(path), "add", "bound.txt"], check=True
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(path), "commit", "-qm", "bound"], check=True
+            )
+            for item in [path, *path.rglob("*")]:
+                os.chown(item, 1000, 1000, follow_symlinks=False)
+        repository_bytes_before = {
+            item.relative_to(repository): item.read_bytes()
+            for item in repository.rglob("*")
+            if item.is_file() and not item.is_symlink()
+        }
+        config_before = (repository / ".git/config").read_bytes()
+        content_before = (repository / "bound.txt").read_bytes()
+        denied = subprocess.run(
+            ["/usr/bin/git", "-C", str(repository), "rev-parse", "HEAD"],
+            env=recovery.PRODUCTION_GIT_ENV,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert denied.returncode != 0 and "dubious ownership" in denied.stderr
+        head = recovery._production_git("rev-parse", "HEAD")
+        assert re.fullmatch(r"[0-9a-f]{40}", head)
+        assert recovery._production_git("status", "--porcelain=v1") == ""
+        denied_foreign = subprocess.run(
+            ["/usr/bin/git", "-C", str(foreign), "rev-parse", "HEAD"],
+            env=recovery.PRODUCTION_GIT_ENV,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert denied_foreign.returncode != 0
+        assert recovery._production_git("status", "--porcelain=v1") == ""
+        assert (repository / "bound.txt").read_bytes() == content_before
+        assert (repository / ".git/config").read_bytes() == config_before
+        assert {
+            item.relative_to(repository): item.read_bytes()
+            for item in repository.rglob("*")
+            if item.is_file() and not item.is_symlink()
+        } == repository_bytes_before
+        assert not list((repository / ".git").rglob("*.lock"))
+        assert (
+            root_config.read_bytes() if root_config.exists() else None
+        ) == root_config_before
+    finally:
+        shutil.rmtree(repository, ignore_errors=True)
+        shutil.rmtree(foreign, ignore_errors=True)
 
 
 def test_fresh_run_verifies_exact_dependencies_before_first_legacy_mutation():

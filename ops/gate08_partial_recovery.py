@@ -170,6 +170,16 @@ CHILD_ENV = {
     "LANG": "C",
     "LC_ALL": "C",
 }
+PRODUCTION_GIT_ENV = {
+    "HOME": "/root",
+    "PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_OPTIONAL_LOCKS": "0",
+}
 STORAGE_PATH_GROUPS = {
     "/": "rootfs",
     "/etc": "rootfs",
@@ -1313,6 +1323,38 @@ def _command(arguments: Sequence[str]) -> str:
     return result.stdout.strip()
 
 
+def _production_git(
+    *arguments: str, command_runner: Callable[..., Any] | None = None
+) -> str:
+    if arguments not in {("rev-parse", "HEAD"), ("status", "--porcelain=v1")}:
+        _fail("unsupported production Git operation")
+    runner = subprocess.run if command_runner is None else command_runner
+    result = runner(
+        [
+            "/usr/bin/git",
+            "-c",
+            f"safe.directory={PRODUCTION_REPOSITORY}",
+            "-C",
+            str(PRODUCTION_REPOSITORY),
+            *arguments,
+        ],
+        env=PRODUCTION_GIT_ENV,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        _fail("production Git check failed")
+    return result.stdout.rstrip("\n")
+
+
+def _validate_production_git_state() -> None:
+    if _production_git("rev-parse", "HEAD") != PRODUCTION_SHA:
+        _fail("production commit drift")
+    if _production_git("status", "--porcelain=v1"):
+        _fail("production worktree drift")
+
+
 def _unit_state(
     unit: str, *, command_runner: Callable[[Sequence[str]], str] | None = None
 ) -> dict[str, Any]:
@@ -1365,17 +1407,7 @@ def _ancestor_pids() -> set[int]:
 
 def validate_live_partial_state(approval: dict[str, Any]) -> dict[str, Any]:
     production = approval["production"]
-    if (
-        _command(
-            ("/usr/bin/git", "-C", str(PRODUCTION_REPOSITORY), "rev-parse", "HEAD")
-        )
-        != PRODUCTION_SHA
-    ):
-        _fail("production commit drift")
-    if _command(
-        ("/usr/bin/git", "-C", str(PRODUCTION_REPOSITORY), "status", "--porcelain=v1")
-    ):
-        _fail("production worktree drift")
+    _validate_production_git_state()
     if any((PRODUCTION_REPOSITORY / ".git").rglob("*.lock")):
         _fail("production Git lock is present")
     if (
