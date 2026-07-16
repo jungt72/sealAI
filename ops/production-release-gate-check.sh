@@ -24,7 +24,7 @@ production_release_gate_check() {
   PRODUCTION_RELEASE_APPROVED_SOURCE_SHA=""
 
   case "${operation}" in
-    build|pull|deploy|migration|dashboard-publish|recovery-start-existing|remediation-control-install|operational-control-install) ;;
+    build|pull|deploy|migration|dashboard-publish|recovery-start-existing|remediation-control-install|remediation-control-resume|operational-control-install) ;;
     *)
       printf '%s\n' \
         '{"component":"sealai-production-release-gate-invocation","allowed":false,"reason":"invalid_operation"}' >&2
@@ -102,6 +102,10 @@ elif operation == "remediation-control-install":
     expected_keys = base | {"source_git_sha", "approval_id", "artifact_sha256"}
     expected_reason = "gate08_hash_bound_remediation_control_install"
     expected_gate = "GATE-08"
+elif operation == "remediation-control-resume":
+    expected_keys = base | {"source_git_sha", "approval_id", "artifact_sha256"}
+    expected_reason = "gate08_hash_bound_remediation_control_resume"
+    expected_gate = "GATE-08"
 else:
     expected_keys = base | {
         "source_git_sha",
@@ -127,13 +131,14 @@ if (
 source = value.get("source_git_sha", "")
 if operation in mutating or operation in {
     "remediation-control-install",
+    "remediation-control-resume",
     "operational-control-install",
 }:
     if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", source):
         raise SystemExit(78)
     if expected_source and not hmac.compare_digest(source, expected_source):
         raise SystemExit(78)
-if operation in {"remediation-control-install", "operational-control-install"}:
+if operation in {"remediation-control-install", "remediation-control-resume", "operational-control-install"}:
     approval_id = value.get("approval_id")
     artifacts = value.get("artifact_sha256")
     if (

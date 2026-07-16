@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealai.local/schemas/gate08-remediation-resume.schema.json",
+  "title": "GATE-08 evidence-bound Stage-A remediation resume approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gate_id",
+    "operation",
+    "decision",
+    "scope",
+    "approval_id",
+    "approved_by",
+    "approved_at",
+    "expires_at",
+    "source_git_sha",
+    "artifact_sha256",
+    "incident",
+    "legacy_evidence",
+    "evidence_status_before_sha256",
+    "evidence_status_after_sha256",
+    "legacy_timer_fragment_sha256",
+    "legacy_service_fragment_sha256",
+    "production",
+    "current_partial_state",
+    "new_targets"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "gate_id": {"const": "GATE-08"},
+    "operation": {"const": "remediation-control-resume"},
+    "decision": {"enum": ["APPROVED", "PENDING_OWNER_APPROVAL"]},
+    "scope": {"const": "p0-stage-a-partial-recovery"},
+    "approval_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "approved_by": {"type": "string", "minLength": 1, "maxLength": 128},
+    "approved_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "source_git_sha": {"$ref": "#/$defs/gitSha"},
+    "artifact_sha256": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docs/ops/docker-disk-guard.md",
+        "docs/ops/production-release-freeze.md",
+        "docs/ops/stage-a-partial-recovery.md",
+        "ops/bootstrap_gate08_remediation_resume.py",
+        "ops/disk-guard.example.json",
+        "ops/docker-disk-guard.sh",
+        "ops/docker_disk_guard.py",
+        "ops/gate08_partial_recovery.py",
+        "ops/hash_verified_python_loader.py",
+        "ops/production-deploy-remote-entrypoint.sh",
+        "ops/production-release-gate-check.sh",
+        "ops/production-release-state.json",
+        "ops/production-storage-lease.sh",
+        "ops/production_release_gate.py",
+        "ops/resume-disk-guard-install.sh",
+        "ops/schemas/gate08-remediation-resume.schema.json",
+        "ops/sudoers/sealai-storage-preflight",
+        "ops/systemd/sealai-disk-guard.service",
+        "ops/systemd/sealai-disk-guard.timer",
+        "ops/tmpfiles/sealai-storage-mutation.conf"
+      ],
+      "properties": {
+        "docs/ops/docker-disk-guard.md": {"$ref": "#/$defs/sha256"},
+        "docs/ops/production-release-freeze.md": {"$ref": "#/$defs/sha256"},
+        "docs/ops/stage-a-partial-recovery.md": {"$ref": "#/$defs/sha256"},
+        "ops/bootstrap_gate08_remediation_resume.py": {"$ref": "#/$defs/sha256"},
+        "ops/disk-guard.example.json": {"$ref": "#/$defs/sha256"},
+        "ops/docker-disk-guard.sh": {"$ref": "#/$defs/sha256"},
+        "ops/docker_disk_guard.py": {"$ref": "#/$defs/sha256"},
+        "ops/gate08_partial_recovery.py": {"$ref": "#/$defs/sha256"},
+        "ops/hash_verified_python_loader.py": {"$ref": "#/$defs/sha256"},
+        "ops/production-deploy-remote-entrypoint.sh": {"$ref": "#/$defs/sha256"},
+        "ops/production-release-gate-check.sh": {"$ref": "#/$defs/sha256"},
+        "ops/production-release-state.json": {"$ref": "#/$defs/sha256"},
+        "ops/production-storage-lease.sh": {"$ref": "#/$defs/sha256"},
+        "ops/production_release_gate.py": {"$ref": "#/$defs/sha256"},
+        "ops/resume-disk-guard-install.sh": {"$ref": "#/$defs/sha256"},
+        "ops/schemas/gate08-remediation-resume.schema.json": {"$ref": "#/$defs/sha256"},
+        "ops/sudoers/sealai-storage-preflight": {"$ref": "#/$defs/sha256"},
+        "ops/systemd/sealai-disk-guard.service": {"$ref": "#/$defs/sha256"},
+        "ops/systemd/sealai-disk-guard.timer": {"$ref": "#/$defs/sha256"},
+        "ops/tmpfiles/sealai-storage-mutation.conf": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "incident": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "failed_source_git_sha",
+        "failed_operation",
+        "failure_class",
+        "failed_at_phase"
+      ],
+      "properties": {
+        "failed_source_git_sha": {"const": "c905780b54c1f5d27c6c6cea46d12fabdd69ddf8"},
+        "failed_operation": {"const": "remediation-control-install"},
+        "failure_class": {"const": "SYSTEMD_VERIFY_BEFORE_DEPENDENCY_INSTALL"},
+        "failed_at_phase": {"const": "AFTER_LEGACY_UNIT_RETIREMENT_BEFORE_CRON_RETIREMENT"}
+      }
+    },
+    "legacy_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "evidence_directory", "expected_files"],
+      "properties": {
+        "evidence_id": {"const": "legacy-stage-a-c905780b-20260716T062603Z"},
+        "evidence_directory": {"const": "/var/lib/sealai-disk-guard/legacy-unit-evidence/legacy-stage-a-c905780b-20260716T062603Z"},
+        "expected_files": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/evidenceFile"}
+        }
+      }
+    },
+    "evidence_status_before_sha256": {"$ref": "#/$defs/sha256"},
+    "evidence_status_after_sha256": {"$ref": "#/$defs/sha256"},
+    "legacy_timer_fragment_sha256": {"$ref": "#/$defs/sha256"},
+    "legacy_service_fragment_sha256": {"$ref": "#/$defs/sha256"},
+    "production": {"$ref": "#/$defs/production"},
+    "current_partial_state": {"$ref": "#/$defs/partialState"},
+    "new_targets": {"$ref": "#/$defs/newTargets"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "evidenceFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "mode", "uid", "gid"],
+      "properties": {
+        "path": {
+          "enum": [
+            "sealai-docker-disk-guard.service",
+            "sealai-docker-disk-guard.timer",
+            "status-before.json",
+            "status-after.json"
+          ]
+        },
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "mode": {"const": "0600"},
+        "uid": {"const": 0},
+        "gid": {"const": 0}
+      }
+    },
+    "production": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "worktree_state",
+        "docker_root_dir",
+        "filesystem_usage_percent",
+        "filesystem_inode_usage_percent",
+        "backend_container_id",
+        "worker_container_id",
+        "backend_image_digest",
+        "worker_image_digest",
+        "release_freeze_active",
+        "required_release_gate",
+        "gate10_lift_implemented"
+      ],
+      "properties": {
+        "repository": {"const": "/home/thorsten/sealai"},
+        "commit": {"const": "b5fea96e387772547722bdbcaecde1e125d9100b"},
+        "worktree_state": {"const": "CLEAN"},
+        "docker_root_dir": {"const": "/mnt/sealai-volume/docker-data"},
+        "filesystem_usage_percent": {"const": 95},
+        "filesystem_inode_usage_percent": {"const": 27},
+        "backend_container_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "worker_container_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "backend_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "worker_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "release_freeze_active": {"const": true},
+        "required_release_gate": {"const": "GATE-10"},
+        "gate10_lift_implemented": {"const": false}
+      }
+    },
+    "timerState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["load_state", "active_state", "unit_file_state", "fragment_path", "fragment_sha256"],
+      "properties": {
+        "load_state": {"const": "loaded"},
+        "active_state": {"const": "inactive"},
+        "unit_file_state": {"const": "disabled"},
+        "fragment_path": {"const": "/etc/systemd/system/sealai-docker-disk-guard.timer"},
+        "fragment_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "serviceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["load_state", "active_state", "unit_file_state", "main_pid", "control_pid", "fragment_path", "fragment_sha256"],
+      "properties": {
+        "load_state": {"const": "loaded"},
+        "active_state": {"const": "failed"},
+        "unit_file_state": {"const": "static"},
+        "main_pid": {"const": 0},
+        "control_pid": {"const": 0},
+        "fragment_path": {"const": "/etc/systemd/system/sealai-docker-disk-guard.service"},
+        "fragment_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "partialState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["legacy_timer", "legacy_service", "legacy_cron_exact_count"],
+      "properties": {
+        "legacy_timer": {"$ref": "#/$defs/timerState"},
+        "legacy_service": {"$ref": "#/$defs/serviceState"},
+        "legacy_cron_exact_count": {"const": 1}
+      }
+    },
+    "absent": {"const": "ABSENT"},
+    "newTargets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "/etc/sealai/disk-guard.json",
+        "/etc/sudoers.d/sealai-storage-preflight",
+        "/etc/systemd/system/sealai-disk-guard.service",
+        "/etc/systemd/system/sealai-disk-guard.timer",
+        "/etc/tmpfiles.d/sealai-storage-mutation.conf",
+        "/run/lock/sealai-storage-mutation.lock",
+        "/usr/local/libexec/sealai/docker-disk-guard.sh",
+        "/usr/local/libexec/sealai/docker_disk_guard.py",
+        "/usr/local/libexec/sealai/hash-verified-python-loader.py",
+        "/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh",
+        "/usr/local/libexec/sealai/production-release-gate-check.sh",
+        "/usr/local/libexec/sealai/production-storage-lease.sh",
+        "/usr/local/share/doc/sealai/docker-disk-guard.md",
+        "/var/lib/sealai-disk-guard/state.json"
+      ],
+      "properties": {
+        "/etc/sealai/disk-guard.json": {"$ref": "#/$defs/absent"},
+        "/etc/sudoers.d/sealai-storage-preflight": {"$ref": "#/$defs/absent"},
+        "/etc/systemd/system/sealai-disk-guard.service": {"$ref": "#/$defs/absent"},
+        "/etc/systemd/system/sealai-disk-guard.timer": {"$ref": "#/$defs/absent"},
+        "/etc/tmpfiles.d/sealai-storage-mutation.conf": {"$ref": "#/$defs/absent"},
+        "/run/lock/sealai-storage-mutation.lock": {"$ref": "#/$defs/absent"},
+        "/usr/local/libexec/sealai/docker-disk-guard.sh": {"$ref": "#/$defs/absent"},
+        "/usr/local/libexec/sealai/docker_disk_guard.py": {"$ref": "#/$defs/absent"},
+        "/usr/local/libexec/sealai/hash-verified-python-loader.py": {"$ref": "#/$defs/absent"},
+        "/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh": {"$ref": "#/$defs/absent"},
+        "/usr/local/libexec/sealai/production-release-gate-check.sh": {"$ref": "#/$defs/absent"},
+        "/usr/local/libexec/sealai/production-storage-lease.sh": {"$ref": "#/$defs/absent"},
+        "/usr/local/share/doc/sealai/docker-disk-guard.md": {"$ref": "#/$defs/absent"},
+        "/var/lib/sealai-disk-guard/state.json": {"$ref": "#/$defs/absent"}
+      }
+    }
+  }
+}

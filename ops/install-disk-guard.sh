@@ -38,6 +38,7 @@ readonly -a ARTIFACTS=(
   ops/disk-guard.example.json
   ops/docker-disk-guard.sh
   ops/docker_disk_guard.py
+  ops/gate08_partial_recovery.py
   ops/gate08_legacy_unit_retirement.py
   ops/hash_verified_python_loader.py
   ops/install-disk-guard.sh
@@ -48,6 +49,7 @@ readonly -a ARTIFACTS=(
   ops/production_release_gate.py
   ops/sudoers/sealai-storage-preflight
   ops/schemas/gate08-legacy-units.schema.json
+  ops/schemas/gate08-remediation-resume.schema.json
   ops/systemd/sealai-disk-guard.service
   ops/systemd/sealai-disk-guard.timer
   ops/tmpfiles/sealai-storage-mutation.conf
@@ -190,18 +192,45 @@ for relative, claimed in expected.items():
         raise SystemExit("staged control artifact hash mismatch")
 PY
 
-# The staged and hash-bound helper neutralizes only the two fixed legacy units.
-# It intentionally has no rollback path that could reactivate destructive automation.
-/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_legacy_unit_retirement.py" \
-  apply \
-  --manifest /etc/sealai/approvals/gate-08-legacy-units.json \
-  --evidence-root /var/lib/sealai-disk-guard/legacy-unit-evidence
-systemd-analyze verify \
-  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.service" \
-  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.timer"
+# Complete every static and environmental check before the first legacy, cron,
+# live-target, or systemd mutation. The synthetic root contains the exact bytes
+# that will later be installed at the fixed production paths.
+ACTUAL_DOCKER_ROOT="$(docker info --format '{{.DockerRootDir}}')"
+VALIDATION_ROOT="${STAGE_DIR}/validation-root"
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_partial_recovery.py" \
+  validate-stage \
+  --stage-dir "${STAGE_DIR}" \
+  --validation-root "${VALIDATION_ROOT}" \
+  --actual-docker-root "${ACTUAL_DOCKER_ROOT}" >/dev/null
 
-# Capture and validate the exact destructive cron entry before any installed
-# control changes. Absence/duplication is fingerprint drift and stops the gate.
+for target in \
+  /etc/sealai/disk-guard.json \
+  /etc/sudoers.d/sealai-storage-preflight \
+  /etc/systemd/system/sealai-disk-guard.service \
+  /etc/systemd/system/sealai-disk-guard.timer \
+  /etc/tmpfiles.d/sealai-storage-mutation.conf \
+  /run/lock/sealai-storage-mutation.lock \
+  /usr/local/libexec/sealai/docker-disk-guard.sh \
+  /usr/local/libexec/sealai/docker_disk_guard.py \
+  /usr/local/libexec/sealai/hash-verified-python-loader.py \
+  /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh \
+  /usr/local/libexec/sealai/production-release-gate-check.sh \
+  /usr/local/libexec/sealai/production-storage-lease.sh \
+  /usr/local/share/doc/sealai/docker-disk-guard.md \
+  /var/lib/sealai-disk-guard/state.json; do
+  [[ ! -e "${target}" && ! -L "${target}" ]] || {
+    printf 'disk-guard installer: fresh target precondition drift\n' >&2
+    exit 79
+  }
+done
+
+if pgrep -f '[/]home/thorsten/sealai/ops/disk_safeguard[.]sh' >/dev/null; then
+  printf 'disk-guard installer: legacy cleanup process still running\n' >&2
+  exit 79
+fi
+
+# Capture and validate the exact destructive cron entry before the legacy unit
+# transition. Absence or duplication therefore fails with zero legacy mutation.
 CRON_BEFORE="${STAGE_DIR}/crontab.before"
 CRON_AFTER="${STAGE_DIR}/crontab.after"
 crontab -u "${LEGACY_CRON_USER}" -l >"${CRON_BEFORE}" 2>/dev/null || {
@@ -216,8 +245,29 @@ LEGACY_COUNT="$(awk -v exact="${LEGACY_CRON_LINE}" '$0 == exact { count++ } END 
 awk -v exact="${LEGACY_CRON_LINE}" '$0 != exact { print }' \
   "${CRON_BEFORE}" >"${CRON_AFTER}"
 
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_legacy_unit_retirement.py" \
+  dry-run \
+  --manifest /etc/sealai/approvals/gate-08-legacy-units.json \
+  --evidence-root /var/lib/sealai-disk-guard/legacy-unit-evidence >/dev/null
+
+# First production mutation: neutralize only the two exact legacy units after
+# every new-control dependency has already passed synthetic verification.
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_legacy_unit_retirement.py" \
+  apply \
+  --manifest /etc/sealai/approvals/gate-08-legacy-units.json \
+  --evidence-root /var/lib/sealai-disk-guard/legacy-unit-evidence
+
 # Neutralize the old automatic prune before installing the replacement. A
 # failed later step intentionally does not restore destructive automation.
+CRON_CURRENT="${STAGE_DIR}/crontab.current"
+crontab -u "${LEGACY_CRON_USER}" -l >"${CRON_CURRENT}" 2>/dev/null || {
+  printf 'disk-guard installer: legacy crontab unavailable\n' >&2
+  exit 79
+}
+cmp -s "${CRON_BEFORE}" "${CRON_CURRENT}" || {
+  printf 'disk-guard installer: legacy cron changed during preflight\n' >&2
+  exit 79
+}
 crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"
 if crontab -u "${LEGACY_CRON_USER}" -l | grep -Fqx "${LEGACY_CRON_LINE}"; then
   printf 'disk-guard installer: legacy cron retirement failed\n' >&2
@@ -320,7 +370,6 @@ if not isinstance(root, str) or not root.startswith("/"):
 print(root)
 PY
 )"
-ACTUAL_DOCKER_ROOT="$(docker info --format '{{.DockerRootDir}}')"
 [[ "${CONFIGURED_DOCKER_ROOT}" == "${ACTUAL_DOCKER_ROOT}" ]] || {
   printf 'disk-guard installer: Docker root/config mismatch\n' >&2
   exit 78

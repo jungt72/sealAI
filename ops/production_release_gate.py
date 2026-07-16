@@ -30,6 +30,9 @@ MANIFEST_PATH = REPO_ROOT / "ops" / "production-release-manifest.json"
 REMEDIATION_APPROVAL_PATH = Path(
     "/etc/sealai/approvals/gate-08-remediation-control.json"
 )
+REMEDIATION_RESUME_APPROVAL_PATH = Path(
+    "/etc/sealai/approvals/gate-08-remediation-resume.json"
+)
 OPERATIONAL_CONTROL_APPROVAL_PATH = Path(
     "/etc/sealai/approvals/gate-08-operational-controls.json"
 )
@@ -54,10 +57,12 @@ MUTATING_OPERATIONS = frozenset(
 )
 RECOVERY_OPERATION = "recovery-start-existing"
 REMEDIATION_CONTROL_OPERATION = "remediation-control-install"
+REMEDIATION_RESUME_OPERATION = "remediation-control-resume"
 OPERATIONAL_CONTROL_OPERATION = "operational-control-install"
 OPERATIONS = MUTATING_OPERATIONS | {
     RECOVERY_OPERATION,
     REMEDIATION_CONTROL_OPERATION,
+    REMEDIATION_RESUME_OPERATION,
     OPERATIONAL_CONTROL_OPERATION,
 }
 
@@ -70,6 +75,7 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
         "ops/docker-disk-guard.sh",
         "ops/docker_disk_guard.py",
         "ops/gate08_legacy_unit_retirement.py",
+        "ops/gate08_partial_recovery.py",
         "ops/hash_verified_python_loader.py",
         "ops/install-disk-guard.sh",
         "ops/production-deploy-remote-entrypoint.sh",
@@ -79,6 +85,32 @@ REMEDIATION_CONTROL_ARTIFACTS = frozenset(
         "ops/production-storage-lease.sh",
         "ops/sudoers/sealai-storage-preflight",
         "ops/schemas/gate08-legacy-units.schema.json",
+        "ops/schemas/gate08-remediation-resume.schema.json",
+        "ops/systemd/sealai-disk-guard.service",
+        "ops/systemd/sealai-disk-guard.timer",
+        "ops/tmpfiles/sealai-storage-mutation.conf",
+    }
+)
+
+REMEDIATION_RESUME_ARTIFACTS = frozenset(
+    {
+        "docs/ops/docker-disk-guard.md",
+        "docs/ops/production-release-freeze.md",
+        "docs/ops/stage-a-partial-recovery.md",
+        "ops/bootstrap_gate08_remediation_resume.py",
+        "ops/disk-guard.example.json",
+        "ops/docker-disk-guard.sh",
+        "ops/docker_disk_guard.py",
+        "ops/gate08_partial_recovery.py",
+        "ops/hash_verified_python_loader.py",
+        "ops/production-deploy-remote-entrypoint.sh",
+        "ops/production-release-gate-check.sh",
+        "ops/production-release-state.json",
+        "ops/production-storage-lease.sh",
+        "ops/production_release_gate.py",
+        "ops/resume-disk-guard-install.sh",
+        "ops/schemas/gate08-remediation-resume.schema.json",
+        "ops/sudoers/sealai-storage-preflight",
         "ops/systemd/sealai-disk-guard.service",
         "ops/systemd/sealai-disk-guard.timer",
         "ops/tmpfiles/sealai-storage-mutation.conf",
@@ -575,6 +607,45 @@ def _artifact_sha256(relative_path: str) -> str:
     return digest.hexdigest()
 
 
+def _run_hash_bound_recovery_validator(
+    approval: dict[str, Any], expected_digest: str
+) -> None:
+    path = REPO_ROOT / "ops/gate08_partial_recovery.py"
+    _assert_trusted_path(path, leaf_directory=False)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise GateConfigurationError(
+            "remediation resume validator is unavailable"
+        ) from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or metadata.st_size > 1024 * 1024
+        ):
+            raise GateConfigurationError("remediation resume validator is unsafe")
+        raw = b""
+        while chunk := os.read(descriptor, 65536):
+            raw += chunk
+    finally:
+        os.close(descriptor)
+    if hashlib.sha256(raw).hexdigest() != expected_digest:
+        raise GateConfigurationError("remediation resume validator hash mismatch")
+    namespace: dict[str, Any] = {
+        "__name__": "sealai_hash_bound_recovery_validator",
+        "__file__": str(path),
+    }
+    try:
+        exec(compile(raw, str(path), "exec"), namespace)
+        namespace["validate_approval_contract"](approval)
+    except Exception as exc:
+        raise GateConfigurationError("remediation resume approval is invalid") from exc
+
+
 def _validate_remediation_control_approval(
     approval_path: Path, *, require_versioned: bool
 ) -> tuple[str, str, dict[str, str]]:
@@ -657,6 +728,46 @@ def _validate_remediation_control_approval(
             for relative_path in sorted(REMEDIATION_CONTROL_ARTIFACTS)
         },
     )
+
+
+def _validate_remediation_resume_approval(
+    approval_path: Path, *, require_versioned: bool
+) -> tuple[str, str, dict[str, str]]:
+    if REPO_ROOT.resolve() == LIVE_PRODUCTION_REPO:
+        raise GateConfigurationError(
+            "remediation resume must run from a non-live root-owned checkout"
+        )
+    if require_versioned:
+        _assert_root_checkout()
+        _assert_trusted_path(approval_path, leaf_directory=False, root_only=True)
+    approval, _ = _load_private_json(approval_path)
+    artifact_hashes = _require_mapping(
+        approval.get("artifact_sha256"), "artifact_sha256"
+    )
+    if set(artifact_hashes) != REMEDIATION_RESUME_ARTIFACTS:
+        raise GateConfigurationError("remediation resume artifact set is not exact")
+    validator_digest = artifact_hashes.get("ops/gate08_partial_recovery.py")
+    if not isinstance(validator_digest, str) or not SHA256_RE.fullmatch(
+        validator_digest
+    ):
+        raise GateConfigurationError("remediation resume validator hash is invalid")
+    _run_hash_bound_recovery_validator(approval, validator_digest)
+    source_git_sha = str(approval["source_git_sha"])
+    if source_git_sha != _git("rev-parse", "HEAD").strip():
+        raise GateConfigurationError("remediation resume is bound to another commit")
+    normalized: dict[str, str] = {}
+    for relative_path in sorted(REMEDIATION_RESUME_ARTIFACTS):
+        expected = artifact_hashes.get(relative_path)
+        if not isinstance(expected, str) or not SHA256_RE.fullmatch(expected):
+            raise GateConfigurationError("remediation resume artifact hash is invalid")
+        if require_versioned:
+            _assert_committed_versioned(REPO_ROOT / relative_path)
+        if expected != _artifact_sha256(relative_path):
+            raise GateConfigurationError("remediation resume artifact hash mismatch")
+        normalized[relative_path] = expected
+    if require_versioned:
+        _assert_clean_checkout()
+    return str(approval["approval_id"]), source_git_sha, normalized
 
 
 def _validate_operational_target_preconditions(
@@ -831,6 +942,7 @@ def evaluate(
     approval_path: Path = APPROVAL_PATH,
     manifest_path: Path = MANIFEST_PATH,
     remediation_approval_path: Path = REMEDIATION_APPROVAL_PATH,
+    remediation_resume_approval_path: Path = REMEDIATION_RESUME_APPROVAL_PATH,
     operational_approval_path: Path = OPERATIONAL_CONTROL_APPROVAL_PATH,
     require_versioned: bool = True,
 ) -> GateDecision:
@@ -861,6 +973,23 @@ def evaluate(
                 True,
                 operation,
                 "gate08_hash_bound_remediation_control_install",
+                state_id,
+                "GATE-08",
+                source_git_sha,
+                approval_id,
+                artifact_hashes,
+            )
+        if operation == REMEDIATION_RESUME_OPERATION:
+            approval_id, source_git_sha, artifact_hashes = (
+                _validate_remediation_resume_approval(
+                    remediation_resume_approval_path,
+                    require_versioned=require_versioned,
+                )
+            )
+            return GateDecision(
+                True,
+                operation,
+                "gate08_hash_bound_remediation_control_resume",
                 state_id,
                 "GATE-08",
                 source_git_sha,
@@ -932,6 +1061,7 @@ def _status_document() -> dict[str, object]:
         "mutating_operations": sorted(MUTATING_OPERATIONS),
         "freeze_recovery_operation": RECOVERY_OPERATION,
         "freeze_remediation_operation": REMEDIATION_CONTROL_OPERATION,
+        "freeze_remediation_resume_operation": REMEDIATION_RESUME_OPERATION,
         "freeze_operational_control_operation": OPERATIONAL_CONTROL_OPERATION,
     }
 
