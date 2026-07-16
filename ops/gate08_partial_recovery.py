@@ -1192,7 +1192,13 @@ def build_synthetic_root(stage: Path, root: Path) -> dict[str, str]:
     (root / "etc/group").write_text("root:x:0:\nthorsten:x:1000:\n", encoding="utf-8")
     system_units = root / "usr/lib/systemd/system"
     system_units.mkdir(mode=0o755, parents=True)
-    for name in ("local-fs.target", "timers.target"):
+    for name in (
+        "basic.target",
+        "local-fs.target",
+        "shutdown.target",
+        "sysinit.target",
+        "timers.target",
+    ):
         (system_units / name).write_text("[Unit]\n", encoding="utf-8")
     hashes: dict[str, str] = {}
     for spec in sorted(TARGET_SPECS, key=lambda item: item.path):
