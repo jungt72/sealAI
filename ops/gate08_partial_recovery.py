@@ -41,6 +41,17 @@ EVIDENCE_FILES = frozenset(
         "status-after.json",
     }
 )
+STATUS_COMMON_FIELDS = frozenset(
+    {
+        "unit_name",
+        "load_state",
+        "active_state",
+        "unit_file_state",
+        "fragment_path",
+    }
+)
+STATUS_BEFORE_FIELDS = STATUS_COMMON_FIELDS | {"fragment_sha256"}
+STATUS_AFTER_FIELDS = STATUS_COMMON_FIELDS
 
 
 class TargetSpec:
@@ -286,17 +297,21 @@ def load_private_approval(path: Path = APPROVAL_PATH) -> dict[str, Any]:
     return value
 
 
-def _validate_unit_statuses(value: Any, *, before: bool) -> None:
+def _validate_unit_statuses(
+    value: Any,
+    *,
+    before: bool,
+    expected_fragment_sha256: dict[str, str] | None = None,
+) -> None:
     if not isinstance(value, list) or len(value) != 2:
         _fail("legacy status evidence set is not exact")
     by_name: dict[str, dict[str, Any]] = {}
-    keys = {
-        "unit_name",
-        "load_state",
-        "active_state",
-        "unit_file_state",
-        "fragment_path",
-    }
+    keys = STATUS_BEFORE_FIELDS if before else STATUS_AFTER_FIELDS
+    if before and (
+        not isinstance(expected_fragment_sha256, dict)
+        or set(expected_fragment_sha256) != set(LEGACY_FRAGMENTS)
+    ):
+        _fail("legacy status evidence fragment hash binding is not exact")
     for item in value:
         item = _exact_mapping(item, keys, "legacy status evidence")
         name = item.get("unit_name")
@@ -304,6 +319,14 @@ def _validate_unit_statuses(value: Any, *, before: bool) -> None:
             _fail("legacy status evidence unit set is not exact")
         if item.get("fragment_path") != str(LEGACY_FRAGMENTS[str(name)]):
             _fail("legacy status evidence fragment path drift")
+        if before:
+            digest = item.get("fragment_sha256")
+            if (
+                not isinstance(digest, str)
+                or not SHA256_RE.fullmatch(digest)
+                or digest != expected_fragment_sha256[str(name)]
+            ):
+                _fail("legacy status evidence fragment hash drift")
         by_name[str(name)] = item
     if set(by_name) != set(LEGACY_FRAGMENTS):
         _fail("legacy status evidence unit set is not exact")
@@ -614,8 +637,20 @@ def validate_evidence(
             _fail("legacy evidence hash drift")
         raws[filename] = raw
         digests[filename] = digest
+    fragment_digests = {
+        LEGACY_TIMER: digests[LEGACY_TIMER],
+        LEGACY_SERVICE: digests[LEGACY_SERVICE],
+    }
+    approval_fragment_digests = {
+        LEGACY_TIMER: approval["legacy_timer_fragment_sha256"],
+        LEGACY_SERVICE: approval["legacy_service_fragment_sha256"],
+    }
+    if fragment_digests != approval_fragment_digests:
+        _fail("legacy evidence fragment approval binding drift")
     _validate_unit_statuses(
-        _json_bytes(raws["status-before.json"], "status-before"), before=True
+        _json_bytes(raws["status-before.json"], "status-before"),
+        before=True,
+        expected_fragment_sha256=fragment_digests,
     )
     _validate_unit_statuses(
         _json_bytes(raws["status-after.json"], "status-after"), before=False

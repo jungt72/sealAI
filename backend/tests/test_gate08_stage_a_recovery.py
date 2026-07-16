@@ -28,8 +28,57 @@ SCHEMA = OPS / "schemas/gate08-remediation-resume.schema.json"
 sys.path.insert(0, str(OPS))
 
 import bootstrap_gate08_remediation_resume as bootstrap  # noqa: E402
+import gate08_legacy_unit_retirement as legacy_writer  # noqa: E402
 import gate08_partial_recovery as recovery  # noqa: E402
 import production_release_gate as gate  # noqa: E402
+
+
+GOLDEN_TIMER_FRAGMENT_SHA256 = (
+    "b2286df5aded8dfb22c37d0b256a97cf9ce8c05fee4d40852d3b5d7594fdf18b"
+)
+GOLDEN_SERVICE_FRAGMENT_SHA256 = (
+    "967a4e8b7ec66a589d15fa487eb1e0923835a22a361f4001048430b9442fc780"
+)
+GOLDEN_STATUS_BEFORE_SHA256 = (
+    "5e728b73a68e2cdcb09c0186bb3e0c7f7e7672c5f701cda8d85fd412d26b971d"
+)
+GOLDEN_STATUS_AFTER_SHA256 = (
+    "7056c1840fdee27df8c8dbc1bcf12fda9af82a0fcc0bf1a2d8e62dc16d7c3c9b"
+)
+GOLDEN_STATUS_BEFORE = [
+    {
+        "active_state": "active",
+        "fragment_path": "/etc/systemd/system/sealai-docker-disk-guard.timer",
+        "fragment_sha256": GOLDEN_TIMER_FRAGMENT_SHA256,
+        "load_state": "loaded",
+        "unit_file_state": "enabled",
+        "unit_name": "sealai-docker-disk-guard.timer",
+    },
+    {
+        "active_state": "failed",
+        "fragment_path": "/etc/systemd/system/sealai-docker-disk-guard.service",
+        "fragment_sha256": GOLDEN_SERVICE_FRAGMENT_SHA256,
+        "load_state": "loaded",
+        "unit_file_state": "static",
+        "unit_name": "sealai-docker-disk-guard.service",
+    },
+]
+GOLDEN_STATUS_AFTER = [
+    {
+        "active_state": "inactive",
+        "fragment_path": "/etc/systemd/system/sealai-docker-disk-guard.timer",
+        "load_state": "loaded",
+        "unit_file_state": "disabled",
+        "unit_name": "sealai-docker-disk-guard.timer",
+    },
+    {
+        "active_state": "failed",
+        "fragment_path": "/etc/systemd/system/sealai-docker-disk-guard.service",
+        "load_state": "loaded",
+        "unit_file_state": "static",
+        "unit_name": "sealai-docker-disk-guard.service",
+    },
+]
 
 
 def _artifact_hashes() -> dict[str, str]:
@@ -165,8 +214,10 @@ def _approval(*, decision: str = "APPROVED") -> dict[str, object]:
     }
 
 
-def _statuses(*, after: bool) -> list[dict[str, object]]:
-    return [
+def _statuses(
+    *, after: bool, fragment_sha256: dict[str, str] | None = None
+) -> list[dict[str, object]]:
+    values = [
         {
             "unit_name": recovery.LEGACY_TIMER,
             "load_state": "loaded",
@@ -182,6 +233,12 @@ def _statuses(*, after: bool) -> list[dict[str, object]]:
             "fragment_path": str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_SERVICE]),
         },
     ]
+    if not after:
+        assert fragment_sha256 is not None
+        assert set(fragment_sha256) == set(recovery.LEGACY_FRAGMENTS)
+        for item in values:
+            item["fragment_sha256"] = fragment_sha256[str(item["unit_name"])]
+    return values
 
 
 def _unit_output(**properties: object) -> str:
@@ -191,23 +248,42 @@ def _unit_output(**properties: object) -> str:
 def _evidence_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     directory = tmp_path / recovery.EVIDENCE_ID
     directory.mkdir(mode=0o700)
+    fragment_values = {
+        recovery.LEGACY_SERVICE: b"[Service]\n",
+        recovery.LEGACY_TIMER: b"[Timer]\n",
+    }
+    fragment_sha256 = {
+        name: hashlib.sha256(raw).hexdigest() for name, raw in fragment_values.items()
+    }
     values = {
-        "sealai-docker-disk-guard.service": b"[Service]\n",
-        "sealai-docker-disk-guard.timer": b"[Timer]\n",
+        **fragment_values,
         "status-before.json": (
-            json.dumps(_statuses(after=False), sort_keys=True, indent=2) + "\n"
+            json.dumps(
+                _statuses(after=False, fragment_sha256=fragment_sha256),
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n"
         ).encode(),
         "status-after.json": (
             json.dumps(_statuses(after=True), sort_keys=True, indent=2) + "\n"
         ).encode(),
     }
     approval = _approval()
+    _bind_evidence(approval, directory, values)
+    return approval, directory
+
+
+def _bind_evidence(
+    approval: dict[str, object], directory: Path, values: dict[str, bytes]
+) -> None:
     expected = []
     for name, raw in sorted(values.items()):
         path = directory / name
-        path.write_bytes(raw)
+        if not path.exists():
+            path.write_bytes(raw)
         path.chmod(0o600)
-        digest = hashlib.sha256(raw).hexdigest()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
         expected.append(
             {"path": name, "sha256": digest, "mode": "0600", "uid": 0, "gid": 0}
         )
@@ -229,7 +305,22 @@ def _evidence_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     approval["current_partial_state"]["legacy_service"]["fragment_sha256"] = by_name[
         "sealai-docker-disk-guard.service"
     ]
-    return approval, directory
+
+
+def _replace_status_evidence(
+    approval: dict[str, object], directory: Path, name: str, value: object
+) -> None:
+    raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+    (directory / name).write_bytes(raw)
+    digest = hashlib.sha256(raw).hexdigest()
+    for item in approval["legacy_evidence"]["expected_files"]:
+        if item["path"] == name:
+            item["sha256"] = digest
+    field = {
+        "status-before.json": "evidence_status_before_sha256",
+        "status-after.json": "evidence_status_after_sha256",
+    }[name]
+    approval[field] = digest
 
 
 def _stage(tmp_path: Path) -> Path:
@@ -351,19 +442,253 @@ def test_legacy_evidence_is_exact_private_hashed_and_semantic(tmp_path: Path):
         )
 
 
+def test_observed_golden_status_bytes_match_hashes_and_are_accepted_unchanged():
+    before = (
+        json.dumps(GOLDEN_STATUS_BEFORE, sort_keys=True, indent=2) + "\n"
+    ).encode()
+    after = (json.dumps(GOLDEN_STATUS_AFTER, sort_keys=True, indent=2) + "\n").encode()
+    assert hashlib.sha256(before).hexdigest() == GOLDEN_STATUS_BEFORE_SHA256
+    assert hashlib.sha256(after).hexdigest() == GOLDEN_STATUS_AFTER_SHA256
+    fragment_sha256 = {
+        recovery.LEGACY_TIMER: GOLDEN_TIMER_FRAGMENT_SHA256,
+        recovery.LEGACY_SERVICE: GOLDEN_SERVICE_FRAGMENT_SHA256,
+    }
+    recovery._validate_unit_statuses(
+        json.loads(before),
+        before=True,
+        expected_fragment_sha256=fragment_sha256,
+    )
+    recovery._validate_unit_statuses(json.loads(after), before=False)
+
+
 def test_status_before_and_after_semantics_cannot_be_relabelled(tmp_path: Path):
     approval, directory = _evidence_fixture(tmp_path)
-    before = directory / "status-before.json"
-    before.write_text(
-        json.dumps(_statuses(after=True), sort_keys=True, indent=2) + "\n",
-        encoding="utf-8",
+    before = json.loads((directory / "status-before.json").read_bytes())
+    after = json.loads((directory / "status-after.json").read_bytes())
+    _replace_status_evidence(approval, directory, "status-before.json", after)
+    _replace_status_evidence(approval, directory, "status-after.json", before)
+    with pytest.raises(recovery.RecoveryError, match="fields are not exact"):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("unit", "mutation"),
+    [
+        (recovery.LEGACY_TIMER, "remove_hash"),
+        (recovery.LEGACY_SERVICE, "remove_hash"),
+        (recovery.LEGACY_TIMER, "uppercase_hash"),
+        (recovery.LEGACY_TIMER, "unknown_field"),
+        (recovery.LEGACY_TIMER, "fragment_path"),
+    ],
+)
+def test_status_before_rejects_missing_invalid_or_extra_binding(
+    tmp_path: Path, unit: str, mutation: str
+):
+    approval, directory = _evidence_fixture(tmp_path)
+    statuses = json.loads((directory / "status-before.json").read_bytes())
+    item = next(value for value in statuses if value["unit_name"] == unit)
+    if mutation == "remove_hash":
+        del item["fragment_sha256"]
+    elif mutation == "uppercase_hash":
+        item["fragment_sha256"] = item["fragment_sha256"].upper()
+    elif mutation == "unknown_field":
+        item["unexpected"] = "rejected"
+    else:
+        item["fragment_path"] += ".drift"
+    _replace_status_evidence(approval, directory, "status-before.json", statuses)
+    with pytest.raises(recovery.RecoveryError):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+def test_status_before_rejects_swapped_fragment_hashes(tmp_path: Path):
+    approval, directory = _evidence_fixture(tmp_path)
+    statuses = json.loads((directory / "status-before.json").read_bytes())
+    statuses[0]["fragment_sha256"], statuses[1]["fragment_sha256"] = (
+        statuses[1]["fragment_sha256"],
+        statuses[0]["fragment_sha256"],
     )
-    digest = hashlib.sha256(before.read_bytes()).hexdigest()
-    for item in approval["legacy_evidence"]["expected_files"]:
-        if item["path"] == "status-before.json":
-            item["sha256"] = digest
-    approval["evidence_status_before_sha256"] = digest
-    with pytest.raises(recovery.RecoveryError, match="bound transition"):
+    _replace_status_evidence(approval, directory, "status-before.json", statuses)
+    with pytest.raises(recovery.RecoveryError, match="fragment hash drift"):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+def test_status_before_hash_is_bound_to_stored_fragment(tmp_path: Path):
+    approval, directory = _evidence_fixture(tmp_path)
+    (directory / recovery.LEGACY_TIMER).write_bytes(b"drifted fragment\n")
+    with pytest.raises(recovery.RecoveryError, match="legacy evidence hash drift"):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+def test_stored_fragment_hash_is_bound_to_approval(tmp_path: Path):
+    approval, directory = _evidence_fixture(tmp_path)
+    approval["legacy_timer_fragment_sha256"] = "0" * 64
+    with pytest.raises(recovery.RecoveryError, match="approval binding drift"):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+@pytest.mark.parametrize("mutation", ["fragment_hash", "unknown_field"])
+def test_status_after_rejects_hash_or_any_extra_field(tmp_path: Path, mutation: str):
+    approval, directory = _evidence_fixture(tmp_path)
+    statuses = json.loads((directory / "status-after.json").read_bytes())
+    key = "fragment_sha256" if mutation == "fragment_hash" else "unexpected"
+    statuses[0][key] = "0" * 64 if mutation == "fragment_hash" else "rejected"
+    _replace_status_evidence(approval, directory, "status-after.json", statuses)
+    with pytest.raises(recovery.RecoveryError, match="fields are not exact"):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation", ["missing_timer", "missing_service", "duplicate", "unknown_unit"]
+)
+def test_status_evidence_requires_exactly_one_timer_and_service(
+    tmp_path: Path, mutation: str
+):
+    approval, directory = _evidence_fixture(tmp_path)
+    statuses = json.loads((directory / "status-before.json").read_bytes())
+    if mutation == "missing_timer":
+        statuses = [
+            item for item in statuses if item["unit_name"] != recovery.LEGACY_TIMER
+        ]
+    elif mutation == "missing_service":
+        statuses = [
+            item for item in statuses if item["unit_name"] != recovery.LEGACY_SERVICE
+        ]
+    elif mutation == "duplicate":
+        statuses[1] = dict(statuses[0])
+    else:
+        statuses[0]["unit_name"] = "unknown.service"
+    _replace_status_evidence(approval, directory, "status-before.json", statuses)
+    with pytest.raises(recovery.RecoveryError, match="set is not exact"):
+        recovery.validate_evidence(
+            approval,
+            evidence_directory=directory,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+def test_legacy_writer_output_is_accepted_unchanged_and_schema_compatible(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    fragments = {
+        legacy_writer.LEGACY_TIMER: b"[Timer]\nOnCalendar=hourly\n",
+        legacy_writer.LEGACY_SERVICE: b"[Service]\nType=oneshot\n",
+    }
+    fragment_sha256 = {
+        unit: hashlib.sha256(raw).hexdigest() for unit, raw in fragments.items()
+    }
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    manifest = {
+        "schema_version": 1,
+        "gate_id": "GATE-08",
+        "decision": "APPROVED",
+        "scope": "legacy-disk-guard-unit-retirement",
+        "approval_id": recovery.EVIDENCE_ID,
+        "approved_at": now.isoformat().replace("+00:00", "Z"),
+        "expires_at": (now + dt.timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "units": _statuses(after=False, fragment_sha256=fragment_sha256),
+    }
+    neutralized = False
+
+    def fake_fragment_bytes(path: Path, *, required_uid: int) -> bytes:
+        assert required_uid == os.getuid()
+        unit = next(
+            name
+            for name, expected in legacy_writer.EXPECTED_FRAGMENTS.items()
+            if expected == path
+        )
+        return fragments[unit]
+
+    def fake_systemd(command: list[str]) -> str:
+        nonlocal neutralized
+        if command[1] in {"stop", "disable"}:
+            neutralized = True
+            return ""
+        if "--property=MainPID" in command:
+            return "MainPID=0\nControlPID=0\n"
+        unit = command[-1]
+        assert unit in legacy_writer.LEGACY_UNITS
+        if unit == legacy_writer.LEGACY_TIMER:
+            active_state = "inactive" if neutralized else "active"
+            unit_file_state = "disabled" if neutralized else "enabled"
+        else:
+            active_state = "failed"
+            unit_file_state = "static"
+        return _unit_output(
+            LoadState="loaded",
+            ActiveState=active_state,
+            UnitFileState=unit_file_state,
+            FragmentPath=str(legacy_writer.EXPECTED_FRAGMENTS[unit]),
+        )
+
+    monkeypatch.setattr(legacy_writer, "_fragment_bytes", fake_fragment_bytes)
+    evidence_root = tmp_path / "legacy-evidence"
+    result = legacy_writer.execute(
+        manifest,
+        apply=True,
+        evidence_root=evidence_root,
+        now=now,
+        runner=fake_systemd,
+        required_uid=os.getuid(),
+    )
+    assert result["mutation"] is True
+    directory = evidence_root / recovery.EVIDENCE_ID
+    writer_values = {
+        name: (directory / name).read_bytes() for name in recovery.EVIDENCE_FILES
+    }
+    writer_before = json.loads(writer_values["status-before.json"])
+    writer_after = json.loads(writer_values["status-after.json"])
+    assert all(set(item) == recovery.STATUS_BEFORE_FIELDS for item in writer_before)
+    assert all(set(item) == recovery.STATUS_AFTER_FIELDS for item in writer_after)
+    approval = _approval()
+    _bind_evidence(approval, directory, writer_values)
+    recovery.validate_approval_contract(approval)
+    assert (
+        set(
+            recovery.validate_evidence(
+                approval,
+                evidence_directory=directory,
+                required_uid=os.getuid(),
+                required_gid=os.getgid(),
+            )
+        )
+        == recovery.EVIDENCE_FILES
+    )
+
+    before = writer_before
+    before[0]["fragment_sha256"] = "0" * 64
+    _replace_status_evidence(approval, directory, "status-before.json", before)
+    with pytest.raises(recovery.RecoveryError, match="fragment hash drift"):
         recovery.validate_evidence(
             approval,
             evidence_directory=directory,
