@@ -184,6 +184,10 @@ def _statuses(*, after: bool) -> list[dict[str, object]]:
     ]
 
 
+def _unit_output(**properties: object) -> str:
+    return "\n".join(f"{name}={value}" for name, value in properties.items())
+
+
 def _evidence_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
     directory = tmp_path / recovery.EVIDENCE_ID
     directory.mkdir(mode=0o700)
@@ -366,6 +370,279 @@ def test_status_before_and_after_semantics_cannot_be_relabelled(tmp_path: Path):
             required_uid=os.getuid(),
             required_gid=os.getgid(),
         )
+
+
+def test_timer_accepts_exact_common_properties_without_pid_fields():
+    state = recovery._unit_state(
+        recovery.LEGACY_TIMER,
+        command_runner=lambda _arguments: _unit_output(
+            LoadState="loaded",
+            ActiveState="inactive",
+            UnitFileState="disabled",
+            FragmentPath=str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_TIMER]),
+        ),
+    )
+    assert state == {
+        "load_state": "loaded",
+        "active_state": "inactive",
+        "unit_file_state": "disabled",
+        "fragment_path": str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_TIMER]),
+    }
+    assert "main_pid" not in state
+    assert "control_pid" not in state
+
+
+def test_timer_queries_only_common_systemd_properties():
+    captured = None
+
+    def runner(arguments):
+        nonlocal captured
+        captured = tuple(arguments)
+        return _unit_output(
+            LoadState="loaded",
+            ActiveState="inactive",
+            UnitFileState="disabled",
+            FragmentPath=str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_TIMER]),
+        )
+
+    recovery._unit_state(recovery.LEGACY_TIMER, command_runner=runner)
+    assert captured == (
+        "/usr/bin/systemctl",
+        "show",
+        "--no-pager",
+        "--property=LoadState",
+        "--property=ActiveState",
+        "--property=UnitFileState",
+        "--property=FragmentPath",
+        recovery.LEGACY_TIMER,
+    )
+
+
+@pytest.mark.parametrize("missing", ["FragmentPath", "UnitFileState"])
+def test_timer_rejects_missing_common_property(missing: str):
+    properties = {
+        "LoadState": "loaded",
+        "ActiveState": "inactive",
+        "UnitFileState": "disabled",
+        "FragmentPath": str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_TIMER]),
+    }
+    del properties[missing]
+    with pytest.raises(recovery.RecoveryError, match="query is incomplete"):
+        recovery._unit_state(
+            recovery.LEGACY_TIMER,
+            command_runner=lambda _arguments: _unit_output(**properties),
+        )
+
+
+def test_service_accepts_all_common_and_pid_properties():
+    state = recovery._unit_state(
+        recovery.LEGACY_SERVICE,
+        command_runner=lambda _arguments: _unit_output(
+            MainPID="0",
+            ControlPID="0",
+            LoadState="loaded",
+            ActiveState="failed",
+            FragmentPath=str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_SERVICE]),
+            UnitFileState="static",
+        ),
+    )
+    assert state == {
+        "load_state": "loaded",
+        "active_state": "failed",
+        "unit_file_state": "static",
+        "fragment_path": str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_SERVICE]),
+        "main_pid": 0,
+        "control_pid": 0,
+    }
+
+
+def test_service_queries_common_and_pid_systemd_properties():
+    captured = None
+
+    def runner(arguments):
+        nonlocal captured
+        captured = tuple(arguments)
+        return _unit_output(
+            LoadState="loaded",
+            ActiveState="failed",
+            UnitFileState="static",
+            FragmentPath=str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_SERVICE]),
+            MainPID="0",
+            ControlPID="0",
+        )
+
+    recovery._unit_state(recovery.LEGACY_SERVICE, command_runner=runner)
+    assert captured[-3:] == (
+        "--property=MainPID",
+        "--property=ControlPID",
+        recovery.LEGACY_SERVICE,
+    )
+    assert captured[3:-3] == tuple(
+        f"--property={name}" for name in recovery.COMMON_UNIT_PROPERTIES
+    )
+
+
+@pytest.mark.parametrize("missing", ["MainPID", "ControlPID"])
+def test_service_rejects_missing_pid_property(missing: str):
+    properties = {
+        "LoadState": "loaded",
+        "ActiveState": "failed",
+        "UnitFileState": "static",
+        "FragmentPath": str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_SERVICE]),
+        "MainPID": "0",
+        "ControlPID": "0",
+    }
+    del properties[missing]
+    with pytest.raises(recovery.RecoveryError, match="query is incomplete"):
+        recovery._unit_state(
+            recovery.LEGACY_SERVICE,
+            command_runner=lambda _arguments: _unit_output(**properties),
+        )
+
+
+def test_service_rejects_non_numeric_pid():
+    with pytest.raises(recovery.RecoveryError, match="PID is invalid"):
+        recovery._unit_state(
+            recovery.LEGACY_SERVICE,
+            command_runner=lambda _arguments: _unit_output(
+                LoadState="loaded",
+                ActiveState="failed",
+                UnitFileState="static",
+                FragmentPath=str(recovery.LEGACY_FRAGMENTS[recovery.LEGACY_SERVICE]),
+                MainPID="not-a-pid",
+                ControlPID="0",
+            ),
+        )
+
+
+def test_unknown_unit_name_is_rejected_before_command_execution():
+    def unexpected_runner(_arguments):
+        pytest.fail("unknown unit reached the command runner")
+
+    with pytest.raises(recovery.RecoveryError, match="unsupported legacy unit"):
+        recovery._unit_state("unknown.service", command_runner=unexpected_runner)
+
+
+def test_validate_live_partial_state_never_reads_timer_pid_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    approval = _approval()
+    repository = tmp_path / "production"
+    (repository / ".git").mkdir(parents=True)
+    monkeypatch.setattr(recovery, "PRODUCTION_REPOSITORY", repository)
+    fragment = b"bound legacy fragment\n"
+    fragment_hash = hashlib.sha256(fragment).hexdigest()
+    approval["current_partial_state"]["legacy_timer"]["fragment_sha256"] = fragment_hash
+    approval["current_partial_state"]["legacy_service"]["fragment_sha256"] = (
+        fragment_hash
+    )
+
+    class TimerState(dict):
+        def __getitem__(self, key):
+            if key in {"main_pid", "control_pid"}:
+                raise AssertionError("timer PID field was read")
+            return super().__getitem__(key)
+
+    def unit_state(unit: str):
+        if unit == recovery.LEGACY_TIMER:
+            return TimerState(
+                load_state="loaded",
+                active_state="inactive",
+                unit_file_state="disabled",
+                fragment_path=str(recovery.LEGACY_FRAGMENTS[unit]),
+            )
+        assert unit == recovery.LEGACY_SERVICE
+        return {
+            "load_state": "loaded",
+            "active_state": "failed",
+            "unit_file_state": "static",
+            "fragment_path": str(recovery.LEGACY_FRAGMENTS[unit]),
+            "main_pid": 0,
+            "control_pid": 0,
+        }
+
+    def command(arguments):
+        if arguments[:3] == ("/usr/bin/git", "-C", str(repository)):
+            return (
+                recovery.PRODUCTION_SHA
+                if arguments[-2:] == ("rev-parse", "HEAD")
+                else ""
+            )
+        if arguments[:2] == ("/usr/bin/docker", "info"):
+            return approval["production"]["docker_root_dir"]
+        if arguments[:2] == ("/usr/bin/docker", "inspect"):
+            name = arguments[-1]
+            if name == "backend-v2":
+                return "|".join(
+                    (
+                        approval["production"]["backend_container_id"],
+                        approval["production"]["backend_image_digest"],
+                    )
+                )
+            return "|".join(
+                (
+                    approval["production"]["worker_container_id"],
+                    approval["production"]["worker_image_digest"],
+                )
+            )
+        pytest.fail(f"unexpected command: {arguments}")
+
+    def process(arguments, **_kwargs):
+        if arguments[0] == "/usr/bin/crontab":
+            return SimpleNamespace(
+                returncode=0, stdout=recovery.LEGACY_CRON_LINE + "\n"
+            )
+        assert arguments[0] == "/usr/bin/pgrep"
+        return SimpleNamespace(returncode=1, stdout="")
+
+    monkeypatch.setattr(recovery, "_unit_state", unit_state)
+    monkeypatch.setattr(recovery, "_command", command)
+    monkeypatch.setattr(recovery, "_read_regular", lambda *_args, **_kwargs: fragment)
+    monkeypatch.setattr(
+        recovery, "validate_target_preconditions", lambda _targets: None
+    )
+    monkeypatch.setattr(recovery, "validate_evidence", lambda _approval: {})
+    monkeypatch.setattr(recovery.subprocess, "run", process)
+    result = recovery.validate_live_partial_state(approval)
+    assert result["legacy_cron"] == recovery.LEGACY_CRON_LINE + "\n"
+
+
+def test_observed_production_timer_without_pid_properties_is_accepted():
+    output = "\n".join(
+        (
+            "LoadState=loaded",
+            "ActiveState=inactive",
+            "FragmentPath=/etc/systemd/system/sealai-docker-disk-guard.timer",
+            "UnitFileState=disabled",
+        )
+    )
+    state = recovery._unit_state(
+        recovery.LEGACY_TIMER, command_runner=lambda _arguments: output
+    )
+    assert state["active_state"] == "inactive"
+    assert set(state) == {
+        "load_state",
+        "active_state",
+        "unit_file_state",
+        "fragment_path",
+    }
+
+
+def test_observed_production_service_with_zero_pids_is_accepted():
+    output = "\n".join(
+        (
+            "MainPID=0",
+            "ControlPID=0",
+            "LoadState=loaded",
+            "ActiveState=failed",
+            "FragmentPath=/etc/systemd/system/sealai-docker-disk-guard.service",
+            "UnitFileState=static",
+        )
+    )
+    state = recovery._unit_state(
+        recovery.LEGACY_SERVICE, command_runner=lambda _arguments: output
+    )
+    assert state["main_pid"] == state["control_pid"] == 0
 
 
 def test_fresh_run_verifies_exact_dependencies_before_first_legacy_mutation():

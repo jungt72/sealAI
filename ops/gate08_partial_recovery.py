@@ -179,6 +179,13 @@ STORAGE_PATH_GROUPS = {
     "/mnt/sealai-volume/docker-data": "dockerfs",
 }
 STORAGE_GROUPS = frozenset(STORAGE_PATH_GROUPS.values())
+COMMON_UNIT_PROPERTIES = (
+    "LoadState",
+    "ActiveState",
+    "UnitFileState",
+    "FragmentPath",
+)
+SERVICE_PID_PROPERTIES = ("MainPID", "ControlPID")
 
 
 class RecoveryError(RuntimeError):
@@ -1306,40 +1313,41 @@ def _command(arguments: Sequence[str]) -> str:
     return result.stdout.strip()
 
 
-def _unit_state(unit: str) -> dict[str, Any]:
-    raw = _command(
+def _unit_state(
+    unit: str, *, command_runner: Callable[[Sequence[str]], str] | None = None
+) -> dict[str, Any]:
+    if unit == LEGACY_TIMER:
+        properties = COMMON_UNIT_PROPERTIES
+    elif unit == LEGACY_SERVICE:
+        properties = COMMON_UNIT_PROPERTIES + SERVICE_PID_PROPERTIES
+    else:
+        _fail("unsupported legacy unit")
+    runner = _command if command_runner is None else command_runner
+    raw = runner(
         (
             "/usr/bin/systemctl",
             "show",
             "--no-pager",
-            "--property=LoadState",
-            "--property=ActiveState",
-            "--property=UnitFileState",
-            "--property=FragmentPath",
-            "--property=MainPID",
-            "--property=ControlPID",
+            *(f"--property={name}" for name in properties),
             unit,
         )
     )
     values = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
-    expected = {
-        "LoadState",
-        "ActiveState",
-        "UnitFileState",
-        "FragmentPath",
-        "MainPID",
-        "ControlPID",
-    }
-    if set(values) != expected:
+    if set(values) != set(properties):
         _fail("legacy unit state query is incomplete")
-    return {
+    state: dict[str, Any] = {
         "load_state": values["LoadState"],
         "active_state": values["ActiveState"],
         "unit_file_state": values["UnitFileState"],
         "fragment_path": values["FragmentPath"],
-        "main_pid": int(values["MainPID"]),
-        "control_pid": int(values["ControlPID"]),
     }
+    if unit == LEGACY_SERVICE:
+        try:
+            state["main_pid"] = int(values["MainPID"])
+            state["control_pid"] = int(values["ControlPID"])
+        except ValueError as exc:
+            raise RecoveryError("legacy service PID is invalid") from exc
+    return state
 
 
 def _ancestor_pids() -> set[int]:
