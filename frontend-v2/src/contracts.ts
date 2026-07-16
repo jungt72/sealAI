@@ -243,6 +243,10 @@ export interface MaterialConstraintMatch {
   source_ref: string;
   evidence_binding_state: "unbound";
 }
+export interface MaterialConstraintBlocker {
+  kind: "hard_gate" | "scope" | "conflict" | "input" | "medium_relation";
+  ref: string;
+}
 export interface MaterialConstraintResult {
   material_state: "known" | "missing" | "unknown" | "ambiguous";
   medium_state: "known" | "missing" | "unknown" | "ambiguous";
@@ -255,6 +259,7 @@ export interface MaterialConstraintResult {
   requires_resolution: boolean;
   positive_statement_allowed: false;
   conditions: MaterialConstraintMatch[];
+  blockers: MaterialConstraintBlocker[];
   matches?: MaterialConstraintMatch[];
 }
 // L3 trust status (P1.5) — lets the client distinguish a confidently-verified answer from a hedge or

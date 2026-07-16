@@ -141,6 +141,7 @@ describe("Answer — P4 Gegencheck note (disqualify-only, E4-1)", () => {
             requires_resolution: false,
             positive_statement_allowed: false,
             conditions: [],
+            blockers: [],
             matches: [
               {
                 rule_ref: "MX-NBR-MINERALOEL",
@@ -154,7 +155,11 @@ describe("Answer — P4 Gegencheck note (disqualify-only, E4-1)", () => {
         }}
       />,
     );
-    expect(screen.queryByText(/Gegencheck/)).not.toBeInTheDocument();
+    const note = screen.getByTestId("material-constraint-neutral");
+    expect(note).toHaveTextContent(
+      "Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.",
+    );
+    expect(note).toHaveTextContent("matrix-cell:MX-NBR-MINERALOEL");
     expect(screen.queryByText(/kompatibel|geeignet|freigegeben/i)).not.toBeInTheDocument();
   });
 });

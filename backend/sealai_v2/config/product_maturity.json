@@ -42,12 +42,12 @@
     "material_constraints": {
       "horizon": "H3",
       "status": "in_build",
-      "implementation_status": "contract_only_default_off",
-      "contract_version": "MAT-GOV-01",
+      "implementation_status": "governance_default_off",
+      "contract_version": "MAT-GOV-02",
       "activation_gate": "G8",
       "activation_blockers": [
-        "MAT-GOV-02",
         "MAT-GOV-03",
+        "MED-NORM-01",
         "material_rule_evidence",
         "owner_activation"
       ],

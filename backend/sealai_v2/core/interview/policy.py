@@ -37,6 +37,10 @@ _UNSUPPORTED_SCOPE = "unsupported"
 _UNKNOWN_SCOPE = "unknown"
 
 
+class InterviewContractError(RuntimeError):
+    """Controlled fail-closed error for an invalid interview catalog/runtime."""
+
+
 def _normalized(value: str | None) -> str:
     return " ".join((value or "").strip().casefold().split())
 
@@ -243,18 +247,24 @@ def resolve_need_states(
         if need := _need_for_field(pack, conflict.field_key):
             active_conflicts.add(need.need_id)
 
+    overrides = {item.need_id: item for item in runtime_state.unobtainable_overrides}
+    for record in overrides.values():
+        if (record.pack_version, record.policy_version) != (
+            pack.version,
+            pack.policy_version,
+        ):
+            raise InterviewContractError("unobtainable override version mismatch")
+        if pack.need(record.need_id) is None or not pack.allows_unobtainable(
+            record.need_id
+        ):
+            raise InterviewContractError(
+                "unobtainable override is not allowed for this primary need"
+            )
+
     states: dict[str, NeedState] = {}
     for need in sorted(
         pack.needs, key=lambda item: (item.dependency_depth, item.need_id)
     ):
-        override = runtime_state.need_status_overrides.get(need.need_id)
-        if override is not None:
-            states[need.need_id] = NeedState(
-                need_id=need.need_id,
-                status=override,
-                reason_code="explicit_status_override",
-            )
-            continue
         if not need.active:
             states[need.need_id] = NeedState(
                 need_id=need.need_id,
@@ -267,6 +277,13 @@ def resolve_need_states(
                 need_id=need.need_id,
                 status=NeedStatus.CONFLICTED,
                 reason_code="active_conflict",
+            )
+            continue
+        if need.need_id in overrides:
+            states[need.need_id] = NeedState(
+                need_id=need.need_id,
+                status=NeedStatus.UNOBTAINABLE,
+                reason_code="audited_unobtainable_override",
             )
             continue
         if need.derived_calc_id:
@@ -804,6 +821,29 @@ def decide_next_interview_step(
             patches=tuple(patches),
         )
 
+    required_incomplete = next(
+        (
+            need
+            for need in domain_pack.needs
+            if need.active
+            and need.required
+            and not states[need.need_id].is_completion_satisfying
+        ),
+        None,
+    )
+    if required_incomplete is not None:
+        return _decision(
+            case_state=case_state,
+            pack=domain_pack,
+            directive=InterviewDirective(
+                type=InterviewDirectiveType.ESCALATE,
+                reason_code="required_need_not_completion_satisfying",
+                primary_need_id=required_incomplete.need_id,
+            ),
+            rule_refs=("AI-T6-INCOMPLETE-001", *required_incomplete.rule_refs),
+            patches=tuple(patches),
+        )
+
     return _decision(
         case_state=case_state,
         pack=domain_pack,
@@ -881,15 +921,28 @@ def next_question_payload(
     decision: InterviewDecision,
 ) -> NextQuestionPayload | None:
     directive = decision.directives[0] if decision.directives else None
-    if (
-        directive is None
-        or not directive.question_id
-        or not directive.pending_question_id
+    if directive is None:
+        return None
+    expects_question = directive.type in {
+        InterviewDirectiveType.ASK,
+        InterviewDirectiveType.CLARIFY_CONFLICT,
+        InterviewDirectiveType.CONFIRM_CRITICAL_FACT,
+    }
+    if expects_question and (
+        not directive.question_id or not directive.pending_question_id
     ):
+        raise InterviewContractError(
+            "question directive requires question and pending references"
+        )
+    if not expects_question:
+        if directive.question_id or directive.pending_question_id:
+            raise InterviewContractError(
+                "non-question directive cannot carry question references"
+            )
         return None
     question = pack.question(directive.question_id)
     if question is None:
-        return None
+        raise InterviewContractError("directed question missing from catalog")
     return NextQuestionPayload(
         case_id=case_id,
         topic_id=topic_id,

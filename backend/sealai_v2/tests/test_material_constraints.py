@@ -275,6 +275,10 @@ def test_both_inputs_missing_are_blocked_with_undetermined_relation() -> None:
         "requires_resolution": True,
         "positive_statement_allowed": False,
         "conditions": [],
+        "blockers": [
+            {"kind": "input", "ref": "material-input:missing"},
+            {"kind": "input", "ref": "medium-input:missing"},
+        ],
     }
 
 
@@ -666,6 +670,7 @@ def test_positive_statement_is_structurally_forbidden() -> None:
     assert material_constraint_to_gegencheck(result) == {
         "disqualified": False,
         "basis": "matrix_compatible",
+        "source": "matrix-cell:COMPAT-01",
     }
 
 

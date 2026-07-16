@@ -40,6 +40,7 @@ from sealai_v2.pipeline.pipeline import (
     ProgressSink,
     TokenSink,
 )
+from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewUnavailable
 from sealai_v2.security.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v2", tags=["chat"])
@@ -55,6 +56,16 @@ _MODE_UNAVAILABLE_MESSAGE = (
     "Dieser Produktmodus befindet sich noch in der fachlichen Freigabe und ist "
     "derzeit nicht aktiviert."
 )
+_ADAPTIVE_INTERVIEW_UNAVAILABLE_MESSAGE = (
+    "Die fachliche Klärung ist vorübergehend nicht verfügbar."
+)
+
+
+def _adaptive_interview_unavailable_detail() -> dict:
+    return {
+        "code": AdaptiveInterviewUnavailable.code,
+        "message": _ADAPTIVE_INTERVIEW_UNAVAILABLE_MESSAGE,
+    }
 
 
 def _mode_unavailable_detail(exc: ProductModeUnavailable) -> dict:
@@ -109,6 +120,10 @@ async def chat(
         raise HTTPException(
             status_code=503, detail=_mode_unavailable_detail(exc)
         ) from exc
+    except AdaptiveInterviewUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail=_adaptive_interview_unavailable_detail()
+        ) from exc
     except ConversationAccessDenied as exc:
         raise HTTPException(status_code=404, detail="conversation not found") from exc
     return chat_response(result)
@@ -145,6 +160,8 @@ async def chat_stream(
             queue.put_nowait(("result", chat_response(result)))
         except ProductModeUnavailable as exc:
             queue.put_nowait(("error", _mode_unavailable_detail(exc)))
+        except AdaptiveInterviewUnavailable:
+            queue.put_nowait(("error", _adaptive_interview_unavailable_detail()))
         except ConversationAccessDenied:
             queue.put_nowait(
                 (

@@ -102,18 +102,20 @@
   "capabilities": {
     "material_constraints": {
       "status": "in_build_default_off",
-      "contract_version": "MAT-GOV-01",
+      "contract_version": "MAT-GOV-02",
       "activation_gate": "G8",
       "activation_blockers": [
-        "MAT-GOV-02",
         "MAT-GOV-03",
+        "MED-NORM-01",
         "material_rule_evidence",
         "owner_activation"
       ],
       "evidence": [
         "docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md",
         "backend/sealai_v2/core/material_constraints.py",
-        "backend/sealai_v2/tests/test_material_constraints.py"
+        "backend/sealai_v2/tests/test_material_constraints.py",
+        "backend/sealai_v2/tests/test_mat_gov_02.py",
+        "backend/sealai_v2/tests/test_interview_governance.py"
       ]
     },
     "adaptive_interview_rwdr": {

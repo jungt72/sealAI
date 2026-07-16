@@ -377,6 +377,103 @@ class EvaluationState(str, Enum):
     NO_RULE_DATA = "no_rule_data"
 
 
+class MaterialConstraintScopeState(str, Enum):
+    """Explicit material-governance scope; absence is never a wildcard."""
+
+    IN_SCOPE = "in_scope"
+    OUT_OF_SCOPE = "out_of_scope"
+    UNKNOWN = "unknown"
+
+
+class MaterialConstraintBlockerKind(str, Enum):
+    """Stable precedence classes for fail-closed material evaluation."""
+
+    HARD_GATE = "hard_gate"
+    SCOPE = "scope"
+    CONFLICT = "conflict"
+    INPUT = "input"
+    MEDIUM_RELATION = "medium_relation"
+
+
+_MATERIAL_BLOCKER_PRECEDENCE = {
+    MaterialConstraintBlockerKind.HARD_GATE: 0,
+    MaterialConstraintBlockerKind.SCOPE: 1,
+    MaterialConstraintBlockerKind.CONFLICT: 2,
+    MaterialConstraintBlockerKind.INPUT: 3,
+    MaterialConstraintBlockerKind.MEDIUM_RELATION: 4,
+}
+
+
+@dataclass(frozen=True)
+class MaterialConstraintBlocker:
+    kind: MaterialConstraintBlockerKind
+    ref: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, MaterialConstraintBlockerKind):
+            raise TypeError(
+                "material blocker kind must be MaterialConstraintBlockerKind"
+            )
+        if (
+            not self.ref
+            or self.ref != self.ref.strip()
+            or any(ch.isspace() for ch in self.ref)
+        ):
+            raise ValueError("material blocker requires a stable non-whitespace ref")
+
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind.value, "ref": self.ref}
+
+
+def material_constraint_blocker_sort_key(
+    blocker: MaterialConstraintBlocker,
+) -> tuple[int, str]:
+    return (_MATERIAL_BLOCKER_PRECEDENCE[blocker.kind], blocker.ref)
+
+
+@dataclass(frozen=True)
+class MaterialConstraintPreconditions:
+    """Typed pre-rule boundary in binding governance precedence order."""
+
+    scope: MaterialConstraintScopeState = MaterialConstraintScopeState.UNKNOWN
+    hard_gate_refs: tuple[str, ...] = ()
+    conflict_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scope, MaterialConstraintScopeState):
+            raise TypeError("material scope must be MaterialConstraintScopeState")
+        for label, refs in (
+            ("hard_gate_refs", self.hard_gate_refs),
+            ("conflict_refs", self.conflict_refs),
+        ):
+            if len(refs) != len(set(refs)):
+                raise ValueError(f"{label} must be unique")
+            if any(
+                not ref or ref != ref.strip() or any(ch.isspace() for ch in ref)
+                for ref in refs
+            ):
+                raise ValueError(f"{label} require stable non-whitespace refs")
+
+    @property
+    def blockers(self) -> tuple[MaterialConstraintBlocker, ...]:
+        blockers = [
+            MaterialConstraintBlocker(MaterialConstraintBlockerKind.HARD_GATE, ref)
+            for ref in self.hard_gate_refs
+        ]
+        if self.scope is not MaterialConstraintScopeState.IN_SCOPE:
+            blockers.append(
+                MaterialConstraintBlocker(
+                    MaterialConstraintBlockerKind.SCOPE,
+                    f"material-scope:{self.scope.value}",
+                )
+            )
+        blockers.extend(
+            MaterialConstraintBlocker(MaterialConstraintBlockerKind.CONFLICT, ref)
+            for ref in self.conflict_refs
+        )
+        return tuple(sorted(blockers, key=material_constraint_blocker_sort_key))
+
+
 def _validate_material_input(
     name: str, value: str, state: InputResolutionState
 ) -> None:
@@ -532,6 +629,7 @@ class MaterialConstraintResult:
     verdict: MaterialConstraintVerdict | None = None
     matches: tuple[MaterialConstraintMatch, ...] = ()
     decisive_ref: str | None = None
+    blockers: tuple[MaterialConstraintBlocker, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.material_state, InputResolutionState):
@@ -548,6 +646,16 @@ class MaterialConstraintResult:
             self.verdict, MaterialConstraintVerdict
         ):
             raise TypeError("result verdict must be MaterialConstraintVerdict")
+        if any(
+            not isinstance(item, MaterialConstraintBlocker) for item in self.blockers
+        ):
+            raise TypeError("result blockers must be MaterialConstraintBlocker values")
+        if len({(item.kind, item.ref) for item in self.blockers}) != len(self.blockers):
+            raise ValueError("material blockers must be unique")
+        if self.blockers != tuple(
+            sorted(self.blockers, key=material_constraint_blocker_sort_key)
+        ):
+            raise ValueError("material blockers must use canonical precedence order")
         _validate_medium_relation(
             self.medium_state, self.medium_cardinality, self.relation_state
         )
@@ -558,6 +666,8 @@ class MaterialConstraintResult:
             and self.relation_state is RelationState.NOT_APPLICABLE
         )
         if self.evaluation_state is EvaluationState.EVALUATED:
+            if self.blockers:
+                raise ValueError("evaluated result cannot carry blockers")
             if not inputs_evaluable:
                 raise ValueError("evaluated result requires evaluable input states")
             if self.verdict is None or not self.matches or self.decisive_ref is None:
@@ -586,9 +696,15 @@ class MaterialConstraintResult:
             and not inputs_evaluable
         ):
             raise ValueError("no_rule_data requires otherwise evaluable inputs")
-        if self.evaluation_state is EvaluationState.BLOCKED and inputs_evaluable:
+        if self.evaluation_state is EvaluationState.NO_RULE_DATA and self.blockers:
+            raise ValueError("no_rule_data result cannot carry blockers")
+        if (
+            self.evaluation_state is EvaluationState.BLOCKED
+            and inputs_evaluable
+            and not self.blockers
+        ):
             raise ValueError(
-                "blocked result requires unresolved input or relation state"
+                "blocked evaluable result requires an explicit precondition blocker"
             )
         if self.verdict is not None or self.matches or self.decisive_ref is not None:
             raise ValueError(
@@ -630,6 +746,7 @@ class MaterialConstraintResult:
             "requires_resolution": self.requires_resolution,
             "positive_statement_allowed": self.positive_statement_allowed,
             "conditions": [condition.to_dict() for condition in self.conditions],
+            "blockers": [blocker.to_dict() for blocker in self.blockers],
         }
         if self.verdict is not None:
             payload["verdict"] = self.verdict.value
@@ -1006,6 +1123,8 @@ class Case:
     seal_spec: dict | None = (
         None  # {material?, type?, form?, designation?} — populated later
     )
+    material_state: InputResolutionState | None = None
+    material_candidates: tuple[str, ...] = ()
     provenance: tuple[
         str, ...
     ] = ()  # per-field origin (carried as the typed slots grow)
@@ -1025,17 +1144,36 @@ class Case:
         Lazy import keeps ``contracts`` (the base module) free of any import-cycle risk."""
         seal_spec: dict | None = None
         medium: dict | None = None
+        material_state: InputResolutionState | None = None
+        material_candidates: tuple[str, ...] = ()
         if question:
             from sealai_v2.core.medium_extract import extract_media
-            from sealai_v2.core.seal_spec_extract import extract_seal_spec
+            from sealai_v2.core.seal_spec_extract import (
+                extract_material_candidates,
+                extract_seal_spec,
+            )
 
             seal_spec = extract_seal_spec(question)
+            material_candidates = extract_material_candidates(question)
+            material_state = (
+                InputResolutionState.MISSING
+                if not material_candidates
+                else InputResolutionState.KNOWN
+                if len(material_candidates) == 1
+                else InputResolutionState.AMBIGUOUS
+            )
             media = extract_media(question)
             if media:
                 # name = primary (display); matched = ALL media → the stage folds the kernel
                 # over every one so a co-mentioned disqualifying medium is never dropped.
                 medium = {"name": media[0], "matched": list(media)}
-        return cls(facts=tuple(case_state), seal_spec=seal_spec, medium=medium)
+        return cls(
+            facts=tuple(case_state),
+            seal_spec=seal_spec,
+            medium=medium,
+            material_state=material_state,
+            material_candidates=material_candidates,
+        )
 
     def to_prompt_context(self) -> list[dict]:
         """The byte-identical prompt projection: ``[{"feld","wert"}]`` over the case-state facts.

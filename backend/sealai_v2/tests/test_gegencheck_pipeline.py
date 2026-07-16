@@ -15,6 +15,7 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.pipeline import stages
 from sealai_v2.pipeline.pipeline import Pipeline
+import sealai_v2.pipeline.pipeline as pipeline_module
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.tenant import TenantContext
 from sealai_v2.tests._fakes import FakeLlmClient
@@ -119,3 +120,56 @@ def test_enabled_contract_returns_blocked_result_without_inputs() -> None:
     assert res.material_constraints.to_dict()["evaluation_state"] == "blocked"
     assert res.material_constraints.to_dict()["medium_cardinality"] == "none"
     assert res.material_constraints.to_dict()["relation_state"] == "undetermined"
+
+
+def test_governed_compatible_matrix_fact_is_not_a_positive_l1_claim() -> None:
+    res = _run(
+        _pipeline(FakeLlmClient("Antwort"), material_constraints_enabled=True),
+        "Wir verwenden EPDM in Heißdampf, passt das?",
+    )
+    assert res.material_constraints is not None
+    assert res.material_constraints.to_dict()["verdict"] == "vertraeglich"
+    assert all(fact.kind != "matrix" for fact in res.grounding_facts)
+    assert res.gegencheck["source"].startswith("matrix-cell:")
+
+
+def test_governed_result_does_not_auto_migrate_produktspec(monkeypatch) -> None:
+    candidate = {"material_candidate_set": ["NBR"]}
+    monkeypatch.setattr(
+        pipeline_module, "compute_kandidaten_spec", lambda *_args, **_kwargs: candidate
+    )
+    governed = _pipeline(FakeLlmClient("Antwort"), material_constraints_enabled=True)
+    governed.produktspec_enabled = True
+    assert (
+        _run(governed, "Wir verwenden EPDM in Heißdampf, passt das?").kandidaten_spec
+        is None
+    )
+
+    legacy = _pipeline(FakeLlmClient("Antwort"), material_constraints_enabled=False)
+    legacy.produktspec_enabled = True
+    assert (
+        _run(legacy, "Wir verwenden EPDM in Heißdampf, passt das?").kandidaten_spec
+        == candidate
+    )
+
+
+def test_governed_multiple_media_do_not_reach_any_matrix_path() -> None:
+    class MustNotAccessMatrix:
+        @property
+        def catalog(self):
+            raise AssertionError("blocked multi-medium case accessed matrix catalog")
+
+        def query(self, *_args, **_kwargs):
+            raise AssertionError("blocked multi-medium case queried matrix")
+
+    pipeline = _pipeline(FakeLlmClient("Antwort"), material_constraints_enabled=True)
+    pipeline.matrix = MustNotAccessMatrix()
+    result = _run(
+        pipeline,
+        "Wir verwenden NBR in Mineralöl und Aceton, passt das?",
+    )
+    assert result.material_constraints is not None
+    assert result.material_constraints.evaluation_state.value == "blocked"
+    assert result.material_constraints.medium_cardinality.value == "multiple"
+    assert result.material_constraints.blockers[0].ref == "medium-cardinality:multiple"
+    assert all(fact.kind != "matrix" for fact in result.grounding_facts)

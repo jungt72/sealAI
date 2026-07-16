@@ -41,7 +41,6 @@ export function MediumPanel({ data }: { data: MediumIntelligence }) {
         title="Herausforderungen für die Dichtung"
         items={data.herausforderungen}
       />
-      <Section title="Werkstoff-Tendenz" items={data.werkstoff_tendenz} />
       {data.unsicher ? (
         <p className="medium-panel-unsicher">
           Ungewöhnliches Medium — diese Angaben sind besonders unsicher; unbedingt gegen

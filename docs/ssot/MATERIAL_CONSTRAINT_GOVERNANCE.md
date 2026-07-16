@@ -1,7 +1,8 @@
 # Material-Constraint Governance
 
-Status: MAT-GOV-01 implemented as a default-off contract; no material-rule
-activation. Owner decisions ratified 2026-07-16.
+Status: MAT-GOV-01 and MAT-GOV-02 implemented default-off; no material-rule
+activation. Independent review and all activation gates remain required.
+Owner decisions ratified 2026-07-16.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
 P12 to material constraints. It does not add material facts, media classes,
@@ -69,15 +70,64 @@ They never authorize a positive compatibility statement, material selection,
 component release, or `COVERED_RECOMMENDATION` on their own. The canonical
 contract enforces `positive_statement_allowed=false` for every result.
 
+## Preconditions and precedence
+
+The evaluator accepts typed preconditions and emits canonically ordered stable
+blocker references. It resolves them before any matrix access in this order:
+
+1. authentication, tenant, legal, product, and approval hard gates;
+2. explicit material-governance scope;
+3. active case conflicts;
+4. material and medium input resolution;
+5. medium cardinality and relation;
+6. material rules;
+7. coverage;
+8. response projection.
+
+A blocked result carries no verdict, match, or decisive reference. Every
+multiple cardinality is blocked before matrix access whether its relation is
+`unresolved` or `resolved`. Recognized material candidates may establish
+`ambiguous`; punctuation, conjunctions, slashes, or token concatenation never
+establish media cardinality or a multi-medium evaluation.
+
+`matrix_compatible` is an internal neutral state on the governed path. Its
+maximum external projection is `PARTIAL_ENVELOPE + COVERED_CAUTION`, with
+reason code `matrix_no_documented_incompatibility` and the exact notice:
+
+```text
+Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.
+```
+
+Missing, unknown, ambiguous, or otherwise blocked chemical input maps to a
+missing chemical axis, never to `not_applicable`. The legacy coverage and
+prompt projection remain unchanged while `material_constraints_enabled=false`.
+
+## Interview override and failure contract
+
+`NeedState.is_documented` and `NeedState.is_completion_satisfying` are separate.
+`BLOCKED` is documented but cannot produce `COMPLETE`. `UNOBTAINABLE` accepts
+only a typed audit record with `need_id`, reason, actor reference, UTC time,
+domain-pack version, and policy version. It is allowed only where the domain
+pack explicitly enables the need as `primary_need_id`; related needs require
+their own primary contract and are never updated as a side effect. Active
+conflicts precede the override. Legacy untyped status dictionaries are rejected
+and are not migrated implicitly. There is no public override writer.
+
+Active adaptive-interview contract failures never collapse to `None`. Before a
+normal response they project as HTTP 503 with the stable code
+`adaptive_interview_unavailable`; after streaming starts they terminate the
+stream with one error event and no normal result. Shadow-only operation remains
+fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
+
 ## Work-package boundaries
 
 | Package | Binding scope |
 | --- | --- |
 | MAT-GOV-01 | Canonical typed result, unchanged verdict values, stable conditional references, legacy Gegencheck adapter, default-off additive serialization |
-| MAT-GOV-02 | Scope, null, unknown, unresolved-relation, hard-gate, conflict, `unobtainable`, and precedence invariants |
+| MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
 | MAT-GOV-03 | Ruleset persistence, review/activation, rollback, and immutable decision-snapshot pinning |
 
-MAT-GOV-01 contains no database migration, ruleset lifecycle, new material
+MAT-GOV-01/02 contain no database migration, ruleset lifecycle, new material
 rule, medium catalog, evidence migration, thermal model, or frontend
 recommendation. `material_constraints_enabled` defaults to false. While false,
 the historical Gegencheck code path and API payload remain unchanged and contain
@@ -102,7 +152,7 @@ rejected during settings validation.
 7. Executable RWDR thermal calculation remains NO-GO until separately sourced,
    reviewed, tested, and owner-activated.
 
-Items 1, 2, 3, and 6 require the MAT-GOV-02 implementation before activation.
-Ruleset lifecycle and snapshot binding require MAT-GOV-03. Until both packages
-are complete and independently gated, the new contract remains an audit-only,
-default-off surface.
+Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Ruleset lifecycle and snapshot
+binding require MAT-GOV-03; structured multi-medium evaluation requires
+MED-NORM-01. Until those packages, material-rule evidence, independent review,
+and owner activation are complete, the contract remains default-off.

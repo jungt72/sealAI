@@ -12,6 +12,10 @@ from sealai_v2.core.contracts import (
     InputResolutionState,
     MediumCardinality,
     MaterialConstraintMatch,
+    MaterialConstraintBlocker,
+    MaterialConstraintBlockerKind,
+    MaterialConstraintPreconditions,
+    MaterialConstraintScopeState,
     MaterialConstraintQuery,
     MaterialConstraintResult,
     MaterialConstraintVerdict,
@@ -36,7 +40,10 @@ def _legacy_projection_matches(
 
 
 def _result_without_verdict(
-    query: MaterialConstraintQuery, evaluation_state: EvaluationState
+    query: MaterialConstraintQuery,
+    evaluation_state: EvaluationState,
+    *,
+    blockers: tuple[MaterialConstraintBlocker, ...] = (),
 ) -> MaterialConstraintResult:
     return MaterialConstraintResult(
         material_state=query.material_state,
@@ -44,7 +51,46 @@ def _result_without_verdict(
         medium_cardinality=query.medium_cardinality,
         relation_state=query.relation_state,
         evaluation_state=evaluation_state,
+        blockers=blockers,
     )
+
+
+def _query_blockers(
+    query: MaterialConstraintQuery,
+) -> tuple[MaterialConstraintBlocker, ...]:
+    blockers: list[MaterialConstraintBlocker] = []
+    if query.material_state is not InputResolutionState.KNOWN:
+        blockers.append(
+            MaterialConstraintBlocker(
+                MaterialConstraintBlockerKind.INPUT,
+                f"material-input:{query.material_state.value}",
+            )
+        )
+    if query.medium_state is not InputResolutionState.KNOWN:
+        blockers.append(
+            MaterialConstraintBlocker(
+                MaterialConstraintBlockerKind.INPUT,
+                f"medium-input:{query.medium_state.value}",
+            )
+        )
+    if query.medium_cardinality is MediumCardinality.MULTIPLE:
+        blockers.append(
+            MaterialConstraintBlocker(
+                MaterialConstraintBlockerKind.MEDIUM_RELATION,
+                "medium-cardinality:multiple",
+            )
+        )
+    elif query.relation_state not in {
+        RelationState.NOT_APPLICABLE,
+        RelationState.UNDETERMINED,
+    }:
+        blockers.append(
+            MaterialConstraintBlocker(
+                MaterialConstraintBlockerKind.MEDIUM_RELATION,
+                f"medium-relation:{query.relation_state.value}",
+            )
+        )
+    return tuple(blockers)
 
 
 def _assert_unique_rule_refs(rule_refs: tuple[str, ...]) -> None:
@@ -60,7 +106,9 @@ def resolve_material_constraint_matches(
     if not query.evaluable:
         if matches:
             raise ValueError("blocked material-constraint input cannot carry matches")
-        return _result_without_verdict(query, EvaluationState.BLOCKED)
+        return _result_without_verdict(
+            query, EvaluationState.BLOCKED, blockers=_query_blockers(query)
+        )
 
     _assert_unique_rule_refs(tuple(match.rule_ref for match in matches))
     ordered = tuple(sorted(matches, key=material_constraint_match_sort_key))
@@ -85,6 +133,7 @@ def evaluate_material_constraints(
     *,
     tenant: str,
     catalog: CompatibilityMatrixCatalog | None,
+    preconditions: MaterialConstraintPreconditions | None = None,
 ) -> MaterialConstraintResult:
     """Evaluate explicit inputs against the existing compatibility matrix.
 
@@ -95,8 +144,24 @@ def evaluate_material_constraints(
     resolved: MAT-GOV-01 has no structured per-medium evaluation surface.
     """
 
+    # ``None`` is the MAT-GOV-01 compatibility boundary. The governed pipeline
+    # always supplies an explicit scope; an explicitly constructed empty
+    # precondition object remains UNKNOWN and therefore blocks.
+    typed_preconditions = preconditions or MaterialConstraintPreconditions(
+        scope=MaterialConstraintScopeState.IN_SCOPE
+    )
+    if not isinstance(typed_preconditions, MaterialConstraintPreconditions):
+        raise TypeError("preconditions must be MaterialConstraintPreconditions")
+    if typed_preconditions.blockers:
+        return _result_without_verdict(
+            query,
+            EvaluationState.BLOCKED,
+            blockers=typed_preconditions.blockers,
+        )
     if not query.evaluable:
-        return _result_without_verdict(query, EvaluationState.BLOCKED)
+        return _result_without_verdict(
+            query, EvaluationState.BLOCKED, blockers=_query_blockers(query)
+        )
     if catalog is None:
         return _result_without_verdict(query, EvaluationState.NO_RULE_DATA)
 
@@ -158,7 +223,11 @@ def material_constraint_to_gegencheck(result: MaterialConstraintResult) -> dict:
             "condition": decisive.statement,
             "source": decisive.source_ref,
         }
-    return {"disqualified": False, "basis": "matrix_compatible"}
+    return {
+        "disqualified": False,
+        "basis": "matrix_compatible",
+        "source": decisive.source_ref,
+    }
 
 
 def legacy_material_constraint_query(

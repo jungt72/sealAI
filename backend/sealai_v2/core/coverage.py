@@ -24,6 +24,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from sealai_v2.core.contracts import (
+    EvaluationState,
+    MaterialConstraintResult,
+    MaterialConstraintVerdict,
+)
+
+MATRIX_COMPATIBLE_NEUTRAL_REASON = "matrix_no_documented_incompatibility"
+
 
 class CoverageStatus(str, Enum):
     """How far the system's REVIEWED grounding reaches for this case (SS4.2)."""
@@ -45,6 +53,7 @@ class AxisCoverage(str, Enum):
         "analog"  # no direct hit, but a near neighbour (same family / adjacent medium)
     )
     MISSING = "missing"  # the axis is relevant to the case but ungrounded
+    NEUTRAL = "neutral"  # no documented incompatibility; never positive coverage
     NOT_APPLICABLE = "not_applicable"  # the case has no such axis (e.g. a pure-geometry decode question)
 
 
@@ -73,6 +82,20 @@ def chemical_axis(gegencheck_verdict: dict | None) -> AxisCoverage:
     return _GEGENCHECK_BASIS.get(basis, AxisCoverage.MISSING)
 
 
+def material_chemical_axis(result: MaterialConstraintResult) -> AxisCoverage:
+    """Map the typed material result without collapsing missing data to N/A."""
+
+    if result.evaluation_state is not EvaluationState.EVALUATED:
+        return AxisCoverage.MISSING
+    if result.verdict is MaterialConstraintVerdict.BEDINGT:
+        return AxisCoverage.BORDER
+    if result.verdict is MaterialConstraintVerdict.VERTRAEGLICH:
+        return AxisCoverage.NEUTRAL
+    if result.verdict is MaterialConstraintVerdict.UNVERTRAEGLICH:
+        return AxisCoverage.GROUNDED
+    raise ValueError("evaluated material result requires a canonical verdict")
+
+
 def archetype_axis(archetype_context: dict | None) -> AxisCoverage:
     """Map the recognised-archetype context (a matched reviewed profile, or ``None``) to coverage.
 
@@ -87,6 +110,7 @@ class CoverageResult:
     chemical: AxisCoverage
     operating: AxisCoverage
     archetype: AxisCoverage
+    reason_code: str = ""
 
     def axis_summary(self) -> str:
         """Deterministic evidence summary — the per-axis hit/miss list (SS4.2), reusable as the SS9
@@ -100,13 +124,16 @@ class CoverageResult:
     def to_dict(self) -> dict:
         """Render/serializer surface (mirrors the gegencheck verdict dict) — the SPA + the §9 flywheel
         consume this; it is NEVER asserted by L1/L3, only the status bounds the allowed mode (§5)."""
-        return {
+        payload = {
             "status": self.status.value,
             "chemical": self.chemical.value,
             "operating": self.operating.value,
             "archetype": self.archetype.value,
             "axes": self.axis_summary(),
         }
+        if self.reason_code:
+            payload["reason_code"] = self.reason_code
+        return payload
 
 
 def classify_coverage(
@@ -114,6 +141,7 @@ def classify_coverage(
     chemical: AxisCoverage,
     operating: AxisCoverage = AxisCoverage.NOT_APPLICABLE,
     archetype: AxisCoverage = AxisCoverage.NOT_APPLICABLE,
+    reason_code: str = "",
 ) -> CoverageResult:
     """Deterministic case-level coverage from per-axis grounding (SS4.3, refined against the IST-stand).
 
@@ -125,6 +153,7 @@ def classify_coverage(
         chemical=chemical,
         operating=operating,
         archetype=archetype,
+        reason_code=reason_code,
     )
 
 
@@ -137,6 +166,8 @@ def _status(
     if chemical is AxisCoverage.ANALOG:
         return CoverageStatus.ANALOG_ONLY
     if chemical is AxisCoverage.BORDER:
+        return CoverageStatus.PARTIAL_ENVELOPE
+    if chemical is AxisCoverage.NEUTRAL:
         return CoverageStatus.PARTIAL_ENVELOPE
     # chemical is GROUNDED or NOT_APPLICABLE -> the supporting axes decide.
     support = [
@@ -153,13 +184,25 @@ def _status(
 
 
 def coverage_for(
-    gegencheck_verdict: dict | None, archetype_context: dict | None
+    gegencheck_verdict: dict | None,
+    archetype_context: dict | None,
+    *,
+    material_constraints: MaterialConstraintResult | None = None,
 ) -> dict:
     """Build the case-level coverage dict from the pipeline's grounded evidence — the chemical axis
     from the gegencheck verdict (``core/gegencheck.py``) and the archetype axis from the recognised
     profile. The operating axis stays NOT_APPLICABLE in v1: geometric/structural reasoning is
     LLM-allowed (I-COV-3), and a grounded operating-validity layer is a later sub-step. Pure."""
+    chemical = (
+        material_chemical_axis(material_constraints)
+        if material_constraints is not None
+        else chemical_axis(gegencheck_verdict)
+    )
+    reason_code = (
+        MATRIX_COMPATIBLE_NEUTRAL_REASON if chemical is AxisCoverage.NEUTRAL else ""
+    )
     return classify_coverage(
-        chemical=chemical_axis(gegencheck_verdict),
+        chemical=chemical,
         archetype=archetype_axis(archetype_context),
+        reason_code=reason_code,
     ).to_dict()

@@ -27,6 +27,7 @@ from sealai_v2.core.contracts import (
     LlmClient,
     MaterialConstraintQuery,
     MaterialConstraintResult,
+    MaterialConstraintPreconditions,
     MediumCardinality,
     MemoryView,
     ModelConfig,
@@ -341,7 +342,13 @@ async def remember(
         )
 
 
-def material_constraints(matrix, case, *, tenant_id: str) -> MaterialConstraintResult:
+def material_constraints(
+    matrix,
+    case,
+    *,
+    tenant_id: str,
+    preconditions: MaterialConstraintPreconditions | None = None,
+) -> MaterialConstraintResult:
     """Return an explicit canonical result whenever the feature is enabled."""
 
     spec = case.seal_spec or {} if case is not None else {}
@@ -353,9 +360,10 @@ def material_constraints(matrix, case, *, tenant_id: str) -> MaterialConstraintR
     if isinstance(matched, str):
         matched = [matched]
     medium_items = tuple(str(item).strip() for item in matched if str(item).strip())
-    material_value = str(material or "").strip()
+    material_candidates = tuple(getattr(case, "material_candidates", ()) or ())
+    material_value = str(material or "").strip() or " ".join(material_candidates)
     medium_value = " ".join(medium_items)
-    material_state = (
+    material_state = getattr(case, "material_state", None) or (
         InputResolutionState.KNOWN if material_value else InputResolutionState.MISSING
     )
     medium_state = (
@@ -378,10 +386,14 @@ def material_constraints(matrix, case, *, tenant_id: str) -> MaterialConstraintR
         medium_cardinality=medium_cardinality,
         relation_state=relation_state,
     )
+    catalog = None
+    if query.evaluable and not (preconditions and preconditions.blockers):
+        catalog = getattr(matrix, "catalog", None)
     return evaluate_material_constraints(
         query,
         tenant=tenant_id,
-        catalog=getattr(matrix, "catalog", None),
+        catalog=catalog,
+        preconditions=preconditions,
     )
 
 

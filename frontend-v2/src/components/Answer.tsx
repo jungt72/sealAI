@@ -51,6 +51,22 @@ function GegencheckNote({ gegencheck }: { gegencheck: ChatResponse["gegencheck"]
   return null; // matrix_compatible / no_matrix_data / no_medium — E4-1: never an affirmative badge
 }
 
+const MATRIX_COMPATIBLE_NEUTRAL_TEXT =
+  "Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.";
+
+function MaterialConstraintNote({ result }: { result: ChatResponse["material_constraints"] }) {
+  if (result?.evaluation_state !== "evaluated" || result.verdict !== "vertraeglich") return null;
+  return (
+    <div className="gegencheck-note" data-testid="material-constraint-neutral">
+      <span className="gegencheck-label">Material-Gegencheck: neutral</span>
+      <p className="gegencheck-text">{MATRIX_COMPATIBLE_NEUTRAL_TEXT}</p>
+      {result.decisive_ref && (
+        <p className="gegencheck-source">matrix-cell:{result.decisive_ref}</p>
+      )}
+    </div>
+  );
+}
+
 /** L3 trust status (audit L3 "Unsicherheit ist ein Zustand, kein Textbaustein"): lets the user tell
  * a confidently-checked answer from one the safety check adjusted, or one that was never confidently
  * checked at all — instead of every answer looking equally trustworthy. `verified` already folds
@@ -104,6 +120,7 @@ export function Answer({ res }: { res: ChatResponse }) {
     <div className="answer" data-testid="answer">
       <RiskFlagsNote riskFlags={res.risk_flags} />
       <GegencheckNote gegencheck={res.gegencheck} />
+      <MaterialConstraintNote result={res.material_constraints} />
       {/* Phase 2B route-aware display: the "Technische Vorbewertung" meta block is render-only
           scaffolding and makes no sense on smalltalk/off-topic turns. Hide it ONLY when the backend
           explicitly says so (show_technical_preassessment === false); `undefined`/`true` keep the

@@ -90,18 +90,24 @@ final-release evidence outside this bounded cutover.
 
 ## ODR-11: Material-constraint governance boundary
 
-Decision: on 2026-07-16 the owner authorized MAT-GOV-01 as a default-off typed
-contract only. The existing verdict values remain canonical; `bedingt` remains
-opaque and every applicable condition remains bound by stable rule reference.
-Multiple media with an unresolved relationship fail closed. Internally
+Decision: on 2026-07-16 the owner authorized MAT-GOV-01 and the default-off
+MAT-GOV-02 governance implementation. The existing verdict values remain
+canonical; `bedingt` remains opaque and every applicable condition remains
+bound by stable rule reference. Every multiple-media state fails closed,
+including a relation marked `resolved`, until MED-NORM-01. Internally
 attested cells cannot create a positive compatibility statement, and
 `matrix_compatible` means only that no documented incompatibility was found.
 It cannot alone create `COVERED_RECOMMENDATION`. Conflicts and hard gates always
-precede `unobtainable`.
+precede `unobtainable`. An `UNOBTAINABLE` override is valid only for an
+explicitly enabled `primary_need_id` and only as a typed, version-bound,
+server-validated audit record; related needs are never changed implicitly.
 
-Consequence: MAT-GOV-02 owns scope, null, unknown, unresolved-relation and
-precedence invariants. MAT-GOV-03 owns ruleset persistence, activation,
+Consequence: MAT-GOV-02 owns typed preconditions, scope, null, unknown,
+multiple-media, conflict, override, coverage and response-projection
+invariants. `matrix_compatible` projects only to neutral
+`PARTIAL_ENVELOPE + COVERED_CAUTION` while the governed path is active and
+must show the non-release notice. MAT-GOV-03 owns ruleset persistence, activation,
 rollback, and snapshot pinning. Produktspec remains default-off and is not
 automatically migrated. Unreviewed LLM material tendencies cannot become
 canonical or positive material statements. Executable RWDR thermal calculation
-remains NO-GO. No material-rule activation follows from MAT-GOV-01.
+remains NO-GO. No material-rule activation follows from MAT-GOV-01/02.
