@@ -23,6 +23,7 @@
     "legacy_timer_fragment_sha256",
     "legacy_service_fragment_sha256",
     "production",
+    "storage_policy",
     "current_partial_state",
     "new_targets"
   ],
@@ -121,6 +122,7 @@
     "legacy_timer_fragment_sha256": {"$ref": "#/$defs/sha256"},
     "legacy_service_fragment_sha256": {"$ref": "#/$defs/sha256"},
     "production": {"$ref": "#/$defs/production"},
+    "storage_policy": {"$ref": "#/$defs/storagePolicy"},
     "current_partial_state": {"$ref": "#/$defs/partialState"},
     "new_targets": {"$ref": "#/$defs/newTargets"}
   },
@@ -154,8 +156,6 @@
         "commit",
         "worktree_state",
         "docker_root_dir",
-        "filesystem_usage_percent",
-        "filesystem_inode_usage_percent",
         "backend_container_id",
         "worker_container_id",
         "backend_image_digest",
@@ -169,8 +169,6 @@
         "commit": {"const": "b5fea96e387772547722bdbcaecde1e125d9100b"},
         "worktree_state": {"const": "CLEAN"},
         "docker_root_dir": {"const": "/mnt/sealai-volume/docker-data"},
-        "filesystem_usage_percent": {"const": 95},
-        "filesystem_inode_usage_percent": {"const": 27},
         "backend_container_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "worker_container_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "backend_image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -178,6 +176,55 @@
         "release_freeze_active": {"const": true},
         "required_release_gate": {"const": "GATE-10"},
         "gate10_lift_implemented": {"const": false}
+      }
+    },
+    "storageGroupBytes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootfs", "runfs", "dockerfs"],
+      "properties": {
+        "rootfs": {"type": "integer", "minimum": 1},
+        "runfs": {"type": "integer", "minimum": 1},
+        "dockerfs": {"type": "integer", "minimum": 1}
+      }
+    },
+    "storageGroupUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rootfs", "runfs", "dockerfs"],
+      "properties": {
+        "rootfs": {"type": "integer", "minimum": 1, "maximum": 99},
+        "runfs": {"type": "integer", "minimum": 1, "maximum": 99},
+        "dockerfs": {"type": "integer", "minimum": 1, "maximum": 99}
+      }
+    },
+    "storagePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path_groups",
+        "minimum_available_bytes",
+        "minimum_free_inodes",
+        "fixed_safety_reserve_bytes"
+      ],
+      "properties": {
+        "path_groups": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["/", "/etc", "/usr/local", "/var/lib/sealai-disk-guard", "/run", "/mnt/sealai-volume/docker-data"],
+          "properties": {
+            "/": {"const": "rootfs"},
+            "/etc": {"const": "rootfs"},
+            "/usr/local": {"const": "rootfs"},
+            "/var/lib/sealai-disk-guard": {"const": "rootfs"},
+            "/run": {"const": "runfs"},
+            "/mnt/sealai-volume/docker-data": {"const": "dockerfs"}
+          }
+        },
+        "minimum_available_bytes": {"$ref": "#/$defs/storageGroupBytes"},
+        "minimum_free_inodes": {"$ref": "#/$defs/storageGroupBytes"},
+        "maximum_usage_percent": {"$ref": "#/$defs/storageGroupUsage"},
+        "fixed_safety_reserve_bytes": {"$ref": "#/$defs/storageGroupBytes"}
       }
     },
     "timerState": {

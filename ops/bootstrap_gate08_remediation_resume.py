@@ -53,6 +53,7 @@ RECEIPT_KEYS = frozenset(
         "legacy_timer_fragment_sha256",
         "legacy_service_fragment_sha256",
         "production",
+        "storage_policy",
         "current_partial_state",
         "new_targets",
     }

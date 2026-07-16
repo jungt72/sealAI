@@ -51,3 +51,28 @@ jobs:
       - name: V2 import-purity boundary (keystone)
         run: |
           python -m pytest backend/tests/architecture/test_v2_import_boundary.py --noconftest
+
+  stage-a-recovery-ubuntu-24-04:
+    name: stage-a recovery (Ubuntu 24.04 systemd)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned recovery-test dependencies
+        run: python -m pip install "pytest~=8.4.2" "jsonschema==4.26.0"
+
+      - name: Require Ubuntu systemd validation toolchain
+        run: |
+          test -x /usr/bin/systemd-analyze
+          test -x /usr/bin/systemd-tmpfiles
+          test -x /usr/sbin/visudo
+
+      - name: Validate Stage-A synthetic root without skip
+        run: |
+          python -m pytest \
+            backend/tests/test_gate08_stage_a_recovery.py::test_ubuntu_toolchain_verifies_the_synthetic_root \
+            --noconftest -q

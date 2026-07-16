@@ -28,8 +28,10 @@ The only accepted approval path is:
 ```
 
 It must be root-owned mode `0600`, valid for no more than four hours, and bind
-the exact source commit, artifact set, production state, target absence, and
-legacy evidence hashes. Package material remains
+the exact source commit, artifact set, production state, target absence,
+legacy evidence hashes, path-to-filesystem groups, minimum available bytes,
+minimum free inodes, fixed safety reserves, and optionally maximum usage
+percentages. Package material remains
 `PENDING_OWNER_APPROVAL`; changing that value and placing the approval requires
 a separate owner authorization after PR review and audit.
 
@@ -122,14 +124,25 @@ set, runs `remediation-control-resume`, then invokes only
 ## Transaction phases
 
 1. **R0** verifies approval, production, containers, freeze, evidence, legacy
-   states/PIDs, exact cron count, process exclusion, and all absent targets.
+   states/PIDs, exact cron count, process exclusion, and all absent targets. It
+   then inspects `/`, `/etc`, `/usr/local`, `/var/lib/sealai-disk-guard`,
+   `/run`, and the bound Docker root, deduplicates identical mounts by device
+   and mount identity, and checks bytes, inodes, optional usage limits, and the
+   calculated stage/validation/install/rollback/evidence reserve. This occurs
+   before lock-file or private-stage creation; a capacity failure is
+   `RECOVERY_STORAGE_PREFLIGHT_FAILED` and performs no recovery mutation.
 2. **R1** creates a private synthetic root and validates the exact staged unit
    and payload bytes with the production `systemd-analyze`, plus shell, Python,
-   JSON, Sudoers, tmpfiles, Docker-root, and free-space checks.
+   JSON, Sudoers, tmpfiles, and Docker-root checks.
 3. **R2** fsyncs a rollback manifest and cron-before evidence before creating a
-   live target.
-4. **R3** installs exact staged files atomically with fixed owners and modes;
-   it does not enable a unit.
+   live target. The real filesystem preflight is retained with the transaction
+   evidence.
+4. **R3** installs exact staged files from one canonical target specification.
+   Each exclusive temporary file is created in the fixed target directory and
+   removed on every pre-rename failure. Before rename and again after install,
+   the runner checks hash, regular-file/no-symlink topology, UID/GID `0`, exact
+   mode, exact path, and safe non-group/world-writable ancestors. It does not
+   enable a unit.
 5. **R4** runs live systemd verification with all referenced executables
    present, without `daemon-reload`.
 6. **R5** rechecks the byte-identical crontab and removes exactly the one bound
@@ -137,7 +150,9 @@ set, runs `remediation-control-resume`, then invokes only
 7. **R6** creates the lock object, reloads systemd, enables the new timer, runs
    one non-destructive observation, and rechecks the storage lease and release
    freeze.
-8. **R7** fsyncs a redacted receipt and consumes the one-time approval.
+8. **R7** repeats every target hash and metadata check immediately before it
+   fsyncs the receipt and consumes the one-time approval. Every receipt target
+   records `path`, `sha256`, `uid`, `gid`, and zero-padded `mode`.
 
 The recovery runner contains no call to the legacy retirement helper and no
 command that stops or disables the legacy timer again.

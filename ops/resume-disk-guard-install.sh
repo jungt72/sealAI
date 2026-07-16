@@ -18,7 +18,7 @@ case "${1:-}" in
 esac
 [[ "$#" -le 1 ]] || { usage >&2; exit 64; }
 
-SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
+SOURCE_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 REPO_ROOT="$(dirname "${SOURCE_DIR}")"
 [[ "$(realpath "${REPO_ROOT}")" != /home/thorsten/sealai ]] || {
   printf 'recovery runner: live production checkout is forbidden\n' >&2
@@ -72,12 +72,6 @@ fi
   exit 77
 }
 
-exec 8>/run/lock/sealai-stage-a-recovery.lock
-flock -n 8 || {
-  printf 'recovery runner: another recovery process is active\n' >&2
-  exit 79
-}
-
 /usr/bin/python3 -I - "${REPO_ROOT}" "${ARTIFACTS[@]}" <<'PY'
 import os
 from pathlib import Path
@@ -128,13 +122,30 @@ production_release_gate_check \
   "${SOURCE_DIR}/production_release_gate.py" remediation-control-resume
 GATE_DECISION="${PRODUCTION_RELEASE_GATE_DECISION}"
 
+# R0: every production, evidence, unit, cron, process, target, and real
+# filesystem precondition is read-only and precedes the first recovery write.
+/usr/bin/python3 -I "${SOURCE_DIR}/gate08_partial_recovery.py" \
+  preflight --approval "${APPROVAL}" >/dev/null
+STORAGE_PREFLIGHT_JSON="$(
+  /usr/bin/python3 -I "${SOURCE_DIR}/gate08_partial_recovery.py" \
+    storage-preflight --approval "${APPROVAL}" --source-root "${REPO_ROOT}"
+)"
+
+exec 8>/run/lock/sealai-stage-a-recovery.lock
+flock -n 8 || {
+  printf 'recovery runner: another recovery process is active\n' >&2
+  exit 79
+}
+# Close the interval between the read-only preflight and lock acquisition.
+/usr/bin/python3 -I "${SOURCE_DIR}/gate08_partial_recovery.py" \
+  preflight --approval "${APPROVAL}" >/dev/null
+
 STAGE_DIR="$(mktemp -d /run/sealai-remediation-resume.XXXXXX)"
 chmod 0700 "${STAGE_DIR}"
 TRANSACTION_DIR=""
 MUTATION_STARTED=0
 CRON_RETIRED=0
 NEW_TIMER_TOUCHED=0
-declare -a INSTALLED_TARGETS=()
 
 write_failure_receipt() {
   local verdict="$1"
@@ -263,9 +274,22 @@ for relative, digest in expected.items():
         raise SystemExit("recovery staged artifact hash mismatch")
 PY
 
-# R0: every production, evidence, unit, cron, process, and target precondition.
-/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_partial_recovery.py" \
-  preflight --approval "${APPROVAL}" --stage-dir "${STAGE_DIR}" >/dev/null
+STORAGE_PREFLIGHT_RESULT="${STAGE_DIR}/storage-preflight.json"
+/usr/bin/python3 -I - "${STORAGE_PREFLIGHT_RESULT}" "${STORAGE_PREFLIGHT_JSON}" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+
+value = json.loads(sys.argv[2])
+raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+fd = os.open(sys.argv[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+try:
+    os.write(fd, raw)
+    os.fsync(fd)
+finally:
+    os.close(fd)
+PY
 
 CRON_BEFORE="${STAGE_DIR}/crontab.before"
 CRON_AFTER="${STAGE_DIR}/crontab.after"
@@ -309,7 +333,10 @@ TRANSACTION_JSON="$(/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_partial_recover
 TRANSACTION_DIR="$(printf '%s' "${TRANSACTION_JSON}" | /usr/bin/python3 -I -c \
   'import json,sys; print(json.load(sys.stdin)["transaction_directory"])')"
 install -m 0600 -o root -g root "${CRON_BEFORE}" "${TRANSACTION_DIR}/crontab.before"
+install -m 0600 -o root -g root \
+  "${STORAGE_PREFLIGHT_RESULT}" "${TRANSACTION_DIR}/storage-preflight.json"
 /bin/sync -f "${TRANSACTION_DIR}/crontab.before"
+/bin/sync -f "${TRANSACTION_DIR}/storage-preflight.json"
 MUTATION_STARTED=1
 
 install -d -m 0755 -o root -g root \
@@ -317,62 +344,17 @@ install -d -m 0755 -o root -g root \
   /usr/local/share/doc /usr/local/share/doc/sealai
 test "$(stat -Lc '%F:%a:%U:%G' /etc/sealai)" = 'directory:700:root:root'
 
-atomic_install() {
-  local source="$1"
-  local target="$2"
-  local mode="$3"
-  local temporary
-  temporary="$(mktemp "${target}.recovery.XXXXXX")"
-  install -m "${mode}" -o root -g root "${source}" "${temporary}"
-  test "$(sha256sum "${source}" | awk '{print $1}')" = \
-    "$(sha256sum "${temporary}" | awk '{print $1}')"
-  mv -T -- "${temporary}" "${target}"
-  /bin/sync -f "${target}"
-  INSTALLED_TARGETS+=("${target}")
-}
-
 # R3: install only the exact staged bytes; no unit is enabled yet.
-atomic_install "${STAGE_DIR}/ops/docker_disk_guard.py" \
-  /usr/local/libexec/sealai/docker_disk_guard.py 0755
-atomic_install "${STAGE_DIR}/ops/docker-disk-guard.sh" \
-  /usr/local/libexec/sealai/docker-disk-guard.sh 0755
-atomic_install "${STAGE_DIR}/ops/production-storage-lease.sh" \
-  /usr/local/libexec/sealai/production-storage-lease.sh 0644
-atomic_install "${STAGE_DIR}/ops/production-release-gate-check.sh" \
-  /usr/local/libexec/sealai/production-release-gate-check.sh 0755
-atomic_install "${STAGE_DIR}/ops/production-deploy-remote-entrypoint.sh" \
-  /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh 0755
-atomic_install "${STAGE_DIR}/ops/hash_verified_python_loader.py" \
-  /usr/local/libexec/sealai/hash-verified-python-loader.py 0755
-atomic_install "${STAGE_DIR}/ops/disk-guard.example.json" \
-  /etc/sealai/disk-guard.json 0600
-atomic_install "${STAGE_DIR}/docs/ops/docker-disk-guard.md" \
-  /usr/local/share/doc/sealai/docker-disk-guard.md 0644
-atomic_install "${STAGE_DIR}/ops/systemd/sealai-disk-guard.service" \
-  /etc/systemd/system/sealai-disk-guard.service 0644
-atomic_install "${STAGE_DIR}/ops/systemd/sealai-disk-guard.timer" \
-  /etc/systemd/system/sealai-disk-guard.timer 0644
-atomic_install "${STAGE_DIR}/ops/tmpfiles/sealai-storage-mutation.conf" \
-  /etc/tmpfiles.d/sealai-storage-mutation.conf 0644
-atomic_install "${STAGE_DIR}/ops/sudoers/sealai-storage-preflight" \
-  /etc/sudoers.d/sealai-storage-preflight 0440
-
-/usr/bin/python3 -I - "${STAGED_HASHES}" <<'PY'
-import hashlib
-import json
-from pathlib import Path
-import stat
-import sys
-
-expected = json.loads(Path(sys.argv[1]).read_text())
-for target, digest in expected.items():
-    path = Path(target)
-    metadata = path.lstat()
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise SystemExit("installed recovery target topology drift")
-    if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-        raise SystemExit("installed recovery target hash drift")
-PY
+INSTALL_RESULT="${STAGE_DIR}/install-result.json"
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_partial_recovery.py" \
+  install-targets --stage-dir "${STAGE_DIR}" >"${INSTALL_RESULT}"
+POSTINSTALL_TARGETS="${STAGE_DIR}/postinstall-targets.json"
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_partial_recovery.py" \
+  verify-targets --stage-dir "${STAGE_DIR}" >"${POSTINSTALL_TARGETS}"
+cmp -s "${INSTALL_RESULT}" "${POSTINSTALL_TARGETS}" || {
+  printf 'recovery runner: post-install target metadata drift\n' >&2
+  exit 78
+}
 
 # R4: live verification occurs only after every referenced executable exists.
 systemd-analyze verify \
@@ -387,7 +369,11 @@ cmp -s "${CRON_BEFORE}" "${CRON_CURRENT}" || {
   exit 79
 }
 crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"
-! crontab -u "${LEGACY_CRON_USER}" -l | grep -Fqx "${LEGACY_CRON_LINE}"
+CRON_INSTALLED="$(crontab -u "${LEGACY_CRON_USER}" -l)"
+if grep -Fqx "${LEGACY_CRON_LINE}" <<<"${CRON_INSTALLED}"; then
+  printf 'recovery runner: bound legacy cron remains installed\n' >&2
+  exit 78
+fi
 install -m 0600 -o root -g root "${CRON_AFTER}" "${TRANSACTION_DIR}/crontab.after"
 /bin/sync -f "${TRANSACTION_DIR}/crontab.after"
 CRON_RETIRED=1
@@ -426,9 +412,16 @@ LEASE_RC=$?
 set -e
 [[ "${LEASE_RC}" -eq 0 || "${LEASE_RC}" -eq 22 ]]
 
-# R7: redacted receipt contains hashes only and consumes the one-time approval.
+# R7: revalidate every target immediately before the complete one-time receipt.
+RECEIPT_TARGETS="${STAGE_DIR}/receipt-targets.json"
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_partial_recovery.py" \
+  verify-targets --stage-dir "${STAGE_DIR}" >"${RECEIPT_TARGETS}"
+cmp -s "${POSTINSTALL_TARGETS}" "${RECEIPT_TARGETS}" || {
+  printf 'recovery runner: target metadata drift before receipt\n' >&2
+  exit 78
+}
 /usr/bin/python3 -I - \
-  "${APPROVAL}" "${TRANSACTION_DIR}" "${STAGED_HASHES}" <<'PY'
+  "${APPROVAL}" "${TRANSACTION_DIR}" "${RECEIPT_TARGETS}" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -436,7 +429,16 @@ import sys
 
 approval = json.loads(Path(sys.argv[1]).read_text())
 transaction = Path(sys.argv[2])
-targets = json.loads(Path(sys.argv[3]).read_text())
+target_value = json.loads(Path(sys.argv[3]).read_text())
+targets = target_value.get("targets")
+if not isinstance(targets, list) or any(
+    not isinstance(item, dict)
+    or set(item) != {"path", "sha256", "uid", "gid", "mode"}
+    or item["uid"] != 0
+    or item["gid"] != 0
+    for item in targets
+):
+    raise SystemExit("recovery target receipt input is incomplete")
 receipt = {
     "operation": "remediation-control-resume",
     "required_gate": "GATE-08",
@@ -450,10 +452,7 @@ receipt = {
     "new_timer_enabled": True,
     "observation_completed": True,
     "release_freeze_active": True,
-    "targets": [
-        {"path": path, "sha256": digest}
-        for path, digest in sorted(targets.items())
-    ],
+    "targets": targets,
 }
 raw = (json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode()
 path = transaction / "recovery-receipt.json"

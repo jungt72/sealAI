@@ -11,10 +11,10 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from typing import Any, Callable, NoReturn, Sequence
 
 
@@ -42,62 +42,87 @@ EVIDENCE_FILES = frozenset(
     }
 )
 
-INSTALL_TARGETS = {
-    "docs/ops/docker-disk-guard.md": (
+
+class TargetSpec:
+    __slots__ = ("source", "path", "mode")
+
+    def __init__(self, source: str, path: str, mode: str) -> None:
+        self.source = source
+        self.path = path
+        self.mode = mode
+
+
+TARGET_SPECS = (
+    TargetSpec(
+        "docs/ops/docker-disk-guard.md",
         "/usr/local/share/doc/sealai/docker-disk-guard.md",
         "0644",
     ),
-    "ops/disk-guard.example.json": ("/etc/sealai/disk-guard.json", "0600"),
-    "ops/docker-disk-guard.sh": (
+    TargetSpec("ops/disk-guard.example.json", "/etc/sealai/disk-guard.json", "0600"),
+    TargetSpec(
+        "ops/docker-disk-guard.sh",
         "/usr/local/libexec/sealai/docker-disk-guard.sh",
         "0755",
     ),
-    "ops/docker_disk_guard.py": (
+    TargetSpec(
+        "ops/docker_disk_guard.py",
         "/usr/local/libexec/sealai/docker_disk_guard.py",
         "0755",
     ),
-    "ops/hash_verified_python_loader.py": (
+    TargetSpec(
+        "ops/hash_verified_python_loader.py",
         "/usr/local/libexec/sealai/hash-verified-python-loader.py",
         "0755",
     ),
-    "ops/production-deploy-remote-entrypoint.sh": (
+    TargetSpec(
+        "ops/production-deploy-remote-entrypoint.sh",
         "/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh",
         "0755",
     ),
-    "ops/production-release-gate-check.sh": (
+    TargetSpec(
+        "ops/production-release-gate-check.sh",
         "/usr/local/libexec/sealai/production-release-gate-check.sh",
         "0755",
     ),
-    "ops/production-storage-lease.sh": (
+    TargetSpec(
+        "ops/production-storage-lease.sh",
         "/usr/local/libexec/sealai/production-storage-lease.sh",
         "0644",
     ),
-    "ops/sudoers/sealai-storage-preflight": (
+    TargetSpec(
+        "ops/sudoers/sealai-storage-preflight",
         "/etc/sudoers.d/sealai-storage-preflight",
         "0440",
     ),
-    "ops/systemd/sealai-disk-guard.service": (
+    TargetSpec(
+        "ops/systemd/sealai-disk-guard.service",
         "/etc/systemd/system/sealai-disk-guard.service",
         "0644",
     ),
-    "ops/systemd/sealai-disk-guard.timer": (
+    TargetSpec(
+        "ops/systemd/sealai-disk-guard.timer",
         "/etc/systemd/system/sealai-disk-guard.timer",
         "0644",
     ),
-    "ops/tmpfiles/sealai-storage-mutation.conf": (
+    TargetSpec(
+        "ops/tmpfiles/sealai-storage-mutation.conf",
         "/etc/tmpfiles.d/sealai-storage-mutation.conf",
         "0644",
     ),
-}
+)
+if len(TARGET_SPECS) != len({spec.source for spec in TARGET_SPECS}) or len(
+    TARGET_SPECS
+) != len({spec.path for spec in TARGET_SPECS}):
+    raise RuntimeError("canonical recovery target specification is not unique")
+TARGETS_BY_SOURCE = {spec.source: spec for spec in TARGET_SPECS}
+TARGETS_BY_PATH = {spec.path: spec for spec in TARGET_SPECS}
 RUNTIME_TARGETS = frozenset(
     {
         "/run/lock/sealai-storage-mutation.lock",
         "/var/lib/sealai-disk-guard/state.json",
     }
 )
-ALL_TARGETS = frozenset(
-    {target for target, _mode in INSTALL_TARGETS.values()} | RUNTIME_TARGETS
-)
+ALL_TARGETS = frozenset({spec.path for spec in TARGET_SPECS} | RUNTIME_TARGETS)
 SYNTHETIC_REQUIRED_TARGETS = frozenset(
     {
         "/etc/systemd/system/sealai-disk-guard.service",
@@ -136,6 +161,7 @@ APPROVAL_KEYS = frozenset(
         "production",
         "current_partial_state",
         "new_targets",
+        "storage_policy",
     }
 )
 CHILD_ENV = {
@@ -144,6 +170,15 @@ CHILD_ENV = {
     "LANG": "C",
     "LC_ALL": "C",
 }
+STORAGE_PATH_GROUPS = {
+    "/": "rootfs",
+    "/etc": "rootfs",
+    "/usr/local": "rootfs",
+    "/var/lib/sealai-disk-guard": "rootfs",
+    "/run": "runfs",
+    "/mnt/sealai-volume/docker-data": "dockerfs",
+}
+STORAGE_GROUPS = frozenset(STORAGE_PATH_GROUPS.values())
 
 
 class RecoveryError(RuntimeError):
@@ -388,8 +423,6 @@ def validate_approval_contract(
             "commit",
             "worktree_state",
             "docker_root_dir",
-            "filesystem_usage_percent",
-            "filesystem_inode_usage_percent",
             "backend_container_id",
             "worker_container_id",
             "backend_image_digest",
@@ -405,8 +438,6 @@ def validate_approval_contract(
         or production.get("commit") != PRODUCTION_SHA
         or production.get("worktree_state") != "CLEAN"
         or production.get("docker_root_dir") != "/mnt/sealai-volume/docker-data"
-        or production.get("filesystem_usage_percent") != 95
-        or production.get("filesystem_inode_usage_percent") != 27
         or production.get("release_freeze_active") is not True
         or production.get("required_release_gate") != "GATE-10"
         or production.get("gate10_lift_implemented") is not False
@@ -422,6 +453,55 @@ def validate_approval_contract(
             r"sha256:[0-9a-f]{64}", production[field]
         ):
             _fail("production image binding is invalid")
+
+    storage_policy_value = approval.get("storage_policy")
+    if (
+        not isinstance(storage_policy_value, dict)
+        or not {
+            "path_groups",
+            "minimum_available_bytes",
+            "minimum_free_inodes",
+            "fixed_safety_reserve_bytes",
+        }
+        <= set(storage_policy_value)
+        or set(storage_policy_value)
+        - {
+            "path_groups",
+            "minimum_available_bytes",
+            "minimum_free_inodes",
+            "maximum_usage_percent",
+            "fixed_safety_reserve_bytes",
+        }
+    ):
+        _fail("storage policy keys are not exact")
+    storage_policy = storage_policy_value
+    if storage_policy.get("path_groups") != STORAGE_PATH_GROUPS:
+        _fail("storage mount policy drift")
+    for field in (
+        "minimum_available_bytes",
+        "minimum_free_inodes",
+        "fixed_safety_reserve_bytes",
+    ):
+        values = storage_policy.get(field)
+        if not isinstance(values, dict) or set(values) != STORAGE_GROUPS:
+            _fail("storage threshold set is not exact")
+        for value in values.values():
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                _fail("storage threshold is invalid")
+    if "maximum_usage_percent" in storage_policy:
+        values = storage_policy["maximum_usage_percent"]
+        if (
+            not isinstance(values, dict)
+            or set(values) != STORAGE_GROUPS
+            or any(
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 1
+                or value > 99
+                for value in values.values()
+            )
+        ):
+            _fail("storage usage threshold is invalid")
 
     partial = _exact_mapping(
         approval.get("current_partial_state"),
@@ -539,6 +619,545 @@ def validate_target_preconditions(
             _fail("RECOVERY_TARGET_PRECONDITION_DRIFT")
 
 
+def _verify_ancestor_chain(
+    path: Path,
+    *,
+    root: Path,
+    required_uid: int,
+    required_gid: int,
+) -> None:
+    try:
+        root_metadata = root.lstat()
+    except OSError as exc:
+        raise RecoveryError("installed target root is unavailable") from exc
+    if (
+        stat.S_ISLNK(root_metadata.st_mode)
+        or not stat.S_ISDIR(root_metadata.st_mode)
+        or root_metadata.st_uid != required_uid
+        or root_metadata.st_gid != required_gid
+        or stat.S_IMODE(root_metadata.st_mode) & 0o022
+    ):
+        _fail("installed target ancestor is unsafe")
+    root = root.resolve(strict=True)
+    parent = path.parent
+    try:
+        relative = parent.relative_to(root)
+    except ValueError:
+        _fail("target path escapes the fixed root")
+    current = root
+    for part in relative.parts:
+        current /= part
+        metadata = current.lstat()
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != required_uid
+            or metadata.st_gid != required_gid
+            or stat.S_IMODE(metadata.st_mode) & 0o022
+        ):
+            _fail("installed target ancestor is unsafe")
+
+
+def _validate_target_metadata(
+    metadata: os.stat_result,
+    spec: TargetSpec,
+    *,
+    required_uid: int,
+    required_gid: int,
+    label: str,
+) -> None:
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != required_uid
+        or metadata.st_gid != required_gid
+        or stat.S_IMODE(metadata.st_mode) != int(spec.mode, 8)
+    ):
+        _fail(f"{label} metadata drift")
+
+
+def verify_installed_targets(
+    stage: Path,
+    *,
+    specs: Sequence[TargetSpec] = TARGET_SPECS,
+    root: Path = Path("/"),
+    required_uid: int = 0,
+    required_gid: int = 0,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for spec in sorted(specs, key=lambda item: item.path):
+        source = stage / spec.source
+        expected = _digest_bytes(_read_regular(source))
+        target = root / spec.path.lstrip("/")
+        _verify_ancestor_chain(
+            target,
+            root=root,
+            required_uid=required_uid,
+            required_gid=required_gid,
+        )
+        try:
+            metadata = target.lstat()
+        except OSError as exc:
+            raise RecoveryError("installed target is unavailable") from exc
+        _validate_target_metadata(
+            metadata,
+            spec,
+            required_uid=required_uid,
+            required_gid=required_gid,
+            label="installed target",
+        )
+        actual = _digest_bytes(
+            _read_regular(
+                target,
+                required_uid=required_uid,
+                required_gid=required_gid,
+                required_mode=int(spec.mode, 8),
+            )
+        )
+        if actual != expected:
+            _fail("installed target hash drift")
+        results.append(
+            {
+                "path": spec.path,
+                "sha256": actual,
+                "uid": required_uid,
+                "gid": required_gid,
+                "mode": spec.mode,
+            }
+        )
+    return results
+
+
+FailureHook = Callable[[str, TargetSpec, Path | None, Path], None]
+
+
+def _write_all(descriptor: int, raw: bytes) -> None:
+    offset = 0
+    while offset < len(raw):
+        written = os.write(descriptor, raw[offset:])
+        if written <= 0:
+            _fail("atomic target write failed")
+        offset += written
+
+
+def install_target_atomic(
+    spec: TargetSpec,
+    stage: Path,
+    *,
+    root: Path = Path("/"),
+    required_uid: int = 0,
+    required_gid: int = 0,
+    failure_hook: FailureHook | None = None,
+) -> dict[str, Any]:
+    target = root / spec.path.lstrip("/")
+    _verify_ancestor_chain(
+        target,
+        root=root,
+        required_uid=required_uid,
+        required_gid=required_gid,
+    )
+    if target.exists() or target.is_symlink():
+        _fail("RECOVERY_TARGET_PRECONDITION_DRIFT")
+    source_raw = _read_regular(stage / spec.source)
+    expected = _digest_bytes(source_raw)
+    temporary: Path | None = None
+    descriptor: int | None = None
+    renamed = False
+
+    def inject(step: str) -> None:
+        if failure_hook is not None:
+            failure_hook(step, spec, temporary, target)
+
+    try:
+        inject("temp_create")
+        descriptor, raw_name = tempfile.mkstemp(
+            prefix=f".{target.name}.recovery.", dir=target.parent
+        )
+        temporary = Path(raw_name)
+        inject("install")
+        _write_all(descriptor, source_raw)
+        os.fchown(descriptor, required_uid, required_gid)
+        os.fchmod(descriptor, int(spec.mode, 8))
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+
+        inject("hash")
+        if _digest_bytes(_read_regular(temporary)) != expected:
+            _fail("temporary target hash drift")
+        inject("metadata")
+        _validate_target_metadata(
+            temporary.lstat(),
+            spec,
+            required_uid=required_uid,
+            required_gid=required_gid,
+            label="temporary target",
+        )
+        inject("rename")
+        os.replace(temporary, target)
+        renamed = True
+        temporary = None
+        inject("fsync")
+        parent = os.open(
+            target.parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+        )
+        try:
+            os.fsync(parent)
+        finally:
+            os.close(parent)
+        return verify_installed_target(
+            spec,
+            stage,
+            root=root,
+            required_uid=required_uid,
+            required_gid=required_gid,
+        )
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if not renamed and temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+
+
+def verify_installed_target(
+    spec: TargetSpec,
+    stage: Path,
+    *,
+    root: Path = Path("/"),
+    required_uid: int = 0,
+    required_gid: int = 0,
+) -> dict[str, Any]:
+    results = verify_installed_targets(
+        stage,
+        specs=(spec,),
+        root=root,
+        required_uid=required_uid,
+        required_gid=required_gid,
+    )
+    return results[0]
+
+
+def install_targets_atomic(
+    stage: Path,
+    *,
+    root: Path = Path("/"),
+    required_uid: int = 0,
+    required_gid: int = 0,
+    failure_hook: FailureHook | None = None,
+) -> list[dict[str, Any]]:
+    results = []
+    for spec in sorted(TARGET_SPECS, key=lambda item: item.path):
+        results.append(
+            install_target_atomic(
+                spec,
+                stage,
+                root=root,
+                required_uid=required_uid,
+                required_gid=required_gid,
+                failure_hook=failure_hook,
+            )
+        )
+    return results
+
+
+def _mount_identity(path: str) -> dict[str, Any]:
+    resolved = str(Path(path).resolve(strict=True))
+    best: tuple[int, dict[str, Any]] | None = None
+    try:
+        lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise RecoveryError("RECOVERY_STORAGE_PREFLIGHT_FAILED") from exc
+    for line in lines:
+        fields = line.split()
+        if len(fields) < 10 or "-" not in fields:
+            continue
+        mount_point = fields[4].replace("\\040", " ")
+        if resolved != mount_point and not resolved.startswith(
+            mount_point.rstrip("/") + "/"
+        ):
+            continue
+        candidate = {
+            "mount_id": int(fields[0]),
+            "device_major_minor": fields[2],
+            "mount_point": mount_point,
+        }
+        length = len(mount_point)
+        if best is None or length > best[0]:
+            best = (length, candidate)
+    if best is None:
+        _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+    return best[1]
+
+
+def collect_filesystem_snapshots(
+    paths: Sequence[str],
+    *,
+    stat_fn: Callable[[str], os.stat_result] = os.stat,
+    statvfs_fn: Callable[[str], os.statvfs_result] = os.statvfs,
+    mount_resolver: Callable[[str], dict[str, Any]] = _mount_identity,
+) -> list[dict[str, Any]]:
+    snapshots: dict[tuple[int, int, int], dict[str, Any]] = {}
+    for path in paths:
+        try:
+            metadata = stat_fn(path)
+            filesystem = statvfs_fn(path)
+            mount = mount_resolver(path)
+            filesystem_id = int(getattr(filesystem, "f_fsid", metadata.st_dev))
+            mount_id = int(mount["mount_id"])
+        except (OSError, KeyError, TypeError, ValueError) as exc:
+            raise RecoveryError("RECOVERY_STORAGE_PREFLIGHT_FAILED") from exc
+        identity = (int(metadata.st_dev), filesystem_id, mount_id)
+        block_size = int(filesystem.f_frsize or filesystem.f_bsize)
+        total_bytes = int(filesystem.f_blocks) * block_size
+        free_bytes = int(filesystem.f_bfree) * block_size
+        available_bytes = int(filesystem.f_bavail) * block_size
+        used_bytes = max(total_bytes - free_bytes, 0)
+        usage_percent = (used_bytes * 100 + max(total_bytes, 1) - 1) // max(
+            total_bytes, 1
+        )
+        value = {
+            "device_id": int(metadata.st_dev),
+            "filesystem_id": filesystem_id,
+            "mount_id": mount_id,
+            "device_major_minor": str(mount["device_major_minor"]),
+            "mount_point": str(mount["mount_point"]),
+            "paths": [],
+            "total_bytes": total_bytes,
+            "free_bytes": free_bytes,
+            "available_bytes": available_bytes,
+            "total_inodes": int(filesystem.f_files),
+            "free_inodes": int(filesystem.f_ffree),
+            "usage_percent": usage_percent,
+        }
+        existing = snapshots.setdefault(identity, value)
+        metric_keys = {
+            "device_id",
+            "filesystem_id",
+            "mount_id",
+            "device_major_minor",
+            "mount_point",
+            "total_bytes",
+            "free_bytes",
+            "available_bytes",
+            "total_inodes",
+            "free_inodes",
+            "usage_percent",
+        }
+        if any(existing[key] != value[key] for key in metric_keys):
+            _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+        existing["paths"].append(path)
+    for snapshot in snapshots.values():
+        snapshot["paths"].sort()
+    return sorted(
+        snapshots.values(), key=lambda item: (item["mount_id"], item["paths"])
+    )
+
+
+def calculate_storage_requirements(
+    source_root: Path,
+    approval: dict[str, Any],
+    *,
+    cron_evidence_bytes: int = 65536,
+) -> dict[str, dict[str, int]]:
+    artifact_bytes = sum(
+        (source_root / relative).stat().st_size
+        for relative in approval["artifact_sha256"]
+    )
+    target_bytes = sum(
+        (source_root / spec.source).stat().st_size for spec in TARGET_SPECS
+    )
+    evidence_bytes = 1024 * 1024 + cron_evidence_bytes * 2
+    components = {
+        "rootfs": {
+            "target_installation_bytes": target_bytes,
+            "rollback_bytes": target_bytes,
+            "transaction_and_cron_evidence_bytes": evidence_bytes,
+            "private_stage_bytes": 0,
+            "synthetic_validation_root_bytes": 0,
+        },
+        "runfs": {
+            "target_installation_bytes": 0,
+            "rollback_bytes": 0,
+            "transaction_and_cron_evidence_bytes": 0,
+            "private_stage_bytes": artifact_bytes,
+            "synthetic_validation_root_bytes": target_bytes + 1024 * 1024,
+        },
+        "dockerfs": {
+            "target_installation_bytes": 0,
+            "rollback_bytes": 0,
+            "transaction_and_cron_evidence_bytes": 0,
+            "private_stage_bytes": 0,
+            "synthetic_validation_root_bytes": 0,
+        },
+    }
+    result: dict[str, dict[str, int]] = {}
+    reserve = approval["storage_policy"]["fixed_safety_reserve_bytes"]
+    for group, values in components.items():
+        subtotal = sum(values.values())
+        result[group] = {
+            **values,
+            "fixed_safety_reserve_bytes": int(reserve[group]),
+            "calculated_required_bytes": subtotal + int(reserve[group]),
+        }
+    return result
+
+
+def validate_storage_snapshots(
+    approval: dict[str, Any],
+    snapshots: Sequence[dict[str, Any]],
+    requirements: dict[str, dict[str, int]],
+) -> dict[str, Any]:
+    policy = approval["storage_policy"]
+    by_path: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        expected_keys = {
+            "device_id",
+            "filesystem_id",
+            "mount_id",
+            "device_major_minor",
+            "mount_point",
+            "paths",
+            "total_bytes",
+            "free_bytes",
+            "available_bytes",
+            "total_inodes",
+            "free_inodes",
+            "usage_percent",
+        }
+        if not isinstance(snapshot, dict) or set(snapshot) != expected_keys:
+            _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+        integer_fields = (
+            "device_id",
+            "filesystem_id",
+            "mount_id",
+            "total_bytes",
+            "free_bytes",
+            "available_bytes",
+            "total_inodes",
+            "free_inodes",
+            "usage_percent",
+        )
+        if any(
+            not isinstance(snapshot[field], int)
+            or isinstance(snapshot[field], bool)
+            or snapshot[field] < 0
+            for field in integer_fields
+        ):
+            _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+        if (
+            not isinstance(snapshot["device_major_minor"], str)
+            or not snapshot["device_major_minor"]
+            or not isinstance(snapshot["mount_point"], str)
+            or not snapshot["mount_point"].startswith("/")
+            or not isinstance(snapshot["paths"], list)
+            or not snapshot["paths"]
+            or snapshot["total_bytes"] <= 0
+            or snapshot["available_bytes"] > snapshot["free_bytes"]
+            or snapshot["free_bytes"] > snapshot["total_bytes"]
+            or snapshot["total_inodes"] <= 0
+            or snapshot["free_inodes"] > snapshot["total_inodes"]
+            or snapshot["usage_percent"] > 100
+        ):
+            _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+        for path in snapshot["paths"]:
+            if not isinstance(path, str):
+                _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+            if path in by_path:
+                _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+            by_path[path] = snapshot
+    if set(by_path) != set(STORAGE_PATH_GROUPS):
+        _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+    if set(requirements) != STORAGE_GROUPS or any(
+        not isinstance(requirements[group], dict)
+        or not isinstance(requirements[group].get("calculated_required_bytes"), int)
+        or isinstance(requirements[group].get("calculated_required_bytes"), bool)
+        or requirements[group]["calculated_required_bytes"] < 0
+        for group in STORAGE_GROUPS
+    ):
+        _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+    group_identity: dict[str, tuple[int, int, int]] = {}
+    for path, group in policy["path_groups"].items():
+        snapshot = by_path[path]
+        identity = (
+            snapshot["device_id"],
+            snapshot["filesystem_id"],
+            snapshot["mount_id"],
+        )
+        if group in group_identity and group_identity[group] != identity:
+            _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+        group_identity[group] = identity
+    if set(group_identity) != STORAGE_GROUPS or len(
+        set(group_identity.values())
+    ) != len(STORAGE_GROUPS):
+        _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+    validated = []
+    for group in sorted(STORAGE_GROUPS):
+        identity = group_identity[group]
+        snapshot = next(
+            item
+            for item in snapshots
+            if (
+                item["device_id"],
+                item["filesystem_id"],
+                item["mount_id"],
+            )
+            == identity
+        )
+        required = max(
+            policy["minimum_available_bytes"][group],
+            requirements[group]["calculated_required_bytes"],
+        )
+        maximum_usage = policy.get("maximum_usage_percent", {}).get(group)
+        if (
+            snapshot["available_bytes"] < required
+            or snapshot["total_inodes"] <= 0
+            or snapshot["free_inodes"] < policy["minimum_free_inodes"][group]
+            or (maximum_usage is not None and snapshot["usage_percent"] > maximum_usage)
+        ):
+            _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+        validated.append(
+            {
+                "group": group,
+                **snapshot,
+                "minimum_available_bytes": policy["minimum_available_bytes"][group],
+                "minimum_free_inodes": policy["minimum_free_inodes"][group],
+                "maximum_usage_percent": maximum_usage,
+                "calculated_required_bytes": requirements[group][
+                    "calculated_required_bytes"
+                ],
+            }
+        )
+    return {"filesystems": validated, "requirements": requirements}
+
+
+def run_storage_preflight(
+    approval: dict[str, Any],
+    source_root: Path,
+    *,
+    actual_docker_root: str,
+    stat_fn: Callable[[str], os.stat_result] = os.stat,
+    statvfs_fn: Callable[[str], os.statvfs_result] = os.statvfs,
+    mount_resolver: Callable[[str], dict[str, Any]] = _mount_identity,
+) -> dict[str, Any]:
+    if actual_docker_root != approval["production"]["docker_root_dir"]:
+        _fail("RECOVERY_STORAGE_PREFLIGHT_FAILED")
+    try:
+        requirements = calculate_storage_requirements(source_root, approval)
+    except (KeyError, OSError, TypeError, ValueError) as exc:
+        raise RecoveryError("RECOVERY_STORAGE_PREFLIGHT_FAILED") from exc
+    snapshots = collect_filesystem_snapshots(
+        tuple(STORAGE_PATH_GROUPS),
+        stat_fn=stat_fn,
+        statvfs_fn=statvfs_fn,
+        mount_resolver=mount_resolver,
+    )
+    return validate_storage_snapshots(approval, snapshots, requirements)
+
+
 def _copy_exact(source: Path, target: Path, mode: int) -> str:
     raw = _read_regular(source)
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
@@ -576,11 +1195,11 @@ def build_synthetic_root(stage: Path, root: Path) -> dict[str, str]:
     for name in ("local-fs.target", "timers.target"):
         (system_units / name).write_text("[Unit]\n", encoding="utf-8")
     hashes: dict[str, str] = {}
-    for relative, (target, mode) in sorted(INSTALL_TARGETS.items()):
-        if target in RUNTIME_TARGETS:
-            continue
-        hashes[target] = _copy_exact(
-            stage / relative, root / target.lstrip("/"), int(mode, 8)
+    for spec in sorted(TARGET_SPECS, key=lambda item: item.path):
+        hashes[spec.path] = _copy_exact(
+            stage / spec.source,
+            root / spec.path.lstrip("/"),
+            int(spec.mode, 8),
         )
     if not SYNTHETIC_REQUIRED_TARGETS <= set(hashes):
         _fail("synthetic verification root is incomplete")
@@ -656,10 +1275,8 @@ def validate_stage(
     _run_checked(
         (
             "/usr/bin/systemd-tmpfiles",
-            "--dry-run",
             "--create",
             f"--root={validation_root}",
-            "/etc/tmpfiles.d/sealai-storage-mutation.conf",
         )
     )
     _run_checked(
@@ -671,18 +1288,7 @@ def validate_stage(
             "sealai-disk-guard.timer",
         )
     )
-    staged_bytes = sum(
-        path.stat().st_size for path in stage.rglob("*") if path.is_file()
-    )
-    required_free = max(staged_bytes * 6, 16 * 1024 * 1024)
-    free = shutil.disk_usage(validation_root).free
-    if free < required_free:
-        _fail("insufficient free space for stage, rollback, and evidence")
-    return {
-        "validated_targets": hashes,
-        "required_free_bytes": required_free,
-        "available_free_bytes": free,
-    }
+    return {"validated_targets": hashes}
 
 
 def _command(arguments: Sequence[str]) -> str:
@@ -878,11 +1484,17 @@ def _arguments(argv: Sequence[str]) -> argparse.Namespace:
     validate.add_argument("--actual-docker-root", required=True)
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument("--approval", type=Path, default=APPROVAL_PATH)
-    preflight.add_argument("--stage-dir", required=True, type=Path)
+    storage = subparsers.add_parser("storage-preflight")
+    storage.add_argument("--approval", type=Path, default=APPROVAL_PATH)
+    storage.add_argument("--source-root", required=True, type=Path)
     prepare = subparsers.add_parser("prepare-transaction")
     prepare.add_argument("--approval", type=Path, default=APPROVAL_PATH)
     prepare.add_argument("--evidence-root", required=True, type=Path)
     prepare.add_argument("--staged-hashes", required=True, type=Path)
+    install = subparsers.add_parser("install-targets")
+    install.add_argument("--stage-dir", required=True, type=Path)
+    verify = subparsers.add_parser("verify-targets")
+    verify.add_argument("--stage-dir", required=True, type=Path)
     return parser.parse_args(list(argv))
 
 
@@ -897,7 +1509,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "preflight":
         approval = validate_approval_contract(load_private_approval(args.approval))
         result = validate_live_partial_state(approval)
-    else:
+    elif args.command == "storage-preflight":
+        approval = validate_approval_contract(load_private_approval(args.approval))
+        actual_docker_root = _command(
+            ("/usr/bin/docker", "info", "--format", "{{.DockerRootDir}}")
+        )
+        result = run_storage_preflight(
+            approval,
+            args.source_root,
+            actual_docker_root=actual_docker_root,
+        )
+    elif args.command == "prepare-transaction":
         approval = validate_approval_contract(load_private_approval(args.approval))
         hashes = _json_bytes(_read_regular(args.staged_hashes), "staged hashes")
         if not isinstance(hashes, dict):
@@ -908,6 +1530,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             staged_hashes={str(key): str(value) for key, value in hashes.items()},
         )
         result = {"transaction_directory": str(transaction)}
+    elif args.command == "install-targets":
+        if os.geteuid() != 0:
+            _fail("install-targets requires root")
+        result = {"targets": install_targets_atomic(args.stage_dir)}
+    else:
+        result = {"targets": verify_installed_targets(args.stage_dir)}
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0
 

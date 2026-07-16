@@ -9,8 +9,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import jsonschema
 import pytest
@@ -99,8 +101,6 @@ def _approval(*, decision: str = "APPROVED") -> dict[str, object]:
             "commit": recovery.PRODUCTION_SHA,
             "worktree_state": "CLEAN",
             "docker_root_dir": "/mnt/sealai-volume/docker-data",
-            "filesystem_usage_percent": 95,
-            "filesystem_inode_usage_percent": 27,
             "backend_container_id": (
                 "f029cf6b2e86ac795d6e1d743ff12a7f7984069621207a8dbbc9e425b8474c92"
             ),
@@ -116,6 +116,29 @@ def _approval(*, decision: str = "APPROVED") -> dict[str, object]:
             "release_freeze_active": True,
             "required_release_gate": "GATE-10",
             "gate10_lift_implemented": False,
+        },
+        "storage_policy": {
+            "path_groups": dict(recovery.STORAGE_PATH_GROUPS),
+            "minimum_available_bytes": {
+                "rootfs": 16 * 1024 * 1024,
+                "runfs": 16 * 1024 * 1024,
+                "dockerfs": 64 * 1024 * 1024,
+            },
+            "minimum_free_inodes": {
+                "rootfs": 1024,
+                "runfs": 1024,
+                "dockerfs": 1024,
+            },
+            "maximum_usage_percent": {
+                "rootfs": 97,
+                "runfs": 97,
+                "dockerfs": 97,
+            },
+            "fixed_safety_reserve_bytes": {
+                "rootfs": 16 * 1024 * 1024,
+                "runfs": 16 * 1024 * 1024,
+                "dockerfs": 64 * 1024 * 1024,
+            },
         },
         "current_partial_state": {
             "legacy_timer": {
@@ -207,7 +230,7 @@ def _evidence_fixture(tmp_path: Path) -> tuple[dict[str, object], Path]:
 
 def _stage(tmp_path: Path) -> Path:
     stage = tmp_path / "stage"
-    for relative in set(recovery.INSTALL_TARGETS) | {
+    for relative in set(recovery.TARGETS_BY_SOURCE) | {
         "ops/production-release-state.json",
         "ops/production_release_gate.py",
         "ops/schemas/gate08-remediation-resume.schema.json",
@@ -219,12 +242,66 @@ def _stage(tmp_path: Path) -> Path:
     return stage
 
 
+def _installed_tree(tmp_path: Path) -> tuple[Path, Path]:
+    stage = _stage(tmp_path)
+    root = tmp_path / "installed-root"
+    root.mkdir(mode=0o700)
+    for spec in recovery.TARGET_SPECS:
+        target = root / spec.path.lstrip("/")
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+        current = target.parent
+        while current != root:
+            current.chmod(0o755)
+            current = current.parent
+        shutil.copyfile(stage / spec.source, target)
+        target.chmod(int(spec.mode, 8))
+    return stage, root
+
+
+def _storage_snapshots() -> list[dict[str, object]]:
+    values = []
+    for identity, mount, paths in (
+        (1, "/", ["/", "/etc", "/usr/local", "/var/lib/sealai-disk-guard"]),
+        (2, "/run", ["/run"]),
+        (3, "/mnt/sealai-volume/docker-data", ["/mnt/sealai-volume/docker-data"]),
+    ):
+        values.append(
+            {
+                "device_id": identity,
+                "filesystem_id": identity,
+                "mount_id": identity,
+                "device_major_minor": f"0:{identity}",
+                "mount_point": mount,
+                "paths": paths,
+                "total_bytes": 10**10,
+                "free_bytes": 5 * 10**9,
+                "available_bytes": 4 * 10**9,
+                "total_inodes": 10**6,
+                "free_inodes": 5 * 10**5,
+                "usage_percent": 50,
+            }
+        )
+    return values
+
+
+def _storage_requirements(required: int = 1024) -> dict[str, dict[str, int]]:
+    return {
+        group: {"calculated_required_bytes": required}
+        for group in recovery.STORAGE_GROUPS
+    }
+
+
 def test_recovery_schema_and_exact_bound_approval_validate():
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     jsonschema.Draft202012Validator.check_schema(schema)
     approval = _approval()
     jsonschema.validate(approval, schema)
     assert recovery.validate_approval_contract(approval) is approval
+
+    without_optional_usage = _approval()
+    del without_optional_usage["storage_policy"]["maximum_usage_percent"]
+    jsonschema.validate(without_optional_usage, schema)
+    assert recovery.validate_approval_contract(without_optional_usage)
 
 
 @pytest.mark.parametrize(
@@ -236,6 +313,7 @@ def test_recovery_schema_and_exact_bound_approval_validate():
         (("production", "commit"), "0" * 40),
         (("production", "release_freeze_active"), False),
         (("production", "gate10_lift_implemented"), True),
+        (("storage_policy", "minimum_free_inodes", "rootfs"), 0),
     ],
 )
 def test_recovery_contract_rejects_nonincident_partial_states(path, value):
@@ -320,10 +398,189 @@ def test_synthetic_root_contains_exact_later_installed_bytes(tmp_path: Path):
     root = tmp_path / "validation-root"
     hashes = recovery.build_synthetic_root(stage, root)
     assert recovery.SYNTHETIC_REQUIRED_TARGETS <= set(hashes)
-    for relative, (target, _mode) in recovery.INSTALL_TARGETS.items():
-        assert (stage / relative).read_bytes() == (
-            root / target.lstrip("/")
+    for spec in recovery.TARGET_SPECS:
+        assert (stage / spec.source).read_bytes() == (
+            root / spec.path.lstrip("/")
         ).read_bytes()
+
+
+def test_target_postconditions_are_exact_and_receipt_complete(tmp_path: Path):
+    stage, root = _installed_tree(tmp_path)
+    targets = recovery.verify_installed_targets(
+        stage,
+        root=root,
+        required_uid=os.getuid(),
+        required_gid=os.getgid(),
+    )
+    assert len(targets) == len(recovery.TARGET_SPECS)
+    assert {item["path"] for item in targets} == set(recovery.TARGETS_BY_PATH)
+    assert all(
+        set(item) == {"path", "sha256", "uid", "gid", "mode"}
+        and item["uid"] == os.getuid()
+        and item["gid"] == os.getgid()
+        and item["mode"] == recovery.TARGETS_BY_PATH[item["path"]].mode
+        for item in targets
+    )
+
+
+@pytest.mark.parametrize("drift", ["mode", "symlink", "hash", "ancestor"])
+def test_target_postconditions_reject_filesystem_drift(tmp_path: Path, drift: str):
+    stage, root = _installed_tree(tmp_path)
+    spec = recovery.TARGET_SPECS[0]
+    target = root / spec.path.lstrip("/")
+    if drift == "mode":
+        target.chmod(0o600 if spec.mode != "0600" else 0o644)
+    elif drift == "symlink":
+        target.unlink()
+        target.symlink_to(stage / spec.source)
+    elif drift == "hash":
+        target.write_bytes(b"drift\n")
+        target.chmod(int(spec.mode, 8))
+    else:
+        target.parent.chmod(0o775)
+    with pytest.raises(recovery.RecoveryError):
+        recovery.verify_installed_targets(
+            stage,
+            root=root,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+
+
+@pytest.mark.parametrize(("uid_offset", "gid_offset"), [(1, 0), (0, 1)])
+def test_target_metadata_rejects_wrong_owner_or_group(uid_offset: int, gid_offset: int):
+    spec = recovery.TARGET_SPECS[0]
+    metadata = SimpleNamespace(
+        st_mode=stat.S_IFREG | int(spec.mode, 8),
+        st_uid=os.getuid() + uid_offset,
+        st_gid=os.getgid() + gid_offset,
+    )
+    with pytest.raises(recovery.RecoveryError, match="metadata drift"):
+        recovery._validate_target_metadata(
+            metadata,
+            spec,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+            label="test target",
+        )
+
+
+def test_target_metadata_drift_between_postinstall_and_receipt_fails(tmp_path: Path):
+    stage, root = _installed_tree(tmp_path)
+    first = recovery.verify_installed_targets(
+        stage,
+        root=root,
+        required_uid=os.getuid(),
+        required_gid=os.getgid(),
+    )
+    spec = recovery.TARGET_SPECS[0]
+    (root / spec.path.lstrip("/")).chmod(0o600 if spec.mode != "0600" else 0o644)
+    with pytest.raises(recovery.RecoveryError, match="metadata drift"):
+        recovery.verify_installed_targets(
+            stage,
+            root=root,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+        )
+    assert first
+
+
+@pytest.mark.parametrize(
+    "failure_step", ["temp_create", "install", "hash", "metadata", "rename", "fsync"]
+)
+def test_atomic_install_cleans_only_its_temp_on_every_failure(
+    tmp_path: Path, failure_step: str
+):
+    stage = _stage(tmp_path)
+    root = tmp_path / "atomic-root"
+    root.mkdir(mode=0o700)
+    spec = recovery.TARGET_SPECS[0]
+    target = root / spec.path.lstrip("/")
+    target.parent.mkdir(parents=True, mode=0o755)
+    current = target.parent
+    while current != root:
+        current.chmod(0o755)
+        current = current.parent
+
+    def fail_at(
+        step: str,
+        _spec: recovery.TargetSpec,
+        _temporary: Path | None,
+        _target: Path,
+    ) -> None:
+        if step == failure_step:
+            raise recovery.RecoveryError(f"simulated {step} failure")
+
+    with pytest.raises(recovery.RecoveryError, match="simulated"):
+        recovery.install_target_atomic(
+            spec,
+            stage,
+            root=root,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+            failure_hook=fail_at,
+        )
+    assert not list(target.parent.glob("*.recovery.*"))
+    assert target.exists() is (failure_step == "fsync")
+
+
+def test_atomic_install_success_keeps_target_and_no_temp(tmp_path: Path):
+    stage = _stage(tmp_path)
+    root = tmp_path / "atomic-success-root"
+    root.mkdir(mode=0o700)
+    spec = recovery.TARGET_SPECS[0]
+    target = root / spec.path.lstrip("/")
+    target.parent.mkdir(parents=True, mode=0o755)
+    current = target.parent
+    while current != root:
+        current.chmod(0o755)
+        current = current.parent
+    result = recovery.install_target_atomic(
+        spec,
+        stage,
+        root=root,
+        required_uid=os.getuid(),
+        required_gid=os.getgid(),
+    )
+    assert target.is_file()
+    assert result["path"] == spec.path
+    assert not list(target.parent.glob("*.recovery.*"))
+
+
+def test_atomic_install_failure_preserves_unrelated_file(tmp_path: Path):
+    stage = _stage(tmp_path)
+    root = tmp_path / "atomic-unrelated-root"
+    root.mkdir(mode=0o700)
+    spec = recovery.TARGET_SPECS[0]
+    target = root / spec.path.lstrip("/")
+    target.parent.mkdir(parents=True, mode=0o755)
+    current = target.parent
+    while current != root:
+        current.chmod(0o755)
+        current = current.parent
+    unrelated = target.parent / ".owner-created.recovery.keep"
+    unrelated.write_bytes(b"keep\n")
+
+    def fail_install(
+        step: str,
+        _spec: recovery.TargetSpec,
+        _temporary: Path | None,
+        _target: Path,
+    ) -> None:
+        if step == "install":
+            raise recovery.RecoveryError("simulated install failure")
+
+    with pytest.raises(recovery.RecoveryError, match="simulated"):
+        recovery.install_target_atomic(
+            spec,
+            stage,
+            root=root,
+            required_uid=os.getuid(),
+            required_gid=os.getgid(),
+            failure_hook=fail_install,
+        )
+    assert unrelated.read_bytes() == b"keep\n"
+    assert not list(target.parent.glob(f".{target.name}.recovery.*"))
 
 
 @pytest.mark.skipif(
@@ -359,6 +616,123 @@ def test_target_drift_and_second_recovery_are_rejected(tmp_path: Path):
         recovery.validate_target_preconditions(
             targets, path_factory=lambda target: tmp_path / target.lstrip("/")
         )
+
+
+def test_storage_snapshot_collection_deduplicates_shared_filesystems():
+    identities = {
+        path: 1 if group == "rootfs" else 2 if group == "runfs" else 3
+        for path, group in recovery.STORAGE_PATH_GROUPS.items()
+    }
+
+    def fake_stat(path: str) -> SimpleNamespace:
+        return SimpleNamespace(st_dev=identities[path])
+
+    def fake_statvfs(path: str) -> SimpleNamespace:
+        identity = identities[path]
+        return SimpleNamespace(
+            f_fsid=identity,
+            f_frsize=4096,
+            f_bsize=4096,
+            f_blocks=1_000_000,
+            f_bfree=500_000,
+            f_bavail=400_000,
+            f_files=1_000_000,
+            f_ffree=500_000,
+        )
+
+    def fake_mount(path: str) -> dict[str, object]:
+        identity = identities[path]
+        return {
+            "mount_id": identity,
+            "device_major_minor": f"0:{identity}",
+            "mount_point": next(
+                mount
+                for group_identity, mount in (
+                    (1, "/"),
+                    (2, "/run"),
+                    (3, "/mnt/sealai-volume/docker-data"),
+                )
+                if group_identity == identity
+            ),
+        }
+
+    snapshots = recovery.collect_filesystem_snapshots(
+        tuple(recovery.STORAGE_PATH_GROUPS),
+        stat_fn=fake_stat,
+        statvfs_fn=fake_statvfs,
+        mount_resolver=fake_mount,
+    )
+    assert len(snapshots) == 3
+    rootfs = next(item for item in snapshots if item["mount_id"] == 1)
+    assert rootfs["paths"] == [
+        "/",
+        "/etc",
+        "/usr/local",
+        "/var/lib/sealai-disk-guard",
+    ]
+
+
+def test_storage_preflight_rejects_wrong_mount_binding():
+    approval = _approval()
+    snapshots = _storage_snapshots()
+    snapshots[0]["paths"].remove("/etc")
+    misplaced = dict(snapshots[0])
+    misplaced.update(
+        {
+            "device_id": 4,
+            "filesystem_id": 4,
+            "mount_id": 4,
+            "device_major_minor": "0:4",
+            "mount_point": "/etc",
+            "paths": ["/etc"],
+        }
+    )
+    with pytest.raises(recovery.RecoveryError, match="STORAGE_PREFLIGHT_FAILED"):
+        recovery.validate_storage_snapshots(
+            approval, [*snapshots, misplaced], _storage_requirements()
+        )
+
+
+@pytest.mark.parametrize("metric", ["available_bytes", "free_inodes"])
+def test_storage_preflight_rejects_insufficient_capacity(metric: str):
+    approval = _approval()
+    snapshots = _storage_snapshots()
+    snapshots[0][metric] = 0
+    with pytest.raises(recovery.RecoveryError, match="STORAGE_PREFLIGHT_FAILED"):
+        recovery.validate_storage_snapshots(
+            approval, snapshots, _storage_requirements()
+        )
+
+
+def test_storage_preflight_rejects_docker_root_drift(tmp_path: Path):
+    with pytest.raises(recovery.RecoveryError, match="STORAGE_PREFLIGHT_FAILED"):
+        recovery.run_storage_preflight(
+            _approval(),
+            tmp_path,
+            actual_docker_root="/var/lib/docker",
+        )
+
+
+def test_storage_preflight_accepts_calculated_reserve_and_records_components():
+    approval = _approval()
+    requirements = recovery.calculate_storage_requirements(ROOT, approval)
+    result = recovery.validate_storage_snapshots(
+        approval, _storage_snapshots(), requirements
+    )
+    assert len(result["filesystems"]) == 3
+    assert {
+        "private_stage_bytes",
+        "synthetic_validation_root_bytes",
+        "target_installation_bytes",
+        "rollback_bytes",
+        "transaction_and_cron_evidence_bytes",
+        "fixed_safety_reserve_bytes",
+        "calculated_required_bytes",
+    } <= set(requirements["rootfs"])
+    assert (
+        requirements["rootfs"]["calculated_required_bytes"]
+        > requirements["rootfs"]["fixed_safety_reserve_bytes"]
+    )
 
 
 def test_release_gate_allows_only_exact_hash_bound_recovery(tmp_path: Path):
@@ -397,6 +771,11 @@ def test_recovery_runner_never_repeats_legacy_retirement_or_fallback():
     assert source.count("LEGACY_CRON_LINE=") == 1
     assert 'crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"' in source
     assert 'crontab -u "${LEGACY_CRON_USER}" "${CRON_BEFORE}"' not in source
+    assert "atomic_install()" not in source
+    assert source.count("install-targets --stage-dir") == 1
+    assert source.count("verify-targets --stage-dir") == 2
+    assert 'target_value.get("targets")' in source
+    assert '{"path", "sha256", "uid", "gid", "mode"}' in source
 
 
 def test_pre_cron_rollback_uses_manifest_and_refuses_hash_drift(tmp_path: Path):
@@ -454,6 +833,12 @@ def test_recovery_phase_order_is_fail_closed():
     assert source.index("systemd-analyze verify", positions[4]) < positions[5]
     assert source.index("systemctl daemon-reload") > positions[5]
     assert source.index("systemctl enable --now") > positions[5]
+    storage = source.index("storage-preflight --approval")
+    lock = source.index("exec 8>/run/lock/sealai-stage-a-recovery.lock")
+    private_stage = source.index(
+        'STAGE_DIR="$(mktemp -d /run/sealai-remediation-resume.XXXXXX)"'
+    )
+    assert storage < lock < private_stage
 
 
 def test_bootstrap_has_fixed_gate_runner_and_no_direct_checkout_fallback():
