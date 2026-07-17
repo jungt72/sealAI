@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import symtable
 
 
 _ALLOWED_BARE_COLUMN_TYPES = frozenset(
@@ -39,6 +40,7 @@ _PROTECTED_HELPERS = frozenset(
         "mapped_column",
     }
 )
+_PROTECTED_BINDING_NAMES = _PROTECTED_HELPERS | {"_MATERIAL_RULESET_JSON"}
 _ALLOWED_HELPER_IMPORTS = {
     "sqlalchemy": frozenset(
         {
@@ -326,66 +328,123 @@ def _validate_table_constraints(
         names.add(name)
 
 
-def _validate_helper_bindings(tree: ast.Module, *, filename: str) -> None:
-    json_assignments: list[ast.Assign] = []
-    protected_definitions: list[ast.AST] = []
-    import_counts = {name: 0 for name in _PROTECTED_HELPERS}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if (alias.asname or alias.name.split(".")[0]) in _PROTECTED_HELPERS:
-                    protected_definitions.append(node)
-        elif isinstance(node, ast.ImportFrom):
-            allowed = _ALLOWED_HELPER_IMPORTS.get(node.module or "", frozenset())
-            for alias in node.names:
-                bound = alias.asname or alias.name
-                if bound in _PROTECTED_HELPERS:
-                    import_counts[bound] += 1
-                    if alias.asname is not None or alias.name not in allowed:
-                        protected_definitions.append(node)
-        elif isinstance(node, ast.arg) and node.arg in _PROTECTED_HELPERS:
-            protected_definitions.append(node)
-        elif (
-            isinstance(node, ast.Name)
-            and isinstance(node.ctx, (ast.Store, ast.Del))
-            and node.id in _PROTECTED_HELPERS
-        ):
-            protected_definitions.append(node)
-    for statement in tree.body:
-        if isinstance(statement, ast.Assign):
-            targets = [
-                target for target in statement.targets if isinstance(target, ast.Name)
-            ]
-            if any(target.id == "_MATERIAL_RULESET_JSON" for target in targets):
-                json_assignments.append(statement)
-            if any(target.id in _PROTECTED_HELPERS for target in targets):
-                protected_definitions.append(statement)
-        elif isinstance(statement, (ast.AnnAssign, ast.AugAssign)) and isinstance(
-            statement.target, ast.Name
-        ):
-            if (
-                statement.target.id == "_MATERIAL_RULESET_JSON"
-                or statement.target.id in _PROTECTED_HELPERS
-            ):
-                protected_definitions.append(statement)
-        elif isinstance(statement, ast.Delete) and any(
-            isinstance(target, ast.Name)
-            and (
-                target.id == "_MATERIAL_RULESET_JSON" or target.id in _PROTECTED_HELPERS
-            )
-            for target in statement.targets
-        ):
-            protected_definitions.append(statement)
-        elif (
-            isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            and statement.name in _PROTECTED_HELPERS
-        ):
-            protected_definitions.append(statement)
-    if protected_definitions:
-        first = min(protected_definitions, key=lambda node: node.lineno)
-        raise AssertionError(
-            f"{filename}:{first.lineno}: protected MAT-GOV helper was rebound"
+def _direct_bound_names(node: ast.AST) -> tuple[str, ...]:
+    """Return names bound directly by one AST node, never by its descendants."""
+
+    if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        return (node.id,)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return (node.name,)
+    if isinstance(node, ast.arg):
+        return (node.arg,)
+    if isinstance(node, ast.Import):
+        return tuple(
+            alias.asname or alias.name.split(".", 1)[0] for alias in node.names
         )
+    if isinstance(node, ast.ImportFrom):
+        return tuple(alias.asname or alias.name for alias in node.names)
+    if isinstance(node, ast.ExceptHandler) and node.name:
+        return (
+            (node.name,)
+            if isinstance(node.name, str)
+            else _direct_bound_names(node.name)
+        )
+    if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+        return (node.name,)
+    if isinstance(node, ast.MatchMapping) and node.rest:
+        return (node.rest,)
+    if isinstance(node, (ast.Global, ast.Nonlocal)):
+        return tuple(node.names)
+
+    type_alias = getattr(ast, "TypeAlias", None)
+    if type_alias is not None and isinstance(node, type_alias):
+        target = node.name
+        if isinstance(target, ast.Name):
+            return (target.id,)
+        if isinstance(target, str):
+            return (target,)
+        return ("<unrecognized-type-alias-target>",)
+    return ()
+
+
+def _symbol_is_binding(symbol: symtable.Symbol) -> bool:
+    return any(
+        predicate()
+        for predicate in (
+            symbol.is_assigned,
+            symbol.is_imported,
+            symbol.is_parameter,
+            symbol.is_namespace,
+        )
+    )
+
+
+def _validate_symbol_bindings(
+    source: str,
+    *,
+    filename: str,
+    allowed_helper_imports: frozenset[str],
+    json_binding_allowed: bool,
+) -> None:
+    """Cross-check compiler-recognized bindings so unknown AST forms fail closed."""
+
+    root = symtable.symtable(source, filename, "exec")
+
+    def inspect(table: symtable.SymbolTable, *, module: bool) -> None:
+        for name in _PROTECTED_BINDING_NAMES:
+            try:
+                symbol = table.lookup(name)
+            except KeyError:
+                continue
+            if not _symbol_is_binding(symbol):
+                continue
+            allowed = False
+            if module and name in allowed_helper_imports:
+                allowed = (
+                    symbol.is_imported()
+                    and not symbol.is_assigned()
+                    and not symbol.is_parameter()
+                    and not symbol.is_namespace()
+                )
+            elif module and name == "_MATERIAL_RULESET_JSON" and json_binding_allowed:
+                allowed = (
+                    symbol.is_assigned()
+                    and not symbol.is_imported()
+                    and not symbol.is_parameter()
+                    and not symbol.is_namespace()
+                )
+            if not allowed:
+                raise AssertionError(
+                    f"{filename}: protected MAT-GOV helper was rebound in "
+                    f"{table.get_type()} scope {table.get_name()!r}"
+                )
+        for child in table.get_children():
+            inspect(child, module=False)
+
+    inspect(root, module=True)
+
+
+def _validate_helper_bindings(tree: ast.Module, *, source: str, filename: str) -> None:
+    top_level_ids = {id(statement) for statement in tree.body}
+    import_counts = {name: 0 for name in _PROTECTED_HELPERS}
+    allowed_binding_nodes: set[tuple[int, str]] = set()
+
+    for statement in tree.body:
+        if not isinstance(statement, ast.ImportFrom):
+            continue
+        allowed = _ALLOWED_HELPER_IMPORTS.get(statement.module or "", frozenset())
+        for alias in statement.names:
+            if alias.name == "*":
+                raise AssertionError(
+                    f"{filename}:{statement.lineno}: wildcard imports are forbidden"
+                )
+            bound = alias.asname or alias.name
+            if bound not in _PROTECTED_HELPERS:
+                continue
+            import_counts[bound] += 1
+            if alias.asname is None and alias.name in allowed:
+                allowed_binding_nodes.add((id(statement), bound))
+
     duplicated_imports = sorted(
         name for name, count in import_counts.items() if count > 1
     )
@@ -394,18 +453,64 @@ def _validate_helper_bindings(tree: ast.Module, *, filename: str) -> None:
             f"{filename}: protected MAT-GOV helpers imported more than once: "
             f"{duplicated_imports}"
         )
+
+    json_assignments = [
+        statement
+        for statement in tree.body
+        if isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and isinstance(statement.targets[0], ast.Name)
+        and statement.targets[0].id == "_MATERIAL_RULESET_JSON"
+    ]
+    json_binding_allowed = len(json_assignments) == 1 and _is_material_json_expression(
+        json_assignments[0].value
+    )
+    if json_binding_allowed:
+        allowed_binding_nodes.add(
+            (id(json_assignments[0].targets[0]), "_MATERIAL_RULESET_JSON")
+        )
+
+    protected_bindings: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and any(
+            alias.name == "*" for alias in node.names
+        ):
+            protected_bindings.append(node)
+            continue
+        for name in _direct_bound_names(node):
+            if name not in _PROTECTED_BINDING_NAMES:
+                continue
+            binding_node_id = id(node)
+            if isinstance(node, ast.ImportFrom) and id(node) in top_level_ids:
+                binding_node_id = id(node)
+            if (binding_node_id, name) not in allowed_binding_nodes:
+                protected_bindings.append(node)
+
+    if protected_bindings:
+        first = min(protected_bindings, key=lambda node: getattr(node, "lineno", 1))
+        raise AssertionError(
+            f"{filename}:{getattr(first, 'lineno', 1)}: protected MAT-GOV helper "
+            "was rebound"
+        )
+
     json_uses = any(
         isinstance(node, ast.Name) and node.id == "_MATERIAL_RULESET_JSON"
         for node in ast.walk(tree)
     )
-    if json_uses:
-        if len(json_assignments) != 1 or not _is_material_json_expression(
-            json_assignments[0].value
-        ):
-            line = json_assignments[0].lineno if json_assignments else 1
-            raise AssertionError(
-                f"{filename}:{line}: invalid _MATERIAL_RULESET_JSON binding"
-            )
+    if json_uses and not json_binding_allowed:
+        line = json_assignments[0].lineno if json_assignments else 1
+        raise AssertionError(
+            f"{filename}:{line}: invalid _MATERIAL_RULESET_JSON binding"
+        )
+
+    _validate_symbol_bindings(
+        source,
+        filename=filename,
+        allowed_helper_imports=frozenset(
+            name for name, count in import_counts.items() if count == 1
+        ),
+        json_binding_allowed=json_binding_allowed,
+    )
 
 
 def parse_material_schema_source(
@@ -415,7 +520,7 @@ def parse_material_schema_source(
     require_table_constraints: bool = False,
 ) -> dict[str, frozenset[str]]:
     tree = ast.parse(source, filename=filename)
-    _validate_helper_bindings(tree, filename=filename)
+    _validate_helper_bindings(tree, source=source, filename=filename)
     top_level_classes = {
         id(node) for node in tree.body if isinstance(node, ast.ClassDef)
     }

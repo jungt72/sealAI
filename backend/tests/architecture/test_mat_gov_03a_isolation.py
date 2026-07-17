@@ -6,7 +6,13 @@ import ast
 import hashlib
 from pathlib import Path
 
-from _model_schema_ast import load_material_schema, parse_material_schema_source
+import pytest
+
+from _model_schema_ast import (
+    _PROTECTED_BINDING_NAMES,
+    load_material_schema,
+    parse_material_schema_source,
+)
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -355,6 +361,108 @@ class UnexpectedName(Base):
     value: Mapped[str] = mapped_column(String(64), nullable=False)
 """
     _assert_schema_rejected(nested_rebind)
+
+
+_BINDING_FORMS = (
+    "def {name}():\n    pass",
+    "async def {name}():\n    pass",
+    "class {name}:\n    pass",
+    "class Container:\n    def {name}(self):\n        pass",
+    "def outer():\n    def {name}():\n        pass",
+    "def probe({name}):\n    pass",
+    "def probe({name}, /):\n    pass",
+    "def probe(*, {name}):\n    pass",
+    "def probe(*{name}):\n    pass",
+    "def probe(**{name}):\n    pass",
+    "probe = lambda {name}: None",
+    "import attacker as {name}",
+    "from attacker import value as {name}",
+    "try:\n    operation()\nexcept Exception as {name}:\n    pass",
+    "match payload:\n    case _ as {name}:\n        pass",
+    "match payload:\n    case [*{name}]:\n        pass",
+    'match payload:\n    case {"key": value, **{name}}:\n        pass',
+    (
+        "match payload:\n"
+        "    case Point(value={name}) | Box(value={name}):\n"
+        "        pass"
+    ),
+    "captured = ({name} := build())",
+    "for {name} in values:\n    pass",
+    "async def probe():\n    async for {name} in values:\n        pass",
+    "captured = [item for {name} in values]",
+    "with manager() as {name}:\n    pass",
+    "async def probe():\n    async with manager() as {name}:\n        pass",
+    "{name} = build()",
+    "{name}: object = build()",
+    "{name} += value",
+    "del {name}",
+    "def probe():\n    global {name}",
+    (
+        "def outer():\n"
+        "    {name} = value\n"
+        "    def inner():\n"
+        "        nonlocal {name}"
+    ),
+)
+if hasattr(ast, "TypeAlias"):
+    _BINDING_FORMS += ("type {name} = str",)
+
+
+def _schema_with_binding(binding: str) -> str:
+    return f"""{binding}
+class V2MaterialBindingProbe(Base):
+    __tablename__ = "v2_material_shadow_binding_probe"
+    value: Mapped[str] = mapped_column(String(64), nullable=False)
+"""
+
+
+@pytest.mark.parametrize("name", sorted(_PROTECTED_BINDING_NAMES))
+@pytest.mark.parametrize("binding_form", _BINDING_FORMS)
+def test_material_schema_parser_rejects_recursive_protected_bindings(
+    name: str, binding_form: str
+) -> None:
+    _assert_schema_rejected(_schema_with_binding(binding_form.replace("{name}", name)))
+
+
+def test_material_schema_parser_rejects_class_local_string_definition() -> None:
+    _assert_schema_rejected(
+        _schema_with_binding("class Container:\n    def String(self):\n        pass")
+    )
+
+
+def test_material_schema_parser_rejects_match_string_capture() -> None:
+    _assert_schema_rejected(
+        _schema_with_binding("match payload:\n    case String:\n        pass")
+    )
+
+
+def test_material_schema_parser_rejects_material_json_pattern_rebinding() -> None:
+    _assert_schema_rejected(
+        """
+_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), "postgresql")
+match payload:
+    case [*_MATERIAL_RULESET_JSON]:
+        pass
+class V2MaterialBindingProbe(Base):
+    __tablename__ = "v2_material_shadow_binding_probe"
+    payload: Mapped[dict] = mapped_column(_MATERIAL_RULESET_JSON, nullable=False)
+"""
+    )
+
+
+def test_material_schema_parser_allows_pure_helper_references() -> None:
+    source = """
+def reference_only():
+    return (Base, String, mapped_column, _MATERIAL_RULESET_JSON)
+
+_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), "postgresql")
+class V2MaterialBindingProbe(Base):
+    __tablename__ = "v2_material_shadow_binding_probe"
+    payload: Mapped[dict] = mapped_column(_MATERIAL_RULESET_JSON, nullable=False)
+"""
+    assert parse_material_schema_source(source) == {
+        "v2_material_shadow_binding_probe": frozenset({"payload"})
+    }
 
 
 def test_material_schema_parser_closes_table_constraint_ast() -> None:
