@@ -15,6 +15,7 @@ from sealai_v2.core.material_rulesets import (
     EvidenceBindingV1,
     MaterialRuleScopeV1,
     MaterialRulesetErrorCode,
+    MaterialRulesetPayloadV1,
     MaterialRulesetSnapshotV1,
     MaterialRulesetValidationError,
     canonicalize_payload,
@@ -195,6 +196,42 @@ def test_boolean_and_string_types_are_not_coerced() -> None:
     boolean_string = _base_payload()
     boolean_string["rules"][0]["material"] = False
     assert _error(_raw(boolean_string)) == MaterialRulesetErrorCode.INVALID_TYPE.value
+
+
+def test_positive_statement_true_is_rejected_with_stable_error_code() -> None:
+    payload = _base_payload()
+    payload["positive_statement_allowed"] = True
+    assert _error(_raw(payload)) == MaterialRulesetErrorCode.INVALID_CONSTANT.value
+
+
+@pytest.mark.parametrize(
+    "verdict",
+    [
+        "compatible",
+        "VERTRAEGLICH",
+        " vertraeglich",
+        "vertraeglich ",
+        "unverträglich",
+        "bedingт",  # final character is Cyrillic U+0442
+    ],
+)
+def test_unknown_material_verdicts_fail_closed_with_stable_error_code(
+    verdict: str,
+) -> None:
+    payload = _base_payload()
+    payload["rules"][0]["verdict"] = verdict
+    assert _error(_raw(payload)) == MaterialRulesetErrorCode.INVALID_CONSTANT.value
+
+
+def test_direct_payload_constructor_uses_typed_domain_pack_error_contract() -> None:
+    parsed = MaterialRulesetSnapshotV1.from_json(RULESET_ID, _raw(_base_payload()))
+    with pytest.raises(MaterialRulesetValidationError) as exc:
+        MaterialRulesetPayloadV1(
+            domain_pack_id="INVALID DOMAIN PACK",
+            rules=parsed.payload.rules,
+        )
+    assert exc.value.code is MaterialRulesetErrorCode.INVALID_ID
+    assert exc.value.path == "$.domain_pack_id"
 
 
 @pytest.mark.parametrize("state", ["bound", "reviewed", "approved", "grounded"])

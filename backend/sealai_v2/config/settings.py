@@ -7,7 +7,9 @@ when ``SEALAI_V2_OPENAI_API_KEY`` is unset (see ``llm.factory``).
 
 from __future__ import annotations
 
-from pydantic import model_validator
+from typing import Literal
+
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -120,6 +122,28 @@ class Settings(BaseSettings):
     # disabled the pipeline emits only the historical Gegencheck field and the
     # serialized response remains key-for-key unchanged.
     material_constraints_enabled: bool = False
+    # MAT-GOV-03B: pointerless, invisible and non-authoritative shadow
+    # evaluation.  All switches are independent from the visible material
+    # constraint flag and default off.  No setting ever contains a snapshot ID.
+    material_ruleset_shadow_enabled: bool = False
+    material_ruleset_shadow_persistence_enabled: bool = False
+    material_ruleset_shadow_sampling_enabled: bool = False
+    material_ruleset_shadow_sampling_basis_points: int = 0
+    material_ruleset_shadow_environment: (
+        Literal["development", "staging", "production"] | None
+    ) = None
+    material_ruleset_shadow_redis_url: str | None = None
+    material_ruleset_shadow_hmac_active_key_id: str | None = None
+    material_ruleset_shadow_hmac_keyring_json: SecretStr | None = None
+    material_ruleset_shadow_evaluator_version: str = "MAT-GOV-03B.eval.v1"
+    material_ruleset_shadow_kernel_version: str = "MAT-GOV-02.kernel.v1"
+    material_ruleset_shadow_poll_interval_s: int = 15
+    material_ruleset_shadow_lease_s: int = 60
+    material_ruleset_shadow_db_timeout_s: int = 2
+    material_ruleset_shadow_retry_base_s: int = 5
+    material_ruleset_shadow_retry_max_s: int = 300
+    material_ruleset_shadow_claim_timeout_s: int = 60
+    material_ruleset_shadow_max_attempts: int = 5
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
@@ -255,6 +279,68 @@ class Settings(BaseSettings):
         if self.material_constraints_enabled and not self.compatibility_matrix_enabled:
             raise ValueError(
                 "material_constraints_enabled requires compatibility_matrix_enabled"
+            )
+        if self.material_ruleset_shadow_persistence_enabled and not (
+            self.material_ruleset_shadow_enabled
+        ):
+            raise ValueError(
+                "material shadow persistence requires material_ruleset_shadow_enabled"
+            )
+        if self.material_ruleset_shadow_sampling_enabled and not (
+            self.material_ruleset_shadow_enabled
+            and self.material_ruleset_shadow_persistence_enabled
+        ):
+            raise ValueError("material shadow sampling requires shadow and persistence")
+        if self.material_ruleset_shadow_sampling_basis_points != 0:
+            raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
+        shadow_times = {
+            "poll_interval": self.material_ruleset_shadow_poll_interval_s,
+            "lease": self.material_ruleset_shadow_lease_s,
+            "db_timeout": self.material_ruleset_shadow_db_timeout_s,
+            "retry_base": self.material_ruleset_shadow_retry_base_s,
+            "retry_max": self.material_ruleset_shadow_retry_max_s,
+            "claim_timeout": self.material_ruleset_shadow_claim_timeout_s,
+            "max_attempts": self.material_ruleset_shadow_max_attempts,
+        }
+        if any(type(value) is not int or value <= 0 for value in shadow_times.values()):
+            raise ValueError(
+                "material shadow timeouts and attempts must be positive integers"
+            )
+        if self.material_ruleset_shadow_lease_s <= (
+            self.material_ruleset_shadow_poll_interval_s
+        ):
+            raise ValueError("material shadow lease must exceed the polling interval")
+        if self.material_ruleset_shadow_retry_max_s < (
+            self.material_ruleset_shadow_retry_base_s
+        ):
+            raise ValueError("material shadow retry maximum must cover its base")
+        if self.material_ruleset_shadow_enabled:
+            required = {
+                "database_url": self.database_url,
+                "material_ruleset_shadow_environment": (
+                    self.material_ruleset_shadow_environment
+                ),
+                "material_ruleset_shadow_redis_url": (
+                    self.material_ruleset_shadow_redis_url
+                ),
+                "material_ruleset_shadow_hmac_active_key_id": (
+                    self.material_ruleset_shadow_hmac_active_key_id
+                ),
+                "material_ruleset_shadow_hmac_keyring_json": (
+                    self.material_ruleset_shadow_hmac_keyring_json
+                ),
+            }
+            missing = sorted(name for name, value in required.items() if not value)
+            if missing:
+                raise ValueError(
+                    "material shadow requires server-side configuration: "
+                    + ", ".join(missing)
+                )
+            from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+
+            ShadowHmacKeyring.from_json(
+                self.material_ruleset_shadow_hmac_keyring_json.get_secret_value(),
+                active_key_id=self.material_ruleset_shadow_hmac_active_key_id,
             )
         if (
             self.adaptive_interview_enabled or self.adaptive_interview_shadow_enabled

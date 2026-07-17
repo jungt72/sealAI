@@ -31,9 +31,6 @@ PROTECTED_HASHES = {
     "backend/sealai_v2/core/contracts.py": (
         "ed8af58c5407cd0d65730abfa390d56464e9a1f43f36715f9f6236913054b7b3"
     ),
-    "backend/sealai_v2/config/settings.py": (
-        "1dfb4c862bd48ee637d4a5b7cd1e5a26cd93cbf98538d6984c4f884422f1570a"
-    ),
     "docker-compose.deploy.yml": (
         "322c08a81b97becffa8af53e63f645ff2ac1b8426b3867ce20443007c284a988"
     ),
@@ -86,7 +83,15 @@ def test_03a_models_contain_no_lifecycle_or_runtime_tables() -> None:
     from sealai_v2.db.engine import Base
 
     material_tables = {
-        name for name in Base.metadata.tables if name.startswith("v2_material_")
+        name
+        for name in Base.metadata.tables
+        if name
+        in {
+            "v2_material_rulesets",
+            "v2_material_ruleset_snapshots",
+            "v2_material_snapshot_validation_events",
+            "v2_material_snapshot_audit_events",
+        }
     }
     assert material_tables == {
         "v2_material_rulesets",

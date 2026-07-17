@@ -44,7 +44,7 @@ defined in `docs/ssot/sealingAI_SSoT_v2.0.md` and summarized in `AGENTS.md`.
 | Technical answer contract | `backend/sealai_v2/core/technical_answer.py` |
 | Output guard | `backend/sealai_v2/core/output_guard.py` |
 | Case state | `backend/sealai_v2/core/case_state.py` |
-| Material-constraint governance (MAT-GOV-03A technical snapshots, inert/default-off) | `docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md`, `docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md`, `backend/sealai_v2/core/material_rulesets.py`, `backend/sealai_v2/db/material_rulesets.py`; MAT-GOV-03B/03C remain NO-GO |
+| Material-constraint governance (03A immutable snapshots plus 03B non-authoritative pointerless shadow foundation; local/default-off/sampling zero) | `docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md`, `docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md`, `docs/architecture/ADR_MAT_GOV_03B_SHADOW_PINNING.md`, `backend/sealai_v2/core/material_rulesets.py`, `backend/sealai_v2/core/material_shadow.py`, `backend/sealai_v2/db/material_shadow.py`; 03B owner acceptance, production migration, activation and MAT-GOV-03C remain NO-GO |
 | RWDR adaptive interview (owner-approved limited production scope) | `docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md`, `docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md`, `docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/`, `backend/sealai_v2/core/interview/` |
 | Knowledge source of record | `backend/sealai_v2/db/models.py`, `backend/sealai_v2/knowledge/ledger.py` |
 | Derived retrieval index | `backend/sealai_v2/knowledge/qdrant_retrieval.py` |

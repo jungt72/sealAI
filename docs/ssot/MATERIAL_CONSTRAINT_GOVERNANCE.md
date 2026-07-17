@@ -1,8 +1,10 @@
 # Material-Constraint Governance
 
-Status: MAT-GOV-01/02 and the inert technical MAT-GOV-03A snapshot foundation
-implemented default-off; no material-rule activation. MAT-GOV-03B/03C,
-independent review, MAT-EVID-01, and every activation gate remain required.
+Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, and the
+non-authoritative MAT-GOV-03B shadow/pinning foundation are implemented
+default-off locally; no material-rule activation or production migration is
+authorized. Independent review/owner acceptance of 03B, MAT-GOV-03C,
+MAT-EVID-01, and every activation gate remain required.
 Owner decisions ratified through 2026-07-17.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
@@ -127,7 +129,7 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | MAT-GOV-01 | Canonical typed result, unchanged verdict values, stable conditional references, legacy Gegencheck adapter, default-off additive serialization |
 | MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
 | MAT-GOV-03A | Versioned ruleset/snapshot identity, sealingAI JCS profile v1, domain-separated content hash, deep immutability, empty technical persistence and append-only technical audit; no runtime selection |
-| MAT-GOV-03B | Request/session/case/decision/evaluation pinning, cache binding, shadow resolver and bounded reconciliation; NO-GO |
+| MAT-GOV-03B | Pointerless exact-snapshot shadow bindings, canonical-input eligibility, pseudonymous request/session/evaluation pinning, isolated cache/worker and bounded reconciliation; locally implemented, default-off, sampling frozen at zero, owner acceptance pending independent audit |
 | MAT-GOV-03C | Evidence review/approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01 and separate owner approval |
 
 MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
@@ -202,6 +204,50 @@ controlled quarantine-candidate error but no 03C lifecycle mutation.
 or cache integration, API/serializer/frontend change, pointer selection,
 pinning, review, approval, activation, rollback, readiness, or reconciliation.
 Its migration is not approved for production execution.
+
+## MAT-GOV-03B non-authoritative shadow contract
+
+03B selects no snapshot implicitly. An immutable, time-bounded binding names
+one exact 03A `snapshot_id` and `content_sha256` together with environment,
+fixed shadow purpose, global or verified-tenant-canary scope, domain-pack,
+evaluator/kernel/runtime/build identity, creator, reason, and a zero-percent
+sampling policy. Tenant canary precedes global without fallback. Transactional
+partition locks and exact overlap checks prevent concurrent bindings for the
+same interval; revocation does not release the reserved interval early.
+
+A persistable input requires server-verified canonical structured material and
+single-medium IDs plus the closed `known + single + not_applicable` state. Free
+text, unknown, ambiguous, missing, multiple, separator-derived, or LLM-derived
+input is `ineligible_unresolved_input` and creates no pin, job, evaluation, or
+cache entry. MED-NORM-01 is not implemented.
+
+The shadow pin is always `SHADOW_NON_AUTHORITATIVE` and can never allow a
+positive statement. Pin and outbox job are atomic; tenant/session/request/case/
+decision correlation is HMAC-SHA-256 with a versioned key ID, never raw identity.
+Session versions are immutable and explicitly upgraded; a per-session advisory
+lock and monotone sequence prevent concurrent creation or worker reordering.
+
+The isolated cache namespace binds tenant HMAC/key version, exact snapshot and
+hash, evaluator/kernel/domain/policy versions, and a canonical input fingerprint.
+The isolated worker persists only verdict/reference projections and stable
+technical codes. Postgres remains authoritative; Redis and notification are
+optimizations with no in-process, last-known-good, or cross-snapshot fallback.
+Bounded reconciliation defaults to 15-second polling, a 60-second lease, a
+two-second DB timeout, and deterministic jitter.
+
+All flags default false and sampling is fixed at zero. `/chat` capture occurs
+only after the public answer and contains every exception. In the absence of a
+server canonical-ID provider it stops before DB/Redis construction. Therefore
+the public response, prompt, serializers, visible answer cache, productspec and
+frontend remain unchanged. The worker has no Compose or deployment integration.
+
+Migration `20260717_0012` is additive and empty. It creates only the isolated
+binding/event/pin/session/outbox/evaluation aggregate with restrictive internal
+foreign keys and mutation guards. It adds no pointer, approval, deployment
+state, cohort, stage acknowledgment, seed, backfill, public/admin API, or
+case/decision mutation. Production execution is not authorized. Sampling above
+zero remains blocked until a tested 90-day evaluation purge and maintenance role
+exist; aggregate metrics may be retained for 13 months.
 
 ## Ratified owner decisions
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -84,6 +84,34 @@ class ChatRequest(BaseModel):
     case_id: str | None = Field(default=None, max_length=255)
 
 
+def _capture_material_shadow_after_response(
+    *,
+    settings: Settings,
+    identity: VerifiedIdentity,
+    session_id: str,
+    result,
+) -> None:
+    """Lazy, exception-contained post-response shadow seam.
+
+    The import and all work are unreachable while the master flag is false.
+    No exception may escape back into Starlette's background machinery.
+    """
+
+    try:
+        from sealai_v2.material_shadow.capture import (
+            capture_chat_shadow_after_response,
+        )
+
+        capture_chat_shadow_after_response(
+            settings=settings,
+            identity=identity,
+            session_id=session_id,
+            result=result,
+        )
+    except Exception:  # noqa: BLE001 - public response has already completed
+        _log.warning("material shadow post-response capture stopped")
+
+
 async def _run_pipeline(
     req: ChatRequest,
     identity: VerifiedIdentity,
@@ -110,6 +138,7 @@ async def _run_pipeline(
 @router.post("/chat")
 async def chat(
     req: ChatRequest,
+    background_tasks: BackgroundTasks,
     identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
@@ -126,7 +155,16 @@ async def chat(
         ) from exc
     except ConversationAccessDenied as exc:
         raise HTTPException(status_code=404, detail="conversation not found") from exc
-    return chat_response(result)
+    response = chat_response(result)
+    if settings.material_ruleset_shadow_enabled:
+        background_tasks.add_task(
+            _capture_material_shadow_after_response,
+            settings=settings,
+            identity=identity,
+            session_id=req.case_id or identity.session_id,
+            result=result,
+        )
+    return response
 
 
 @router.post("/chat/stream")

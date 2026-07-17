@@ -129,3 +129,24 @@ approved. The additive migration is not authorized for production execution.
 MAT-GOV-03B and MAT-GOV-03C remain NO-GO pending separate owner adjudication;
 MAT-EVID-01 and both MAT-GOV-02 activation blockers remain open. MED-NORM-01,
 Produktspec, and RWDR-THERM-01 are unchanged.
+
+## ODR-13: MAT-GOV-03B local shadow/pinning implementation
+
+Decision: on 2026-07-17 the owner authorized one local MAT-GOV-03B commit on
+the accepted 03A base. Shadow jobs require server-verified canonical material
+and exactly one canonical medium ID. No free-text, separator, or LLM-derived
+normalization is permitted; unresolved input creates no durable shadow object.
+Bindings are pointerless, exact-snapshot, finite, append-only, tenant-scoped,
+and sampling remains exactly zero. Pins and jobs are atomic, non-authoritative,
+positive-statement-disabled, session-ordered, and correlated only through a
+dedicated versioned HMAC-SHA-256 keyring.
+
+Consequence: the implementation remains default-off and operationally inactive
+for real unnormalized requests. The `/chat` seam is post-response and cannot
+change public output; no worker is wired into Compose or deployment. Migration
+`20260717_0012` is not authorized for production. Sampling above zero remains
+blocked until a tested purge path and maintenance role exist. Independent
+Claude-Sonnet-5 audit and explicit owner acceptance are still required for this
+exact commit. Push, PR, merge, production migration, MAT-GOV-03C, MAT-EVID-01,
+MED-NORM-01, active pointers, review/approval, activation, and visible material
+output remain NO-GO.

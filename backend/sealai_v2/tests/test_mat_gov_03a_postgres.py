@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
-from sealai_v2.db.migrate import _config, migration_status, up
+from sealai_v2.db.migrate import _config, _upgrade_engine, migration_status
 from sealai_v2.db.models import V2MaterialSnapshotValidationEvent
 
 
@@ -61,12 +61,12 @@ def test_real_postgres_fk_triggers_and_downgrade_contract() -> None:
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
 
-    up(engine)
-    assert migration_status(engine) == ("20260717_0011", "20260717_0011")
+    _upgrade_engine(engine, "20260717_0011")
+    assert migration_status(engine) == ("20260717_0011", "20260717_0012")
     with engine.begin() as connection:
         command.downgrade(_config(connection=connection), "20260714_0010")
     assert "v2_material_rulesets" not in inspect(engine).get_table_names()
-    up(engine)
+    _upgrade_engine(engine, "20260717_0011")
 
     repository = MaterialRulesetRepository(make_sessionmaker(engine))
     family = repository.create_ruleset(

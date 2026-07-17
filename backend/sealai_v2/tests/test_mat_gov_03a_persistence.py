@@ -13,7 +13,7 @@ from sealai_v2.core.material_rulesets import (
 )
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
-from sealai_v2.db.migrate import _config, _upgrade_engine, migration_status, up
+from sealai_v2.db.migrate import _config, _upgrade_engine, migration_status
 from sealai_v2.db.models import (
     V2MaterialRuleset,
     V2MaterialRulesetSnapshot,
@@ -57,7 +57,7 @@ def _raw_payload() -> str:
 
 def _repository(tmp_path, name="mat-gov-03a.db"):
     engine = make_engine(f"sqlite:///{tmp_path / name}")
-    up(engine)
+    _upgrade_engine(engine, "20260717_0011")
     return engine, MaterialRulesetRepository(make_sessionmaker(engine))
 
 
@@ -81,7 +81,7 @@ def test_fresh_migration_creates_only_the_four_03a_tables_and_internal_fks(
 ) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
     before = set(_upgrade_to_previous(engine))
-    _upgrade_engine(engine)
+    _upgrade_engine(engine, "20260717_0011")
     after = set(inspect(engine).get_table_names())
     assert after - before == {
         "v2_material_rulesets",
@@ -89,7 +89,7 @@ def test_fresh_migration_creates_only_the_four_03a_tables_and_internal_fks(
         "v2_material_snapshot_validation_events",
         "v2_material_snapshot_audit_events",
     }
-    assert migration_status(engine) == ("20260717_0011", "20260717_0011")
+    assert migration_status(engine) == ("20260717_0011", "20260717_0012")
     expected = {
         "v2_material_ruleset_snapshots": (
             "ruleset_id",

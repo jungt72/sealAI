@@ -472,12 +472,10 @@ class MaterialRulesetPayloadV1:
             raise ValueError("unsupported canonicalization version")
         if self.mat_gov_contract_version != MAT_GOV_CONTRACT_VERSION:
             raise ValueError("unsupported MAT-GOV contract version")
-        try:
-            validate_domain_pack_id(self.domain_pack_id)
-        except MaterialRulesetValidationError as exc:
-            raise ValueError(
-                "domain_pack_id must use the canonical lowercase ASCII form"
-            ) from exc
+        # Keep the direct-domain constructor on the same stable fail-closed
+        # error contract as the untrusted JSON parser.  Callers must not have
+        # to infer an invalid domain-pack identifier from a generic ValueError.
+        validate_domain_pack_id(self.domain_pack_id)
         if type(self.rules) is not tuple or not self.rules:
             raise ValueError("rules must be a non-empty tuple")
         if any(type(rule) is not MaterialRuleV1 for rule in self.rules):

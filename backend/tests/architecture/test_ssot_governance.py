@@ -101,18 +101,22 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
     )
 
     material = maturity["capabilities"]["material_constraints"]
-    assert material["implementation_status"] == "mat_gov_03a_inert_default_off"
-    assert material["contract_version"] == "MAT-GOV-03A"
+    assert material["implementation_status"] == (
+        "mat_gov_03b_local_shadow_default_off_sampling_zero"
+    )
+    assert material["contract_version"] == "MAT-GOV-03B"
     assert {
-        "MAT-GOV-03B",
+        "MAT-GOV-03B-independent-audit-and-owner-acceptance",
         "MAT-GOV-03C",
         "MAT-EVID-01",
         "MED-NORM-01",
+        "tested_shadow_purge_and_maintenance_role",
         "mat_gov_02_payload_and_hard_gate_followups",
         "owner_activation",
     } <= set(material["activation_blockers"])
     assert material["scope_limit"] == (
-        "technical_snapshot_infrastructure_only_no_runtime_selection"
+        "local_non_authoritative_pointerless_shadow_foundation_"
+        "no_production_migration_or_sampling"
     )
 
 
@@ -242,6 +246,7 @@ def test_owner_decisions_and_companion_contracts_are_present() -> None:
     for number in range(1, 9):
         assert f"ODR-{number:02d}" in decisions
     assert "ODR-12: MAT-GOV-03A technical snapshot foundation" in decisions
+    assert "ODR-13: MAT-GOV-03B local shadow/pinning implementation" in decisions
 
     for name in (
         "INVARIANT_MAPPING.md",
