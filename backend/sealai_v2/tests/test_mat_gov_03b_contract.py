@@ -18,14 +18,21 @@ from sealai_v2.core.material_shadow import (
     ServerVerifiedCanonicalId,
     ShadowAuthority,
     ShadowBinding,
+    ShadowContractError,
     ShadowEnvironment,
+    ShadowErrorCode,
     ShadowMaterialRulesetPin,
     ShadowPurpose,
     ShadowReadinessState,
     ShadowScopeKind,
     assess_shadow_input_eligibility,
 )
-from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+from sealai_v2.material_shadow.hmac_refs import (
+    SESSION_REF_DOMAIN,
+    TENANT_REF_DOMAIN,
+    ShadowHmacKeyring,
+    encode_hmac_fields,
+)
 from sealai_v2.material_shadow.sampling import decide_sampling
 
 
@@ -220,16 +227,160 @@ def test_shadow_pin_cannot_become_authoritative_or_positive() -> None:
     assert not hasattr(module, "AuthoritativeMaterialRulesetPin")
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("pin_id", "mshp_bad"),
+        ("binding_id", "mshb_bad"),
+        ("snapshot_id", "mss_bad"),
+        ("content_sha256", "A" * 64),
+        ("environment", "staging"),
+        ("purpose", "MATERIAL_RULESET_SHADOW"),
+        ("scope_kind", "GLOBAL"),
+        ("tenant_ref_hmac", "8" * 63),
+        ("hmac_key_id", ""),
+        ("domain_pack_id", "invalid domain"),
+        ("domain_pack_version", ""),
+        ("evaluator_version", ""),
+        ("kernel_version", ""),
+        ("runtime_profile_sha256", "6" * 63),
+        ("build_git_sha", "3" * 39),
+        ("build_tree_hash", "4" * 41),
+        ("sampling_policy_version", ""),
+        ("sampled", True),
+        ("sampled", 0),
+        ("acquired_at", "2026-07-17T12:00:00+01:00"),
+        ("binding_valid_until", NOW),
+        ("pin_schema_version", True),
+        ("pin_schema_version", 2),
+    ),
+)
+def test_shadow_pin_direct_constructor_rejects_every_invalid_field(
+    field: str, value: object
+) -> None:
+    valid = asdict(
+        ShadowMaterialRulesetPin(
+            pin_id="mshp_" + "7" * 32,
+            binding_id=_binding().binding_id,
+            snapshot_id=SNAPSHOT_ID,
+            content_sha256=HASH,
+            environment=ShadowEnvironment.STAGING,
+            purpose=ShadowPurpose.MATERIAL_RULESET_SHADOW,
+            scope_kind=ShadowScopeKind.GLOBAL,
+            tenant_ref_hmac="8" * 64,
+            hmac_key_id="shadow-key-v1",
+            domain_pack_id="material.test.v1",
+            domain_pack_version="1.0.0",
+            evaluator_version="MAT-GOV-03B.eval.v1",
+            kernel_version="MAT-GOV-02.kernel.v1",
+            runtime_profile_sha256="6" * 64,
+            build_git_sha=GIT,
+            build_tree_hash=TREE,
+            sampling_policy_version="MAT-GOV-03B.shadow.v1",
+            sampled=False,
+            acquired_at=NOW,
+            binding_valid_until=LATER,
+        )
+    )
+    with pytest.raises(ShadowContractError) as exc:
+        ShadowMaterialRulesetPin(**{**valid, field: value})
+    assert exc.value.code is ShadowErrorCode.INVALID_PIN
+
+
+def test_shadow_pin_storage_parser_uses_the_closed_constructor_contract() -> None:
+    pin = ShadowMaterialRulesetPin(
+        pin_id="mshp_" + "7" * 32,
+        binding_id=_binding().binding_id,
+        snapshot_id=SNAPSHOT_ID,
+        content_sha256=HASH,
+        environment=ShadowEnvironment.STAGING,
+        purpose=ShadowPurpose.MATERIAL_RULESET_SHADOW,
+        scope_kind=ShadowScopeKind.GLOBAL,
+        tenant_ref_hmac="8" * 64,
+        hmac_key_id="shadow-key-v1",
+        domain_pack_id="material.test.v1",
+        domain_pack_version="1.0.0",
+        evaluator_version="MAT-GOV-03B.eval.v1",
+        kernel_version="MAT-GOV-02.kernel.v1",
+        runtime_profile_sha256="6" * 64,
+        build_git_sha=GIT,
+        build_tree_hash=TREE,
+        sampling_policy_version="MAT-GOV-03B.shadow.v1",
+        sampled=False,
+        acquired_at=NOW,
+        binding_valid_until=LATER,
+    )
+    stored = asdict(pin)
+    stored["environment"] = pin.environment.value
+    stored["purpose"] = pin.purpose.value
+    stored["scope_kind"] = pin.scope_kind.value
+    assert ShadowMaterialRulesetPin.from_storage(stored) == pin
+    for invalid in (
+        {**stored, "environment": "unknown"},
+        {**stored, "purpose": "unknown"},
+        {**stored, "scope_kind": "unknown"},
+        {**stored, "extra": "state"},
+        {key: value for key, value in stored.items() if key != "pin_id"},
+    ):
+        with pytest.raises(ShadowContractError) as exc:
+            ShadowMaterialRulesetPin.from_storage(invalid)
+        assert exc.value.code is ShadowErrorCode.INVALID_PIN
+
+
 def test_versioned_hmac_keyring_retains_old_keys_without_exposing_secrets() -> None:
     keyring = ShadowHmacKeyring(
         {"key-v1": "a" * 32, "key-v2": "b" * 32}, active_key_id="key-v2"
     )
-    assert keyring.digest("tenant-a", key_id="key-v1") != keyring.digest(
-        "tenant-a", key_id="key-v2"
-    )
+    assert keyring.digest_fields(
+        TENANT_REF_DOMAIN, ("tenant-a",), key_id="key-v1"
+    ) != keyring.digest_fields(TENANT_REF_DOMAIN, ("tenant-a",), key_id="key-v2")
     assert keyring.contains("key-v1")
     with pytest.raises(ValueError, match="SHADOW_HMAC_KEY_UNAVAILABLE"):
-        keyring.digest("tenant-a", key_id="deleted-key")
+        keyring.digest_fields(TENANT_REF_DOMAIN, ("tenant-a",), key_id="deleted-key")
+    with pytest.raises(ValueError, match="SHADOW_HMAC_KEY_UNAVAILABLE"):
+        keyring.digest_fields(TENANT_REF_DOMAIN, ("tenant-a",), key_id="")
+
+
+def test_hmac_tuple_encoding_is_injective_for_empty_nul_and_unicode_fields() -> None:
+    pairs = (
+        (("tenant-A", "session-X\x00tail"), ("tenant-A\x00session-X", "tail")),
+        (("", "a"), ("a", "")),
+        (("tenant", "ä"), ("tenantä", "")),
+    )
+    for left, right in pairs:
+        assert encode_hmac_fields(SESSION_REF_DOMAIN, left) != encode_hmac_fields(
+            SESSION_REF_DOMAIN, right
+        )
+    assert encode_hmac_fields(SESSION_REF_DOMAIN, ("e\u0301",)) != encode_hmac_fields(
+        SESSION_REF_DOMAIN, ("é",)
+    )
+
+
+def test_hmac_domains_and_input_types_are_closed() -> None:
+    assert encode_hmac_fields(TENANT_REF_DOMAIN, ("tenant",)) != encode_hmac_fields(
+        SESSION_REF_DOMAIN, ("tenant",)
+    )
+    with pytest.raises(TypeError, match="tuple of strings"):
+        encode_hmac_fields(TENANT_REF_DOMAIN, (1,))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="unknown"):
+        encode_hmac_fields(b"unregistered", ("tenant",))
+
+
+def test_hmac_encoder_rejects_uint32_overflow_before_packing(monkeypatch) -> None:
+    import sealai_v2.material_shadow.hmac_refs as hmac_module
+
+    monkeypatch.setattr(hmac_module, "_UINT32_MAX", 3)
+    with pytest.raises(ValueError, match="uint32"):
+        encode_hmac_fields(TENANT_REF_DOMAIN, ("four",))
+
+
+def test_hmac_keyring_json_rejects_duplicate_keys() -> None:
+    with pytest.raises(ValueError, match="SHADOW_HMAC_KEY_UNAVAILABLE"):
+        ShadowHmacKeyring.from_json(
+            '{"key-v1":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+            '"key-v1":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}',
+            active_key_id="key-v1",
+        )
 
 
 def test_sampling_is_deterministic_and_owner_frozen_at_zero() -> None:

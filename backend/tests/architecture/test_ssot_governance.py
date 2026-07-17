@@ -247,6 +247,9 @@ def test_owner_decisions_and_companion_contracts_are_present() -> None:
         assert f"ODR-{number:02d}" in decisions
     assert "ODR-12: MAT-GOV-03A technical snapshot foundation" in decisions
     assert "ODR-13: MAT-GOV-03B local shadow/pinning implementation" in decisions
+    assert "INTERMEDIATE_CLAUDE_GATES_WAIVED_BY_OWNER" in decisions
+    assert "sampling remains `0`" in decisions
+    assert "creates no activation authority" in decisions
 
     for name in (
         "INVARIANT_MAPPING.md",

@@ -28,7 +28,6 @@ from sealai_v2.db.material_rulesets import MaterialRulesetRepository
 from sealai_v2.db.material_shadow import MaterialShadowRepository
 from sealai_v2.db.migrate import _config, _upgrade_engine, migration_status, up
 from sealai_v2.db.models import (
-    Base,
     V2MaterialShadowBinding,
     V2MaterialShadowBindingEvent,
     V2MaterialShadowOutbox,
@@ -36,7 +35,7 @@ from sealai_v2.db.models import (
     V2MaterialShadowSessionUpgradeEvent,
     V2MaterialShadowSessionVersion,
 )
-from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+from sealai_v2.material_shadow.hmac_refs import TENANT_REF_DOMAIN, ShadowHmacKeyring
 
 
 NOW = "2026-07-17T12:00:00.000000Z"
@@ -182,13 +181,32 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
     tmp_path,
 ) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'adoption.db'}")
-    Base.metadata.create_all(engine)
-    assert "alembic_version" not in inspect(engine).get_table_names()
+    up(engine)
+    with engine.begin() as connection:
+        before = list(
+            connection.execute(
+                text(
+                    "SELECT type,name,tbl_name,sql FROM sqlite_master "
+                    "WHERE name LIKE 'v2_material_%' "
+                    "OR name LIKE 'trg_v2_material_%' ORDER BY type,name"
+                )
+            )
+        )
+        connection.exec_driver_sql("DROP TABLE alembic_version")
 
     up(engine)
 
     assert migration_status(engine) == ("20260717_0013", "20260717_0013")
     with engine.connect() as connection:
+        after = list(
+            connection.execute(
+                text(
+                    "SELECT type,name,tbl_name,sql FROM sqlite_master "
+                    "WHERE name LIKE 'v2_material_%' "
+                    "OR name LIKE 'trg_v2_material_%' ORDER BY type,name"
+                )
+            )
+        )
         triggers = set(
             connection.execute(
                 text(
@@ -197,9 +215,63 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
                 )
             ).scalars()
         )
+    assert after == before
     assert "trg_v2_material_shadow_pins_update_immutable" in triggers
     assert "trg_v2_material_shadow_binding_insert_guard" in triggers
     assert "trg_v2_material_shadow_outbox_insert_lease_guard" in triggers
+
+
+def test_adoption_rejects_same_named_index_with_different_semantics(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'adoption-index-drift.db'}")
+    up(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE alembic_version")
+        connection.exec_driver_sql("DROP INDEX ix_v2_material_shadow_binding_lookup")
+        connection.exec_driver_sql(
+            "CREATE INDEX ix_v2_material_shadow_binding_lookup "
+            "ON v2_material_shadow_bindings(binding_id)"
+        )
+    with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
+        up(engine)
+
+
+def test_adoption_rejects_same_named_trigger_with_different_body(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'adoption-trigger-drift.db'}")
+    up(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE alembic_version")
+        connection.exec_driver_sql(
+            "DROP TRIGGER trg_v2_material_shadow_pins_update_immutable"
+        )
+        connection.exec_driver_sql(
+            "CREATE TRIGGER trg_v2_material_shadow_pins_update_immutable "
+            "BEFORE UPDATE ON v2_material_shadow_pins BEGIN SELECT 1; END"
+        )
+    with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
+        up(engine)
+
+
+def test_lease_migration_rejects_predecessor_drift_before_first_mutation(
+    tmp_path,
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'lease-predecessor-drift.db'}")
+    _upgrade_engine(engine, "20260717_0012")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "DROP TRIGGER trg_v2_material_shadow_outbox_update_guard"
+        )
+        connection.exec_driver_sql(
+            "CREATE TRIGGER trg_v2_material_shadow_outbox_update_guard "
+            "BEFORE UPDATE ON v2_material_shadow_outbox BEGIN SELECT 1; END"
+        )
+    with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
+        _upgrade_engine(engine, "20260717_0013")
+    columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("v2_material_shadow_outbox")
+    }
+    assert "lease_owner" not in columns
+    assert "lease_expires_at" not in columns
 
 
 def test_partial_precreated_03b_schema_is_rejected(tmp_path) -> None:
@@ -292,11 +364,12 @@ def test_canary_overlap_is_detected_across_retained_hmac_keys(tmp_path) -> None:
     _engine, factory, _rulesets, snapshot = _database(tmp_path)
     repository = MaterialShadowRepository(factory)
     keyring = _keyring()
-    tenant_value = f"tenant\x00{IDENTITY.tenant_id}"
     first = _binding(
         snapshot,
         scope_kind=ShadowScopeKind.TENANT_CANARY,
-        tenant_ref_hmac=keyring.digest(tenant_value, key_id="key-old"),
+        tenant_ref_hmac=keyring.digest_fields(
+            TENANT_REF_DOMAIN, (IDENTITY.tenant_id,), key_id="key-old"
+        ),
         hmac_key_id="key-old",
     )
     repository.create_binding(
@@ -309,7 +382,9 @@ def test_canary_overlap_is_detected_across_retained_hmac_keys(tmp_path) -> None:
         snapshot,
         suffix="7",
         scope_kind=ShadowScopeKind.TENANT_CANARY,
-        tenant_ref_hmac=keyring.digest(tenant_value, key_id="key-v1"),
+        tenant_ref_hmac=keyring.digest_fields(
+            TENANT_REF_DOMAIN, (IDENTITY.tenant_id,), key_id="key-v1"
+        ),
         hmac_key_id="key-v1",
     )
     with pytest.raises(ValueError, match="overlapping binding"):
@@ -429,6 +504,55 @@ def test_hmac_rotation_preserves_the_existing_session_lineage(tmp_path) -> None:
     assert len(versions) == 1
     assert versions[0].hmac_key_id == "key-old"
     assert [job.hmac_key_id for job in jobs] == ["key-old", "key-v1"]
+
+
+def test_session_lineage_lookup_and_uniqueness_are_tenant_bound(tmp_path) -> None:
+    _engine, factory, _rulesets, snapshot = _database(tmp_path)
+    repository = MaterialShadowRepository(factory)
+    binding = _binding(snapshot)
+    repository.create_binding(binding, identity=IDENTITY, created_at=NOW)
+    tenant_b = VerifiedIdentity("tenant-b", "session-b", "subject:b")
+    first = repository.persist_pin_and_job(
+        binding=binding,
+        identity=IDENTITY,
+        session_id="same-session",
+        correlation_id="request-a",
+        material_input=_input(),
+        hmac_keyring=_keyring(),
+        acquired_at="2026-07-17T12:05:00.000000Z",
+    )
+    second = repository.persist_pin_and_job(
+        binding=binding,
+        identity=tenant_b,
+        session_id="same-session",
+        correlation_id="request-b",
+        material_input=_input(),
+        hmac_keyring=_keyring(),
+        acquired_at="2026-07-17T12:06:00.000000Z",
+    )
+    assert first.session_version_id != second.session_version_id
+    with factory() as session:
+        versions = session.scalars(
+            select(V2MaterialShadowSessionVersion).order_by(
+                V2MaterialShadowSessionVersion.session_version_id
+            )
+        ).all()
+    assert len(versions) == 2
+    assert len({row.tenant_ref_hmac for row in versions}) == 2
+    assert len({row.session_ref_hmac for row in versions}) == 2
+
+    duplicate = V2MaterialShadowSessionVersion(
+        session_version_id="mshs_" + "f" * 32,
+        tenant_ref_hmac=versions[0].tenant_ref_hmac,
+        session_ref_hmac=versions[0].session_ref_hmac,
+        hmac_key_id=versions[0].hmac_key_id,
+        version_no=versions[0].version_no,
+        pin_id=versions[0].pin_id,
+        created_at="2026-07-17T12:07:00.000000Z",
+    )
+    with pytest.raises(IntegrityError):
+        with factory() as session, session.begin():
+            session.add(duplicate)
 
 
 def test_pin_and_job_require_exact_live_binding_interval_and_domain(tmp_path) -> None:

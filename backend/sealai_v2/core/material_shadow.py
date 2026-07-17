@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 import re
+from typing import Mapping
 from typing import NoReturn
 
 from sealai_v2.core.contracts import (
@@ -29,6 +30,7 @@ SHADOW_POLICY_VERSION = "MAT-GOV-03B.shadow.v1"
 
 _HEX40 = re.compile(r"^[0-9a-f]{40}$", re.ASCII)
 _HEX64 = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
+_SNAPSHOT_ID = re.compile(r"^mss_[0-9a-f]{64}$", re.ASCII)
 _BINDING_ID = re.compile(r"^mshb_[0-9a-f]{32}$", re.ASCII)
 _PIN_ID = re.compile(r"^mshp_[0-9a-f]{32}$", re.ASCII)
 _STABLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", re.ASCII)
@@ -104,6 +106,7 @@ class ShadowErrorCode(str, Enum):
     HMAC_KEY_UNAVAILABLE = "SHADOW_HMAC_KEY_UNAVAILABLE"
     LEASE_ATTEMPTS_EXHAUSTED = "SHADOW_LEASE_ATTEMPTS_EXHAUSTED"
     RETRY_EXHAUSTED = "SHADOW_RETRY_EXHAUSTED"
+    INVALID_PIN = "SHADOW_INVALID_PIN"
     INTERNAL = "SHADOW_INTERNAL_ERROR"
 
 
@@ -364,36 +367,84 @@ class ShadowMaterialRulesetPin:
     binding_valid_until: str
     pin_schema_version: int = SHADOW_PIN_SCHEMA_VERSION
 
+    @classmethod
+    def from_storage(cls, payload: Mapping[str, object]) -> "ShadowMaterialRulesetPin":
+        """Construct one pin from persistence through the same closed validator."""
+
+        expected = {
+            field.name
+            for field in cls.__dataclass_fields__.values()  # type: ignore[attr-defined]
+        }
+        if type(payload) is not dict or set(payload) != expected:
+            raise ShadowContractError(
+                ShadowErrorCode.INVALID_PIN,
+                "stored shadow pin fields do not match the closed schema",
+            )
+        values = dict(payload)
+        try:
+            values["environment"] = ShadowEnvironment(values["environment"])
+            values["purpose"] = ShadowPurpose(values["purpose"])
+            values["scope_kind"] = ShadowScopeKind(values["scope_kind"])
+            return cls(**values)  # type: ignore[arg-type]
+        except ShadowContractError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise ShadowContractError(ShadowErrorCode.INVALID_PIN, str(exc)) from exc
+
     def __post_init__(self) -> None:
-        if not _PIN_ID.fullmatch(self.pin_id):
-            raise ValueError("invalid shadow pin_id")
-        if not _BINDING_ID.fullmatch(self.binding_id):
-            raise ValueError("invalid binding_id")
-        if not self.snapshot_id.startswith("mss_") or len(self.snapshot_id) != 68:
-            raise ValueError("invalid snapshot_id")
-        for value, field in (
-            (self.content_sha256, "content_sha256"),
-            (self.runtime_profile_sha256, "runtime_profile_sha256"),
-        ):
-            if not _HEX64.fullmatch(value):
-                raise ValueError(f"{field} must be lowercase SHA-256")
-        if not _HEX64.fullmatch(self.tenant_ref_hmac):
-            raise ValueError("tenant_ref_hmac must be a lowercase HMAC-SHA-256")
-        _require_stable(self.hmac_key_id, field="hmac_key_id")
-        validate_domain_pack_id(self.domain_pack_id)
-        for value, field in (
-            (self.domain_pack_version, "domain_pack_version"),
-            (self.evaluator_version, "evaluator_version"),
-            (self.kernel_version, "kernel_version"),
-            (self.sampling_policy_version, "sampling_policy_version"),
-        ):
-            _require_version(value, field=field)
-        parse_utc(self.acquired_at, field="acquired_at")
-        parse_utc(self.binding_valid_until, field="binding_valid_until")
-        if self.pin_schema_version != SHADOW_PIN_SCHEMA_VERSION:
-            raise ValueError("unsupported shadow pin schema")
-        if self.sampled is not False:
-            raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
+        try:
+            if not _PIN_ID.fullmatch(self.pin_id):
+                raise ValueError("invalid shadow pin_id")
+            if not _BINDING_ID.fullmatch(self.binding_id):
+                raise ValueError("invalid binding_id")
+            if not _SNAPSHOT_ID.fullmatch(self.snapshot_id):
+                raise ValueError("invalid snapshot_id")
+            for value, field in (
+                (self.content_sha256, "content_sha256"),
+                (self.runtime_profile_sha256, "runtime_profile_sha256"),
+            ):
+                if not _HEX64.fullmatch(value):
+                    raise ValueError(f"{field} must be lowercase SHA-256")
+            for value, field in (
+                (self.build_git_sha, "build_git_sha"),
+                (self.build_tree_hash, "build_tree_hash"),
+            ):
+                if not _HEX40.fullmatch(value):
+                    raise ValueError(f"{field} must be a full lowercase Git hash")
+            if type(self.environment) is not ShadowEnvironment:
+                raise TypeError("environment must be ShadowEnvironment")
+            if self.purpose is not ShadowPurpose.MATERIAL_RULESET_SHADOW:
+                raise ValueError("shadow purpose is fixed")
+            if type(self.scope_kind) is not ShadowScopeKind:
+                raise TypeError("scope_kind must be ShadowScopeKind")
+            if not _HEX64.fullmatch(self.tenant_ref_hmac):
+                raise ValueError("tenant_ref_hmac must be a lowercase HMAC-SHA-256")
+            _require_stable(self.hmac_key_id, field="hmac_key_id")
+            validate_domain_pack_id(self.domain_pack_id)
+            for value, field in (
+                (self.domain_pack_version, "domain_pack_version"),
+                (self.evaluator_version, "evaluator_version"),
+                (self.kernel_version, "kernel_version"),
+                (self.sampling_policy_version, "sampling_policy_version"),
+            ):
+                _require_version(value, field=field)
+            acquired = parse_utc(self.acquired_at, field="acquired_at")
+            valid_until = parse_utc(
+                self.binding_valid_until, field="binding_valid_until"
+            )
+            if acquired >= valid_until:
+                raise ValueError("pin must be acquired before binding expiry")
+            if (
+                type(self.pin_schema_version) is not int
+                or self.pin_schema_version != SHADOW_PIN_SCHEMA_VERSION
+            ):
+                raise ValueError("unsupported shadow pin schema")
+            if self.sampled is not False:
+                raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
+        except ShadowContractError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise ShadowContractError(ShadowErrorCode.INVALID_PIN, str(exc)) from exc
 
     @property
     def authority(self) -> ShadowAuthority:

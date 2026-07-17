@@ -12,6 +12,8 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
+from sealai_v2.db.migrations.adoption_fingerprint import require_schema_fingerprint
+
 
 revision = "20260717_0012"
 down_revision = "20260717_0011"
@@ -30,6 +32,20 @@ _TABLES = (
     "v2_material_shadow_evaluation_refs",
 )
 _IMMUTABLE = tuple(table for table in _TABLES if table != "v2_material_shadow_outbox")
+_ADOPTION_FINGERPRINTS: dict[str, frozenset[str]] = {
+    "postgresql": frozenset(
+        {
+            "6effeeeaf7a78a4260df1885aee05e4d33027a27c4e5ee99d78c02c4ada221fc",
+            "f27b49f8532dbc200c7a438f54e2775ed9a4c34696dcbc7ae5fd529a629eb216",
+        }
+    ),
+    "sqlite": frozenset(
+        {
+            "8b9644876f150f472f648a1459657d0082dfa12a8812aa20c303b6c4824428d7",
+            "c0ced9f9c249f45db5d8bb292cb2daa5a98dbdaec4df60c546807b23553c0913",
+        }
+    ),
+}
 
 _EXPECTED_COLUMNS = {
     "v2_material_shadow_bindings": {
@@ -95,6 +111,7 @@ _EXPECTED_COLUMNS = {
     },
     "v2_material_shadow_session_versions": {
         "session_version_id",
+        "tenant_ref_hmac",
         "session_ref_hmac",
         "hmac_key_id",
         "version_no",
@@ -552,6 +569,7 @@ def _create_tables() -> None:
     op.create_table(
         "v2_material_shadow_session_versions",
         sa.Column("session_version_id", sa.String(37), primary_key=True),
+        sa.Column("tenant_ref_hmac", sa.String(64), nullable=False),
         sa.Column("session_ref_hmac", sa.String(64), nullable=False),
         sa.Column("hmac_key_id", sa.String(64), nullable=False),
         sa.Column("version_no", sa.Integer(), nullable=False),
@@ -561,7 +579,7 @@ def _create_tables() -> None:
             "version_no>0", name="ck_v2_material_shadow_session_version"
         ),
         sa.CheckConstraint(
-            "length(session_ref_hmac)=64",
+            "length(tenant_ref_hmac)=64 AND length(session_ref_hmac)=64",
             name="ck_v2_material_shadow_session_hmac",
         ),
         sa.ForeignKeyConstraint(
@@ -571,15 +589,17 @@ def _create_tables() -> None:
             ondelete="RESTRICT",
         ),
         sa.UniqueConstraint(
+            "hmac_key_id",
+            "tenant_ref_hmac",
             "session_ref_hmac",
             "version_no",
             name="uq_v2_material_shadow_session_version",
         ),
     )
     op.create_index(
-        "ix_v2_material_shadow_session_ref",
+        "ix_v2_material_shadow_session_identity",
         "v2_material_shadow_session_versions",
-        ["session_ref_hmac"],
+        ["hmac_key_id", "tenant_ref_hmac", "session_ref_hmac"],
     )
 
     op.create_table(
@@ -1145,11 +1165,21 @@ def upgrade() -> None:
             f"present={sorted(present)} missing={sorted(expected-present)}"
         )
     if present:
-        _validate_adopted_schema()
-        _ensure_adoption_indexes()
-    else:
-        _create_tables()
+        require_schema_fingerprint(
+            op.get_bind(),
+            _TABLES,
+            _ADOPTION_FINGERPRINTS,
+            contract="MAT-GOV-03B",
+        )
+        return
+    _create_tables()
     _install_guards()
+    require_schema_fingerprint(
+        op.get_bind(),
+        _TABLES,
+        _ADOPTION_FINGERPRINTS,
+        contract="MAT-GOV-03B post-install",
+    )
 
 
 def downgrade() -> None:

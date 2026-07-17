@@ -13,6 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
+from sealai_v2.db.migrations.adoption_fingerprint import require_schema_fingerprint
+
 
 revision = "20260717_0011"
 down_revision = "20260714_0010"
@@ -26,6 +28,14 @@ _TABLES = (
     "v2_material_snapshot_audit_events",
 )
 _IMMUTABLE_TABLES = _TABLES
+_ADOPTION_FINGERPRINTS: dict[str, frozenset[str]] = {
+    "postgresql": frozenset(
+        {"8a16f587c824f4979feffbfdd3226c4369833c70d157bd4ca291c0d7a9c6bea1"}
+    ),
+    "sqlite": frozenset(
+        {"8922eec4bee847c645aaaa3cb7d1078a2f603e8dc8f70c0e29b4fd8c9de7884e"}
+    ),
+}
 _EXPECTED_COLUMNS = {
     "v2_material_rulesets": {
         "ruleset_id",
@@ -76,45 +86,6 @@ _EXPECTED_FOREIGN_KEYS = {
     },
 }
 _JSON = sa.JSON().with_variant(JSONB(), "postgresql")
-
-
-def _validate_adopted_schema(inspector: sa.Inspector) -> None:
-    missing_columns = {
-        table: sorted(
-            columns - {column["name"] for column in inspector.get_columns(table)}
-        )
-        for table, columns in _EXPECTED_COLUMNS.items()
-    }
-    missing_columns = {
-        table: columns for table, columns in missing_columns.items() if columns
-    }
-    if missing_columns:
-        raise RuntimeError(
-            "incomplete MAT-GOV-03A schema; refusing adoption: " f"{missing_columns}"
-        )
-    for table, expected in _EXPECTED_FOREIGN_KEYS.items():
-        actual = set()
-        for foreign_key in inspector.get_foreign_keys(table):
-            constrained = foreign_key.get("constrained_columns") or []
-            referred = foreign_key.get("referred_columns") or []
-            if len(constrained) == len(referred) == 1:
-                actual.add(
-                    (
-                        constrained[0],
-                        foreign_key["referred_table"],
-                        referred[0],
-                    )
-                )
-            options = foreign_key.get("options") or {}
-            if str(options.get("ondelete", "")).upper() != "RESTRICT":
-                raise RuntimeError(
-                    f"MAT-GOV-03A foreign key in {table} lacks ON DELETE RESTRICT"
-                )
-        if expected - actual:
-            raise RuntimeError(
-                "incomplete MAT-GOV-03A foreign keys; refusing adoption: "
-                f"table={table} missing={sorted(expected - actual)}"
-            )
 
 
 def _create_tables() -> None:
@@ -303,10 +274,21 @@ def upgrade() -> None:
             f"present={sorted(present)} missing={sorted(expected - present)}"
         )
     if present:
-        _validate_adopted_schema(inspector)
-    else:
-        _create_tables()
+        require_schema_fingerprint(
+            op.get_bind(),
+            _TABLES,
+            _ADOPTION_FINGERPRINTS,
+            contract="MAT-GOV-03A",
+        )
+        return
+    _create_tables()
     _install_immutability_triggers()
+    require_schema_fingerprint(
+        op.get_bind(),
+        _TABLES,
+        _ADOPTION_FINGERPRINTS,
+        contract="MAT-GOV-03A post-install",
+    )
 
 
 def downgrade() -> None:

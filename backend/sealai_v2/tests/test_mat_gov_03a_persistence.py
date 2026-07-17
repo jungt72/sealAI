@@ -261,3 +261,50 @@ def test_partial_precreated_03a_schema_is_rejected(tmp_path) -> None:
         )
     with pytest.raises(RuntimeError, match="partial MAT-GOV-03A schema"):
         _upgrade_engine(engine)
+
+
+def test_exact_03a_schema_is_adopted_without_object_replacement(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'exact-adoption.db'}")
+    _upgrade_engine(engine, "20260717_0011")
+    with engine.begin() as connection:
+        before = list(
+            connection.exec_driver_sql(
+                "SELECT type,name,tbl_name,sql FROM sqlite_master "
+                "WHERE name LIKE 'v2_material_%' "
+                "OR name LIKE 'trg_v2_material_%' ORDER BY type,name"
+            )
+        )
+        connection.exec_driver_sql("DROP TABLE alembic_version")
+    _upgrade_engine(engine, "20260717_0011")
+    with engine.connect() as connection:
+        after = list(
+            connection.exec_driver_sql(
+                "SELECT type,name,tbl_name,sql FROM sqlite_master "
+                "WHERE name LIKE 'v2_material_%' "
+                "OR name LIKE 'trg_v2_material_%' ORDER BY type,name"
+            )
+        )
+    assert after == before
+
+
+def test_03a_adoption_rejects_same_named_check_with_changed_expression(
+    tmp_path,
+) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'check-drift.db'}")
+    _upgrade_to_previous(engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE v2_material_rulesets ("
+            "ruleset_id VARCHAR(36) NOT NULL, domain_pack_id VARCHAR(128) NOT NULL, "
+            "created_by_subject VARCHAR(255) NOT NULL, created_at VARCHAR(40) NOT NULL, "
+            "CONSTRAINT ck_v2_material_ruleset_id CHECK (length(ruleset_id)=35), "
+            "PRIMARY KEY (ruleset_id))"
+        )
+        for table in (
+            "v2_material_ruleset_snapshots",
+            "v2_material_snapshot_validation_events",
+            "v2_material_snapshot_audit_events",
+        ):
+            connection.exec_driver_sql(f"CREATE TABLE {table} (id TEXT)")
+    with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
+        _upgrade_engine(engine, "20260717_0011")

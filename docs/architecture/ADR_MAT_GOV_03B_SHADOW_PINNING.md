@@ -76,10 +76,14 @@ identifier.
 Tenant, session, request, case, and decision references use HMAC-SHA-256 with a
 dedicated versioned `hmac_key_id`. The keyring is server-only and excluded from
 runtime-profile hashes, logs, audits, and database rows. Old keys must remain
-available for the full retention of records created under them. Session lookup
-checks every retained key version under a key-independent transaction lock, so
-rotation continues the existing immutable session lineage rather than silently
-creating another one. Missing key material stops only shadow processing.
+available for the full retention of records created under them. Every HMAC
+input has a distinct versioned domain and uint32-big-endian-length-prefixed
+UTF-8 fields. Session, case, request, and decision references bind the verified
+tenant as a separate field; session rows persist tenant HMAC and key ID and use
+all three values for lookup and uniqueness. Session lookup checks every retained
+key version under a collision-safe key-independent transaction lock, so rotation
+continues the existing immutable session lineage rather than silently creating
+another one. Missing key material stops only shadow processing.
 
 ### Worker, cache and reconciliation
 
@@ -103,11 +107,14 @@ cache misses and are never authoritative. Values contain reference-only
 evaluation projections. Redis failure stops shadow; there is no in-process,
 cross-snapshot, or last-known-good fallback.
 
-Postgres remains the system of record. Process-local reconciliation polls every
-15 seconds by default with deterministic +/-10 percent jitter and a 60-second
-lease; DB timeout defaults to two seconds. Expired leases cannot revive a prior
-selection. Shadow readiness is internal and never changes primary readiness or
-creates a public 503 in this package.
+Postgres remains the system of record. Process-local reconciliation is a
+thread-safe map keyed by tenant HMAC/key ID, environment, purpose, scope,
+domain-pack identity/version, runtime/build identity, evaluator/kernel version,
+and the resolved binding when present. Only the exact partition can reuse its
+lease. It polls every 15 seconds by default with deterministic +/-10 percent
+jitter and a 60-second monotonic lease; DB timeout defaults to two seconds.
+Expired leases cannot revive a prior selection. Shadow readiness is internal
+and never changes primary readiness or creates a public 503 in this package.
 
 ### Runtime and activation boundary
 
@@ -133,10 +140,12 @@ keys use `ON DELETE RESTRICT`. Immutable payload tables reject update/delete;
 the outbox permits only bounded operational state transitions. Additive empty
 migration `20260717_0013` adds the owner-bound lease owner/expiry fields and
 their atomic attempt-transition guards; it refuses a populated retrofit.
-Adoption is
-allowed only for the complete, exact modeled shape with all required checks,
-unique constraints, and restrictive foreign keys. Partial or drifting schemas
-fail closed. Downgrade is allowed only while every 03B table is empty.
+Adoption is allowed only when the complete catalog fingerprint matches the
+known revision exactly, including ordered columns and types, checks, unique and
+foreign-key semantics, indexes, predicates, triggers, and trigger-function
+definitions. Adoption never drops, creates, or rewrites an existing object.
+Partial or drifting schemas fail closed. Downgrade is allowed only while every
+03B table is empty.
 
 No existing case, decision, session, answer-cache, matrix, snapshot, prompt,
 serializer, or frontend table is changed. The migration is not authorized for

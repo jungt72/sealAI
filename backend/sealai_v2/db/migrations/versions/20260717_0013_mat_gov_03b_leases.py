@@ -12,6 +12,8 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 
+from sealai_v2.db.migrations.adoption_fingerprint import require_schema_fingerprint
+
 
 revision = "20260717_0013"
 down_revision = "20260717_0012"
@@ -19,7 +21,34 @@ branch_labels = None
 depends_on = None
 
 _TABLE = "v2_material_shadow_outbox"
+_TABLES = (
+    "v2_material_shadow_bindings",
+    "v2_material_shadow_binding_events",
+    "v2_material_shadow_pins",
+    "v2_material_shadow_session_versions",
+    "v2_material_shadow_session_upgrade_events",
+    "v2_material_shadow_outbox",
+    "v2_material_shadow_evaluations",
+    "v2_material_shadow_evaluation_matches",
+    "v2_material_shadow_evaluation_refs",
+)
 _LEASE_COLUMNS = {"lease_owner", "lease_expires_at"}
+_ADOPTION_FINGERPRINTS: dict[str, frozenset[str]] = {
+    "postgresql": frozenset(
+        {"f27b49f8532dbc200c7a438f54e2775ed9a4c34696dcbc7ae5fd529a629eb216"}
+    ),
+    "sqlite": frozenset(
+        {"c0ced9f9c249f45db5d8bb292cb2daa5a98dbdaec4df60c546807b23553c0913"}
+    ),
+}
+_PREDECESSOR_FINGERPRINTS: dict[str, frozenset[str]] = {
+    "postgresql": frozenset(
+        {"6effeeeaf7a78a4260df1885aee05e4d33027a27c4e5ee99d78c02c4ada221fc"}
+    ),
+    "sqlite": frozenset(
+        {"8b9644876f150f472f648a1459657d0082dfa12a8812aa20c303b6c4824428d7"}
+    ),
+}
 
 
 def _postgres_guard() -> None:
@@ -258,7 +287,21 @@ def upgrade() -> None:
     present = existing & _LEASE_COLUMNS
     if present and present != _LEASE_COLUMNS:
         raise RuntimeError("partial MAT-GOV-03B lease schema; refusing adoption")
+    if present == _LEASE_COLUMNS:
+        require_schema_fingerprint(
+            bind,
+            _TABLES,
+            _ADOPTION_FINGERPRINTS,
+            contract="MAT-GOV-03B lease",
+        )
+        return
     if not present:
+        require_schema_fingerprint(
+            bind,
+            _TABLES,
+            _PREDECESSOR_FINGERPRINTS,
+            contract="MAT-GOV-03B lease predecessor",
+        )
         populated = bind.execute(
             sa.text(f'SELECT COUNT(*) FROM "{_TABLE}"')
         ).scalar_one()
@@ -271,6 +314,12 @@ def upgrade() -> None:
             _TABLE, sa.Column("lease_expires_at", sa.String(32), nullable=True)
         )
     _install_guard()
+    require_schema_fingerprint(
+        bind,
+        _TABLES,
+        _ADOPTION_FINGERPRINTS,
+        contract="MAT-GOV-03B lease post-install",
+    )
 
 
 def downgrade() -> None:

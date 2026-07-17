@@ -31,7 +31,16 @@ from sealai_v2.db.models import (
     V2MaterialShadowSessionUpgradeEvent,
     V2MaterialShadowSessionVersion,
 )
-from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+from sealai_v2.material_shadow.hmac_refs import (
+    BINDING_LOCK_DOMAIN,
+    CASE_REF_DOMAIN,
+    DECISION_REF_DOMAIN,
+    REQUEST_REF_DOMAIN,
+    SESSION_REF_DOMAIN,
+    TENANT_REF_DOMAIN,
+    ShadowHmacKeyring,
+    encode_hmac_fields,
+)
 
 
 _EVENT_DOMAIN = b"sealai.material-shadow.binding-event.v1\x00"
@@ -93,8 +102,10 @@ class MaterialShadowRepository:
         if binding.scope_kind is ShadowScopeKind.TENANT_CANARY:
             if hmac_keyring is None or binding.hmac_key_id is None:
                 raise ValueError("tenant canary requires the server HMAC keyring")
-            expected_tenant_ref = hmac_keyring.digest(
-                f"tenant\x00{identity.tenant_id}", key_id=binding.hmac_key_id
+            expected_tenant_ref = hmac_keyring.digest_fields(
+                TENANT_REF_DOMAIN,
+                (identity.tenant_id,),
+                key_id=binding.hmac_key_id,
             )
             if binding.tenant_ref_hmac != expected_tenant_ref:
                 raise ValueError("tenant canary must equal the verified tenant")
@@ -112,7 +123,6 @@ class MaterialShadowRepository:
         with self._session_factory() as session, session.begin():
             if binding.scope_kind is ShadowScopeKind.TENANT_CANARY:
                 assert hmac_keyring is not None
-                tenant_value = f"tenant\x00{identity.tenant_id}"
                 if (
                     session.bind is not None
                     and session.bind.dialect.name == "postgresql"
@@ -120,10 +130,15 @@ class MaterialShadowRepository:
                     # Serialize the verified tenant partition independently of
                     # the active HMAC key.  The raw value is used only as
                     # transaction-local lock material and is never persisted.
-                    lock_material = (
-                        f"{binding.environment.value}\x1f{binding.purpose.value}\x1f"
-                        f"{identity.tenant_id}\x1f{binding.domain_pack_id}"
-                    )
+                    lock_material = encode_hmac_fields(
+                        BINDING_LOCK_DOMAIN,
+                        (
+                            binding.environment.value,
+                            binding.purpose.value,
+                            identity.tenant_id,
+                            binding.domain_pack_id,
+                        ),
+                    ).hex()
                     session.execute(
                         text(
                             "SELECT pg_advisory_xact_lock("
@@ -134,7 +149,10 @@ class MaterialShadowRepository:
                 tenant_predicates = tuple(
                     (V2MaterialShadowBinding.hmac_key_id == key_id)
                     & (V2MaterialShadowBinding.tenant_ref_hmac == tenant_ref)
-                    for key_id, tenant_ref in hmac_keyring.references(tenant_value)
+                    for key_id, tenant_ref in hmac_keyring.references_fields(
+                        TENANT_REF_DOMAIN,
+                        (identity.tenant_id,),
+                    )
                 )
                 overlap = session.scalar(
                     select(V2MaterialShadowBinding.binding_id).where(
@@ -229,8 +247,10 @@ class MaterialShadowRepository:
             if row.scope_kind == ShadowScopeKind.TENANT_CANARY.value:
                 if hmac_keyring is None or row.hmac_key_id is None:
                     raise ValueError("tenant canary requires the server HMAC keyring")
-                expected_tenant_ref = hmac_keyring.digest(
-                    f"tenant\x00{identity.tenant_id}", key_id=row.hmac_key_id
+                expected_tenant_ref = hmac_keyring.digest_fields(
+                    TENANT_REF_DOMAIN,
+                    (identity.tenant_id,),
+                    key_id=row.hmac_key_id,
                 )
                 if row.tenant_ref_hmac != expected_tenant_ref:
                     raise ValueError("terminal actor tenant does not match the binding")
@@ -382,8 +402,10 @@ class MaterialShadowRepository:
         if binding.scope_kind is ShadowScopeKind.TENANT_CANARY:
             if binding.hmac_key_id is None:
                 raise ValueError("tenant canary lacks hmac_key_id")
-            expected_tenant_ref = hmac_keyring.digest(
-                f"tenant\x00{identity.tenant_id}", key_id=binding.hmac_key_id
+            expected_tenant_ref = hmac_keyring.digest_fields(
+                TENANT_REF_DOMAIN,
+                (identity.tenant_id,),
+                key_id=binding.hmac_key_id,
             )
             if binding.tenant_ref_hmac != expected_tenant_ref:
                 raise ValueError("tenant canary must equal the verified tenant")
@@ -399,20 +421,38 @@ class MaterialShadowRepository:
             < parse_utc(binding.valid_until, field="binding.valid_until")
         ):
             raise ValueError("shadow pin must be acquired inside the binding interval")
-        tenant_ref = hmac_keyring.digest(f"tenant\x00{identity.tenant_id}")
-        session_value = f"session\x00{identity.tenant_id}\x00{session_id}"
-        session_references = hmac_keyring.references(session_value)
-        session_ref = hmac_keyring.digest(session_value)
-        correlation_ref = hmac_keyring.digest(
-            f"request\x00{identity.tenant_id}\x00{session_id}\x00{correlation_id}"
+        tenant_references = dict(
+            hmac_keyring.references_fields(TENANT_REF_DOMAIN, (identity.tenant_id,))
+        )
+        session_references = dict(
+            hmac_keyring.references_fields(
+                SESSION_REF_DOMAIN,
+                (identity.tenant_id, session_id),
+            )
+        )
+        identity_references = tuple(
+            (key_id, tenant_references[key_id], session_references[key_id])
+            for key_id in sorted(tenant_references)
+        )
+        tenant_ref = tenant_references[hmac_keyring.active_key_id]
+        session_ref = session_references[hmac_keyring.active_key_id]
+        correlation_ref = hmac_keyring.digest_fields(
+            REQUEST_REF_DOMAIN,
+            (identity.tenant_id, session_id, correlation_id),
         )
         case_ref = (
-            hmac_keyring.digest(f"case\x00{identity.tenant_id}\x00{case_id}")
+            hmac_keyring.digest_fields(
+                CASE_REF_DOMAIN,
+                (identity.tenant_id, case_id),
+            )
             if case_id is not None
             else None
         )
         decision_ref = (
-            hmac_keyring.digest(f"decision\x00{identity.tenant_id}\x00{decision_id}")
+            hmac_keyring.digest_fields(
+                DECISION_REF_DOMAIN,
+                (identity.tenant_id, decision_id),
+            )
             if decision_id is not None
             else None
         )
@@ -438,10 +478,12 @@ class MaterialShadowRepository:
                 # The raw verified values are transaction-local lock material,
                 # never persisted.  This keeps rotation between active HMAC
                 # keys from creating a second silent session lineage.
-                lock_material = (
-                    f"{identity.tenant_id}\x1f{session_id}"
-                    "\x1fmaterial-shadow-session"
-                )
+                lock_material = hashlib.sha256(
+                    encode_hmac_fields(
+                        SESSION_REF_DOMAIN,
+                        (identity.tenant_id, session_id),
+                    )
+                ).hexdigest()
                 session.execute(
                     text(
                         "SELECT pg_advisory_xact_lock(hashtextextended(:value,73004))"
@@ -496,10 +538,18 @@ class MaterialShadowRepository:
                             *(
                                 (V2MaterialShadowSessionVersion.hmac_key_id == key_id)
                                 & (
-                                    V2MaterialShadowSessionVersion.session_ref_hmac
-                                    == reference
+                                    V2MaterialShadowSessionVersion.tenant_ref_hmac
+                                    == tenant_reference
                                 )
-                                for key_id, reference in session_references
+                                & (
+                                    V2MaterialShadowSessionVersion.session_ref_hmac
+                                    == session_reference
+                                )
+                                for (
+                                    key_id,
+                                    tenant_reference,
+                                    session_reference,
+                                ) in identity_references
                             )
                         )
                     )
@@ -562,6 +612,7 @@ class MaterialShadowRepository:
                 session.add(
                     V2MaterialShadowSessionVersion(
                         session_version_id=session_version_id,
+                        tenant_ref_hmac=tenant_ref,
                         session_ref_hmac=session_ref,
                         hmac_key_id=hmac_keyring.active_key_id,
                         version_no=1,
@@ -593,6 +644,7 @@ class MaterialShadowRepository:
                     session.add(
                         V2MaterialShadowSessionVersion(
                             session_version_id=session_version_id,
+                            tenant_ref_hmac=tenant_ref,
                             session_ref_hmac=session_ref,
                             hmac_key_id=hmac_keyring.active_key_id,
                             version_no=new_version_no,
@@ -674,31 +726,28 @@ class MaterialShadowRepository:
 
     @staticmethod
     def _pin_from_row(row: V2MaterialShadowPin) -> ShadowMaterialRulesetPin:
-        from sealai_v2.core.material_shadow import (
-            ShadowEnvironment,
-            ShadowPurpose,
-        )
-
-        return ShadowMaterialRulesetPin(
-            pin_id=row.pin_id,
-            binding_id=row.binding_id,
-            snapshot_id=row.snapshot_id,
-            content_sha256=row.content_sha256,
-            environment=ShadowEnvironment(row.environment),
-            purpose=ShadowPurpose(row.purpose),
-            scope_kind=ShadowScopeKind(row.scope_kind),
-            tenant_ref_hmac=row.tenant_ref_hmac,
-            hmac_key_id=row.hmac_key_id,
-            domain_pack_id=row.domain_pack_id,
-            domain_pack_version=row.domain_pack_version,
-            evaluator_version=row.evaluator_version,
-            kernel_version=row.kernel_version,
-            runtime_profile_sha256=row.runtime_profile_sha256,
-            build_git_sha=row.build_git_sha,
-            build_tree_hash=row.build_tree_hash,
-            sampling_policy_version=row.sampling_policy_version,
-            sampled=row.sampled,
-            acquired_at=row.acquired_at,
-            binding_valid_until=row.binding_valid_until,
-            pin_schema_version=row.pin_schema_version,
+        return ShadowMaterialRulesetPin.from_storage(
+            {
+                "pin_id": row.pin_id,
+                "binding_id": row.binding_id,
+                "snapshot_id": row.snapshot_id,
+                "content_sha256": row.content_sha256,
+                "environment": row.environment,
+                "purpose": row.purpose,
+                "scope_kind": row.scope_kind,
+                "tenant_ref_hmac": row.tenant_ref_hmac,
+                "hmac_key_id": row.hmac_key_id,
+                "domain_pack_id": row.domain_pack_id,
+                "domain_pack_version": row.domain_pack_version,
+                "evaluator_version": row.evaluator_version,
+                "kernel_version": row.kernel_version,
+                "runtime_profile_sha256": row.runtime_profile_sha256,
+                "build_git_sha": row.build_git_sha,
+                "build_tree_hash": row.build_tree_hash,
+                "sampling_policy_version": row.sampling_policy_version,
+                "sampled": row.sampled,
+                "acquired_at": row.acquired_at,
+                "binding_valid_until": row.binding_valid_until,
+                "pin_schema_version": row.pin_schema_version,
+            }
         )

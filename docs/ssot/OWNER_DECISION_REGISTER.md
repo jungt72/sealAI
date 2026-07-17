@@ -237,3 +237,23 @@ audit, and durable audit evidence is registered.
 - MAT-GOV-03C: `NO-GO`
 - MAT-EVID-01: `NO-GO`
 - MED-NORM-01: `NO-GO`
+
+## ODR-MAT-GOV-03B-20260717-05
+
+### Decision
+
+`INTERMEDIATE_CLAUDE_GATES_WAIVED_BY_OWNER`
+
+Claude is no longer an intermediate implementation or review gate for the
+current MAT-GOV-03B correction cycle. Codex leads implementation and internal
+reviews. Exactly one external Claude-Sonnet-5 audit is deferred until after a
+separately authorized dark-staging deployment.
+
+### Consequence
+
+This waiver creates no activation authority. Until that final audit passes,
+all material flags remain `False`, sampling remains `0`, and no positive
+material statement, ruleset activation, production migration, or production
+deployment is authorized. The final external audit remains a prerequisite for
+any later activation decision. MAT-GOV-03C, MAT-EVID-01, and MED-NORM-01 remain
+`NO-GO`.

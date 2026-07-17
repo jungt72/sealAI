@@ -7,7 +7,7 @@ from threading import Barrier, Event
 import time
 
 import pytest
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
@@ -21,6 +21,8 @@ from sealai_v2.db.models import (
     V2MaterialShadowOutbox,
 )
 from sealai_v2.core.material_shadow import ShadowScopeKind
+from sealai_v2.core.contracts import VerifiedIdentity
+from sealai_v2.material_shadow.hmac_refs import TENANT_REF_DOMAIN
 from sealai_v2.material_shadow.worker import MaterialShadowWorker
 from sealai_v2.tests.test_mat_gov_03b_persistence import (
     IDENTITY,
@@ -47,6 +49,12 @@ def _assert_dedicated_local_database(url: str) -> None:
     assert (parsed.database or "").startswith("sealai_mat_gov_03b_test")
 
 
+def _clear_database(engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("DROP SCHEMA public CASCADE"))
+        connection.execute(text("CREATE SCHEMA public"))
+
+
 def _attempt_binding(repository, binding, barrier: Barrier) -> str:
     barrier.wait(timeout=10)
     try:
@@ -66,6 +74,24 @@ def _attempt_capture(repository, binding, correlation_id: str, barrier: Barrier)
         material_input=_input(),
         hmac_keyring=_keyring(),
         acquired_at="2026-07-17T12:35:00.000000Z",
+    )
+
+
+def _attempt_cross_tenant_capture(
+    repository,
+    binding,
+    identity: VerifiedIdentity,
+    barrier: Barrier,
+):
+    barrier.wait(timeout=10)
+    return repository.persist_pin_and_job(
+        binding=binding,
+        identity=identity,
+        session_id="same-cross-tenant-session",
+        correlation_id=f"request-{identity.tenant_id}",
+        material_input=_input(),
+        hmac_keyring=_keyring(),
+        acquired_at="2026-07-17T12:36:00.000000Z",
     )
 
 
@@ -103,6 +129,7 @@ class _BlockingCache(DictCache):
 def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     _assert_dedicated_local_database(POSTGRES_URL)
     engine = make_engine(POSTGRES_URL)
+    _clear_database(engine)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
     assert migration_status(engine) == ("20260717_0013", "20260717_0013")
@@ -306,19 +333,22 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     assert exhausted.lease_owner is None
     assert exhausted.lease_expires_at is None
 
-    tenant_value = f"tenant\x00{IDENTITY.tenant_id}"
     canary_old = _binding(
         snapshot,
         suffix="8",
         scope_kind=ShadowScopeKind.TENANT_CANARY,
-        tenant_ref_hmac=_keyring().digest(tenant_value, key_id="key-old"),
+        tenant_ref_hmac=_keyring().digest_fields(
+            TENANT_REF_DOMAIN, (IDENTITY.tenant_id,), key_id="key-old"
+        ),
         hmac_key_id="key-old",
     )
     canary_active = _binding(
         snapshot,
         suffix="9",
         scope_kind=ShadowScopeKind.TENANT_CANARY,
-        tenant_ref_hmac=_keyring().digest(tenant_value, key_id="key-v1"),
+        tenant_ref_hmac=_keyring().digest_fields(
+            TENANT_REF_DOMAIN, (IDENTITY.tenant_id,), key_id="key-v1"
+        ),
         hmac_key_id="key-v1",
     )
     canary_barrier = Barrier(2)
@@ -340,3 +370,84 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
             )
             == 1
         )
+
+    cross_tenant_barrier = Barrier(2)
+    cross_tenant_identities = (
+        VerifiedIdentity("tenant-cross-a", "session-a", "subject:cross-a"),
+        VerifiedIdentity("tenant-cross-b", "session-b", "subject:cross-b"),
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        cross_tenant = list(
+            executor.map(
+                lambda identity: _attempt_cross_tenant_capture(
+                    repository, winning, identity, cross_tenant_barrier
+                ),
+                cross_tenant_identities,
+            )
+        )
+    assert len({item.session_version_id for item in cross_tenant}) == 2
+    assert [item.sequence_no for item in cross_tenant] == [1, 1]
+
+
+def test_real_postgres_adoption_is_exact_and_never_rewrites_functions() -> None:
+    _assert_dedicated_local_database(POSTGRES_URL)
+    engine = make_engine(POSTGRES_URL)
+    _clear_database(engine)
+    _upgrade_engine(engine)
+    with engine.begin() as connection:
+        before = (
+            connection.execute(
+                text(
+                    "SELECT pg_get_functiondef(p.oid) FROM pg_proc p "
+                    "JOIN pg_namespace n ON n.oid=p.pronamespace "
+                    "WHERE n.nspname='public' AND p.proname LIKE 'sealai_mat_gov_%' "
+                    "ORDER BY p.proname"
+                )
+            )
+            .scalars()
+            .all()
+        )
+        connection.execute(text("DROP TABLE alembic_version"))
+    _upgrade_engine(engine)
+    with engine.connect() as connection:
+        after = (
+            connection.execute(
+                text(
+                    "SELECT pg_get_functiondef(p.oid) FROM pg_proc p "
+                    "JOIN pg_namespace n ON n.oid=p.pronamespace "
+                    "WHERE n.nspname='public' AND p.proname LIKE 'sealai_mat_gov_%' "
+                    "ORDER BY p.proname"
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert after == before
+
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE alembic_version"))
+        connection.execute(
+            text(
+                "CREATE FUNCTION sealai_mat_gov_03b_reject_mutation(integer) "
+                "RETURNS integer AS $$ SELECT $1 $$ LANGUAGE sql IMMUTABLE"
+            )
+        )
+    with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
+        _upgrade_engine(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("DROP FUNCTION sealai_mat_gov_03b_reject_mutation(integer)")
+        )
+    _upgrade_engine(engine)
+
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE alembic_version"))
+        connection.execute(
+            text(
+                "CREATE OR REPLACE FUNCTION sealai_mat_gov_03b_reject_mutation() "
+                "RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql"
+            )
+        )
+    with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
+        _upgrade_engine(engine)

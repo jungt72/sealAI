@@ -1081,21 +1081,28 @@ class V2MaterialShadowSessionVersion(Base):
     __tablename__ = "v2_material_shadow_session_versions"
     __table_args__ = (
         UniqueConstraint(
+            "hmac_key_id",
+            "tenant_ref_hmac",
             "session_ref_hmac",
             "version_no",
             name="uq_v2_material_shadow_session_version",
         ),
         CheckConstraint("version_no > 0", name="ck_v2_material_shadow_session_version"),
         CheckConstraint(
-            "length(session_ref_hmac) = 64",
+            "length(tenant_ref_hmac) = 64 AND length(session_ref_hmac) = 64",
             name="ck_v2_material_shadow_session_hmac",
+        ),
+        Index(
+            "ix_v2_material_shadow_session_identity",
+            "hmac_key_id",
+            "tenant_ref_hmac",
+            "session_ref_hmac",
         ),
     )
 
     session_version_id: Mapped[str] = mapped_column(String(37), primary_key=True)
-    session_ref_hmac: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True
-    )
+    tenant_ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
     hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     pin_id: Mapped[str] = mapped_column(

@@ -153,12 +153,12 @@ def test_material_schema_parser_resolves_physical_column_names() -> None:
     aliased_source = """
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    alias: Mapped[str] = mapped_column("tenant_id", String())
+    alias: Mapped[str] = mapped_column("tenant_id", String(64))
 """
     default_source = """
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    tenant_id: Mapped[str] = mapped_column(String())
+    tenant_id: Mapped[str] = mapped_column(String(64))
 """
     expected = {"v2_material_shadow_unexpected": frozenset({"tenant_id"})}
     assert parse_material_schema_source(aliased_source) == expected
@@ -167,22 +167,24 @@ class UnexpectedName(Base):
 
 def test_material_schema_parser_accepts_only_static_column_type_forms() -> None:
     source = """
+_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), "postgresql")
+
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    inferred_value: Mapped[str] = mapped_column()
     string_value: Mapped[str] = mapped_column(String(64))
     integer_value: Mapped[int] = mapped_column(Integer)
     boolean_value: Mapped[bool] = mapped_column(Boolean)
     binary_value: Mapped[bytes] = mapped_column(LargeBinary)
     json_value: Mapped[dict] = mapped_column(_MATERIAL_RULESET_JSON)
     foreign_value: Mapped[str] = mapped_column(
-        String(68), ForeignKey("v2_material_rulesets.ruleset_id")
+        String(68),
+        ForeignKey("v2_material_rulesets.ruleset_id", ondelete="RESTRICT"),
+        nullable=False,
     )
 """
     assert parse_material_schema_source(source) == {
         "v2_material_shadow_unexpected": frozenset(
             {
-                "inferred_value",
                 "string_value",
                 "integer_value",
                 "boolean_value",
@@ -200,7 +202,7 @@ def test_material_schema_parser_rejects_dynamic_column_arguments() -> None:
         "mapped_column(build_name(), String())",
         'mapped_column(f"{PREFIX}_id", String())',
         "mapped_column(*COLUMN_ARGS)",
-        "mapped_column(String(), **COLUMN_OPTIONS)",
+        "mapped_column(String(64), **COLUMN_OPTIONS)",
     )
     for declaration in dynamic_sources:
         _assert_schema_rejected(
@@ -227,7 +229,7 @@ def test_material_schema_parser_recognizes_models_structurally() -> None:
     literal_model = """
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    value: Mapped[str] = mapped_column(String())
+    value: Mapped[str] = mapped_column(String(64))
 """
     assert parse_material_schema_source(literal_model) == {
         "v2_material_shadow_unexpected": frozenset({"value"})
@@ -251,12 +253,12 @@ def test_material_schema_parser_normatively_rejects_plain_assign_columns() -> No
     plain_assign = """
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    field = mapped_column(String())
+    field = mapped_column(String(64))
 """
     untyped_annassign = """
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    field: str = mapped_column(String())
+    field: str = mapped_column(String(64))
 """
     for source in (plain_assign, untyped_annassign):
         _assert_schema_rejected(source)
@@ -276,7 +278,115 @@ class V2MaterialShadowDynamic(Base):
     dynamic_keyword_name = """
 class V2MaterialShadowDynamic(Base):
     __tablename__ = "v2_material_shadow_dynamic"
-    value: Mapped[str] = mapped_column(String(), name="tenant_id")
+    value: Mapped[str] = mapped_column(String(64), name="tenant_id")
 """
     for source in (dynamic_table, dynamic_column, dynamic_keyword_name):
         _assert_schema_rejected(source)
+
+
+def test_material_schema_parser_rejects_every_dynamic_ast_escape() -> None:
+    declarations = (
+        "field: Mapped[build_type()] = mapped_column(String(64))",
+        "field: Mapped[str] = mapped_column(UNKNOWN_TYPE)",
+        "field: Mapped[str] = mapped_column(String(dynamic_length))",
+        "field: Mapped[str] = mapped_column(String(64), build_constraint())",
+        "field: Mapped[str] = mapped_column(String(64), ForeignKey(build_target()))",
+        "field: Mapped[str] = mapped_column(String(64), ForeignKey('v2_material_rulesets.ruleset_id', ondelete=DELETE_POLICY))",
+        "field: Mapped[str] = mapped_column(String(64), nullable=runtime_nullable())",
+        "field: Mapped[str] = mapped_column(String(64), unknown=True)",
+        "field: Mapped[str] = mapped_column(String(64), *ARGS)",
+        "field: Mapped[str] = mapped_column(String(64), **KWARGS)",
+        "field: Mapped[str] = mapped_column(f'{PREFIX}_id', String(64))",
+        "field: Mapped[str] = mapped_column(String(32 + 32))",
+        "field: Mapped[str] = mapped_column(TYPES[0])",
+        "field: Mapped[str] = mapped_column((lambda: String(64))())",
+        "field: Mapped[str] = mapped_column(String(64) if FLAG else String(32))",
+        "field: Mapped[str] = mapped_column([String(64) for _ in ITEMS][0])",
+        "field: Mapped[str] = mapped_column(sa.String(64))",
+    )
+    for declaration in declarations:
+        _assert_schema_rejected(
+            f"""\nclass UnexpectedName(Base):\n    __tablename__ = "v2_material_shadow_unexpected"\n    {declaration}\n"""
+        )
+
+
+def test_material_json_helper_has_one_exact_static_binding() -> None:
+    valid = """
+_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), "postgresql")
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    payload: Mapped[dict] = mapped_column(_MATERIAL_RULESET_JSON, nullable=False)
+"""
+    assert parse_material_schema_source(valid) == {
+        "v2_material_shadow_unexpected": frozenset({"payload"})
+    }
+    invalid_preludes = (
+        "_MATERIAL_RULESET_JSON = build_type()",
+        "_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), DIALECT)",
+        "_MATERIAL_RULESET_JSON = JSON().with_variant(build_type(), 'postgresql')",
+        "_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), 'postgresql')\n_MATERIAL_RULESET_JSON = JSON()",
+        "_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), 'postgresql')\n_MATERIAL_RULESET_JSON += OTHER",
+        "_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), 'postgresql')\ndel _MATERIAL_RULESET_JSON",
+    )
+    for prelude in invalid_preludes:
+        _assert_schema_rejected(
+            f"""{prelude}\nclass UnexpectedName(Base):\n    __tablename__ = "v2_material_shadow_unexpected"\n    payload: Mapped[dict] = mapped_column(_MATERIAL_RULESET_JSON, nullable=False)\n"""
+        )
+
+
+def test_material_schema_parser_rejects_rebound_or_foreign_helpers() -> None:
+    invalid_preludes = (
+        "String = build_type()",
+        "def mapped_column(*args):\n    return args",
+        "class JSON: pass",
+        "from attacker import ForeignKey",
+        "from sqlalchemy import String as Integer",
+        "import attacker as Mapped",
+    )
+    for prelude in invalid_preludes:
+        _assert_schema_rejected(
+            f"""{prelude}\nclass UnexpectedName(Base):\n    __tablename__ = "v2_material_shadow_unexpected"\n    value: Mapped[str] = mapped_column(String(64), nullable=False)\n"""
+        )
+
+    nested_rebind = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    String = build_type()
+    value: Mapped[str] = mapped_column(String(64), nullable=False)
+"""
+    _assert_schema_rejected(nested_rebind)
+
+
+def test_material_schema_parser_closes_table_constraint_ast() -> None:
+    valid = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    __table_args__ = (
+        CheckConstraint("length(value) = 64", name="ck_static"),
+        UniqueConstraint("value", name="uq_static"),
+        Index("ix_static", "value"),
+    )
+    value: Mapped[str] = mapped_column(String(64), nullable=False)
+"""
+    assert parse_material_schema_source(valid, require_table_constraints=True) == {
+        "v2_material_shadow_unexpected": frozenset({"value"})
+    }
+
+    invalid_items = (
+        "build_constraint()",
+        "CheckConstraint(build_sql(), name='ck_static')",
+        "CheckConstraint(f'{COLUMN}=1', name='ck_static')",
+        "CheckConstraint('value=1', name=build_name())",
+        "CheckConstraint('value=1', unknown=True)",
+        "UniqueConstraint(dynamic_column, name='uq_static')",
+        "UniqueConstraint('other', name='uq_static')",
+        "Index('ix_static', build_column())",
+        "Index(build_name(), 'value')",
+        "Index('ix_static', 'other')",
+        "Index('ix_static', *COLUMNS)",
+        "UniqueConstraint('value', **OPTIONS)",
+    )
+    for item in invalid_items:
+        _assert_schema_rejected(
+            f"""\nclass UnexpectedName(Base):\n    __tablename__ = "v2_material_shadow_unexpected"\n    __table_args__ = ({item},)\n    value: Mapped[str] = mapped_column(String(64), nullable=False)\n"""
+        )

@@ -99,6 +99,7 @@ EXPECTED_03B_SCHEMA = {
     "v2_material_shadow_session_versions": frozenset(
         {
             "session_version_id",
+            "tenant_ref_hmac",
             "session_ref_hmac",
             "hmac_key_id",
             "version_no",
@@ -295,7 +296,7 @@ def test_shadow_privacy_guard_rejects_aliased_physical_identifier_columns() -> N
         source = f"""
 class UnexpectedName(Base):
     __tablename__ = "v2_material_shadow_unexpected"
-    safe_alias: Mapped[str] = mapped_column("{physical_name}", String())
+    safe_alias: Mapped[str] = mapped_column("{physical_name}", String(64))
 """
         schema = parse_material_schema_source(source)
         try:

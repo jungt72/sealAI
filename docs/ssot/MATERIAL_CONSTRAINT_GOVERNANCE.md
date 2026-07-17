@@ -223,7 +223,10 @@ cache entry. MED-NORM-01 is not implemented.
 
 The shadow pin is always `SHADOW_NON_AUTHORITATIVE` and can never allow a
 positive statement. Pin and outbox job are atomic; tenant/session/request/case/
-decision correlation is HMAC-SHA-256 with a versioned key ID, never raw identity.
+decision correlation is domain-separated, uint32-length-prefixed HMAC-SHA-256
+with a versioned key ID, never raw identity. Every subordinate reference binds
+the verified tenant; session lookup and uniqueness additionally use the
+persisted tenant HMAC.
 Session versions are immutable and explicitly upgraded; a per-session advisory
 lock and monotone sequence prevent concurrent creation or worker reordering.
 
@@ -238,7 +241,9 @@ Every database-locked worker claim consumes exactly one attempt and carries a
 database-time lease owner/expiry. Expiry at the attempt boundary terminates the
 job with `SHADOW_LEASE_ATTEMPTS_EXHAUSTED` and cannot requeue it.
 Bounded reconciliation defaults to 15-second polling, a 60-second lease, a
-two-second DB timeout, and deterministic jitter.
+two-second DB timeout, and deterministic jitter. Its thread-safe lease map is
+partitioned by tenant/key, scope/binding, domain pack, runtime, build, evaluator,
+and kernel; no partition can inherit another partition's lease.
 
 All flags default false and sampling is fixed at zero. `/chat` capture occurs
 only after the public answer and contains every exception. In the absence of a
@@ -255,6 +260,11 @@ state, cohort, stage acknowledgment, seed, backfill, public/admin API, or
 case/decision mutation. Production execution is not authorized. Sampling above
 zero remains blocked until a tested 90-day evaluation purge and maintenance role
 exist; aggregate metrics may be retained for 13 months.
+
+Pre-existing unpublished MAT-GOV objects are adopted only on an exact
+dialect-specific catalog fingerprint covering columns, constraints, restrictive
+FKs, indexes, predicates, triggers, and trigger-function definitions. Adoption
+is read-only; name-only matches, partial objects, and semantic drift fail closed.
 
 ## Ratified owner decisions
 

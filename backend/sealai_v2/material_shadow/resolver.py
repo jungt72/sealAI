@@ -13,7 +13,10 @@ from sealai_v2.core.material_shadow import (
 )
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
 from sealai_v2.db.material_shadow import MaterialShadowRepository
-from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+from sealai_v2.material_shadow.hmac_refs import (
+    TENANT_REF_DOMAIN,
+    ShadowHmacKeyring,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +66,9 @@ class MaterialShadowResolver:
         if not enabled:
             return ResolvedShadowSelection(ShadowReadinessState.DISABLED)
         try:
-            tenant_references = self._keyring.references(
-                f"tenant\x00{identity.tenant_id}"
+            tenant_references = self._keyring.references_fields(
+                TENANT_REF_DOMAIN,
+                (identity.tenant_id,),
             )
             canary = self._repository.current_candidates(
                 environment=runtime.environment.value,

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+from sealai_v2.material_shadow.hmac_refs import (
+    SAMPLING_REF_DOMAIN,
+    ShadowHmacKeyring,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,8 +29,9 @@ def decide_sampling(
         raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
     # Still derive the stable bucket to prove request/result independence and
     # keep the contract ready for a separately owner-authorized future policy.
-    digest = keyring.digest(
-        f"sampling\x00{tenant_id}\x00{session_ref}\x00{policy_version}"
+    digest = keyring.digest_fields(
+        SAMPLING_REF_DOMAIN,
+        (tenant_id, session_ref, policy_version),
     )
     _bucket = int(digest[:8], 16) % 10_000
     return ShadowSamplingDecision(policy_version, basis_points, False)

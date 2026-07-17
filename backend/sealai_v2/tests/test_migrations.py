@@ -105,7 +105,12 @@ def test_rwdr_pack_cutover_clears_only_1_0_0_ephemeral_state(tmp_path) -> None:
 
 def test_alembic_baseline_adopts_complete_legacy_schema(tmp_path) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
-    Base.metadata.create_all(engine)
+    legacy_tables = [
+        table
+        for table in Base.metadata.sorted_tables
+        if not table.name.startswith("v2_material_")
+    ]
+    Base.metadata.create_all(engine, tables=legacy_tables)
     assert "alembic_version" not in inspect(engine).get_table_names()
 
     up(engine)
@@ -118,7 +123,12 @@ def test_alembic_baseline_adopts_known_legacy_schema_without_legal_table(
     tmp_path,
 ) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'legacy-before-legal.db'}")
-    Base.metadata.create_all(engine)
+    legacy_tables = [
+        table
+        for table in Base.metadata.sorted_tables
+        if not table.name.startswith("v2_material_")
+    ]
+    Base.metadata.create_all(engine, tables=legacy_tables)
     with engine.begin() as connection:
         connection.exec_driver_sql("DROP TABLE v2_legal_acceptance")
 
