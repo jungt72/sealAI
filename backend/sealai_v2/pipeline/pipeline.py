@@ -831,8 +831,10 @@ class Pipeline:
             tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
-        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +
-        # fail-open. A render surface only — never injected into L1/L3 (the prompt stays byte-identical).
+        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3).
+        # Non-RWDR seal type -> the structured not_available_for_seal_type marker (OD-3), not a silent
+        # None; an actual compute error still fails open to plain None (see produktspec_step.py). A
+        # render surface only — never injected into L1/L3 (the prompt stays byte-identical).
         seal_type = next(
             (
                 f.wert
