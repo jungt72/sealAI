@@ -7,11 +7,27 @@ import hashlib
 from pathlib import Path
 import sys
 
-from _model_schema_ast import load_material_schema
+from _model_schema_ast import load_material_schema, parse_material_schema_source
 
 
 REPO = Path(__file__).resolve().parents[3]
 MODELS = REPO / "backend/sealai_v2/db/models.py"
+RAW_IDENTIFIER_COLUMNS = {
+    "tenant_id",
+    "session_id",
+    "case_id",
+    "decision_id",
+    "correlation_id",
+    "request_id",
+}
+CONTENT_COLUMNS = {
+    "question",
+    "answer",
+    "prompt",
+    "document",
+    "exception",
+    "werkstoff_tendenz",
+}
 EXPECTED_03B_SCHEMA = {
     "v2_material_shadow_bindings": frozenset(
         {
@@ -259,28 +275,33 @@ def test_03b_schema_contains_no_activation_or_admin_aggregate() -> None:
     assert not any(token in table for table in tables for token in forbidden)
 
 
-def test_shadow_schema_never_persists_raw_identity_or_conversation_fields() -> None:
-    raw_identifier_columns = {
-        "tenant_id",
-        "session_id",
-        "case_id",
-        "decision_id",
-        "correlation_id",
-        "request_id",
-    }
-    content_columns = {
-        "question",
-        "answer",
-        "prompt",
-        "document",
-        "exception",
-        "werkstoff_tendenz",
-    }
+def _assert_shadow_schema_privacy(schema: dict[str, frozenset[str]]) -> None:
     shadow_tables = {
         name: columns
-        for name, columns in load_material_schema(MODELS).items()
+        for name, columns in schema.items()
         if name.startswith("v2_material_shadow_")
     }
     for table_name, column_names in shadow_tables.items():
-        assert column_names.isdisjoint(raw_identifier_columns), table_name
-        assert column_names.isdisjoint(content_columns), table_name
+        assert column_names.isdisjoint(RAW_IDENTIFIER_COLUMNS), table_name
+        assert column_names.isdisjoint(CONTENT_COLUMNS), table_name
+
+
+def test_shadow_schema_never_persists_raw_identity_or_conversation_fields() -> None:
+    _assert_shadow_schema_privacy(load_material_schema(MODELS))
+
+
+def test_shadow_privacy_guard_rejects_aliased_physical_identifier_columns() -> None:
+    for physical_name in sorted(RAW_IDENTIFIER_COLUMNS):
+        source = f"""
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    safe_alias: Mapped[str] = mapped_column("{physical_name}", String())
+"""
+        schema = parse_material_schema_source(source)
+        try:
+            _assert_shadow_schema_privacy(schema)
+        except AssertionError:
+            continue
+        raise AssertionError(
+            f"aliased forbidden physical column was accepted: {physical_name}"
+        )

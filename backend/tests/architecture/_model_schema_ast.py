@@ -14,6 +14,14 @@ def _is_direct_mapped_column(node: ast.AST | None) -> bool:
     )
 
 
+def _is_mapped_annotation(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "Mapped"
+    )
+
+
 def _mapped_column_calls(node: ast.ClassDef) -> list[ast.Call]:
     return [
         candidate
@@ -22,6 +30,32 @@ def _mapped_column_calls(node: ast.ClassDef) -> list[ast.Call]:
         and isinstance(candidate.func, ast.Name)
         and candidate.func.id == "mapped_column"
     ]
+
+
+def _is_direct_base_model(node: ast.ClassDef) -> bool:
+    return (
+        len(node.bases) == 1
+        and isinstance(node.bases[0], ast.Name)
+        and node.bases[0].id == "Base"
+    )
+
+
+def _physical_column_name(call: ast.Call, *, attribute_name: str, filename: str) -> str:
+    if any(keyword.arg == "name" for keyword in call.keywords):
+        raise AssertionError(
+            f"{filename}:{call.lineno}: MAT-GOV physical column names must use "
+            "the first literal mapped_column argument"
+        )
+    if not call.args or not (
+        isinstance(call.args[0], ast.Constant) and type(call.args[0].value) is str
+    ):
+        return attribute_name
+    physical_name = call.args[0].value
+    if not physical_name:
+        raise AssertionError(
+            f"{filename}:{call.lineno}: empty MAT-GOV physical column name"
+        )
+    return physical_name
 
 
 def parse_material_schema_source(
@@ -44,33 +78,49 @@ def parse_material_schema_source(
             ):
                 table_assignments.append(statement)
 
-        material_class = node.name.startswith("V2Material")
-        if not material_class and not table_assignments:
-            continue
-        if material_class and id(node) not in top_level_classes:
+        named_material_class = node.name.startswith("V2Material")
+        direct_base_model = _is_direct_base_model(node)
+        has_base_reference = any(
+            isinstance(base, ast.Name) and base.id == "Base" for base in node.bases
+        )
+        literal_material_table = any(
+            isinstance(assignment.value, ast.Constant)
+            and type(assignment.value.value) is str
+            and assignment.value.value.startswith("v2_material_")
+            for assignment in table_assignments
+        )
+        material_candidate = named_material_class or literal_material_table
+
+        if has_base_reference and not direct_base_model:
             raise AssertionError(
-                f"{filename}:{node.lineno}: nested MAT-GOV model class is forbidden"
+                f"{filename}:{node.lineno}: ORM models must directly inherit Base only"
+            )
+        if not direct_base_model and not material_candidate:
+            continue
+        if not direct_base_model:
+            raise AssertionError(
+                f"{filename}:{node.lineno}: MAT-GOV model must directly inherit Base"
+            )
+        if id(node) not in top_level_classes:
+            raise AssertionError(
+                f"{filename}:{node.lineno}: nested ORM model class is forbidden"
             )
         if len(table_assignments) != 1:
-            if material_class:
-                raise AssertionError(
-                    f"{filename}:{node.lineno}: MAT-GOV model requires one literal "
-                    "__tablename__"
-                )
-            continue
+            raise AssertionError(
+                f"{filename}:{node.lineno}: ORM model requires one literal "
+                "__tablename__"
+            )
 
         assignment = table_assignments[0]
         if len(assignment.targets) != 1 or not (
             isinstance(assignment.value, ast.Constant)
             and type(assignment.value.value) is str
         ):
-            if material_class:
-                raise AssertionError(
-                    f"{filename}:{assignment.lineno}: dynamic MAT-GOV table name"
-                )
-            continue
+            raise AssertionError(
+                f"{filename}:{assignment.lineno}: dynamic ORM table name"
+            )
         table_name = assignment.value.value
-        if material_class and not table_name.startswith("v2_material_"):
+        if named_material_class and not table_name.startswith("v2_material_"):
             raise AssertionError(
                 f"{filename}:{assignment.lineno}: unrecognized MAT-GOV table name"
             )
@@ -90,12 +140,21 @@ def parse_material_schema_source(
                 raise AssertionError(
                     f"{filename}:{statement.lineno}: dynamic MAT-GOV column target"
                 )
+            if not _is_mapped_annotation(statement.annotation):
+                raise AssertionError(
+                    f"{filename}:{statement.lineno}: MAT-GOV columns require a "
+                    "Mapped[...] annotation"
+                )
             if not _is_direct_mapped_column(statement.value):
                 raise AssertionError(
                     f"{filename}:{statement.lineno}: MAT-GOV column must use direct "
                     "mapped_column"
                 )
-            column_name = statement.target.id
+            column_name = _physical_column_name(
+                statement.value,
+                attribute_name=statement.target.id,
+                filename=filename,
+            )
             if column_name in columns:
                 raise AssertionError(
                     f"{filename}:{statement.lineno}: duplicate MAT-GOV column "
@@ -112,7 +171,8 @@ def parse_material_schema_source(
         if unrecognized_calls:
             first = min(unrecognized_calls, key=lambda call: call.lineno)
             raise AssertionError(
-                f"{filename}:{first.lineno}: dynamic or unannotated MAT-GOV column"
+                f"{filename}:{first.lineno}: MAT-GOV columns require typed "
+                "Mapped[...] AnnAssign declarations"
             )
         if not columns:
             raise AssertionError(

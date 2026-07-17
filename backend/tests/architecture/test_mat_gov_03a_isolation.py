@@ -141,6 +141,80 @@ def test_03a_models_contain_no_lifecycle_or_runtime_tables() -> None:
     assert not any(token in table for table in material_tables for token in forbidden)
 
 
+def _assert_schema_rejected(source: str) -> None:
+    try:
+        parse_material_schema_source(source)
+    except AssertionError:
+        return
+    raise AssertionError("invalid MAT-GOV schema declaration was accepted")
+
+
+def test_material_schema_parser_resolves_physical_column_names() -> None:
+    aliased_source = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    alias: Mapped[str] = mapped_column("tenant_id", String())
+"""
+    default_source = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    tenant_id: Mapped[str] = mapped_column(String())
+"""
+    expected = {"v2_material_shadow_unexpected": frozenset({"tenant_id"})}
+    assert parse_material_schema_source(aliased_source) == expected
+    assert parse_material_schema_source(default_source) == expected
+
+
+def test_material_schema_parser_rejects_duplicate_physical_column_names() -> None:
+    _assert_schema_rejected(
+        """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    first: Mapped[str] = mapped_column("same_name", String())
+    second: Mapped[str] = mapped_column("same_name", String())
+"""
+    )
+
+
+def test_material_schema_parser_recognizes_models_structurally() -> None:
+    literal_model = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    value: Mapped[str] = mapped_column(String())
+"""
+    assert parse_material_schema_source(literal_model) == {
+        "v2_material_shadow_unexpected": frozenset({"value"})
+    }
+
+    dynamic_model = """
+class UnexpectedName(Base):
+    __tablename__ = PREFIX + "_shadow_table"
+    value: Mapped[str] = mapped_column(String())
+"""
+    _assert_schema_rejected(dynamic_model)
+
+    non_model_helper = """
+class UnexpectedName:
+    __tablename__ = PREFIX + "_shadow_table"
+"""
+    assert parse_material_schema_source(non_model_helper) == {}
+
+
+def test_material_schema_parser_normatively_rejects_plain_assign_columns() -> None:
+    plain_assign = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    field = mapped_column(String())
+"""
+    untyped_annassign = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    field: str = mapped_column(String())
+"""
+    for source in (plain_assign, untyped_annassign):
+        _assert_schema_rejected(source)
+
+
 def test_material_schema_parser_rejects_dynamic_declarations() -> None:
     dynamic_table = """
 class V2MaterialShadowDynamic(Base):
@@ -152,9 +226,10 @@ class V2MaterialShadowDynamic(Base):
     __tablename__ = "v2_material_shadow_dynamic"
     value: Mapped[str] = build_column()
 """
-    for source in (dynamic_table, dynamic_column):
-        try:
-            parse_material_schema_source(source)
-        except AssertionError:
-            continue
-        raise AssertionError("dynamic MAT-GOV schema declaration was accepted")
+    dynamic_keyword_name = """
+class V2MaterialShadowDynamic(Base):
+    __tablename__ = "v2_material_shadow_dynamic"
+    value: Mapped[str] = mapped_column(String(), name="tenant_id")
+"""
+    for source in (dynamic_table, dynamic_column, dynamic_keyword_name):
+        _assert_schema_rejected(source)
