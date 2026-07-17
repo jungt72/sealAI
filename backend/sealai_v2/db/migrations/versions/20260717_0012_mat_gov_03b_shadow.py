@@ -994,14 +994,26 @@ def _validate_adopted_schema() -> None:
     for table, expected_columns in _EXPECTED_COLUMNS.items():
         columns = inspector.get_columns(table)
         actual_columns = {column["name"] for column in columns}
-        if actual_columns != expected_columns:
+        allowed_columns = {frozenset(expected_columns)}
+        if table == "v2_material_shadow_outbox":
+            allowed_columns.add(
+                frozenset(expected_columns | {"lease_owner", "lease_expires_at"})
+            )
+        if frozenset(actual_columns) not in allowed_columns:
             raise RuntimeError(
                 "invalid MAT-GOV-03B adoption columns: "
                 f"table={table} actual={sorted(actual_columns)} "
                 f"expected={sorted(expected_columns)}"
             )
         actual_nullable = {column["name"] for column in columns if column["nullable"]}
-        if actual_nullable != _EXPECTED_NULLABLE[table]:
+        allowed_nullable = {frozenset(_EXPECTED_NULLABLE[table])}
+        if table == "v2_material_shadow_outbox":
+            allowed_nullable.add(
+                frozenset(
+                    _EXPECTED_NULLABLE[table] | {"lease_owner", "lease_expires_at"}
+                )
+            )
+        if frozenset(actual_nullable) not in allowed_nullable:
             raise RuntimeError(
                 "invalid MAT-GOV-03B adoption nullability: "
                 f"table={table} actual={sorted(actual_nullable)} "

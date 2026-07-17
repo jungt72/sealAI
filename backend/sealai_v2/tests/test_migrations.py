@@ -25,7 +25,7 @@ def test_alembic_upgrade_creates_fresh_schema(tmp_path) -> None:
     assert set(Base.metadata.tables) <= tables
     assert "alembic_version" in tables
     current, head = migration_status(engine)
-    assert current == head == "20260717_0012"
+    assert current == head == "20260717_0013"
     indexes = {
         item["name"]
         for item in inspect(engine).get_indexes("v2_interview_shadow_decisions")

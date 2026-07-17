@@ -125,6 +125,7 @@
         "backend/sealai_v2/db/material_shadow.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0011_mat_gov_03a_snapshots.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0012_mat_gov_03b_shadow.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0013_mat_gov_03b_leases.py",
         "backend/sealai_v2/core/material_constraints.py",
         "backend/sealai_v2/tests/test_material_constraints.py",
         "backend/sealai_v2/tests/test_mat_gov_02.py",

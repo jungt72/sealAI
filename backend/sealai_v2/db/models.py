@@ -1167,6 +1167,13 @@ class V2MaterialShadowOutbox(Base):
             "(decision_ref_hmac IS NULL OR length(decision_ref_hmac) = 64)",
             name="ck_v2_material_shadow_job_integrity",
         ),
+        CheckConstraint(
+            "(status = 'processing' AND attempts > 0 AND claimed_at IS NOT NULL "
+            "AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL) OR "
+            "(status <> 'processing' AND lease_owner IS NULL "
+            "AND lease_expires_at IS NULL)",
+            name="ck_v2_material_shadow_job_lease_state",
+        ),
     )
 
     job_id: Mapped[str] = mapped_column(String(37), primary_key=True)
@@ -1204,6 +1211,8 @@ class V2MaterialShadowOutbox(Base):
     stable_error_code: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
     claimed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_expires_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     next_attempt_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     completed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
 

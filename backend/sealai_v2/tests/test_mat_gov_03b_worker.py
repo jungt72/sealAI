@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import json
 
-from sqlalchemy import select
+import pytest
+from sqlalchemy import event, select, text
+from sqlalchemy.exc import DBAPIError
 
+from sealai_v2.core.material_shadow import ShadowErrorCode
 from sealai_v2.db.material_shadow import MaterialShadowRepository
 from sealai_v2.db.models import (
     V2MaterialShadowEvaluation,
@@ -20,7 +24,7 @@ from sealai_v2.material_shadow.cache import (
     encode_cache_key_segments,
 )
 from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
-from sealai_v2.material_shadow.worker import MaterialShadowWorker
+from sealai_v2.material_shadow.worker import MaterialShadowWorker, ShadowLeaseLost
 from sealai_v2.tests.test_mat_gov_03b_persistence import (
     IDENTITY,
     NOW,
@@ -74,6 +78,32 @@ def _two_jobs(tmp_path, *, name="worker.db"):
         acquired_at="2026-07-17T12:06:00.000000Z",
     )
     return factory, first, second
+
+
+def _one_job_with_database_clock(tmp_path, *, name: str):
+    engine, factory, _rulesets, snapshot = _database(tmp_path, name)
+    repository = MaterialShadowRepository(factory)
+    binding = _binding(snapshot)
+    repository.create_binding(binding, identity=IDENTITY, created_at=NOW)
+    captured = repository.persist_pin_and_job(
+        binding=binding,
+        identity=IDENTITY,
+        session_id="session-lease",
+        correlation_id="request-lease",
+        material_input=_input(),
+        hmac_keyring=_keyring(),
+        acquired_at="2026-07-17T12:05:00.000000Z",
+    )
+    clock = ["2026-07-17T12:07:00.000000Z"]
+
+    def install_clock(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.create_function(
+            "strftime", 2, lambda _format, _value: clock[0]
+        )
+
+    event.listen(engine, "connect", install_clock)
+    engine.dispose()
+    return factory, captured, clock
 
 
 def test_worker_preserves_session_order_and_persists_reference_only_results(
@@ -143,7 +173,9 @@ def test_cache_outage_retries_first_job_without_reordering_second(tmp_path) -> N
         keyring=_keyring(),
         max_attempts=3,
     )
+    before = datetime.now(timezone.utc)
     outcome = worker.drain_once(now="2026-07-17T12:07:00.000000Z", batch_size=50)
+    after = datetime.now(timezone.utc)
     assert outcome.claimed == 1
     assert outcome.retried == 1
     with factory() as session:
@@ -151,9 +183,173 @@ def test_cache_outage_retries_first_job_without_reordering_second(tmp_path) -> N
         second_row = session.get(V2MaterialShadowOutbox, second.job_id)
         assert first_row.status == "pending"
         assert first_row.stable_error_code == "SHADOW_CACHE_UNAVAILABLE"
-        assert first_row.next_attempt_at == "2026-07-17T12:07:05.000000Z"
+        retry_at = datetime.fromisoformat(
+            first_row.next_attempt_at.replace("Z", "+00:00")
+        )
+        assert before + timedelta(seconds=5) <= retry_at
+        assert retry_at <= after + timedelta(seconds=6)
+        assert first_row.attempts == 1
+        assert first_row.lease_owner is None
+        assert first_row.lease_expires_at is None
         assert second_row.status == "pending"
         assert second_row.attempts == 0
+
+
+def test_claim_atomically_consumes_one_attempt_with_database_time_lease(
+    tmp_path,
+) -> None:
+    factory, captured, clock = _one_job_with_database_clock(
+        tmp_path, name="lease-claim.db"
+    )
+    worker = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        claim_timeout_s=60,
+        worker_id="worker-a",
+    )
+    with pytest.raises(DBAPIError, match="lease transition"):
+        with factory() as session, session.begin():
+            session.execute(
+                text(
+                    "UPDATE v2_material_shadow_outbox "
+                    "SET status='processing', claimed_at=:claimed_at, "
+                    "lease_owner='invalid-worker', lease_expires_at=:expires_at "
+                    "WHERE job_id=:job_id"
+                ),
+                {
+                    "claimed_at": clock[0],
+                    "expires_at": "2026-07-17T12:08:00.000000Z",
+                    "job_id": captured.job_id,
+                },
+            )
+    ids, exhausted = worker._claim(batch_size=1)
+    assert ids == [captured.job_id]
+    assert exhausted == 0
+    with factory() as session:
+        row = session.get(V2MaterialShadowOutbox, captured.job_id)
+    assert row is not None
+    assert row.status == "processing"
+    assert row.attempts == 1
+    assert row.claimed_at == clock[0]
+    assert row.lease_owner == "worker-a"
+    assert row.lease_expires_at == "2026-07-17T12:08:00.000000Z"
+    competing = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        claim_timeout_s=60,
+        worker_id="worker-b",
+    )
+    assert competing._claim(batch_size=1) == ([], 0)
+
+
+def test_expired_leases_consume_attempts_and_fail_at_exact_boundary(tmp_path) -> None:
+    factory, captured, clock = _one_job_with_database_clock(
+        tmp_path, name="lease-boundary.db"
+    )
+    first = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=2,
+        claim_timeout_s=60,
+        worker_id="worker-a",
+    )
+    assert first._claim(batch_size=1) == ([captured.job_id], 0)
+    clock[0] = "2026-07-17T12:08:00.000001Z"
+    second = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=2,
+        claim_timeout_s=60,
+        worker_id="worker-b",
+    )
+    assert second._claim(batch_size=1) == ([captured.job_id], 0)
+    with factory() as session:
+        reclaimed = session.get(V2MaterialShadowOutbox, captured.job_id)
+    assert reclaimed is not None
+    assert reclaimed.attempts == 2
+    assert reclaimed.lease_owner == "worker-b"
+
+    clock[0] = "2026-07-17T12:09:00.000002Z"
+    outcome = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=2,
+        claim_timeout_s=60,
+        worker_id="worker-c",
+    ).drain_once(now="1999-01-01T00:00:00.000000Z", batch_size=1)
+    assert outcome == type(outcome)(claimed=0, evaluated=0, retried=0, failed=1)
+    with factory() as session:
+        failed = session.get(V2MaterialShadowOutbox, captured.job_id)
+    assert failed is not None
+    assert failed.status == "failed"
+    assert failed.attempts == 2
+    assert failed.stable_error_code == "SHADOW_LEASE_ATTEMPTS_EXHAUSTED"
+    assert failed.completed_at == clock[0]
+    assert failed.lease_owner is None
+    assert failed.lease_expires_at is None
+    assert failed.next_attempt_at is None
+
+    unchanged = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=2,
+        worker_id="worker-d",
+    ).drain_once(now="2099-01-01T00:00:00.000000Z", batch_size=1)
+    assert unchanged.claimed == unchanged.failed == 0
+    with factory() as session:
+        terminal = session.get(V2MaterialShadowOutbox, captured.job_id)
+    assert terminal is not None
+    assert terminal.status == "failed"
+    assert terminal.stable_error_code == "SHADOW_LEASE_ATTEMPTS_EXHAUSTED"
+
+
+def test_max_attempts_one_and_expired_completion_are_fail_closed(tmp_path) -> None:
+    factory, captured, clock = _one_job_with_database_clock(
+        tmp_path, name="lease-max-one.db"
+    )
+    worker = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=1,
+        claim_timeout_s=60,
+        worker_id="worker-a",
+    )
+    assert worker._claim(batch_size=1) == ([captured.job_id], 0)
+    clock[0] = "2026-07-17T12:08:00.000001Z"
+    with pytest.raises(ShadowLeaseLost, match="lost its processing lease"):
+        worker._complete(captured.job_id, {}, now=clock[0], cache_hit=False)
+    assert worker._fail(captured.job_id, code=ShadowErrorCode.INTERNAL) is None
+
+    outcome = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=1,
+        worker_id="worker-b",
+    ).drain_once(now=clock[0], batch_size=1)
+    assert outcome.failed == 1
+    with factory() as session:
+        row = session.get(V2MaterialShadowOutbox, captured.job_id)
+    assert row is not None
+    assert row.attempts == 1
+    assert row.status == "failed"
+    assert row.stable_error_code == "SHADOW_LEASE_ATTEMPTS_EXHAUSTED"
+    with pytest.raises(DBAPIError, match="lease transition"):
+        with factory() as session, session.begin():
+            session.execute(
+                text(
+                    "UPDATE v2_material_shadow_outbox SET attempts=2 "
+                    "WHERE job_id=:job_id"
+                ),
+                {"job_id": captured.job_id},
+            )
 
 
 def test_unknown_hmac_key_id_fails_closed_without_exception_text(tmp_path) -> None:

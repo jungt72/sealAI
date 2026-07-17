@@ -234,6 +234,9 @@ encoding. Legacy, malformed and unknown key versions are cache misses.
 The isolated worker persists only verdict/reference projections and stable
 technical codes. Postgres remains authoritative; Redis and notification are
 optimizations with no in-process, last-known-good, or cross-snapshot fallback.
+Every database-locked worker claim consumes exactly one attempt and carries a
+database-time lease owner/expiry. Expiry at the attempt boundary terminates the
+job with `SHADOW_LEASE_ATTEMPTS_EXHAUSTED` and cannot requeue it.
 Bounded reconciliation defaults to 15-second polling, a 60-second lease, a
 two-second DB timeout, and deterministic jitter.
 
@@ -245,7 +248,9 @@ frontend remain unchanged. The worker has no Compose or deployment integration.
 
 Migration `20260717_0012` is additive and empty. It creates only the isolated
 binding/event/pin/session/outbox/evaluation aggregate with restrictive internal
-foreign keys and mutation guards. It adds no pointer, approval, deployment
+foreign keys and mutation guards. Additive empty migration `20260717_0013`
+adds only bounded worker-lease columns and transition guards and refuses a
+populated retrofit. Neither migration adds a pointer, approval, deployment
 state, cohort, stage acknowledgment, seed, backfill, public/admin API, or
 case/decision mutation. Production execution is not authorized. Sampling above
 zero remains blocked until a tested 90-day evaluation purge and maintenance role

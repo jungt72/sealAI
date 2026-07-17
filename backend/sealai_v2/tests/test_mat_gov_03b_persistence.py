@@ -159,7 +159,12 @@ def test_fresh_03b_migration_is_empty_additive_and_pointerless(tmp_path) -> None
         "v2_material_shadow_evaluation_matches",
         "v2_material_shadow_evaluation_refs",
     }
-    assert migration_status(engine) == ("20260717_0012", "20260717_0012")
+    assert migration_status(engine) == ("20260717_0013", "20260717_0013")
+    outbox_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("v2_material_shadow_outbox")
+    }
+    assert {"lease_owner", "lease_expires_at"} <= outbox_columns
     assert not any(
         token in table
         for table in added
@@ -182,7 +187,7 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
 
     up(engine)
 
-    assert migration_status(engine) == ("20260717_0012", "20260717_0012")
+    assert migration_status(engine) == ("20260717_0013", "20260717_0013")
     with engine.connect() as connection:
         triggers = set(
             connection.execute(
@@ -194,6 +199,7 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
         )
     assert "trg_v2_material_shadow_pins_update_immutable" in triggers
     assert "trg_v2_material_shadow_binding_insert_guard" in triggers
+    assert "trg_v2_material_shadow_outbox_insert_lease_guard" in triggers
 
 
 def test_partial_precreated_03b_schema_is_rejected(tmp_path) -> None:
@@ -573,4 +579,4 @@ def test_empty_downgrade_succeeds_and_used_03b_refuses(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="contain data"):
         with used.begin() as connection:
             command.downgrade(_config(connection=connection), "20260717_0011")
-    assert migration_status(used)[0] == "20260717_0012"
+    assert migration_status(used)[0] == "20260717_0013"

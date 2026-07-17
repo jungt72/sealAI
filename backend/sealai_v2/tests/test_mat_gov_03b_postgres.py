@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import os
 from threading import Barrier, Event
 
@@ -98,7 +99,7 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260717_0012", "20260717_0012")
+    assert migration_status(engine) == ("20260717_0013", "20260717_0013")
 
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
@@ -174,6 +175,8 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
         cache=DictCache(),
         keyring=_keyring(),
     )
+    with factory() as session:
+        database_before_claim = session.scalar(select(func.clock_timestamp()))
     with ThreadPoolExecutor(max_workers=1) as executor:
         first_drain = executor.submit(
             first_worker.drain_once,
@@ -181,6 +184,25 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
             batch_size=50,
         )
         assert blocking_cache.entered.wait(timeout=10)
+        with factory() as session:
+            leased = session.scalar(
+                select(V2MaterialShadowOutbox).where(
+                    V2MaterialShadowOutbox.status == "processing"
+                )
+            )
+            database_after_claim = session.scalar(select(func.clock_timestamp()))
+        assert leased is not None
+        assert leased.status == "processing"
+        assert leased.attempts == 1
+        assert leased.lease_owner is not None
+        assert leased.claimed_at is not None
+        assert leased.lease_expires_at is not None
+        claimed_at = leased.claimed_at.replace("Z", "+00:00")
+        lease_expires_at = leased.lease_expires_at.replace("Z", "+00:00")
+        claimed = datetime.fromisoformat(claimed_at)
+        expires = datetime.fromisoformat(lease_expires_at)
+        assert database_before_claim <= claimed <= database_after_claim
+        assert (expires - claimed).total_seconds() == 60
         blocked_drain = second_worker.drain_once(
             now="2026-07-17T12:40:00.000000Z", batch_size=50
         )
@@ -192,12 +214,13 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     )
     assert final_drain.claimed == final_drain.evaluated == 1
     with factory() as session:
-        statuses = session.scalars(
-            select(V2MaterialShadowOutbox.status).order_by(
-                V2MaterialShadowOutbox.sequence_no
-            )
+        completed_jobs = session.scalars(
+            select(V2MaterialShadowOutbox).order_by(V2MaterialShadowOutbox.sequence_no)
         ).all()
-    assert statuses == ["done", "done"]
+    assert [row.status for row in completed_jobs] == ["done", "done"]
+    assert [row.attempts for row in completed_jobs] == [1, 1]
+    assert all(row.lease_owner is None for row in completed_jobs)
+    assert all(row.lease_expires_at is None for row in completed_jobs)
 
     tenant_value = f"tenant\x00{IDENTITY.tenant_id}"
     canary_old = _binding(

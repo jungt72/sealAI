@@ -87,7 +87,11 @@ The isolated worker uses `FOR UPDATE SKIP LOCKED` together with a correlated
 earlier-unfinished check, so a later sequence cannot overtake an earlier
 pending or processing sequence. Claims have finite leases, retries are bounded
 and exponential, evaluation plus job completion is atomic, and only stable
-error codes persist.
+error codes persist. Each successful database-locked claim increments exactly
+one attempt and records a worker owner plus an expiry derived from database
+time. Completion and failure require the same unexpired owner lease. An expired
+lease at the configured attempt boundary becomes immutable `failed` with
+`SHADOW_LEASE_ATTEMPTS_EXHAUSTED`; it is neither requeued nor reconciled back.
 
 The separate Redis namespace is `mat-shadow:v2:`. One central encoder binds
 tenant HMAC/key version, snapshot ID/hash, evaluator/kernel/domain/policy
@@ -126,7 +130,10 @@ Migration `20260717_0012` creates nine initially empty tables for bindings,
 binding events, pins, session versions, session upgrades, outbox jobs,
 evaluations, evaluation matches, and evaluation references. Internal foreign
 keys use `ON DELETE RESTRICT`. Immutable payload tables reject update/delete;
-the outbox permits only bounded operational state transitions. Adoption is
+the outbox permits only bounded operational state transitions. Additive empty
+migration `20260717_0013` adds the owner-bound lease owner/expiry fields and
+their atomic attempt-transition guards; it refuses a populated retrofit.
+Adoption is
 allowed only for the complete, exact modeled shape with all required checks,
 unique constraints, and restrictive foreign keys. Partial or drifting schemas
 fail closed. Downgrade is allowed only while every 03B table is empty.

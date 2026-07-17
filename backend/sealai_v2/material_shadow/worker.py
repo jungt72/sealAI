@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import secrets
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import aliased, sessionmaker
 
 from sealai_v2.core.contracts import (
@@ -68,6 +68,10 @@ class ShadowDrainResult:
     failed: int
 
 
+class ShadowLeaseLost(RuntimeError):
+    pass
+
+
 class MaterialShadowWorker:
     def __init__(
         self,
@@ -79,7 +83,12 @@ class MaterialShadowWorker:
         claim_timeout_s: int = 60,
         retry_base_s: int = 5,
         retry_max_s: int = 300,
+        worker_id: str | None = None,
     ) -> None:
+        if type(max_attempts) is not int or max_attempts <= 0:
+            raise ValueError("shadow max_attempts must be positive")
+        if type(claim_timeout_s) is not int or claim_timeout_s <= 0:
+            raise ValueError("shadow claim timeout must be positive")
         self._sessions = session_factory
         self._rulesets = MaterialRulesetRepository(session_factory)
         self._cache = cache
@@ -88,11 +97,57 @@ class MaterialShadowWorker:
         self._claim_timeout_s = claim_timeout_s
         self._retry_base_s = retry_base_s
         self._retry_max_s = retry_max_s
+        self._worker_id = worker_id or _id("mshw")
+        if (
+            type(self._worker_id) is not str
+            or not self._worker_id
+            or len(self._worker_id) > 64
+            or any(character.isspace() for character in self._worker_id)
+        ):
+            raise ValueError("shadow worker_id must be a stable non-whitespace ID")
 
-    def _claim(self, *, now: str, batch_size: int) -> list[str]:
-        stale_before = _format(_parse(now) - timedelta(seconds=self._claim_timeout_s))
+    @staticmethod
+    def _database_now(session) -> datetime:
+        dialect = session.get_bind().dialect.name
+        if dialect == "postgresql":
+            value = session.scalar(select(func.clock_timestamp()))
+        elif dialect == "sqlite":
+            value = session.scalar(select(func.strftime("%Y-%m-%dT%H:%M:%fZ", "now")))
+        else:
+            raise RuntimeError(f"unsupported shadow worker database {dialect!r}")
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc)
+        if type(value) is str:
+            return _parse(value)
+        raise RuntimeError("database did not return a usable UTC timestamp")
+
+    def _claim(self, *, batch_size: int) -> tuple[list[str], int]:
         earlier = aliased(V2MaterialShadowOutbox)
         with self._sessions() as session, session.begin():
+            database_now = self._database_now(session)
+            now = _format(database_now)
+            exhausted_rows = list(
+                session.scalars(
+                    select(V2MaterialShadowOutbox)
+                    .where(
+                        V2MaterialShadowOutbox.status
+                        == ShadowJobStatus.PROCESSING.value,
+                        V2MaterialShadowOutbox.attempts >= self._max_attempts,
+                        V2MaterialShadowOutbox.lease_expires_at <= now,
+                    )
+                    .with_for_update(skip_locked=True)
+                ).all()
+            )
+            for row in exhausted_rows:
+                row.status = ShadowJobStatus.FAILED.value
+                row.stable_error_code = ShadowErrorCode.LEASE_ATTEMPTS_EXHAUSTED.value
+                row.completed_at = now
+                row.next_attempt_at = None
+                row.lease_owner = None
+                row.lease_expires_at = None
+            session.flush()
             runnable = or_(
                 (
                     (V2MaterialShadowOutbox.status == ShadowJobStatus.PENDING.value)
@@ -103,10 +158,7 @@ class MaterialShadowWorker:
                 ),
                 (
                     (V2MaterialShadowOutbox.status == ShadowJobStatus.PROCESSING.value)
-                    & (
-                        V2MaterialShadowOutbox.claimed_at.is_(None)
-                        | (V2MaterialShadowOutbox.claimed_at <= stale_before)
-                    )
+                    & (V2MaterialShadowOutbox.lease_expires_at <= now)
                 ),
             )
             prior_unfinished = exists(
@@ -125,7 +177,11 @@ class MaterialShadowWorker:
             rows = list(
                 session.scalars(
                     select(V2MaterialShadowOutbox)
-                    .where(runnable, ~prior_unfinished)
+                    .where(
+                        runnable,
+                        V2MaterialShadowOutbox.attempts < self._max_attempts,
+                        ~prior_unfinished,
+                    )
                     .order_by(
                         V2MaterialShadowOutbox.session_version_id,
                         V2MaterialShadowOutbox.sequence_no,
@@ -136,8 +192,13 @@ class MaterialShadowWorker:
             )
             for row in rows:
                 row.status = ShadowJobStatus.PROCESSING.value
+                row.attempts += 1
                 row.claimed_at = now
-            return [row.job_id for row in rows]
+                row.lease_owner = self._worker_id
+                row.lease_expires_at = _format(
+                    database_now + timedelta(seconds=self._claim_timeout_s)
+                )
+            return [row.job_id for row in rows], len(exhausted_rows)
 
     def _load_projection(self, job_id: str, *, now: str) -> tuple:
         with self._sessions() as session:
@@ -197,9 +258,16 @@ class MaterialShadowWorker:
         self, job_id: str, projection: dict, *, now: str, cache_hit: bool
     ) -> None:
         with self._sessions() as session, session.begin():
-            job = session.get(V2MaterialShadowOutbox, job_id)
-            if job is None or job.status != ShadowJobStatus.PROCESSING.value:
-                raise RuntimeError("shadow job lost its processing lease")
+            database_now = _format(self._database_now(session))
+            job = session.get(V2MaterialShadowOutbox, job_id, with_for_update=True)
+            if (
+                job is None
+                or job.status != ShadowJobStatus.PROCESSING.value
+                or job.lease_owner != self._worker_id
+                or job.lease_expires_at is None
+                or job.lease_expires_at <= database_now
+            ):
+                raise ShadowLeaseLost("shadow job lost its processing lease")
             existing = session.scalar(
                 select(V2MaterialShadowEvaluation).where(
                     V2MaterialShadowEvaluation.job_id == job_id
@@ -266,15 +334,25 @@ class MaterialShadowWorker:
                     )
             job.status = ShadowJobStatus.DONE.value
             job.stable_error_code = ShadowErrorCode.NONE.value
-            job.completed_at = now
+            job.completed_at = database_now
             job.next_attempt_at = None
+            job.lease_owner = None
+            job.lease_expires_at = None
 
-    def _fail(self, job_id: str, *, now: str, code: ShadowErrorCode) -> bool:
+    def _fail(self, job_id: str, *, code: ShadowErrorCode) -> bool | None:
         with self._sessions() as session, session.begin():
-            job = session.get(V2MaterialShadowOutbox, job_id)
+            database_now = self._database_now(session)
+            now = _format(database_now)
+            job = session.get(V2MaterialShadowOutbox, job_id, with_for_update=True)
             if job is None:
                 return True
-            job.attempts += 1
+            if (
+                job.status != ShadowJobStatus.PROCESSING.value
+                or job.lease_owner != self._worker_id
+                or job.lease_expires_at is None
+                or job.lease_expires_at <= now
+            ):
+                return None
             job.stable_error_code = code.value
             terminal = job.attempts >= self._max_attempts or code in {
                 ShadowErrorCode.SNAPSHOT_DRIFT,
@@ -291,8 +369,10 @@ class MaterialShadowWorker:
                     self._retry_max_s,
                 )
                 job.status = ShadowJobStatus.PENDING.value
-                job.next_attempt_at = _format(_parse(now) + timedelta(seconds=delay))
+                job.next_attempt_at = _format(database_now + timedelta(seconds=delay))
                 job.claimed_at = None
+            job.lease_owner = None
+            job.lease_expires_at = None
             return terminal
 
     @staticmethod
@@ -309,8 +389,9 @@ class MaterialShadowWorker:
         return ShadowErrorCode.INTERNAL
 
     def drain_once(self, *, now: str, batch_size: int = 50) -> ShadowDrainResult:
-        ids = self._claim(now=now, batch_size=batch_size)
-        evaluated = retried = failed = 0
+        ids, exhausted = self._claim(batch_size=batch_size)
+        evaluated = retried = 0
+        failed = exhausted
         for job_id in ids:
             try:
                 job, pin_row, _binding, _session_version = self._load_projection(
@@ -329,7 +410,7 @@ class MaterialShadowWorker:
                 self._complete(job_id, projection, now=now, cache_hit=cache_hit)
                 evaluated += 1
             except Exception as exc:  # noqa: BLE001 - stable shadow-only failure state
-                terminal = self._fail(job_id, now=now, code=self._stable_code(exc))
+                terminal = self._fail(job_id, code=self._stable_code(exc))
                 if terminal:
                     failed += 1
                 else:
