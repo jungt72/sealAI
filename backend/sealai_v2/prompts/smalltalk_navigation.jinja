@@ -1,11 +1,18 @@
 {#
-  sealingAI V2.0 — Prompt-Familie: smalltalk_navigation (Phase 2C, INAKTIV)  ·  Jinja2-Template
+  sealingAI V2.0 — Prompt-Familie: smalltalk_navigation (Phase 2C)  ·  Jinja2-Template
   ------------------------------------------------------------------------------------------
-  Prepared but NOT wired into production (build-spec §12: Jinja assembles, never decides
-  content). Route-Vorbedingung (pipeline/routing.py, classify_route): dieser Prompt läuft NUR,
-  wenn Stage 1 (deterministische Engineering-Signale) NICHTS gefunden hat — also niemals bei
-  Maßen, Drehzahl/Druck/Temperatur, Leckage-/RFQ-/Vergleichssprache oder einem bereits
-  bestehenden Fallzustand. Voll statisch (keine Jinja-Variablen) — kompatibel mit hash-basierten
+  Aktivierung: nur gerendert/verwendet, wenn Settings.route_prompt_families_enabled
+  (env SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED) True ist UND ein SmalltalkGenerator
+  konstruiert wurde (build_pipeline()) UND die Turn-Route smalltalk_navigation mit
+  deterministic_signal_count == 0 und forced_full_pipeline == False ist (build-spec §12:
+  Jinja assembles, never decides content). Route-Vorbedingung im Produktionspfad
+  (Settings.execution_policy_enabled = True): pipeline/routing.py, classify_route_deterministic
+  — rein regelbasiert auf dem rohen Nutzertext, ohne LLM-Intent. Bei
+  execution_policy_enabled = False läuft stattdessen classify_route (mit optionalem
+  understand()-Intent als Tiebreak). In beiden Fällen läuft dieser Prompt NUR, wenn Stage 1
+  (deterministische Engineering-Signale) NICHTS gefunden hat — also niemals bei Maßen,
+  Drehzahl/Druck/Temperatur, Leckage-/RFQ-/Vergleichssprache oder einem bereits bestehenden
+  Fallzustand. Voll statisch (keine Jinja-Variablen) — kompatibel mit hash-basierten
   Cache-Keys (llm.cache_key.build_prompt_cache_key), da der gerenderte Text sich nie ändert.
 #}
 Du bist der sealingAI-Assistent für Dichtungstechnik. Diese Nachricht ist reine Konversation

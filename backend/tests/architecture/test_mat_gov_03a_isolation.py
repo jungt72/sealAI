@@ -60,7 +60,7 @@ PROTECTED_HASHES = {
         "a285ed7ad58e2fdee5b6a11793b4f88dff4f708510b510424a2090a32a3e1453"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "5842a3f7cd658036e867fafc4af74a0fedb2dfdab9b715708f5fd18d15ee7973"
+        "3b596540440b27ac34bc1f9ff57b0086e2a599ea12a8ddda3c1572afa1143bcb"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
         "cf042c0327fc7791fa22460a126783fb4c1d20383e169c6e4e7390d0a3872bde"
@@ -81,7 +81,7 @@ PROTECTED_HASHES = {
         "746c1c14050f996a37087999d4c1ba39068cb879cdb870f4745cea0962d3d6c1"
     ),
     "frontend-v2/src/contracts.ts": (
-        "1f0b3d92dba2b30d0207dca2bdfb05b63efea3f33960e67e74705482bce38963"
+        "7615d47b05b74363910e9879c2a0862d66b5c4fe8e1e98a82660f4b17816efbc"
     ),
     "frontend-v2/src/components/Answer.tsx": (
         "3d6f6ad1b9050032233b2525b20ec5476090d02e9821d38d8429cc15ef07c415"
