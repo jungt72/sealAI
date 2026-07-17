@@ -620,9 +620,9 @@ class Pipeline:
     # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
     # "" when no catalogs wired. Attached to every PipelineResult; never fed to L1/L3.
     wissensstand: str = ""
-    # Phase 2B (LangGraph-suitability audit): conservative routing. OFF -> classify_route() is
+    # Phase 2B (LangGraph-suitability audit): conservative routing. False: classify_route() is
     # never called at all (not just unused) -- strictly byte-identical to pre-Phase-2B behavior.
-    # ON -> a route is computed (telemetry-only unless the route is a CHEAP route with zero
+    # True: a route is computed (telemetry-only unless the route is a CHEAP route with zero
     # deterministic engineering signals, in which case L3 is skipped in favor of the SAME
     # existing run_parametric_guard fallback already used when the verifier is disabled --
     # no new guard mechanism is invented). Never affects engineering_case/leakage_troubleshooting/
@@ -1115,9 +1115,9 @@ class Pipeline:
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
 
-            # Phase 2B (LangGraph-suitability audit): conservative routing. OFF (default) ->
+            # Phase 2B (LangGraph-suitability audit): conservative routing. False:
             # this whole block is skipped -- classify_route() is never invoked, so behavior is
-            # strictly byte-identical to pre-Phase-2B. ON -> compute a route from the SAME
+            # strictly byte-identical to pre-Phase-2B. True: compute a route from the SAME
             # deterministic signals already computed above (decode_result/diagnosis/
             # gegencheck_verdict/mem.case_state) + the already-running understand() intent.
             # skip_l3_for_route stays False unless the route is a CHEAP route with ZERO

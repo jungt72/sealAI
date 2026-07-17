@@ -194,19 +194,23 @@ class Settings(BaseSettings):
     # invention); OFF -> byte-identical. Flip via SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED.
     material_param_table_enabled: bool = False
     # Phase 2B (LangGraph-suitability audit): conservative route classification
-    # (pipeline/routing.py). OFF (default) -> classify_route() is never called; the pipeline is
-    # strictly byte-identical to pre-Phase-2B behavior. ON -> a route is computed per turn from
+    # (pipeline/routing.py). False: classify_route() is never called; the pipeline is
+    # strictly byte-identical to pre-Phase-2B behavior. True: a route is computed per turn from
     # deterministic engineering signals (dimensions, pressure/temperature/rpm, PV, compression,
     # leakage/RFQ/replacement language, comparative-suitability claims, an already-known
     # material+medium pairing, or a non-empty accumulated case-state) + the already-running
-    # understand() intent. The router can only make the system MORE conservative: any engineering
-    # signal, or any doubt (missing/unklar intent), always forces the existing full engineering
-    # pipeline (unchanged L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero
-    # engineering signals were found -- may skip the LLM-based L3 verifier (Phase 2B safety
-    # correction: a stress test found real false-negatives on general_sealing_knowledge/
-    # material_knowledge's keyword signals against real eval questions, incl. injection fixtures
-    # -- both routes stay L3=True). When skipped, the EXISTING deterministic run_parametric_guard
-    # fallback (already used when the verifier is disabled) still runs -- no new guard invented.
+    # understand() intent -- UNLESS execution_policy_enabled is ALSO True, in which case
+    # pipeline.py uses classify_route_deterministic (no understand()/intent input at all) as the
+    # route decision instead, and this flag's own routing computation is telemetry-only (see
+    # pipeline.py's execution_policy_enabled vs. route_optimization_enabled branch). The router
+    # can only make the system MORE conservative: any engineering signal, or any doubt
+    # (missing/unklar intent), always forces the existing full engineering pipeline (unchanged
+    # L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero engineering signals were
+    # found -- may skip the LLM-based L3 verifier (Phase 2B safety correction: a stress test found
+    # real false-negatives on general_sealing_knowledge/material_knowledge's keyword signals
+    # against real eval questions, incl. injection fixtures -- both routes stay L3=True). When
+    # skipped, the EXISTING deterministic run_parametric_guard fallback (already used when the
+    # verifier is disabled) still runs -- no new guard invented.
     route_optimization_enabled: bool = False
     # Hybrid routing: deterministic engineering guards and known fast paths remain authoritative;
     # only otherwise-unclassified free language is sent to the bounded semantic classifier.
@@ -275,10 +279,11 @@ class Settings(BaseSettings):
         return self
 
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
-    # smalltalk_navigation prompt family. OFF (default) -> Pipeline.run() is byte-identical to
-    # pre-Phase-2D behavior even with route_optimization_enabled=True (the smalltalk generator is
-    # never constructed, so there is nothing to branch to). ON -> ONLY takes effect when ALL of
-    # the following hold for a turn: route_optimization_enabled is True, the classified route is
+    # smalltalk_navigation prompt family. False: Pipeline.run() is byte-identical to
+    # pre-Phase-2D behavior even with route_optimization_enabled/execution_policy_enabled True
+    # (the smalltalk generator is never constructed, so there is nothing to branch to). True:
+    # ONLY takes effect when ALL of the following hold for a turn: a route was actually computed
+    # (route_optimization_enabled OR execution_policy_enabled is True), the classified route is
     # smalltalk_navigation, forced_full_pipeline is False, and deterministic_signal_count is 0 --
     # in that case (and only that case) the compact, fully-static smalltalk_navigation.jinja
     # prompt + the existing cheap helper-tier model answer the turn instead of the full L1
