@@ -150,3 +150,90 @@ Claude-Sonnet-5 audit and explicit owner acceptance are still required for this
 exact commit. Push, PR, merge, production migration, MAT-GOV-03C, MAT-EVID-01,
 MED-NORM-01, active pointers, review/approval, activation, and visible material
 output remain NO-GO.
+
+## ODR-MAT-GOV-03B-20260717-01
+
+### Decision
+
+`ACCEPTED_AS_SEALED_IMPLEMENTATION_BASELINE`
+
+MAT-GOV-03B is accepted as complete within its explicitly limited local,
+non-authoritative, flag-off, zero-sampling shadow scope. This decision does not
+authorize merge, production migration, activation, sampling, authoritative
+use, MAT-GOV-03C, MAT-EVID-01, or MED-NORM-01.
+
+### Sealed implementation
+
+- Branch: `feature/mat-gov-03b`
+- Commit: `da126b1a6a1f75faf4790de7115284a21099e290`
+- Tree: `479728cb57717faf25219299d14345b9ffc530ae`
+- Parent: `c650c44b70326949f2985e9f0ff7ae82bf2f931a`
+- Commit count relative to parent: `1`
+- Worktree at evidence capture: `CLEAN`
+
+The sealed commit must not be amended, rebased, squashed, rewritten, or
+force-pushed. All corrections must be implemented as traceable child commits.
+
+### Audit evidence
+
+- Auditor model: `claude-sonnet-5`
+- Result: `APPROVED_WITH_NONBLOCKING_FINDINGS`
+- Web accesses: `0`
+- Permission denials: `0`
+- Audit input SHA-256:
+  `fb81a9f44e4d6f4797bd72816f79b964f64a6a3297243b064fec602a7b1d9465`
+- Audit result SHA-256:
+  `5bd5e153f292b698fce6154818d1fd541ac886bb72382c52070c3bb3524ceaaa`
+- Controlled summary: `docs/audits/MAT_GOV_03B_AUDIT_SUMMARY.md`
+- Durable raw-artifact location and retention:
+  `PENDING_OWNER_PROVIDED_ARTIFACT_LOCATION`
+
+The raw audit artifacts must be transferred from ephemeral storage to durable,
+access-controlled artifact storage. Their durable location and retention policy
+must be added to this record before merge adjudication.
+
+### Mandatory findings
+
+The following HIGH findings block merge, migration, activation, and sampling:
+
+1. Cache-key segments must use collision-safe, versioned, length-prefixed or
+   equivalently canonical encoding.
+2. Every successful worker lease acquisition must consume an attempt.
+   Repeatedly orphaned leases must eventually reach the configured limit and
+   transition to a durable terminal state.
+
+### Authorized actions
+
+- Preserve and register the sealed commit.
+- Push the unchanged branch to a protected remote reference.
+- Open a Draft PR clearly marked as activation-blocked.
+- Create traceable follow-up work from the sealed commit.
+- Execute tests and independent audits in isolated environments.
+
+### Prohibited actions
+
+- Amend, rebase, squash, or otherwise rewrite the sealed commit.
+- Merge before both HIGH findings are closed and re-audited.
+- Execute the migration in production.
+- Enable any MAT-GOV-03B runtime flag or increase sampling above zero.
+- Add an activation or admin mutation path.
+- Begin MAT-GOV-03C, MAT-EVID-01, or MED-NORM-01.
+- Treat any shadow result as authoritative.
+
+### Required next adjudication
+
+A new Owner Adjudication is required after both HIGH findings are closed, the
+full required test matrix and PostgreSQL concurrency/lease tests pass, flag-off
+output remains byte-identical, the follow-up delta receives an independent
+audit, and durable audit evidence is registered.
+
+### Status
+
+- MAT-GOV-03B implementation baseline: `ACCEPTED`
+- Merge readiness: `HOLD`
+- Production migration: `NO-GO`
+- Activation readiness: `NO-GO`
+- Sampling above zero: `NO-GO`
+- MAT-GOV-03C: `NO-GO`
+- MAT-EVID-01: `NO-GO`
+- MED-NORM-01: `NO-GO`
