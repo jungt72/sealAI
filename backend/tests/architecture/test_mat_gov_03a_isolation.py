@@ -5,10 +5,53 @@ from __future__ import annotations
 import ast
 import hashlib
 from pathlib import Path
-import sys
+
+from _model_schema_ast import load_material_schema, parse_material_schema_source
 
 
 REPO = Path(__file__).resolve().parents[3]
+MODELS = REPO / "backend/sealai_v2/db/models.py"
+EXPECTED_03A_SCHEMA = {
+    "v2_material_rulesets": frozenset(
+        {"ruleset_id", "domain_pack_id", "created_by_subject", "created_at"}
+    ),
+    "v2_material_ruleset_snapshots": frozenset(
+        {
+            "snapshot_id",
+            "ruleset_id",
+            "snapshot_schema_version",
+            "canonicalization_version",
+            "mat_gov_contract_version",
+            "content_sha256",
+            "canonical_payload_json",
+            "canonical_bytes",
+            "created_by_subject",
+            "created_at",
+        }
+    ),
+    "v2_material_snapshot_validation_events": frozenset(
+        {
+            "event_id",
+            "snapshot_id",
+            "validator_contract_version",
+            "validation_state",
+            "error_code",
+            "validation_sha256",
+            "created_at",
+        }
+    ),
+    "v2_material_snapshot_audit_events": frozenset(
+        {
+            "event_id",
+            "snapshot_id",
+            "event_type",
+            "actor_subject",
+            "event_payload_json",
+            "event_sha256",
+            "created_at",
+        }
+    ),
+}
 PROTECTED_HASHES = {
     "backend/sealai_v2/knowledge/matrix_seed.json": (
         "ab6a32cf9ef9deac402619cc1d0eaf67d30b39fa2c0c1d45fc2eb5782da4ed82"
@@ -78,27 +121,13 @@ def test_no_request_runtime_imports_mat_gov_03a() -> None:
 
 
 def test_03a_models_contain_no_lifecycle_or_runtime_tables() -> None:
-    sys.path.insert(0, str(REPO / "backend"))
-    import sealai_v2.db.models  # noqa: F401
-    from sealai_v2.db.engine import Base
-
+    schema = load_material_schema(MODELS)
     material_tables = {
-        name
-        for name in Base.metadata.tables
-        if name
-        in {
-            "v2_material_rulesets",
-            "v2_material_ruleset_snapshots",
-            "v2_material_snapshot_validation_events",
-            "v2_material_snapshot_audit_events",
-        }
+        name: columns
+        for name, columns in schema.items()
+        if not name.startswith("v2_material_shadow_")
     }
-    assert material_tables == {
-        "v2_material_rulesets",
-        "v2_material_ruleset_snapshots",
-        "v2_material_snapshot_validation_events",
-        "v2_material_snapshot_audit_events",
-    }
+    assert material_tables == EXPECTED_03A_SCHEMA
     forbidden = (
         "pointer",
         "approval",
@@ -110,3 +139,22 @@ def test_03a_models_contain_no_lifecycle_or_runtime_tables() -> None:
         "evaluation",
     )
     assert not any(token in table for table in material_tables for token in forbidden)
+
+
+def test_material_schema_parser_rejects_dynamic_declarations() -> None:
+    dynamic_table = """
+class V2MaterialShadowDynamic(Base):
+    __tablename__ = prefix + suffix
+    value: Mapped[str] = mapped_column(String())
+"""
+    dynamic_column = """
+class V2MaterialShadowDynamic(Base):
+    __tablename__ = "v2_material_shadow_dynamic"
+    value: Mapped[str] = build_column()
+"""
+    for source in (dynamic_table, dynamic_column):
+        try:
+            parse_material_schema_source(source)
+        except AssertionError:
+            continue
+        raise AssertionError("dynamic MAT-GOV schema declaration was accepted")

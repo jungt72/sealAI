@@ -7,8 +7,162 @@ import hashlib
 from pathlib import Path
 import sys
 
+from _model_schema_ast import load_material_schema
+
 
 REPO = Path(__file__).resolve().parents[3]
+MODELS = REPO / "backend/sealai_v2/db/models.py"
+EXPECTED_03B_SCHEMA = {
+    "v2_material_shadow_bindings": frozenset(
+        {
+            "binding_id",
+            "binding_schema_version",
+            "snapshot_id",
+            "content_sha256",
+            "environment",
+            "purpose",
+            "scope_kind",
+            "tenant_ref_hmac",
+            "hmac_key_id",
+            "domain_pack_id",
+            "domain_pack_version",
+            "evaluator_version",
+            "kernel_version",
+            "runtime_profile_sha256",
+            "build_git_sha",
+            "build_tree_hash",
+            "valid_from",
+            "valid_until",
+            "creator_subject",
+            "reason",
+            "sampling_policy_version",
+            "sampling_basis_points",
+            "created_at",
+        }
+    ),
+    "v2_material_shadow_binding_events": frozenset(
+        {
+            "event_id",
+            "event_schema_version",
+            "binding_id",
+            "event_type",
+            "actor_subject",
+            "reason",
+            "effective_at",
+            "created_at",
+            "event_sha256",
+        }
+    ),
+    "v2_material_shadow_pins": frozenset(
+        {
+            "pin_id",
+            "pin_schema_version",
+            "binding_id",
+            "snapshot_id",
+            "content_sha256",
+            "environment",
+            "purpose",
+            "scope_kind",
+            "tenant_ref_hmac",
+            "hmac_key_id",
+            "domain_pack_id",
+            "domain_pack_version",
+            "evaluator_version",
+            "kernel_version",
+            "runtime_profile_sha256",
+            "build_git_sha",
+            "build_tree_hash",
+            "sampling_policy_version",
+            "sampled",
+            "authority",
+            "positive_statement_allowed",
+            "acquired_at",
+            "binding_valid_until",
+        }
+    ),
+    "v2_material_shadow_session_versions": frozenset(
+        {
+            "session_version_id",
+            "session_ref_hmac",
+            "hmac_key_id",
+            "version_no",
+            "pin_id",
+            "created_at",
+        }
+    ),
+    "v2_material_shadow_session_upgrade_events": frozenset(
+        {
+            "event_id",
+            "from_session_version_id",
+            "to_session_version_id",
+            "actor_subject",
+            "reason",
+            "created_at",
+        }
+    ),
+    "v2_material_shadow_outbox": frozenset(
+        {
+            "job_id",
+            "pin_id",
+            "session_version_id",
+            "sequence_no",
+            "hmac_key_id",
+            "correlation_hmac",
+            "case_ref_hmac",
+            "decision_ref_hmac",
+            "material_id",
+            "medium_id",
+            "material_state",
+            "medium_state",
+            "medium_cardinality",
+            "relation_state",
+            "domain_pack_id",
+            "domain_pack_version",
+            "input_fingerprint",
+            "idempotency_key",
+            "status",
+            "attempts",
+            "stable_error_code",
+            "created_at",
+            "claimed_at",
+            "lease_owner",
+            "lease_expires_at",
+            "next_attempt_at",
+            "completed_at",
+        }
+    ),
+    "v2_material_shadow_evaluations": frozenset(
+        {
+            "evaluation_id",
+            "job_id",
+            "pin_id",
+            "hmac_key_id",
+            "evaluation_state",
+            "verdict",
+            "decisive_ref",
+            "result_sha256",
+            "stable_error_code",
+            "cache_hit",
+            "authority",
+            "positive_statement_allowed",
+            "created_at",
+            "expires_at",
+        }
+    ),
+    "v2_material_shadow_evaluation_matches": frozenset(
+        {"match_id", "evaluation_id", "rule_ref", "verdict", "source_ref"}
+    ),
+    "v2_material_shadow_evaluation_refs": frozenset(
+        {
+            "ref_id",
+            "evaluation_id",
+            "ref_kind",
+            "ref_hmac",
+            "hmac_key_id",
+            "authority",
+        }
+    ),
+}
 UNCHANGED_PUBLIC_SURFACES = {
     "backend/sealai_v2/knowledge/matrix_seed.json": (
         "ab6a32cf9ef9deac402619cc1d0eaf67d30b39fa2c0c1d45fc2eb5782da4ed82"
@@ -87,14 +241,13 @@ def test_shadow_capture_is_lazy_and_does_not_enter_pipeline_or_serializers() -> 
 
 
 def test_03b_schema_contains_no_activation_or_admin_aggregate() -> None:
-    sys.path.insert(0, str(REPO / "backend"))
-    import sealai_v2.db.models  # noqa: F401
-    from sealai_v2.db.engine import Base
-
+    schema = load_material_schema(MODELS)
     tables = {
-        name for name in Base.metadata.tables if name.startswith("v2_material_shadow_")
+        name: columns
+        for name, columns in schema.items()
+        if name.startswith("v2_material_shadow_")
     }
-    assert len(tables) == 9
+    assert tables == EXPECTED_03B_SCHEMA
     forbidden = (
         "active_pointer",
         "approval",
@@ -107,10 +260,6 @@ def test_03b_schema_contains_no_activation_or_admin_aggregate() -> None:
 
 
 def test_shadow_schema_never_persists_raw_identity_or_conversation_fields() -> None:
-    sys.path.insert(0, str(REPO / "backend"))
-    import sealai_v2.db.models  # noqa: F401
-    from sealai_v2.db.engine import Base
-
     raw_identifier_columns = {
         "tenant_id",
         "session_id",
@@ -127,12 +276,11 @@ def test_shadow_schema_never_persists_raw_identity_or_conversation_fields() -> N
         "exception",
         "werkstoff_tendenz",
     }
-    shadow_tables = (
-        table
-        for name, table in Base.metadata.tables.items()
+    shadow_tables = {
+        name: columns
+        for name, columns in load_material_schema(MODELS).items()
         if name.startswith("v2_material_shadow_")
-    )
-    for table in shadow_tables:
-        column_names = {column.name for column in table.columns}
-        assert column_names.isdisjoint(raw_identifier_columns), table.name
-        assert column_names.isdisjoint(content_columns), table.name
+    }
+    for table_name, column_names in shadow_tables.items():
+        assert column_names.isdisjoint(raw_identifier_columns), table_name
+        assert column_names.isdisjoint(content_columns), table_name
