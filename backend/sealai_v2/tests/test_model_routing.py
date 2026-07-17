@@ -61,7 +61,9 @@ def test_build_pipeline_warns_once_when_execution_policy_disables_understand(cap
     with caplog.at_level("WARNING", logger="sealai_v2.pipeline"):
         build_pipeline(Settings(execution_policy_enabled=True), FakeLlmClient("x"))
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
-    assert any("understand()" in r.message and "deaktiviert" in r.message for r in warnings)
+    assert any(
+        "understand()" in r.message and "deaktiviert" in r.message for r in warnings
+    )
 
 
 def test_build_pipeline_does_not_warn_when_understand_stays_reachable(caplog):

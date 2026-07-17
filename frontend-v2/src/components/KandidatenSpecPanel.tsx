@@ -34,7 +34,7 @@ export function KandidatenSpecPanel({ data }: { data: KandidatenSpec }) {
   // OD-3 (routing audit follow-up): a non-RWDR seal type is a structural scope boundary, not an
   // empty/absent panel -- render the backend's own geltungsrahmen honestly instead of a candidate
   // space the rule engine never computed for this seal type. Render-only, no candidate content.
-  if ("status" in data && data.status === "not_available_for_seal_type") {
+  if ("status" in data) {
     return (
       <section
         className="medium-panel"

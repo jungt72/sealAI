@@ -124,9 +124,7 @@ def test_compute_o_ring_returns_structured_marker():
 def test_compute_skips_when_no_basis_even_for_non_rwdr():
     # The no-basis short-circuit only applies to the RWDR path; a non-RWDR seal type returns the
     # marker regardless of basis (it is a scope statement, not a data-completeness statement).
-    spec = compute_kandidaten_spec(
-        _facts(), "q", enabled=True, seal_type="O-Ring"
-    )
+    spec = compute_kandidaten_spec(_facts(), "q", enabled=True, seal_type="O-Ring")
     assert spec["status"] == "not_available_for_seal_type"
 
 
