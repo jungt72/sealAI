@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import os
 from threading import Barrier, Event
+import time
 
 import pytest
 from sqlalchemy import func, inspect, select
@@ -80,6 +81,11 @@ def _attempt_canary_binding(repository, binding, barrier: Barrier) -> str:
     except (ValueError, IntegrityError, DBAPIError):
         return "rejected"
     return "created"
+
+
+def _attempt_worker_claim(worker: MaterialShadowWorker, barrier: Barrier):
+    barrier.wait(timeout=10)
+    return worker._claim(batch_size=1)
 
 
 class _BlockingCache(DictCache):
@@ -221,6 +227,84 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     assert [row.attempts for row in completed_jobs] == [1, 1]
     assert all(row.lease_owner is None for row in completed_jobs)
     assert all(row.lease_expires_at is None for row in completed_jobs)
+
+    orphan = repository.persist_pin_and_job(
+        binding=winning,
+        identity=IDENTITY,
+        session_id="shared-concurrent-session",
+        correlation_id="request-orphan",
+        material_input=_input(),
+        hmac_keyring=_keyring(),
+        acquired_at="2026-07-17T12:42:00.000000Z",
+    )
+    crashed_worker = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=2,
+        claim_timeout_s=1,
+        worker_id="postgres-worker-crashed",
+    )
+    assert crashed_worker._claim(batch_size=1) == ([orphan.job_id], 0)
+    time.sleep(1.1)
+
+    reclaimers = (
+        MaterialShadowWorker(
+            session_factory=factory,
+            cache=DictCache(),
+            keyring=_keyring(),
+            max_attempts=2,
+            claim_timeout_s=1,
+            worker_id="postgres-reclaimer-a",
+        ),
+        MaterialShadowWorker(
+            session_factory=factory,
+            cache=DictCache(),
+            keyring=_keyring(),
+            max_attempts=2,
+            claim_timeout_s=1,
+            worker_id="postgres-reclaimer-b",
+        ),
+    )
+    reclaim_barrier = Barrier(2)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reclaim_results = list(
+            executor.map(
+                lambda worker: _attempt_worker_claim(worker, reclaim_barrier),
+                reclaimers,
+            )
+        )
+    assert sum(len(job_ids) for job_ids, _exhausted in reclaim_results) == 1
+    assert all(exhausted == 0 for _job_ids, exhausted in reclaim_results)
+    with factory() as session:
+        reclaimed = session.get(V2MaterialShadowOutbox, orphan.job_id)
+    assert reclaimed is not None
+    assert reclaimed.status == "processing"
+    assert reclaimed.attempts == 2
+    assert reclaimed.lease_owner in {
+        "postgres-reclaimer-a",
+        "postgres-reclaimer-b",
+    }
+
+    time.sleep(1.1)
+    terminal = MaterialShadowWorker(
+        session_factory=factory,
+        cache=DictCache(),
+        keyring=_keyring(),
+        max_attempts=2,
+        claim_timeout_s=1,
+        worker_id="postgres-terminalizer",
+    ).drain_once(now="2026-07-17T12:43:00.000000Z", batch_size=1)
+    assert terminal.claimed == 0
+    assert terminal.failed == 1
+    with factory() as session:
+        exhausted = session.get(V2MaterialShadowOutbox, orphan.job_id)
+    assert exhausted is not None
+    assert exhausted.status == "failed"
+    assert exhausted.attempts == 2
+    assert exhausted.stable_error_code == "SHADOW_LEASE_ATTEMPTS_EXHAUSTED"
+    assert exhausted.lease_owner is None
+    assert exhausted.lease_expires_at is None
 
     tenant_value = f"tenant\x00{IDENTITY.tenant_id}"
     canary_old = _binding(
