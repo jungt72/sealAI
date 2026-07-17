@@ -620,9 +620,9 @@ class Pipeline:
     # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
     # "" when no catalogs wired. Attached to every PipelineResult; never fed to L1/L3.
     wissensstand: str = ""
-    # Phase 2B (LangGraph-suitability audit): conservative routing. OFF -> classify_route() is
+    # Phase 2B (LangGraph-suitability audit): conservative routing. False: classify_route() is
     # never called at all (not just unused) -- strictly byte-identical to pre-Phase-2B behavior.
-    # ON -> a route is computed (telemetry-only unless the route is a CHEAP route with zero
+    # True: a route is computed (telemetry-only unless the route is a CHEAP route with zero
     # deterministic engineering signals, in which case L3 is skipped in favor of the SAME
     # existing run_parametric_guard fallback already used when the verifier is disabled --
     # no new guard mechanism is invented). Never affects engineering_case/leakage_troubleshooting/
@@ -831,8 +831,10 @@ class Pipeline:
             tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
-        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +
-        # fail-open. A render surface only — never injected into L1/L3 (the prompt stays byte-identical).
+        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3).
+        # Non-RWDR seal type -> the structured not_available_for_seal_type marker (OD-3), not a silent
+        # None; an actual compute error still fails open to plain None (see produktspec_step.py). A
+        # render surface only — never injected into L1/L3 (the prompt stays byte-identical).
         seal_type = next(
             (
                 f.wert
@@ -1115,9 +1117,9 @@ class Pipeline:
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
 
-            # Phase 2B (LangGraph-suitability audit): conservative routing. OFF (default) ->
+            # Phase 2B (LangGraph-suitability audit): conservative routing. False:
             # this whole block is skipped -- classify_route() is never invoked, so behavior is
-            # strictly byte-identical to pre-Phase-2B. ON -> compute a route from the SAME
+            # strictly byte-identical to pre-Phase-2B. True: compute a route from the SAME
             # deterministic signals already computed above (decode_result/diagnosis/
             # gegencheck_verdict/mem.case_state) + the already-running understand() intent.
             # skip_l3_for_route stays False unless the route is a CHEAP route with ZERO
@@ -2301,6 +2303,16 @@ def build_pipeline(
         raise RuntimeError(
             "build_pipeline needs either a single ``client`` (all roles share it) or a "
             "``client_for`` provider factory (per-role routing) — never neither."
+        )
+    if settings.understand_enabled and settings.execution_policy_enabled:
+        # Logged once here (build time), not per-turn: run()'s own guard (`if self.understand_enabled
+        # and not self.execution_policy_enabled`, pipeline.py:1006) is False on every turn whenever
+        # both flags are True, so understand() (the soft LLM-intent stage) never actually runs in
+        # this configuration -- purely observational, no behavior change.
+        _log.warning(
+            "understand() ist in dieser Konfiguration deaktiviert: "
+            "execution_policy_enabled=true unterdrückt die soft-intent-Stufe trotz "
+            "understand_enabled=true (siehe pipeline.py:1006)."
         )
     # Single-client mode: ignore provider, return the one client (preserves the fake-client tests
     # and the default object graph). Factory mode: each role resolves its provider's client.

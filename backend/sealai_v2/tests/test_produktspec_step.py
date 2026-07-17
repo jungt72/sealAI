@@ -11,6 +11,7 @@ from sealai_v2.pipeline.produktspec_step import (
     _num,
     case_state_to_fall,
     compute_kandidaten_spec,
+    not_available_for_seal_type_marker,
 )
 
 
@@ -66,13 +67,65 @@ def test_compute_gated_off_returns_none():
     )
 
 
-def test_compute_skips_non_rwdr_seal_type():
-    assert (
-        compute_kandidaten_spec(
-            _facts(medium="Öl"), "q", enabled=True, seal_type="hydraulik"
-        )
-        is None
+def test_compute_non_rwdr_seal_type_returns_structured_marker_not_none():
+    # OD-3: a non-RWDR seal type is a structural scope boundary, not a silent None -- the caller
+    # (and ultimately the frontend render surface) can tell "out of scope for this seal type"
+    # apart from "nothing to specify yet" (which still returns plain None, see the no-basis test).
+    spec = compute_kandidaten_spec(
+        _facts(medium="Öl"), "q", enabled=True, seal_type="hydraulik"
     )
+    assert spec == {
+        "status": "not_available_for_seal_type",
+        "seal_type": "hydraulik",
+        "geltungsrahmen": (
+            'Kandidaten-Spezifikation ist für den Dichtungstyp "hydraulik" nicht '
+            "verfügbar — die Regel-Engine deckt ausschließlich RWDR/DIN-3760 ab."
+        ),
+    }
+
+
+def test_compute_glrd_returns_structured_marker():
+    # OD-3 worked example 1/2: Gleitringdichtung (GLRD) -- a real, non-RWDR seal type extracted by
+    # core.seal_type_extract -- gets the marker even with a full engineering basis (medium +
+    # Wellendurchmesser), not the RWDR candidate dict.
+    spec = compute_kandidaten_spec(
+        _facts(
+            medium="Mineralöl",
+            wellendurchmesser="40 mm",
+            drehzahl="3000 U/min",
+            betriebstemperatur="80 °C",
+        ),
+        "GLRD für ein Getriebe",
+        enabled=True,
+        seal_type="Gleitringdichtung",
+    )
+    assert spec["status"] == "not_available_for_seal_type"
+    assert spec["seal_type"] == "Gleitringdichtung"
+    assert "material" not in spec  # never the RWDR shape's rich keys
+    assert "axes" not in spec
+
+
+def test_compute_o_ring_returns_structured_marker():
+    # OD-3 worked example 2/2: O-Ring, same basis as the RWDR-success test below.
+    spec = compute_kandidaten_spec(
+        _facts(
+            medium="Mineralöl",
+            wellendurchmesser="40 mm",
+            drehzahl="3000 U/min",
+            betriebstemperatur="80 °C",
+        ),
+        "O-Ring für eine Pumpe",
+        enabled=True,
+        seal_type="O-Ring",
+    )
+    assert spec == not_available_for_seal_type_marker("O-Ring")
+
+
+def test_compute_skips_when_no_basis_even_for_non_rwdr():
+    # The no-basis short-circuit only applies to the RWDR path; a non-RWDR seal type returns the
+    # marker regardless of basis (it is a scope statement, not a data-completeness statement).
+    spec = compute_kandidaten_spec(_facts(), "q", enabled=True, seal_type="O-Ring")
+    assert spec["status"] == "not_available_for_seal_type"
 
 
 def test_compute_skips_when_no_basis():
