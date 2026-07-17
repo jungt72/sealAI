@@ -89,11 +89,15 @@ pending or processing sequence. Claims have finite leases, retries are bounded
 and exponential, evaluation plus job completion is atomic, and only stable
 error codes persist.
 
-The separate Redis namespace is `sealai:material-shadow:v1`. Keys bind tenant
-HMAC/key version, snapshot ID/hash, evaluator/kernel/domain/policy versions and
-the canonical input fingerprint. Values contain reference-only evaluation
-projections. Redis failure stops shadow; there is no in-process, cross-snapshot,
-or last-known-good fallback.
+The separate Redis namespace is `mat-shadow:v2:`. One central encoder binds
+tenant HMAC/key version, snapshot ID/hash, evaluator/kernel/domain/policy
+versions and the canonical input fingerprint as UTF-8 byte segments. The
+versioned domain and every segment are encoded with an unsigned 32-bit
+big-endian length before base64url projection, so empty, separator-bearing and
+Unicode segments cannot collide. Unknown, legacy or malformed key versions are
+cache misses and are never authoritative. Values contain reference-only
+evaluation projections. Redis failure stops shadow; there is no in-process,
+cross-snapshot, or last-known-good fallback.
 
 Postgres remains the system of record. Process-local reconciliation polls every
 15 seconds by default with deterministic +/-10 percent jitter and a 60-second

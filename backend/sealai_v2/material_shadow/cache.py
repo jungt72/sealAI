@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
+import struct
 from typing import Any, Protocol
 
 from sealai_v2.core.material_shadow import ShadowMaterialRulesetPin
 
 
-SHADOW_CACHE_NAMESPACE = "sealai:material-shadow:v1"
+SHADOW_CACHE_NAMESPACE = "mat-shadow:v2:"
+_CACHE_KEY_DOMAIN = b"sealai.material-shadow.cache-key.v2"
+_CACHE_KEY_COMPONENT_COUNT = 10
+_UINT32_MAX = (1 << 32) - 1
 _HEX64 = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 _CACHE_FIELDS = frozenset(
     {
@@ -33,13 +39,60 @@ class ShadowCache(Protocol):
     def put(self, key: str, value: dict[str, Any], *, ttl_s: int) -> None: ...
 
 
+def encode_cache_key_segments(segments: tuple[str, ...]) -> str:
+    """Encode stable cache-key segments without delimiter ambiguity."""
+
+    if type(segments) is not tuple or any(
+        type(segment) is not str for segment in segments
+    ):
+        raise TypeError("shadow cache key segments must be a tuple of strings")
+    encoded = (_CACHE_KEY_DOMAIN, *(segment.encode("utf-8") for segment in segments))
+    if any(len(segment) > _UINT32_MAX for segment in encoded):
+        raise ValueError("shadow cache key segment exceeds uint32 length")
+    payload = bytearray(struct.pack(">I", len(encoded)))
+    for segment in encoded:
+        payload.extend(struct.pack(">I", len(segment)))
+        payload.extend(segment)
+    token = base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+    return f"{SHADOW_CACHE_NAMESPACE}{token}"
+
+
+def _is_current_cache_key(key: object) -> bool:
+    if type(key) is not str or not key.startswith(SHADOW_CACHE_NAMESPACE):
+        return False
+    token = key.removeprefix(SHADOW_CACHE_NAMESPACE)
+    if not token:
+        return False
+    try:
+        padding = "=" * (-len(token) % 4)
+        payload = base64.b64decode(f"{token}{padding}", altchars=b"-_", validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    if len(payload) < 4:
+        return False
+    segment_count = struct.unpack_from(">I", payload)[0]
+    if segment_count != _CACHE_KEY_COMPONENT_COUNT + 1:
+        return False
+    offset = 4
+    decoded: list[bytes] = []
+    for _index in range(segment_count):
+        if offset + 4 > len(payload):
+            return False
+        length = struct.unpack_from(">I", payload, offset)[0]
+        offset += 4
+        if offset + length > len(payload):
+            return False
+        decoded.append(payload[offset : offset + length])
+        offset += length
+    return offset == len(payload) and decoded[0] == _CACHE_KEY_DOMAIN
+
+
 def cache_key(
     *,
     pin: ShadowMaterialRulesetPin,
     input_fingerprint: str,
 ) -> str:
     components = (
-        SHADOW_CACHE_NAMESPACE,
         pin.hmac_key_id,
         pin.tenant_ref_hmac,
         pin.snapshot_id,
@@ -60,7 +113,7 @@ def cache_key(
         raise ValueError(
             "shadow cache key components must be stable non-whitespace IDs"
         )
-    return ":".join(components)
+    return encode_cache_key_segments(components)
 
 
 def validate_cache_value(value: dict[str, Any]) -> dict[str, Any]:
@@ -142,6 +195,8 @@ class RedisShadowCache:
         self._client = client
 
     def get(self, key: str) -> dict[str, Any] | None:
+        if not _is_current_cache_key(key):
+            return None
         try:
             raw = self._client.get(key)
         except Exception as exc:  # noqa: BLE001 - converted to a stable shadow-only state
@@ -157,6 +212,8 @@ class RedisShadowCache:
         return validate_cache_value(value)
 
     def put(self, key: str, value: dict[str, Any], *, ttl_s: int) -> None:
+        if not _is_current_cache_key(key):
+            raise ValueError("shadow cache key is not in the current domain")
         clean = validate_cache_value(value)
         if type(ttl_s) is not int or ttl_s <= 0:
             raise ValueError("shadow cache TTL must be positive")

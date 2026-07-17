@@ -227,8 +227,10 @@ decision correlation is HMAC-SHA-256 with a versioned key ID, never raw identity
 Session versions are immutable and explicitly upgraded; a per-session advisory
 lock and monotone sequence prevent concurrent creation or worker reordering.
 
-The isolated cache namespace binds tenant HMAC/key version, exact snapshot and
-hash, evaluator/kernel/domain/policy versions, and a canonical input fingerprint.
+The isolated `mat-shadow:v2:` cache namespace binds tenant HMAC/key version,
+exact snapshot and hash, evaluator/kernel/domain/policy versions, and a
+canonical input fingerprint through a versioned, uint32-length-prefixed UTF-8
+encoding. Legacy, malformed and unknown key versions are cache misses.
 The isolated worker persists only verdict/reference projections and stable
 technical codes. Postgres remains authoritative; Redis and notification are
 optimizations with no in-process, last-known-good, or cross-snapshot fallback.
