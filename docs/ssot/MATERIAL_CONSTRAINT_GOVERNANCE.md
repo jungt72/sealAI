@@ -1,8 +1,9 @@
 # Material-Constraint Governance
 
-Status: MAT-GOV-01 and MAT-GOV-02 implemented default-off; no material-rule
-activation. Independent review and all activation gates remain required.
-Owner decisions ratified 2026-07-16.
+Status: MAT-GOV-01/02 and the inert technical MAT-GOV-03A snapshot foundation
+implemented default-off; no material-rule activation. MAT-GOV-03B/03C,
+independent review, MAT-EVID-01, and every activation gate remain required.
+Owner decisions ratified through 2026-07-17.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
 P12 to material constraints. It does not add material facts, media classes,
@@ -125,15 +126,82 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | --- | --- |
 | MAT-GOV-01 | Canonical typed result, unchanged verdict values, stable conditional references, legacy Gegencheck adapter, default-off additive serialization |
 | MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
-| MAT-GOV-03 | Ruleset persistence, review/activation, rollback, and immutable decision-snapshot pinning |
+| MAT-GOV-03A | Versioned ruleset/snapshot identity, sealingAI JCS profile v1, domain-separated content hash, deep immutability, empty technical persistence and append-only technical audit; no runtime selection |
+| MAT-GOV-03B | Request/session/case/decision/evaluation pinning, cache binding, shadow resolver and bounded reconciliation; NO-GO |
+| MAT-GOV-03C | Evidence review/approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01 and separate owner approval |
 
-MAT-GOV-01/02 contain no database migration, ruleset lifecycle, new material
-rule, medium catalog, evidence migration, thermal model, or frontend
-recommendation. `material_constraints_enabled` defaults to false. While false,
-the historical Gegencheck code path and API payload remain unchanged and contain
-no `material_constraints` key. Enabling the contract requires the separately
+MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
+adds only inert technical snapshot persistence and is not imported by the
+request runtime. None of these packages adds a material rule, medium catalog,
+evidence migration, thermal model, or frontend recommendation.
+`material_constraints_enabled` defaults to false. While false, the historical
+Gegencheck code path and API payload remain unchanged and contain no
+`material_constraints` key. Enabling the contract requires the separately
 default-off compatibility matrix setting; an invalid flag combination is
 rejected during settings validation.
+
+## MAT-GOV-03A technical snapshot contract
+
+Snapshot schema v1 contains the closed fields
+`snapshot_schema_version`, `canonicalization_version`,
+`mat_gov_contract_version`, `domain_pack_id`, fixed
+`positive_statement_allowed=false`, and an ordered rule array. Every rule uses
+the existing `MaterialConstraintVerdict`; 03A introduces no second verdict
+taxonomy. Rule scopes contain the only explicitly set-valued fields:
+`materials`, `media`, and `conditions`.
+
+Evidence schema v1 is exactly:
+
+```json
+{"state":"unbound"}
+```
+
+No additional field, null value, claim/source/review/authority reference, or
+bound/reviewed/approved/grounded state is accepted. MAT-EVID-01 must introduce a
+new snapshot schema version. Existing snapshots are never mutated.
+
+Canonicalization v1 is the sealingAI I-JSON/JCS profile:
+
+- duplicate properties, unknown fields, floats, non-finite numbers, implicit
+  conversions, invalid Unicode, non-NFC strings, and BOMs are rejected;
+- validated strings, prose, whitespace, line endings, case, media labels, and
+  units are not normalized;
+- JSON properties are recursively sorted and serialized as compact UTF-8
+  without BOM;
+- ordinary array order is retained;
+- only the three typed scope sets are deduplicated and sorted by UTF-8 bytes.
+
+The exact content identity is:
+
+```text
+canonical_bytes = UTF8(JCS_V1(validated_snapshot_payload))
+content_sha256 = SHA-256(
+  b"sealai.material-ruleset.content.v1\x00" + canonical_bytes
+)
+snapshot_id = "mss_" + SHA-256(
+  b"sealai.material-ruleset.snapshot.v1\x00"
+  + ASCII(ruleset_id) + b"\x00" + ASCII(content_sha256)
+).hexdigest()
+```
+
+`ruleset_id` is server-generated as `mrs_<32 lowercase hex>`. Creator,
+timestamp, future monotone version, lifecycle, review, audit, deployment, and
+activation metadata do not enter the content hash. Schema, canonicalization
+version, MAT-GOV contract version, domain pack, ordered rules, scopes, and the
+unbound evidence object do enter it.
+
+Four initially empty Postgres tables persist family identities, immutable
+snapshots, technical validation events, and append-only technical audit events.
+Internal foreign keys use `ON DELETE RESTRICT`; database triggers reject update
+and delete. This is the bounded ADR exception to the legacy No-FK convention.
+The repository exposes no update/delete/lifecycle API and revalidates schema,
+bytes, hash, identity, and domain-pack binding on every read. Drift produces a
+controlled quarantine-candidate error but no 03C lifecycle mutation.
+
+03A performs no seed import, backfill, runtime dependency injection, pipeline
+or cache integration, API/serializer/frontend change, pointer selection,
+pinning, review, approval, activation, rollback, readiness, or reconciliation.
+Its migration is not approved for production execution.
 
 ## Ratified owner decisions
 
@@ -152,7 +220,10 @@ rejected during settings validation.
 7. Executable RWDR thermal calculation remains NO-GO until separately sourced,
    reviewed, tested, and owner-activated.
 
-Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Ruleset lifecycle and snapshot
-binding require MAT-GOV-03; structured multi-medium evaluation requires
-MED-NORM-01. Until those packages, material-rule evidence, independent review,
-and owner activation are complete, the contract remains default-off.
+Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Technical immutable snapshot
+identity is implemented by MAT-GOV-03A, but runtime pinning requires 03B and
+evidence-bound lifecycle/activation requires 03C. Structured multi-medium
+evaluation requires MED-NORM-01. Until those packages, MAT-EVID-01, both open
+MAT-GOV-02 activation follow-ups, independent review, and owner activation are
+complete, the contract remains default-off and no snapshot is approvable or
+active.

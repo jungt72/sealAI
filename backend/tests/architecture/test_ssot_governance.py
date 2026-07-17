@@ -100,6 +100,21 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
         in maturity["modes"]["knowledge"]["activation_blockers"]
     )
 
+    material = maturity["capabilities"]["material_constraints"]
+    assert material["implementation_status"] == "mat_gov_03a_inert_default_off"
+    assert material["contract_version"] == "MAT-GOV-03A"
+    assert {
+        "MAT-GOV-03B",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
+        "MED-NORM-01",
+        "mat_gov_02_payload_and_hard_gate_followups",
+        "owner_activation",
+    } <= set(material["activation_blockers"])
+    assert material["scope_limit"] == (
+        "technical_snapshot_infrastructure_only_no_runtime_selection"
+    )
+
 
 def test_seed_review_state_never_launders_model_review_into_authority() -> None:
     import sys
@@ -226,6 +241,7 @@ def test_owner_decisions_and_companion_contracts_are_present() -> None:
     decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
     for number in range(1, 9):
         assert f"ODR-{number:02d}" in decisions
+    assert "ODR-12: MAT-GOV-03A technical snapshot foundation" in decisions
 
     for name in (
         "INVARIANT_MAPPING.md",

@@ -102,20 +102,31 @@
   "capabilities": {
     "material_constraints": {
       "status": "in_build_default_off",
-      "contract_version": "MAT-GOV-02",
+      "implementation_status": "mat_gov_03a_inert_default_off",
+      "contract_version": "MAT-GOV-03A",
       "activation_gate": "G8",
       "activation_blockers": [
-        "MAT-GOV-03",
+        "MAT-GOV-03B",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
         "MED-NORM-01",
         "material_rule_evidence",
+        "mat_gov_02_payload_and_hard_gate_followups",
         "owner_activation"
       ],
       "evidence": [
         "docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md",
+        "docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md",
+        "backend/sealai_v2/core/material_rulesets.py",
+        "backend/sealai_v2/db/material_rulesets.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0011_mat_gov_03a_snapshots.py",
         "backend/sealai_v2/core/material_constraints.py",
         "backend/sealai_v2/tests/test_material_constraints.py",
         "backend/sealai_v2/tests/test_mat_gov_02.py",
-        "backend/sealai_v2/tests/test_interview_governance.py"
+        "backend/sealai_v2/tests/test_interview_governance.py",
+        "backend/sealai_v2/tests/test_mat_gov_03a_domain.py",
+        "backend/sealai_v2/tests/test_mat_gov_03a_persistence.py",
+        "backend/tests/architecture/test_mat_gov_03a_isolation.py"
       ]
     },
     "adaptive_interview_rwdr": {

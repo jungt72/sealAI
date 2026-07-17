@@ -40,7 +40,8 @@ the repository, but it may not override the SSoT.
 - `INTEROPERABILITY_CHARTER.md`: lifecycle and external data-contract policy.
 - `QUALITY_ASSURANCE_PLAN.md`: review, validation, incident, and CAPA policy.
 - `MATERIAL_CONSTRAINT_GOVERNANCE.md`: default-off MAT-GOV package boundaries,
-  canonical verdict contract, and owner activation constraints.
+  canonical verdict contract, inert MAT-GOV-03A snapshot foundation, and owner
+  activation constraints.
 
 ## Change rule
 

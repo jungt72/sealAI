@@ -111,3 +111,21 @@ rollback, and snapshot pinning. Produktspec remains default-off and is not
 automatically migrated. Unreviewed LLM material tendencies cannot become
 canonical or positive material statements. Executable RWDR thermal calculation
 remains NO-GO. No material-rule activation follows from MAT-GOV-01/02.
+
+## ODR-12: MAT-GOV-03A technical snapshot foundation
+
+Decision: on 2026-07-17 the owner authorized implementation of MAT-GOV-03A
+only: versioned ruleset/snapshot identity, the sealingAI JCS profile v1,
+domain-separated content addressing, deeply immutable domain values, additive
+empty persistence, technical validation, and append-only technical audit. The
+evidence object is exactly `{ "state": "unbound" }`; MAT-EVID-01 requires a new
+snapshot schema version rather than mutation of v1.
+
+Consequence: MAT-GOV-03A remains inert and default-off. It creates no request
+pin, shadow selection, cache/readiness integration, active pointer, review,
+approval, cohort, lease, activation, rollback, admin/public API, pipeline,
+serializer, prompt, or frontend change. The matrix seed is neither imported nor
+approved. The additive migration is not authorized for production execution.
+MAT-GOV-03B and MAT-GOV-03C remain NO-GO pending separate owner adjudication;
+MAT-EVID-01 and both MAT-GOV-02 activation blockers remain open. MED-NORM-01,
+Produktspec, and RWDR-THERM-01 are unchanged.

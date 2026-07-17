@@ -27,23 +27,30 @@ never been on in production, so these tables have zero real rows. See each class
 per-table detail; ``V2MemoryOutbox.operation`` -> ``event_type`` is the one rename (same zero-rows
 reasoning makes it safe now, would not be after real data exists).
 
-No ``ForeignKey`` constraints (matches this schema's existing convention above — a green-field,
-still-evolving schema avoids FK migration friction; referential integrity for ``memory_item_id`` is
-an application-layer concern, same as every other table here).
+No ``ForeignKey`` constraints in the legacy V2 aggregates (matches this schema's existing convention
+above — a green-field, still-evolving schema avoids FK migration friction; referential integrity for
+``memory_item_id`` is an application-layer concern, same as every other legacy table here).
+MAT-GOV-03A is the deliberately narrow exception documented in
+``docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md``: its new, self-contained aggregate uses real
+``ON DELETE RESTRICT`` foreign keys and does not retrofit existing tables.
 """
 
 from __future__ import annotations
 
 from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
     JSON,
     Boolean,
     Float,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from sealai_v2.db.engine import Base
@@ -750,3 +757,146 @@ class V2LegalAcceptance(Base):
         String(64), nullable=False, default=""
     )
     accepted_user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), "postgresql")
+
+
+class V2MaterialRuleset(Base):
+    """Stable MAT-GOV-03A family identity; no lifecycle or active-version state."""
+
+    __tablename__ = "v2_material_rulesets"
+    __table_args__ = (
+        CheckConstraint(
+            "length(ruleset_id) = 36 AND ruleset_id LIKE 'mrs_%'",
+            name="ck_v2_material_ruleset_id",
+        ),
+    )
+
+    ruleset_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialRulesetSnapshot(Base):
+    """Immutable, content-addressed MAT-GOV-03A snapshot payload."""
+
+    __tablename__ = "v2_material_ruleset_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "ruleset_id",
+            "content_sha256",
+            name="uq_v2_material_ruleset_snapshot_content",
+        ),
+        CheckConstraint(
+            "length(snapshot_id) = 68 AND snapshot_id LIKE 'mss_%'",
+            name="ck_v2_material_snapshot_id",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND content_sha256 = lower(content_sha256)",
+            name="ck_v2_material_snapshot_hash",
+        ),
+        CheckConstraint(
+            "snapshot_schema_version = 1",
+            name="ck_v2_material_snapshot_schema_v1",
+        ),
+        CheckConstraint(
+            "canonicalization_version = 1",
+            name="ck_v2_material_snapshot_canonicalization_v1",
+        ),
+        CheckConstraint(
+            "mat_gov_contract_version = 'MAT-GOV-03A.v1'",
+            name="ck_v2_material_snapshot_contract_v1",
+        ),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    ruleset_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("v2_material_rulesets.ruleset_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonicalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    mat_gov_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialSnapshotValidationEvent(Base):
+    """Append-only technical validation evidence without approval semantics."""
+
+    __tablename__ = "v2_material_snapshot_validation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mtv_%'",
+            name="ck_v2_material_validation_event_id",
+        ),
+        CheckConstraint(
+            "validation_state = 'valid'",
+            name="ck_v2_material_validation_state",
+        ),
+        CheckConstraint(
+            "error_code = 'none'",
+            name="ck_v2_material_validation_error_code",
+        ),
+        CheckConstraint(
+            "length(validation_sha256) = 64",
+            name="ck_v2_material_validation_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    validator_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialSnapshotAuditEvent(Base):
+    """Append-only technical audit event; never a review or approval record."""
+
+    __tablename__ = "v2_material_snapshot_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mta_%'",
+            name="ck_v2_material_audit_event_id",
+        ),
+        CheckConstraint(
+            "event_type = 'snapshot_created'",
+            name="ck_v2_material_audit_event_type",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_material_audit_event_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)

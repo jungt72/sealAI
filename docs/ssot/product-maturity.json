@@ -96,16 +96,19 @@
     "material_constraints": {
       "horizon": "H3",
       "status": "in_build",
-      "implementation_status": "governance_default_off",
-      "contract_version": "MAT-GOV-02",
+      "implementation_status": "mat_gov_03a_inert_default_off",
+      "contract_version": "MAT-GOV-03A",
       "activation_gate": "G8",
       "activation_blockers": [
-        "MAT-GOV-03",
+        "MAT-GOV-03B",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
         "MED-NORM-01",
         "material_rule_evidence",
+        "mat_gov_02_payload_and_hard_gate_followups",
         "owner_activation"
       ],
-      "scope_limit": "no_executable_material_rules"
+      "scope_limit": "technical_snapshot_infrastructure_only_no_runtime_selection"
     },
     "adaptive_interview_rwdr": {
       "horizon": "H2",
