@@ -51,6 +51,40 @@ def test_execution_policy_wires_safe_route_telemetry():
     assert isinstance(p.route_telemetry_sink, LoggingRouteTelemetrySink)
 
 
+# --- F-3: one-time startup warning when understand() is silently disabled ------------------
+
+
+def test_build_pipeline_warns_once_when_execution_policy_disables_understand(caplog):
+    # understand_enabled defaults True; execution_policy_enabled=True makes run()'s own guard
+    # (pipeline.py:1006) False on every turn, so understand() never actually runs. This must be
+    # visible at build time, not discovered only by reading run()'s conditional.
+    with caplog.at_level("WARNING", logger="sealai_v2.pipeline"):
+        build_pipeline(Settings(execution_policy_enabled=True), FakeLlmClient("x"))
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("understand()" in r.message and "deaktiviert" in r.message for r in warnings)
+
+
+def test_build_pipeline_does_not_warn_when_understand_stays_reachable(caplog):
+    # execution_policy_enabled=False (the default): run()'s guard can be True, so understand()
+    # is reachable -- no warning should fire.
+    with caplog.at_level("WARNING", logger="sealai_v2.pipeline"):
+        build_pipeline(Settings(), FakeLlmClient("x"))
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert not any("understand()" in r.message for r in warnings)
+
+
+def test_build_pipeline_does_not_warn_when_understand_already_disabled(caplog):
+    # understand_enabled=False: understand() was never going to run anyway -- the warning would be
+    # noise, not information, so it must not fire.
+    with caplog.at_level("WARNING", logger="sealai_v2.pipeline"):
+        build_pipeline(
+            Settings(execution_policy_enabled=True, understand_enabled=False),
+            FakeLlmClient("x"),
+        )
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert not any("understand()" in r.message for r in warnings)
+
+
 def test_default_run_uses_l1_and_helper_models():
     """A default sessionless turn: understand (helper) + L1 generate + L3 verify — no distill."""
     fake = FakeLlmClient("FAKE-ANSWER")

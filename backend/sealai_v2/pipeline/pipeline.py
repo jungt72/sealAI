@@ -2304,6 +2304,16 @@ def build_pipeline(
             "build_pipeline needs either a single ``client`` (all roles share it) or a "
             "``client_for`` provider factory (per-role routing) — never neither."
         )
+    if settings.understand_enabled and settings.execution_policy_enabled:
+        # Logged once here (build time), not per-turn: run()'s own guard (`if self.understand_enabled
+        # and not self.execution_policy_enabled`, pipeline.py:1006) is False on every turn whenever
+        # both flags are True, so understand() (the soft LLM-intent stage) never actually runs in
+        # this configuration -- purely observational, no behavior change.
+        _log.warning(
+            "understand() ist in dieser Konfiguration deaktiviert: "
+            "execution_policy_enabled=true unterdrückt die soft-intent-Stufe trotz "
+            "understand_enabled=true (siehe pipeline.py:1006)."
+        )
     # Single-client mode: ignore provider, return the one client (preserves the fake-client tests
     # and the default object graph). Factory mode: each role resolves its provider's client.
     resolve = client_for if client_for is not None else (lambda _provider: client)
