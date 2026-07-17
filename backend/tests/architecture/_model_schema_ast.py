@@ -6,6 +6,11 @@ import ast
 from pathlib import Path
 
 
+_ALLOWED_BARE_COLUMN_TYPES = frozenset(
+    {"Boolean", "Integer", "LargeBinary", "_MATERIAL_RULESET_JSON"}
+)
+
+
 def _is_direct_mapped_column(node: ast.AST | None) -> bool:
     return (
         isinstance(node, ast.Call)
@@ -40,22 +45,57 @@ def _is_direct_base_model(node: ast.ClassDef) -> bool:
     )
 
 
+def _is_allowed_column_type(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id in _ALLOWED_BARE_COLUMN_TYPES
+    if not (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "String"
+        and not node.keywords
+        and len(node.args) <= 1
+    ):
+        return False
+    if not node.args:
+        return True
+    length = node.args[0]
+    return (
+        isinstance(length, ast.Constant)
+        and type(length.value) is int
+        and length.value > 0
+    )
+
+
 def _physical_column_name(call: ast.Call, *, attribute_name: str, filename: str) -> str:
+    if any(isinstance(argument, ast.Starred) for argument in call.args):
+        raise AssertionError(
+            f"{filename}:{call.lineno}: dynamic MAT-GOV positional column arguments"
+        )
+    if any(keyword.arg is None for keyword in call.keywords):
+        raise AssertionError(
+            f"{filename}:{call.lineno}: dynamic MAT-GOV keyword column arguments"
+        )
     if any(keyword.arg == "name" for keyword in call.keywords):
         raise AssertionError(
             f"{filename}:{call.lineno}: MAT-GOV physical column names must use "
             "the first literal mapped_column argument"
         )
-    if not call.args or not (
-        isinstance(call.args[0], ast.Constant) and type(call.args[0].value) is str
-    ):
+    if not call.args:
         return attribute_name
-    physical_name = call.args[0].value
-    if not physical_name:
-        raise AssertionError(
-            f"{filename}:{call.lineno}: empty MAT-GOV physical column name"
-        )
-    return physical_name
+    first_argument = call.args[0]
+    if isinstance(first_argument, ast.Constant) and type(first_argument.value) is str:
+        physical_name = first_argument.value
+        if not physical_name:
+            raise AssertionError(
+                f"{filename}:{call.lineno}: empty MAT-GOV physical column name"
+            )
+        return physical_name
+    if _is_allowed_column_type(first_argument):
+        return attribute_name
+    raise AssertionError(
+        f"{filename}:{call.lineno}: dynamic or unrecognized MAT-GOV first "
+        "mapped_column argument"
+    )
 
 
 def parse_material_schema_source(

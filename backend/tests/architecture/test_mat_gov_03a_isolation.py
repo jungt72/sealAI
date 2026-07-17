@@ -165,6 +165,53 @@ class UnexpectedName(Base):
     assert parse_material_schema_source(default_source) == expected
 
 
+def test_material_schema_parser_accepts_only_static_column_type_forms() -> None:
+    source = """
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    inferred_value: Mapped[str] = mapped_column()
+    string_value: Mapped[str] = mapped_column(String(64))
+    integer_value: Mapped[int] = mapped_column(Integer)
+    boolean_value: Mapped[bool] = mapped_column(Boolean)
+    binary_value: Mapped[bytes] = mapped_column(LargeBinary)
+    json_value: Mapped[dict] = mapped_column(_MATERIAL_RULESET_JSON)
+    foreign_value: Mapped[str] = mapped_column(
+        String(68), ForeignKey("v2_material_rulesets.ruleset_id")
+    )
+"""
+    assert parse_material_schema_source(source) == {
+        "v2_material_shadow_unexpected": frozenset(
+            {
+                "inferred_value",
+                "string_value",
+                "integer_value",
+                "boolean_value",
+                "binary_value",
+                "json_value",
+                "foreign_value",
+            }
+        )
+    }
+
+
+def test_material_schema_parser_rejects_dynamic_column_arguments() -> None:
+    dynamic_sources = (
+        "mapped_column(COLUMN_NAME, String())",
+        "mapped_column(build_name(), String())",
+        'mapped_column(f"{PREFIX}_id", String())',
+        "mapped_column(*COLUMN_ARGS)",
+        "mapped_column(String(), **COLUMN_OPTIONS)",
+    )
+    for declaration in dynamic_sources:
+        _assert_schema_rejected(
+            f"""
+class UnexpectedName(Base):
+    __tablename__ = "v2_material_shadow_unexpected"
+    safe_alias: Mapped[str] = {declaration}
+"""
+        )
+
+
 def test_material_schema_parser_rejects_duplicate_physical_column_names() -> None:
     _assert_schema_rejected(
         """
