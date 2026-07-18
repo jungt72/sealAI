@@ -62,7 +62,12 @@ invariants. Confirm the bound corpus safety receipt reports the exact scanner
 contract and zero secret/direct-identifier matches. A scan match is a
 fail-closed stop, not something an operator may redact silently. The schema
 contains no tenant/customer fields, Codex reasoning or preapproval and accepts
-no `.env` value, application prompt or protected full text.
+no `.env` value, application prompt or protected full text. Person-like
+two-token sequences embedded in corpus strings are conservatively rejected;
+publisher labels avoid that heuristic only when they carry a closed
+organization suffix. A false positive is resolved by selecting a different
+permitted source excerpt or a formally complete publisher identity, never by
+silently disabling the scan.
 
 Hash the canonical corpus before execution. A changed byte creates a different
 input hash and invalidates any previous challenge receipt.
@@ -76,11 +81,15 @@ environment variables, ignores caller `PATH`, accepts no caller-supplied
 executable path and selects only the exact platform/path/version/digest record
 from the hash-pinned repository trust manifest
 `backend/sealai_v2/material_evidence_ai_review/claude-executable-trust-v1.json`.
-The selected executable digest is checked before and after the run. A manifest,
-path, version or digest mismatch is a fail-closed stop; changing the reviewed
-installation requires a new repository change and review. The runner writes
-only to a newly created private directory outside the repository and does not
-retry.
+The source is read once through a no-follow descriptor and checked against the
+pinned digest. Only those captured bytes are installed as an inode-bound,
+mode-`0500` private stage in the new mode-`0700` run directory; the stage is
+verified before and after execution and removed on exit. A manifest, path,
+version, object identity or digest mismatch is a fail-closed stop; changing the
+reviewed installation requires a new repository change and review. The runner
+does not retry. This is not an OS sandbox: the authenticated local OS subject
+and runner process must be trusted; a hostile same-UID process is outside the
+contract.
 
 Accept the transport only when the process returns zero, the envelope is a
 complete result, model usage includes `claude-sonnet-5`, permission denials are

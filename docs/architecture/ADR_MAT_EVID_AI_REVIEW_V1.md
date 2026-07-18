@@ -103,9 +103,15 @@ run separation, input binding, finding coverage or outcome derivation.
 The authenticated local `claude` executable is selected only from the
 owner-reviewed, repository-hash-pinned platform/path/version/digest manifest
 `claude-executable-trust-v1.json`; caller `PATH` and executable overrides are
-not selection inputs. The resolved executable digest is checked before and
-after execution, and its canonical attestation is part of the durable receipt.
-It is invoked once from a new private directory outside the repository.
+not selection inputs. The source is read through a no-follow descriptor, its
+bytes are verified against the pinned digest, and only those captured bytes are
+copied into an inode-bound mode-`0500` stage inside the new mode-`0700` private
+run directory. That private object is verified before and after execution and
+then removed. Its execution mode and canonical attestation are part of the
+durable receipt. The trust boundary assumes the authenticated local OS subject
+and the runner process are not already compromised; a hostile same-UID process
+would also control CLI authentication and Python process memory and is outside
+this non-sandbox execution contract.
 Secret-bearing environment variables are removed. Input and result are mode
 `0600`; the returned session identifier is hashed for provenance and redacted
 from disk. There is no API-key fallback or automatic retry.

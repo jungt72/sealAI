@@ -500,10 +500,14 @@ production execution.
 The local runner is one-shot, writes only to a new private directory outside
 the repository, ignores caller `PATH`, and selects the authenticated `claude`
 executable only from an owner-reviewed, repository-hash-pinned exact
-platform/path/version/digest manifest. It verifies the resolved binary before
-and after execution, strips secret-bearing environment variables, disables
-Claude tools/MCP/hooks/web/session persistence, requires exact zero CLI web
-counters, redacts the returned session ID and never retries automatically.
+platform/path/version/digest manifest. It reads the source through a no-follow
+descriptor, executes only captured digest-verified bytes from an inode-bound
+mode-`0500` object inside the new mode-`0700` private run directory, verifies
+that object before and after execution, and removes it. It strips secret-bearing
+environment variables, disables Claude tools/MCP/hooks/web/session persistence,
+requires exact zero CLI web counters, redacts the returned session ID and never
+retries automatically. This local runner is not an OS sandbox and assumes the
+authenticated local subject and runner process are not already compromised.
 Persistence consumes the content-validated runner receipt once, stores the
 canonical audit input, redacted CLI envelope, executable digest and canonical
 executable attestation, and revalidates that durable transport evidence before

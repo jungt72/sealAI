@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
@@ -84,11 +85,13 @@ _SENSITIVE_ENV_MARKERS = (
     "COOKIE",
 )
 _TRUSTED_CHILD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+_EXECUTION_MODE = "private-object-verified-stage-v1"
 
 
 @dataclass(frozen=True, slots=True)
 class _TrustedClaudeExecutableV1:
     path: Path
+    executable_bytes: bytes
     executable_sha256: str
     version: str
     canonical_attestation_bytes: bytes
@@ -213,12 +216,21 @@ def _trusted_claude_executable() -> _TrustedClaudeExecutableV1:
     try:
         entrypoint_metadata = entrypoint.lstat()
         resolved = entrypoint.resolve(strict=True)
-        resolved_metadata = resolved.stat()
+        source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        source_fd = os.open(resolved, source_flags)
     except OSError as exc:
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
             "trusted Claude executable installation is unavailable",
         ) from exc
+    try:
+        resolved_metadata = os.fstat(source_fd)
+        chunks: list[bytes] = []
+        while chunk := os.read(source_fd, 1024 * 1024):
+            chunks.append(chunk)
+        executable_bytes = b"".join(chunks)
+    finally:
+        os.close(source_fd)
     if (
         not (
             stat.S_ISLNK(entrypoint_metadata.st_mode)
@@ -234,19 +246,21 @@ def _trusted_claude_executable() -> _TrustedClaudeExecutableV1:
             AIReviewErrorCode.INVALID_AGENT,
             "trusted Claude executable ownership, path or mode drift",
         )
-    executable_sha256 = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    executable_sha256 = hashlib.sha256(executable_bytes).hexdigest()
     if executable_sha256 != expected_digest:
         raise AIReviewValidationError(
             AIReviewErrorCode.HASH_MISMATCH,
             "trusted Claude executable digest drift",
         )
     attestation_value = {
+        "execution_mode": _EXECUTION_MODE,
         "installation": record,
         "trust_manifest_file_sha256": manifest_sha256,
     }
     canonical_attestation = _canonical_receipt_bytes(attestation_value)
     return _TrustedClaudeExecutableV1(
         path=resolved,
+        executable_bytes=executable_bytes,
         executable_sha256=executable_sha256,
         version=record["version"],
         canonical_attestation_bytes=canonical_attestation,
@@ -254,6 +268,104 @@ def _trusted_claude_executable() -> _TrustedClaudeExecutableV1:
             EXECUTABLE_ATTESTATION_DOMAIN + canonical_attestation
         ).hexdigest(),
     )
+
+
+def _descriptor_sha256(file_descriptor: int) -> str:
+    os.lseek(file_descriptor, 0, os.SEEK_SET)
+    digest = hashlib.sha256()
+    while chunk := os.read(file_descriptor, 1024 * 1024):
+        digest.update(chunk)
+    os.lseek(file_descriptor, 0, os.SEEK_SET)
+    return digest.hexdigest()
+
+
+def _verify_private_stage(
+    path: Path, *, expected_sha256: str, expected_identity: tuple[int, int]
+) -> None:
+    read_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        read_fd = os.open(path, read_flags)
+    except OSError as exc:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "private Claude executable stage is unavailable",
+        ) from exc
+    try:
+        metadata = os.fstat(read_fd)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or (metadata.st_dev, metadata.st_ino) != expected_identity
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o500
+            or _descriptor_sha256(read_fd) != expected_sha256
+        ):
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "private Claude executable stage failed object verification",
+            )
+    finally:
+        os.close(read_fd)
+
+
+@contextmanager
+def _private_staged_executable(trusted: _TrustedClaudeExecutableV1, output: Path):
+    """Yield a private, inode-bound stage containing only verified bytes."""
+
+    stage_path = output / ".claude-executable-stage"
+    create_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    write_fd = os.open(stage_path, create_flags, 0o500)
+    created_identity: tuple[int, int] | None = None
+    try:
+        remaining = memoryview(trusted.executable_bytes)
+        while remaining:
+            written = os.write(write_fd, remaining)
+            if written <= 0:
+                raise OSError("short write while staging Claude executable")
+            remaining = remaining[written:]
+        os.fchmod(write_fd, 0o500)
+        os.fsync(write_fd)
+        metadata = os.fstat(write_fd)
+        created_identity = (metadata.st_dev, metadata.st_ino)
+    finally:
+        os.close(write_fd)
+
+    try:
+        if created_identity is None:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "private Claude executable stage identity is unavailable",
+            )
+        _verify_private_stage(
+            stage_path,
+            expected_sha256=trusted.executable_sha256,
+            expected_identity=created_identity,
+        )
+        directory_fd = os.open(output, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        yield stage_path, created_identity
+        _verify_private_stage(
+            stage_path,
+            expected_sha256=trusted.executable_sha256,
+            expected_identity=created_identity,
+        )
+    finally:
+        try:
+            metadata = stage_path.lstat()
+        except FileNotFoundError:
+            metadata = None
+        if metadata is not None and created_identity != (
+            metadata.st_dev,
+            metadata.st_ino,
+        ):
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "private Claude executable stage identity changed before cleanup",
+            )
+        if metadata is not None:
+            stage_path.unlink()
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -498,7 +610,7 @@ def validate_persisted_claude_run_artifacts(
         EXECUTABLE_ATTESTATION_DOMAIN + attestation_bytes
     ).hexdigest() != claude_executable_attestation_sha256 or set(
         canonical_executable_attestation_json
-    ) != {"installation", "trust_manifest_file_sha256"}:
+    ) != {"execution_mode", "installation", "trust_manifest_file_sha256"}:
         raise AIReviewValidationError(
             AIReviewErrorCode.HASH_MISMATCH,
             "persisted Claude executable attestation drift",
@@ -508,7 +620,9 @@ def validate_persisted_claude_run_artifacts(
         "trust_manifest_file_sha256"
     ]
     if (
-        type(installation) is not dict
+        type(canonical_executable_attestation_json["execution_mode"]) is not str
+        or canonical_executable_attestation_json["execution_mode"] != _EXECUTION_MODE
+        or type(installation) is not dict
         or set(installation) != _TRUST_INSTALLATION_FIELDS
         or any(type(installation[field]) is not str for field in installation)
         or installation["executable_sha256"] != claude_executable_sha256
@@ -707,6 +821,108 @@ def _load_cli_envelope(raw: bytes) -> dict[str, Any]:
     return value
 
 
+def _invoke_trusted_claude(
+    *,
+    trusted: _TrustedClaudeExecutableV1,
+    output: Path,
+    empty_mcp: Path,
+    audit_input: bytes,
+    max_turns: int,
+    max_budget_usd: str,
+) -> tuple[str, subprocess.CompletedProcess[bytes]]:
+    with _private_staged_executable(trusted, output) as (
+        executable,
+        stage_identity,
+    ):
+        _verify_private_stage(
+            executable,
+            expected_sha256=trusted.executable_sha256,
+            expected_identity=stage_identity,
+        )
+        version_process = subprocess.run(
+            [str(executable), "--version"],
+            cwd=output,
+            env=_safe_environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=30,
+        )
+        if version_process.returncode != 0:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "Claude CLI version could not be established",
+            )
+        _verify_private_stage(
+            executable,
+            expected_sha256=trusted.executable_sha256,
+            expected_identity=stage_identity,
+        )
+        try:
+            agent_version = version_process.stdout.decode(
+                "utf-8", errors="strict"
+            ).strip()
+        except UnicodeDecodeError as exc:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "Claude CLI version is not UTF-8",
+            ) from exc
+        if not agent_version or "\n" in agent_version or len(agent_version) > 128:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "Claude CLI version receipt is invalid",
+            )
+        if agent_version != trusted.version:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "Claude CLI version differs from the owner-reviewed attestation",
+            )
+        command = [
+            str(executable),
+            "-p",
+            "--model",
+            "claude-sonnet-5",
+            "--output-format",
+            "json",
+            "--allowedTools",
+            "",
+            "--permission-mode",
+            "plan",
+            "--strict-mcp-config",
+            "--mcp-config",
+            str(empty_mcp),
+            "--settings",
+            json.dumps(_SETTINGS, separators=(",", ":"), sort_keys=True),
+            "--no-session-persistence",
+            "--no-chrome",
+            "--max-turns",
+            str(max_turns),
+            "--max-budget-usd",
+            max_budget_usd,
+        ]
+        completed = subprocess.run(
+            command,
+            cwd=output,
+            env=_safe_environment(),
+            input=audit_input,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=1800,
+        )
+        if completed.returncode != 0:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                f"Claude transport failed with exit {completed.returncode}",
+            )
+        _verify_private_stage(
+            executable,
+            expected_sha256=trusted.executable_sha256,
+            expected_identity=stage_identity,
+        )
+        return agent_version, completed
+
+
 def run_claude_challenge(
     snapshot: AIReviewSnapshotV1,
     *,
@@ -733,7 +949,6 @@ def run_claude_challenge(
     if max_budget_usd not in {"5.00", "10.00"}:
         raise ValueError("max_budget_usd must use an owner-bounded value")
     trusted_executable = _trusted_claude_executable()
-    executable = trusted_executable.path
     claude_executable_sha256 = trusted_executable.executable_sha256
     output = Path(output_directory).expanduser().resolve()
     repository = Path(__file__).resolve().parents[4]
@@ -747,85 +962,14 @@ def run_claude_challenge(
     _private_write(empty_mcp, b"{}\n")
     audit_input = build_claude_audit_input(snapshot)
     _private_write(audit_input_path, audit_input.canonical_bytes)
-    version_process = subprocess.run(
-        [str(executable), "--version"],
-        cwd=output,
-        env=_safe_environment(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=30,
+    agent_version, completed = _invoke_trusted_claude(
+        trusted=trusted_executable,
+        output=output,
+        empty_mcp=empty_mcp,
+        audit_input=audit_input.canonical_bytes,
+        max_turns=max_turns,
+        max_budget_usd=max_budget_usd,
     )
-    if version_process.returncode != 0:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            "Claude CLI version could not be established",
-        )
-    if hashlib.sha256(executable.read_bytes()).hexdigest() != claude_executable_sha256:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            "Claude CLI executable changed during version verification",
-        )
-    try:
-        agent_version = version_process.stdout.decode("utf-8", errors="strict").strip()
-    except UnicodeDecodeError as exc:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            "Claude CLI version is not UTF-8",
-        ) from exc
-    if not agent_version or "\n" in agent_version or len(agent_version) > 128:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            "Claude CLI version receipt is invalid",
-        )
-    if agent_version != trusted_executable.version:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            "Claude CLI version differs from the owner-reviewed attestation",
-        )
-    command = [
-        str(executable),
-        "-p",
-        "--model",
-        "claude-sonnet-5",
-        "--output-format",
-        "json",
-        "--allowedTools",
-        "",
-        "--permission-mode",
-        "plan",
-        "--strict-mcp-config",
-        "--mcp-config",
-        str(empty_mcp),
-        "--settings",
-        json.dumps(_SETTINGS, separators=(",", ":"), sort_keys=True),
-        "--no-session-persistence",
-        "--no-chrome",
-        "--max-turns",
-        str(max_turns),
-        "--max-budget-usd",
-        max_budget_usd,
-    ]
-    completed = subprocess.run(
-        command,
-        cwd=output,
-        env=_safe_environment(),
-        input=audit_input.canonical_bytes,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=1800,
-    )
-    if completed.returncode != 0:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            f"Claude transport failed with exit {completed.returncode}",
-        )
-    if hashlib.sha256(executable.read_bytes()).hexdigest() != claude_executable_sha256:
-        raise AIReviewValidationError(
-            AIReviewErrorCode.INVALID_AGENT,
-            "Claude CLI executable changed during the one-shot run",
-        )
     envelope = _load_cli_envelope(completed.stdout)
     redacted_envelope = {
         "is_error": False,

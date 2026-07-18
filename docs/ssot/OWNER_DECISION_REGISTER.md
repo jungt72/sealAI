@@ -458,8 +458,11 @@ closed primary-source set, rule/claim bindings are exact, CLI web counters must
 be zero, and persistence accepts only a revalidated one-shot runner receipt
 whose Claude executable is selected from the repository-hash-pinned exact
 platform/path/version/digest trust manifest. Caller `PATH` is never a selection
-input; the canonical executable attestation is persisted before re-deriving
-every challenge and adjudication.
+input; only captured digest-verified bytes are executed from an inode-bound
+private stage, and the canonical executable/staging attestation is persisted
+before re-deriving every challenge and adjudication. The local OS subject and
+runner process remain an explicit trusted boundary rather than a security
+sandbox.
 
 ### Consequence
 

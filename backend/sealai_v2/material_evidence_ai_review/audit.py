@@ -152,9 +152,33 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
         ),
     ),
     (
+        "embedded_person_name",
+        re.compile(
+            r"(?<![A-ZÀ-ÖØ-öø-ÿ])"
+            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}\s+"
+            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}"
+            r"(?![A-ZÀ-ÖØ-öø-ÿ])"
+        ),
+    ),
+    (
         "customer_identifier",
         re.compile(r"(?i)\b(?:customer|tenant|case)[_-]?id\s*[:=]\s*[^\s,;]{3,}"),
     ),
+)
+_ORGANIZATION_PUBLISHER_SUFFIXES = (
+    " agency",
+    " association",
+    " board",
+    " company",
+    " corporation",
+    " gmbh",
+    " inc",
+    " institute",
+    " ltd",
+    " office",
+    " publisher",
+    " solutions",
+    " university",
 )
 
 
@@ -179,10 +203,23 @@ def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
         for name, pattern in _CORPUS_SECRET_PATTERNS
         if any(pattern.search(item) for _, item in strings)
     )
+
+    def has_direct_identifier(
+        name: str, pattern: re.Pattern[str], path: str, item: str
+    ) -> bool:
+        if not pattern.search(item):
+            return False
+        if name == "embedded_person_name" and path.endswith(".publisher"):
+            normalized = " ".join(item.split()).casefold()
+            return not normalized.endswith(_ORGANIZATION_PUBLISHER_SUFFIXES)
+        return True
+
     identifier_classes = sorted(
         name
         for name, pattern in _CORPUS_DIRECT_IDENTIFIER_PATTERNS
-        if any(pattern.search(item) for _, item in strings)
+        if any(
+            has_direct_identifier(name, pattern, path, item) for path, item in strings
+        )
     )
     if secret_classes or identifier_classes:
         _fail(

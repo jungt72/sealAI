@@ -185,6 +185,7 @@ def test_runner_uses_one_shot_safe_mode_and_hashes_sensitive_run_id(tmp_path) ->
     ):
         assert value in args
     assert args[args.index("--allowedTools") + 1] == ""
+    assert not (output / ".claude-executable-stage").exists()
 
     with pytest.raises(TypeError, match="one-shot runner"):
         ClaudeChallengeRunReceiptV1(
@@ -272,6 +273,36 @@ def test_runner_rejects_trust_manifest_and_executable_digest_drift(tmp_path) -> 
                 output_directory=tmp_path / "executable-drift-output",
             )
         assert executable_drift.value.code is AIReviewErrorCode.HASH_MISMATCH
+
+
+def test_private_stage_executes_only_captured_verified_bytes(tmp_path) -> None:
+    payload, ruleset, evidence = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    snapshot.payload.validate_against(
+        ruleset,
+        evidence,
+        (_identity_evidence(),),
+    )
+    with _fake_trusted_claude_install(tmp_path) as source_executable:
+        trusted = runner_module._trusted_claude_executable()
+        source_executable.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
+        source_executable.chmod(0o700)
+        output = tmp_path / "captured-executable-output"
+        output.mkdir(mode=0o700)
+        empty_mcp = output / "empty-mcp.json"
+        runner_module._private_write(empty_mcp, b"{}\n")
+        audit_input = runner_module.build_claude_audit_input(snapshot)
+        agent_version, completed = runner_module._invoke_trusted_claude(
+            trusted=trusted,
+            output=output,
+            empty_mcp=empty_mcp,
+            audit_input=audit_input.canonical_bytes,
+            max_turns=20,
+            max_budget_usd="5.00",
+        )
+    assert agent_version == "fake-claude-cli 1.0.0"
+    assert completed.returncode == 0
+    assert not (output / ".claude-executable-stage").exists()
 
 
 def test_runner_receipt_revalidation_rejects_artifact_drift(tmp_path) -> None:
@@ -438,3 +469,57 @@ def test_durable_runner_artifacts_fail_closed_on_receipt_drift(
             session_id_sha256=receipt.session_id_sha256,
             runner_receipt_sha256=runner_hash,
         )
+
+
+def test_durable_runner_rejects_forged_execution_mode_attestation(tmp_path) -> None:
+    payload, ruleset, evidence = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    with _fake_trusted_claude_install(tmp_path):
+        receipt = run_claude_challenge(
+            snapshot,
+            ruleset=ruleset,
+            evidence=evidence,
+            media_identity_evidence=(_identity_evidence(),),
+            output_directory=tmp_path / "execution-mode-drift-output",
+        )
+    attestation = json.loads(receipt.claude_executable_attestation_bytes)
+    attestation["execution_mode"] = "direct-path-execution"
+    attestation_bytes = json.dumps(
+        attestation,
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    attestation_sha256 = hashlib.sha256(
+        runner_module.EXECUTABLE_ATTESTATION_DOMAIN + attestation_bytes
+    ).hexdigest()
+    runner_hash = compute_claude_run_receipt_sha256(
+        challenge=receipt.challenge,
+        audit_input_file_sha256=receipt.audit_input_file_sha256,
+        cli_result_file_sha256=receipt.cli_result_file_sha256,
+        claude_executable_sha256=receipt.claude_executable_sha256,
+        claude_executable_attestation_sha256=attestation_sha256,
+        process_returncode=receipt.process_returncode,
+        session_id_sha256=receipt.session_id_sha256,
+    )
+    with pytest.raises(AIReviewValidationError) as exc:
+        validate_persisted_claude_run_artifacts(
+            snapshot=snapshot,
+            challenge=receipt.challenge,
+            canonical_audit_input_json=json.loads(
+                Path(receipt.audit_input_path).read_text(encoding="utf-8")
+            ),
+            canonical_cli_receipt_json=json.loads(
+                Path(receipt.cli_result_path).read_text(encoding="utf-8")
+            ),
+            canonical_executable_attestation_json=attestation,
+            audit_input_file_sha256=receipt.audit_input_file_sha256,
+            cli_result_file_sha256=receipt.cli_result_file_sha256,
+            claude_executable_sha256=receipt.claude_executable_sha256,
+            claude_executable_attestation_sha256=attestation_sha256,
+            process_returncode=receipt.process_returncode,
+            session_id_sha256=receipt.session_id_sha256,
+            runner_receipt_sha256=runner_hash,
+        )
+    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT

@@ -240,6 +240,8 @@ def test_claude_executable_is_owner_pinned_and_never_resolved_from_path() -> Non
     source = RUNNER.read_text(encoding="utf-8")
     assert "shutil.which" not in source
     assert 'allowed = {\n        "HOME",\n        "LANG"' in source
+    assert '"private-object-verified-stage-v1"' in source
+    assert 'stage_path = output / ".claude-executable-stage"' in source
     manifest = json.loads(EXECUTABLE_TRUST.read_text(encoding="utf-8"))
     assert set(manifest) == {"contract_version", "installations", "schema_version"}
     assert manifest["contract_version"] == ("MAT-EVID-AI-CLAUDE-EXECUTABLE-TRUST.v1")
