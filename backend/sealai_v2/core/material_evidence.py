@@ -200,6 +200,21 @@ def _validate_unicode(value: Any, *, path: str = "$") -> None:
             _validate_unicode(item, path=f"{path}.{key}")
 
 
+def _reject_floats(value: Any, *, path: str = "$") -> None:
+    if type(value) is float:
+        _fail(
+            MaterialEvidenceErrorCode.FLOAT_FORBIDDEN,
+            "floating-point values are forbidden",
+            path=path,
+        )
+    if type(value) is list:
+        for index, item in enumerate(value):
+            _reject_floats(item, path=f"{path}[{index}]")
+    elif type(value) is dict:
+        for key, item in value.items():
+            _reject_floats(item, path=f"{path}.{key}")
+
+
 def _reject_float(_value: str) -> NoReturn:
     _fail(
         MaterialEvidenceErrorCode.FLOAT_FORBIDDEN,
@@ -263,6 +278,7 @@ def parse_json_without_duplicates(raw: str | bytes) -> dict[str, Any]:
 
 
 def _canonical_json(value: dict[str, Any]) -> bytes:
+    _reject_floats(value)
     _validate_unicode(value)
     try:
         return json.dumps(
@@ -447,6 +463,8 @@ class EvidenceClaimScopeV1:
                     f"{name} must not be empty",
                     path=f"$.claim.scope.{name}",
                 )
+            for index, item in enumerate(values):
+                _require_string(item, path=f"$.claim.scope.{name}[{index}]")
             expected = tuple(sorted(set(values), key=lambda item: item.encode("utf-8")))
             if values != expected:
                 _fail(
@@ -564,18 +582,16 @@ class EvidenceManifestPayloadV1:
     mat_evid_contract_version: str = MAT_EVID_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
-        if self.evidence_manifest_schema_version != EVIDENCE_MANIFEST_SCHEMA_VERSION:
-            _fail(
-                MaterialEvidenceErrorCode.UNKNOWN_SCHEMA,
-                "unsupported evidence schema",
-                path="$.evidence_manifest_schema_version",
-            )
-        if self.canonicalization_version != CANONICALIZATION_VERSION:
-            _fail(
-                MaterialEvidenceErrorCode.UNKNOWN_SCHEMA,
-                "unsupported canonicalization",
-                path="$.canonicalization_version",
-            )
+        _require_version(
+            self.evidence_manifest_schema_version,
+            EVIDENCE_MANIFEST_SCHEMA_VERSION,
+            path="$.evidence_manifest_schema_version",
+        )
+        _require_version(
+            self.canonicalization_version,
+            CANONICALIZATION_VERSION,
+            path="$.canonicalization_version",
+        )
         if self.mat_evid_contract_version != MAT_EVID_CONTRACT_VERSION:
             _fail(
                 MaterialEvidenceErrorCode.UNKNOWN_SCHEMA,
@@ -827,6 +843,12 @@ class EvidenceManifestSnapshotV1:
         validate_snapshot_id(self.snapshot_id)
         if type(self.payload) is not EvidenceManifestPayloadV1:
             raise TypeError("payload must be EvidenceManifestPayloadV1")
+        if type(self.canonical_bytes) is not bytes:
+            _fail(
+                MaterialEvidenceErrorCode.INVALID_TYPE,
+                "canonical_bytes must be exact bytes",
+                path="$.canonical_bytes",
+            )
         expected_bytes = canonicalize_payload(self.payload)
         if self.canonical_bytes != expected_bytes:
             raise MaterialEvidenceIntegrityError(

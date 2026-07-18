@@ -99,6 +99,63 @@ def test_manifest_contract_is_versioned_canonical_and_deeply_immutable() -> None
         payload.sources[0] = payload.sources[0]  # type: ignore[index]
 
 
+@pytest.mark.parametrize("mutable_type", [bytearray, memoryview])
+def test_snapshot_rejects_mutable_or_non_exact_canonical_bytes(
+    mutable_type: type,
+) -> None:
+    snapshot = EvidenceManifestSnapshotV1.create(MANIFEST_ID, _payload())
+    with pytest.raises(MaterialEvidenceValidationError) as exc:
+        EvidenceManifestSnapshotV1(
+            manifest_id=snapshot.manifest_id,
+            snapshot_id=snapshot.snapshot_id,
+            content_sha256=snapshot.content_sha256,
+            canonical_bytes=mutable_type(snapshot.canonical_bytes),  # type: ignore[arg-type]
+            payload=snapshot.payload,
+        )
+    assert exc.value.code is MaterialEvidenceErrorCode.INVALID_TYPE
+
+
+@pytest.mark.parametrize(
+    "field", ["evidence_manifest_schema_version", "canonicalization_version"]
+)
+@pytest.mark.parametrize("invalid_version", [True, 1.0])
+def test_direct_payload_constructor_rejects_non_exact_integer_versions(
+    field: str, invalid_version: object
+) -> None:
+    values = {
+        "ruleset_snapshot_id": RULESET_SNAPSHOT_ID,
+        "domain_pack_id": "material.test.v1",
+        "sources": _payload().sources,
+        "claims": _payload().claims,
+        "rule_claim_bindings": _payload().rule_claim_bindings,
+        field: invalid_version,
+    }
+    with pytest.raises(MaterialEvidenceValidationError) as exc:
+        EvidenceManifestPayloadV1(**values)  # type: ignore[arg-type]
+    assert exc.value.code is MaterialEvidenceErrorCode.INVALID_TYPE
+
+
+@pytest.mark.parametrize("member", ["", " ", "\t"])
+@pytest.mark.parametrize("axis", ["materials", "media", "conditions"])
+def test_direct_scope_constructor_rejects_empty_or_whitespace_members(
+    axis: str, member: str
+) -> None:
+    values = {
+        "materials": ("MAT-TEST",),
+        "media": ("MEDIUM-TEST",),
+        "conditions": ("CONDITION-TEST",),
+    }
+    values[axis] = (member,)
+    with pytest.raises(MaterialEvidenceValidationError) as exc:
+        EvidenceClaimScopeV1(**values)
+    assert exc.value.code is MaterialEvidenceErrorCode.INVALID_TYPE
+
+
+def test_direct_domain_construction_round_trips_through_canonical_parser() -> None:
+    payload = _payload()
+    assert parse_manifest_payload(canonicalize_payload(payload)) == payload
+
+
 def test_claim_identity_excludes_source_revision_but_includes_text_and_scope() -> None:
     first = _source(revision="rev-1", digest="4" * 64)
     second = _source(revision="rev-2", digest="5" * 64)
@@ -285,6 +342,9 @@ def test_snapshot_integrity_and_event_hashes_are_deterministic() -> None:
     assert compute_audit_sha256(event) == compute_audit_sha256(
         dict(reversed(list(event.items())))
     )
+    with pytest.raises(MaterialEvidenceValidationError) as floating:
+        compute_audit_sha256({"nested": {"value": 1.5}})
+    assert floating.value.code is MaterialEvidenceErrorCode.FLOAT_FORBIDDEN
     with pytest.raises(MaterialEvidenceIntegrityError):
         EvidenceManifestSnapshotV1(
             manifest_id=MANIFEST_ID,
