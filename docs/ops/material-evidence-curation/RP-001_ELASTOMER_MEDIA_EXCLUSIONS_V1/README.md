@@ -74,5 +74,6 @@ media-identity claim must never receive a material placeholder. It requires a
 new typed Evidence scope `media_identity` with no `materials` field and exactly
 one `media_ref`. MAT-EVID-01A.v1 remains immutable and cannot represent that
 scope. The three humans may curate the source and identity record now, but the
-identity claim remains non-importable until the separately implemented and
-validated Evidence Manifest v2 contract is available end to end.
+validated Evidence Manifest v2 contract is now available end to end. The
+identity claim nevertheless remains non-importable until real verified-human
+creation, review, and owner approval satisfy every package criterion.

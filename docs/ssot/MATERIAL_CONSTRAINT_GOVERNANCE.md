@@ -260,6 +260,36 @@ separately implements fail-closed evaluation binding. MAT-EVID-01C separately
 implements factual evidence review; MAT-GOV-03C owns the still-separate
 ruleset-approval and deployment axes.
 
+## MAT-EVID-01A.v2 typed scope extension
+
+RP001-OD-01 is implemented additively by `MAT-EVID-01A.v2`; v1 is not changed,
+converted, copied, or reinterpreted. Version 2 uses a closed homogeneous target
+and claim-scope discriminator:
+
+- `material_relation` names one exact ruleset snapshot and permits only claims
+  with non-empty `materials` and `media`, exact `conditions`, and complete
+  object-specific `rule_ref -> claim_ref` bindings;
+- `media_identity` names exactly one scalar `media_ref` and permits only claims
+  containing that exact scalar and one exact identity-assertion reference. It
+  has no `materials` property and no rule bindings.
+
+Mixed variants, unknown properties, nullable or plural media identities,
+target/scope drift, foreign rules, incomplete identities, and unsupported
+versions fail closed. Version 2 has separate canonicalization and source,
+claim, content, snapshot, validation, review, runtime-result, and audit hash
+domains with frozen golden hashes. Fourteen additive empty v2 tables preserve
+manifest, technical runtime-companion, and factual-review histories without
+touching any v1 row.
+
+`MAT-EVID-01B.v2` binds only `material_relation` manifests and pins exact v2
+snapshot/hash/version/scope identities; it rejects `media_identity` as outside
+the material evaluator. `MAT-EVID-01C.v2` reviews both variants object-exactly;
+`media_identity` is restricted to `other_technical` and grants only
+`FACTUAL_REVIEW_ONLY`. MED-NORM can validate that approved v2 identity-review
+shape without a material placeholder. None of these seams creates a claim,
+catalog entry, rule, positive statement, active pointer, sampling, public
+projection, production migration, or deployment.
+
 ## MAT-EVID-01B fail-closed runtime binding
 
 MAT-EVID-01B is a new companion contract and does not reinterpret either
@@ -328,6 +358,15 @@ catalog is tenant-isolated and initially empty. It contains no built-in media
 facts, generic fallback class, trade-name mapping, seed, or backfill.
 The reviewed claim scope binds the derived media ID and a domain-separated hash
 of the canonical name, identity kind, and complete alias set.
+
+Evidence validation is version-explicit. Historical v1 identity reviews retain
+their exact legacy material/media/condition shape. New identity reviews use
+only the v2 `media_identity` scope with the exact scalar `media_ref` and
+identity-assertion reference; no material placeholder is accepted. Both paths
+remain tenant-bound, approval-dependent, and fail closed. MED-NORM resolves
+each review snapshot against its explicitly configured v1/v2 repositories;
+missing or cross-version-colliding identities are rejected, so mixed historical
+catalogs never depend on repository order.
 
 Only an exact whole-value match in one pinned catalog snapshot or a verified
 user confirmation of an existing catalog entry can create a canonical

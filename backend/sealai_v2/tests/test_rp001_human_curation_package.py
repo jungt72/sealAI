@@ -35,7 +35,7 @@ def test_package_is_explicitly_non_authoritative_and_non_importable() -> None:
     assert manifest["ratified_owner_decisions"] == [
         {
             "decision_id": "RP001-OD-01",
-            "state": "ratified_import_blocked_pending_v2",
+            "state": "ratified_v2_implemented_import_blocked_pending_human_review",
             "decision": "no_material_placeholder_typed_evidence_scope_v2",
             "required_scope": (
                 "media_identity without materials and with exactly one media_ref"

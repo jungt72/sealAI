@@ -18,7 +18,12 @@ from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.core.material_evidence_review import (
     EvidenceClaimType,
     FactualApprovalState,
+    ReviewedClaimMetadataV1,
 )
+from sealai_v2.core.material_evidence_review_v2 import (
+    ReviewedClaimMetadataV2,
+)
+from sealai_v2.core.material_evidence_v2 import MediaIdentityClaimScopeV2
 from sealai_v2.core.medium_catalog import (
     EvidenceVerifiedMediumCatalogSnapshotV1,
     MED_NORM_CONTRACT_VERSION,
@@ -32,6 +37,9 @@ from sealai_v2.core.medium_catalog import (
     parse_catalog_payload,
 )
 from sealai_v2.db.material_evidence_review import MaterialEvidenceReviewRepository
+from sealai_v2.db.material_evidence_review_v2 import (
+    MaterialEvidenceReviewRepositoryV2,
+)
 from sealai_v2.db.models import (
     V2MediumCatalog,
     V2MediumCatalogAuditEvent,
@@ -66,10 +74,19 @@ class MediumCatalogRepository:
     def __init__(
         self,
         session_factory: sessionmaker,
-        evidence_review_repository: MaterialEvidenceReviewRepository,
+        evidence_review_repository: (
+            MaterialEvidenceReviewRepository | MaterialEvidenceReviewRepositoryV2
+        ),
+        *,
+        evidence_review_repository_v2: MaterialEvidenceReviewRepositoryV2 | None = None,
     ) -> None:
         self._session_factory = session_factory
-        self._reviews = evidence_review_repository
+        repositories = (evidence_review_repository,)
+        if evidence_review_repository_v2 is not None:
+            if evidence_review_repository_v2 is evidence_review_repository:
+                raise ValueError("review repositories must be distinct")
+            repositories += (evidence_review_repository_v2,)
+        self._review_repositories = repositories
 
     def create_catalog(
         self,
@@ -301,10 +318,7 @@ class MediumCatalogRepository:
         self, snapshot: MediumCatalogSnapshotV1, *, identity: VerifiedIdentity
     ) -> None:
         for entry in snapshot.payload.entries:
-            review = self._reviews.load_snapshot(
-                entry.evidence_review_snapshot_id, identity=identity
-            )
-            projection = self._reviews.load_projection(
+            review, projection = self._resolve_review(
                 entry.evidence_review_snapshot_id, identity=identity
             )
             review_claims = {claim.claim_ref: claim for claim in review.payload.claims}
@@ -314,13 +328,7 @@ class MediumCatalogRepository:
             if (
                 review.content_sha256 != entry.evidence_review_content_sha256
                 or any(claim is None for claim in selected_claims)
-                or any(
-                    claim.claim_type is not EvidenceClaimType.OTHER_TECHNICAL
-                    or claim.scope.media != (entry.media_id,)
-                    or claim.scope.conditions != (entry.identity_assertion_ref,)
-                    for claim in selected_claims
-                    if claim is not None
-                )
+                or not self._claims_match_entry(selected_claims, entry=entry)
                 or projection.approval_state is not FactualApprovalState.APPROVED
             ):
                 raise MediumCatalogValidationError(
@@ -328,6 +336,55 @@ class MediumCatalogRepository:
                     "catalog entry lacks exact approved factual evidence",
                     path=f"$.entries[{entry.media_id}]",
                 )
+
+    def _resolve_review(self, review_snapshot_id: str, *, identity: VerifiedIdentity):
+        """Resolve exactly one immutable v1/v2 review provenance per entry.
+
+        Review snapshot IDs intentionally remain unchanged in the MED-NORM v1
+        payload.  The additive router therefore probes only the explicitly
+        configured repositories.  Missing and cross-version-colliding IDs are
+        both rejected; no repository order can select authority.
+        """
+
+        matches = []
+        for repository in self._review_repositories:
+            try:
+                review = repository.load_snapshot(review_snapshot_id, identity=identity)
+            except KeyError:
+                continue
+            projection = repository.load_projection(
+                review_snapshot_id, identity=identity
+            )
+            matches.append((review, projection))
+        if len(matches) != 1:
+            raise MediumCatalogValidationError(
+                MediumCatalogErrorCode.DANGLING_REF,
+                "catalog entry must resolve to exactly one v1/v2 review snapshot",
+                path=f"$.reviews[{review_snapshot_id}]",
+            )
+        return matches[0]
+
+    @staticmethod
+    def _claims_match_entry(selected_claims, *, entry) -> bool:
+        if all(type(claim) is ReviewedClaimMetadataV1 for claim in selected_claims):
+            return all(
+                claim.claim_type is EvidenceClaimType.OTHER_TECHNICAL
+                and claim.scope.media == (entry.media_id,)
+                and claim.scope.conditions == (entry.identity_assertion_ref,)
+                for claim in selected_claims
+                if claim is not None
+            )
+        if all(type(claim) is ReviewedClaimMetadataV2 for claim in selected_claims):
+            return all(
+                type(claim) is ReviewedClaimMetadataV2
+                and claim.claim_type is EvidenceClaimType.OTHER_TECHNICAL
+                and type(claim.scope) is MediaIdentityClaimScopeV2
+                and claim.scope.media_ref == entry.media_id
+                and claim.scope.identity_assertion_ref == entry.identity_assertion_ref
+                for claim in selected_claims
+                if claim is not None
+            )
+        return False
 
     @staticmethod
     def _require_identity(identity: VerifiedIdentity) -> None:

@@ -413,7 +413,18 @@ neutral, sentinel, family, wildcard, or other placeholder material may be used.
 MAT-EVID-01A.v1 snapshots and hashes remain immutable and are neither converted
 nor reinterpreted. RP-001 human source and identity curation may continue, but
 media-identity import remains fail-closed until the additive v2 contract is
-implemented and bound explicitly through MAT-EVID-01B, MAT-EVID-01C, and
-MED-NORM. This decision creates no claim, material fact, catalog entry, rule,
-approval, activation, public output, production migration, or deployment
-authority.
+implemented, reviewed through MAT-EVID-01C, and consumed object-exactly by
+MED-NORM. MAT-EVID-01B.v2 is explicit but not applicable to `media_identity`:
+it rejects that variant fail-closed and binds only `material_relation` for the
+material evaluator. This decision creates no claim, material fact, catalog
+entry, rule, approval, activation, public output, production migration, or
+deployment authority.
+
+### Implementation status
+
+The additive typed contract is implemented as `MAT-EVID-01A.v2`, with explicit
+`MAT-EVID-01B.v2` and `MAT-EVID-01C.v2` companions and an exact, per-entry
+fail-closed v1/v2 MED-NORM review router. Existing v1 histories remain
+unchanged. The implementation is empty and default-off: it creates no source,
+claim, review, catalog entry, material rule, activation, production migration,
+or deployment authority.

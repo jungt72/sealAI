@@ -82,6 +82,7 @@ EXPECTED = {
         }
     ),
 }
+EXPECTED_V2 = {f"{name}_v2": columns for name, columns in EXPECTED.items()}
 
 
 def _imports(path: Path) -> set[str]:
@@ -97,9 +98,10 @@ def _imports(path: Path) -> set[str]:
 def test_01c_schema_is_exact_and_has_no_deployment_or_pointer() -> None:
     schema = load_material_schema(MODELS)
     assert {name: schema[name] for name in EXPECTED} == EXPECTED
+    assert {name: schema[name] for name in EXPECTED_V2} == EXPECTED_V2
     assert {
         name for name in schema if name.startswith("v2_material_evidence_review_")
-    } == set(EXPECTED)
+    } == set(EXPECTED) | set(EXPECTED_V2)
     assert not any(
         token in name
         for name in EXPECTED
