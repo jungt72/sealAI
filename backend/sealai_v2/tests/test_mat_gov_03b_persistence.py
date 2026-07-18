@@ -26,7 +26,7 @@ from sealai_v2.core.material_shadow import (
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
 from sealai_v2.db.material_shadow import MaterialShadowRepository
-from sealai_v2.db.migrate import _config, _upgrade_engine, migration_status, up
+from sealai_v2.db.migrate import _config, _upgrade_engine, migration_status
 from sealai_v2.db.models import (
     V2MaterialShadowBinding,
     V2MaterialShadowBindingEvent,
@@ -75,7 +75,7 @@ def _payload() -> str:
 
 def _database(tmp_path, name="shadow.db"):
     engine = make_engine(f"sqlite:///{tmp_path / name}")
-    up(engine)
+    _up_03b(engine)
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
     rulesets.create_ruleset(
@@ -91,6 +91,11 @@ def _database(tmp_path, name="shadow.db"):
         created_at=NOW,
     )
     return engine, factory, rulesets, snapshot
+
+
+def _up_03b(engine):
+    _upgrade_engine(engine, "20260717_0013")
+    return inspect(engine).get_table_names()
 
 
 def _binding(snapshot, *, suffix="2", start=NOW, end=ONE, **changes):
@@ -145,7 +150,7 @@ def test_fresh_03b_migration_is_empty_additive_and_pointerless(tmp_path) -> None
     before = set(
         _upgrade_engine(engine, "20260717_0011") or inspect(engine).get_table_names()
     )
-    _upgrade_engine(engine)
+    _upgrade_engine(engine, "20260717_0013")
     added = set(inspect(engine).get_table_names()) - before
     assert added == {
         "v2_material_shadow_bindings",
@@ -158,7 +163,7 @@ def test_fresh_03b_migration_is_empty_additive_and_pointerless(tmp_path) -> None
         "v2_material_shadow_evaluation_matches",
         "v2_material_shadow_evaluation_refs",
     }
-    assert migration_status(engine) == ("20260717_0013", "20260717_0013")
+    assert migration_status(engine) == ("20260717_0013", "20260718_0014")
     outbox_columns = {
         column["name"]
         for column in inspect(engine).get_columns("v2_material_shadow_outbox")
@@ -181,7 +186,7 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
     tmp_path,
 ) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'adoption.db'}")
-    up(engine)
+    _up_03b(engine)
     with engine.begin() as connection:
         before = list(
             connection.execute(
@@ -194,9 +199,9 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
         )
         connection.exec_driver_sql("DROP TABLE alembic_version")
 
-    up(engine)
+    _up_03b(engine)
 
-    assert migration_status(engine) == ("20260717_0013", "20260717_0013")
+    assert migration_status(engine) == ("20260717_0013", "20260718_0014")
     with engine.connect() as connection:
         after = list(
             connection.execute(
@@ -223,7 +228,7 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
 
 def test_adoption_rejects_same_named_index_with_different_semantics(tmp_path) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'adoption-index-drift.db'}")
-    up(engine)
+    _up_03b(engine)
     with engine.begin() as connection:
         connection.exec_driver_sql("DROP TABLE alembic_version")
         connection.exec_driver_sql("DROP INDEX ix_v2_material_shadow_binding_lookup")
@@ -232,12 +237,12 @@ def test_adoption_rejects_same_named_index_with_different_semantics(tmp_path) ->
             "ON v2_material_shadow_bindings(binding_id)"
         )
     with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
-        up(engine)
+        _up_03b(engine)
 
 
 def test_adoption_rejects_same_named_trigger_with_different_body(tmp_path) -> None:
     engine = make_engine(f"sqlite:///{tmp_path / 'adoption-trigger-drift.db'}")
-    up(engine)
+    _up_03b(engine)
     with engine.begin() as connection:
         connection.exec_driver_sql("DROP TABLE alembic_version")
         connection.exec_driver_sql(
@@ -248,7 +253,7 @@ def test_adoption_rejects_same_named_trigger_with_different_body(tmp_path) -> No
             "BEFORE UPDATE ON v2_material_shadow_pins BEGIN SELECT 1; END"
         )
     with pytest.raises(RuntimeError, match="structural adoption fingerprint mismatch"):
-        up(engine)
+        _up_03b(engine)
 
 
 def test_lease_migration_rejects_predecessor_drift_before_first_mutation(
@@ -688,7 +693,7 @@ def test_session_binding_change_requires_explicit_immutable_upgrade(tmp_path) ->
 
 def test_empty_downgrade_succeeds_and_used_03b_refuses(tmp_path) -> None:
     empty = make_engine(f"sqlite:///{tmp_path / 'empty.db'}")
-    up(empty)
+    _up_03b(empty)
     with empty.begin() as connection:
         command.downgrade(_config(connection=connection), "20260717_0011")
     assert not any(
