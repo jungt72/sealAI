@@ -106,7 +106,7 @@ def _manifest_payload(
 
 def _repository(tmp_path, name: str = "mat-evid-01a.db"):
     engine = make_engine(f"sqlite:///{tmp_path / name}")
-    _upgrade_engine(engine)
+    _upgrade_engine(engine, "20260718_0014")
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
     rulesets.create_ruleset(
@@ -145,10 +145,10 @@ def test_migration_is_additive_empty_and_uses_restrict_foreign_keys(tmp_path) ->
     engine = make_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     _upgrade_engine(engine, "20260717_0013")
     before = set(inspect(engine).get_table_names())
-    _upgrade_engine(engine)
+    _upgrade_engine(engine, "20260718_0014")
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) - before == EVIDENCE_TABLES
-    assert migration_status(engine) == ("20260718_0014", "20260718_0014")
+    assert migration_status(engine) == ("20260718_0014", "20260718_0016")
     manifest_uniques = {
         tuple(item["column_names"])
         for item in inspector.get_unique_constraints("v2_material_evidence_manifests")

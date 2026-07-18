@@ -30,7 +30,7 @@ reasoning makes it safe now, would not be after real data exists).
 No ``ForeignKey`` constraints in the legacy V2 aggregates (matches this schema's existing convention
 above — a green-field, still-evolving schema avoids FK migration friction; referential integrity for
 ``memory_item_id`` is an application-layer concern, same as every other legacy table here).
-MAT-GOV-03A and the inert MAT-EVID-01A extension are deliberately narrow
+MAT-GOV-03A and the inert MAT-EVID-01A/01B/01C extensions are deliberately narrow
 exceptions documented in ``docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md``
 and ``docs/architecture/ADR_MAT_EVID_01A_PERSISTENCE.md``. Their new bounded
 aggregates use real ``ON DELETE RESTRICT`` foreign keys and do not retrofit
@@ -1056,6 +1056,249 @@ class V2MaterialEvidenceAuditEvent(Base):
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class V2MaterialEvidenceReviewDossier(Base):
+    """Stable tenant-scoped 01C review family for one exact 01A snapshot."""
+
+    __tablename__ = "v2_material_evidence_review_dossiers"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "evidence_snapshot_id",
+            name="uq_v2_mat_evid_review_tenant_evidence",
+        ),
+        CheckConstraint(
+            "length(review_id) = 36 AND review_id LIKE 'mer_%'",
+            name="ck_v2_mat_evid_review_id",
+        ),
+        CheckConstraint(
+            "creator_identity_kind = 'verified_human'",
+            name="ck_v2_mat_evid_review_creator_human",
+        ),
+    )
+
+    review_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    evidence_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_evidence_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    creator_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    creator_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceReviewSnapshot(Base):
+    """Immutable content-addressed 01C factual review dossier."""
+
+    __tablename__ = "v2_material_evidence_review_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "review_id",
+            "content_sha256",
+            name="uq_v2_mat_evid_review_snapshot_content",
+        ),
+        CheckConstraint(
+            "length(review_snapshot_id) = 68 AND review_snapshot_id LIKE 'mrv_%'",
+            name="ck_v2_mat_evid_review_snapshot_id",
+        ),
+        CheckConstraint(
+            "review_schema_version = 1 AND canonicalization_version = 1 AND "
+            "mat_evid_review_contract_version = 'MAT-EVID-01C.v1'",
+            name="ck_v2_mat_evid_review_snapshot_contract",
+        ),
+        CheckConstraint(
+            "evidence_manifest_schema_version = 1 AND "
+            "evidence_contract_version = 'MAT-EVID-01A.v1'",
+            name="ck_v2_mat_evid_review_evidence_contract",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND length(evidence_content_sha256) = 64",
+            name="ck_v2_mat_evid_review_snapshot_hashes",
+        ),
+        CheckConstraint(
+            "runtime_authority = 'FACTUAL_REVIEW_ONLY' AND "
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_mat_evid_review_no_runtime_authority",
+        ),
+    )
+
+    review_snapshot_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    review_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "v2_material_evidence_review_dossiers.review_id", ondelete="RESTRICT"
+        ),
+        nullable=False,
+        index=True,
+    )
+    evidence_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_evidence_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    evidence_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_manifest_schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    evidence_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonicalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    mat_evid_review_contract_version: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    runtime_authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceReviewValidationEvent(Base):
+    """Append-only technical validation; not a factual review event."""
+
+    __tablename__ = "v2_material_evidence_review_validation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mvv_%'",
+            name="ck_v2_mat_evid_review_validation_id",
+        ),
+        CheckConstraint(
+            "validation_state = 'valid' AND error_code = 'none'",
+            name="ck_v2_mat_evid_review_validation_state",
+        ),
+        CheckConstraint(
+            "length(validation_sha256) = 64",
+            name="ck_v2_mat_evid_review_validation_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    validator_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceReviewLifecycleEvent(Base):
+    """Hash-chained append-only human review/approval event."""
+
+    __tablename__ = "v2_material_evidence_review_lifecycle_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mrl_%'",
+            name="ck_v2_mat_evid_review_lifecycle_id",
+        ),
+        UniqueConstraint(
+            "review_snapshot_id",
+            "sequence_no",
+            name="uq_v2_mat_evid_review_lifecycle_sequence",
+        ),
+        CheckConstraint(
+            "event_type IN ('reviewed','rejected','approved','revoked','quarantined')",
+            name="ck_v2_mat_evid_review_lifecycle_type",
+        ),
+        CheckConstraint(
+            "review_state IN ('draft','reviewed','rejected','revoked','quarantined')",
+            name="ck_v2_mat_evid_review_state",
+        ),
+        CheckConstraint(
+            "approval_state IN ('not_approved','approved','revoked','quarantined')",
+            name="ck_v2_mat_evid_approval_state",
+        ),
+        CheckConstraint(
+            "actor_role IN ('material_evidence:review','material_evidence:approve')",
+            name="ck_v2_mat_evid_review_actor_role",
+        ),
+        CheckConstraint(
+            "actor_identity_kind = 'verified_human'",
+            name="ck_v2_mat_evid_review_actor_human",
+        ),
+        CheckConstraint(
+            "sequence_no > 0 AND length(previous_event_sha256) = 64 AND "
+            "length(event_sha256) = 64",
+            name="ck_v2_mat_evid_review_lifecycle_hashes",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    review_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    approval_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    previous_event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceReviewAuditEvent(Base):
+    """Append-only technical creation audit for an immutable review snapshot."""
+
+    __tablename__ = "v2_material_evidence_review_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mra_%'",
+            name="ck_v2_mat_evid_review_audit_id",
+        ),
+        CheckConstraint(
+            "event_type = 'review_snapshot_created'",
+            name="ck_v2_mat_evid_review_audit_type",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_mat_evid_review_audit_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class V2MaterialShadowBinding(Base):
     """Immutable pointerless binding to one exact MAT-GOV-03A snapshot."""
 
@@ -1493,3 +1736,258 @@ class V2MaterialShadowEvaluationRef(Base):
     ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
     hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
     authority: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialEvidenceRuntimeBinding(Base):
+    """Immutable 01B companion to one exact pointerless shadow binding."""
+
+    __tablename__ = "v2_material_evidence_runtime_bindings"
+    __table_args__ = (
+        CheckConstraint(
+            "binding_state IN ('unbound','bound_unreviewed')",
+            name="ck_v2_mat_evid_runtime_binding_state",
+        ),
+        CheckConstraint(
+            "binding_schema_version = 1 AND "
+            "binding_contract_version = 'MAT-EVID-01B.v1'",
+            name="ck_v2_mat_evid_runtime_binding_contract",
+        ),
+        CheckConstraint(
+            "length(ruleset_content_sha256) = 64",
+            name="ck_v2_mat_evid_runtime_binding_ruleset_hash",
+        ),
+        CheckConstraint(
+            "(binding_state = 'unbound' AND evidence_snapshot_id IS NULL AND "
+            "evidence_content_sha256 IS NULL AND "
+            "evidence_manifest_schema_version IS NULL AND "
+            "evidence_canonicalization_version IS NULL AND "
+            "evidence_contract_version IS NULL AND authority = 'NONE') OR "
+            "(binding_state = 'bound_unreviewed' AND "
+            "evidence_snapshot_id IS NOT NULL AND "
+            "length(evidence_content_sha256) = 64 AND "
+            "evidence_manifest_schema_version = 1 AND "
+            "evidence_canonicalization_version = 1 AND "
+            "evidence_contract_version = 'MAT-EVID-01A.v1' AND "
+            "authority = 'TECHNICAL_UNREVIEWED')",
+            name="ck_v2_mat_evid_runtime_binding_evidence_identity",
+        ),
+        CheckConstraint(
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_mat_evid_runtime_binding_no_positive",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_bindings.binding_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    binding_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    binding_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    binding_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    ruleset_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    ruleset_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot_id: Mapped[str | None] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_evidence_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    evidence_content_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    evidence_manifest_schema_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    evidence_canonicalization_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
+    evidence_contract_version: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_pack_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    evaluator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    kernel_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialEvidenceRuntimePin(Base):
+    """Immutable evidence companion for one exact 03B pin."""
+
+    __tablename__ = "v2_material_evidence_runtime_pins"
+    __table_args__ = (
+        CheckConstraint(
+            "pin_schema_version = 1",
+            name="ck_v2_mat_evid_runtime_pin_schema",
+        ),
+        CheckConstraint(
+            "binding_state IN ('unbound','bound_unreviewed')",
+            name="ck_v2_mat_evid_runtime_pin_state",
+        ),
+        CheckConstraint(
+            "length(ruleset_content_sha256) = 64",
+            name="ck_v2_mat_evid_runtime_pin_ruleset_hash",
+        ),
+        CheckConstraint(
+            "(binding_state = 'unbound' AND evidence_snapshot_id IS NULL AND "
+            "evidence_content_sha256 IS NULL AND authority = 'NONE') OR "
+            "(binding_state = 'bound_unreviewed' AND "
+            "evidence_snapshot_id IS NOT NULL AND "
+            "length(evidence_content_sha256) = 64 AND "
+            "authority = 'TECHNICAL_UNREVIEWED')",
+            name="ck_v2_mat_evid_runtime_pin_evidence_identity",
+        ),
+        CheckConstraint(
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_mat_evid_runtime_pin_no_positive",
+        ),
+    )
+
+    pin_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_pins.pin_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    pin_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    binding_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_evidence_runtime_bindings.binding_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    binding_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    ruleset_snapshot_id: Mapped[str] = mapped_column(String(68), nullable=False)
+    ruleset_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot_id: Mapped[str | None] = mapped_column(String(68), nullable=True)
+    evidence_content_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialEvidenceRuntimeEvaluation(Base):
+    """Reference-only evidence envelope for one shadow evaluation."""
+
+    __tablename__ = "v2_material_evidence_runtime_evaluations"
+    __table_args__ = (
+        CheckConstraint(
+            "binding_state IN ('unbound','bound_unreviewed')",
+            name="ck_v2_mat_evid_runtime_eval_state",
+        ),
+        CheckConstraint(
+            "length(result_sha256) = 64",
+            name="ck_v2_mat_evid_runtime_eval_hash",
+        ),
+        CheckConstraint(
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_mat_evid_runtime_eval_no_positive",
+        ),
+    )
+
+    evaluation_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_evaluations.evaluation_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    pin_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_evidence_runtime_pins.pin_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    binding_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    ruleset_snapshot_id: Mapped[str] = mapped_column(String(68), nullable=False)
+    ruleset_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot_id: Mapped[str | None] = mapped_column(String(68), nullable=True)
+    evidence_content_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    result_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    stable_error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialEvidenceRuntimeEvaluationRef(Base):
+    __tablename__ = "v2_material_evidence_runtime_evaluation_refs"
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_id",
+            "rule_ref",
+            "claim_ref",
+            "source_ref",
+            name="uq_v2_mat_evid_runtime_eval_ref",
+        ),
+    )
+
+    ref_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    evaluation_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_evidence_runtime_evaluations.evaluation_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    rule_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    claim_ref: Mapped[str] = mapped_column(String(68), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(68), nullable=False)
+
+
+class V2MaterialEvidenceRuntimeAuditEvent(Base):
+    __tablename__ = "v2_material_evidence_runtime_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('binding_created','pin_created',"
+            "'evaluation_created','integrity_blocked')",
+            name="ck_v2_mat_evid_runtime_audit_type",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_mat_evid_runtime_audit_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    binding_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_evidence_runtime_bindings.binding_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    pin_id: Mapped[str | None] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_evidence_runtime_pins.pin_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    evaluation_id: Mapped[str | None] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_evidence_runtime_evaluations.evaluation_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)

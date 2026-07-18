@@ -144,6 +144,10 @@ class Settings(BaseSettings):
     material_ruleset_shadow_retry_max_s: int = 300
     material_ruleset_shadow_claim_timeout_s: int = 60
     material_ruleset_shadow_max_attempts: int = 5
+    # MAT-EVID-01B: technical, non-authoritative companion binding inside the
+    # already isolated shadow worker. It never changes the request pipeline or
+    # public result and defaults off independently from every 03B switch.
+    material_evidence_runtime_binding_enabled: bool = False
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
@@ -297,6 +301,11 @@ class Settings(BaseSettings):
             raise ValueError("material shadow sampling requires shadow and persistence")
         if self.material_ruleset_shadow_sampling_basis_points != 0:
             raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
+        if self.material_evidence_runtime_binding_enabled and not (
+            self.material_ruleset_shadow_enabled
+            and self.material_ruleset_shadow_persistence_enabled
+        ):
+            raise ValueError("runtime evidence binding requires shadow and persistence")
         shadow_times = {
             "poll_interval": self.material_ruleset_shadow_poll_interval_s,
             "lease": self.material_ruleset_shadow_lease_s,

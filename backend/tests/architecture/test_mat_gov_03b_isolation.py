@@ -200,10 +200,10 @@ UNCHANGED_PUBLIC_SURFACES = {
         "ed8af58c5407cd0d65730abfa390d56464e9a1f43f36715f9f6236913054b7b3"
     ),
     "docker-compose.deploy.yml": (
-        "322c08a81b97becffa8af53e63f645ff2ac1b8426b3867ce20443007c284a988"
+        "e1ebec302d4b101684ca8c9f47f9c79606595ac2ebef5768cfdd31bd97ac4e67"
     ),
     ".env.example": (
-        "746c1c14050f996a37087999d4c1ba39068cb879cdb870f4745cea0962d3d6c1"
+        "acc32c4fd4717872f64ae4ad0501c570f348cf9f9daaf90a96163ef407f00da7"
     ),
     "frontend-v2/src/contracts.ts": (
         "7615d47b05b74363910e9879c2a0862d66b5c4fe8e1e98a82660f4b17816efbc"

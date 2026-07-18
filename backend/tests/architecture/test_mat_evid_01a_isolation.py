@@ -91,10 +91,10 @@ UNCHANGED_PUBLIC = {
         "1795c1b7f0160bc4e99a174817fbfc3ee5a7c12f55791f34f06572d5fba6bb9d"
     ),
     "docker-compose.deploy.yml": (
-        "322c08a81b97becffa8af53e63f645ff2ac1b8426b3867ce20443007c284a988"
+        "e1ebec302d4b101684ca8c9f47f9c79606595ac2ebef5768cfdd31bd97ac4e67"
     ),
     ".env.example": (
-        "746c1c14050f996a37087999d4c1ba39068cb879cdb870f4745cea0962d3d6c1"
+        "acc32c4fd4717872f64ae4ad0501c570f348cf9f9daaf90a96163ef407f00da7"
     ),
     "frontend-v2/src/contracts.ts": (
         "7615d47b05b74363910e9879c2a0862d66b5c4fe8e1e98a82660f4b17816efbc"
@@ -117,11 +117,7 @@ def _imports(path: Path) -> set[str]:
 
 def test_evidence_schema_is_exact_and_contains_no_lifecycle_or_runtime_tables() -> None:
     schema = load_material_schema(MODELS)
-    actual = {
-        name: columns
-        for name, columns in schema.items()
-        if name.startswith("v2_material_evidence_")
-    }
+    actual = {name: schema[name] for name in EXPECTED_SCHEMA}
     assert actual == EXPECTED_SCHEMA
     forbidden = (
         "review",
@@ -137,7 +133,7 @@ def test_evidence_schema_is_exact_and_contains_no_lifecycle_or_runtime_tables() 
     non_shadow = {
         table for table in schema if not table.startswith("v2_material_shadow_")
     }
-    assert non_shadow == MAT_GOV_03A_TABLES | set(EXPECTED_SCHEMA)
+    assert MAT_GOV_03A_TABLES | set(EXPECTED_SCHEMA) <= non_shadow
 
 
 def test_mat_gov_03a_schema_v1_files_are_byte_identical_to_accepted_baseline() -> None:
@@ -166,6 +162,9 @@ def test_request_runtime_does_not_import_evidence_foundation() -> None:
         imports = _imports(REPO / relative)
         assert "sealai_v2.core.material_evidence" not in imports
         assert "sealai_v2.db.material_evidence" not in imports
+        assert "sealai_v2.core.material_evidence_binding" not in imports
+        assert "sealai_v2.db.material_evidence_binding" not in imports
+        assert "sealai_v2.material_evidence_binding" not in imports
 
 
 def test_evidence_migration_contains_no_data_or_lifecycle_operations() -> None:

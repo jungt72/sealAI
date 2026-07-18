@@ -290,3 +290,58 @@ deployment remain `NO-GO`. Intermediate Claude gates remain waived; Codex leads
 implementation and cumulative review, while one external Claude-Sonnet-5 audit
 remains required after a separately authorized dark-staging deployment and
 before activation.
+
+## ODR-MAT-EVID-01B-20260718-02
+
+### Decision
+
+`MAT_EVID_01B_PLAN_AND_IMPLEMENTATION_GO` is ratified as a strictly
+default-off, non-authoritative runtime companion. Every rule in an exact
+ruleset snapshot requires evidence; rule and claim scopes must be exactly
+equal; one claim cannot support multiple rules; multiple claims per rule are
+allowed. `bound_unreviewed` may carry the existing technical result unchanged,
+but binding cannot create or change a verdict, precedence, match, decisive
+reference, or positive statement.
+
+### Consequence
+
+The canonical `MaterialConstraintMatch` remains `unbound`. MAT-GOV-03A and
+MAT-EVID-01A schema v1 are immutable and are not reinterpreted. Missing,
+foreign, duplicated, contradictory, version-drifted, hash-drifted, or
+scope-drifted bindings fail closed. Technical audit is append-only. A later
+reviewed-evidence state requires a new contract; it cannot be added to 01A/01B
+v1.
+
+No existing matrix content is bound or seeded. No review, approval, public
+API, frontend output, positive material assertion, production migration,
+activation, sampling, or deployment is authorized. MAT-EVID-01C,
+MED-NORM-01, MAT-GOV-03C, evidence-bound initial rules, dark staging, and the
+single final external audit remain separate gates.
+
+## ODR-MAT-EVID-01C-20260718-03
+
+### Decision
+
+`MAT_EVID_01C_FACTUAL_REVIEW_IMPLEMENTATION_GO` is ratified as a separate,
+versioned and runtime-inert factual Evidence-review contract. One immutable
+review dossier pins one exact MAT-EVID-01A snapshot, covers every source and
+claim, binds complete document identity/metadata, exact claim scope, required
+source types, rights/locator state, and typed conflict/supersession relations.
+
+Creation, review, and approval require verified-human identities with separate
+roles. Creator, reviewer, and approver are three different verified subjects.
+Self-review, self-approval and model/service auto-approval fail closed.
+Lifecycle events are append-only and hash-chained; revocation and quarantine
+are terminal. Structured short excerpts are bounded; protected full texts and
+long copyrighted passages are excluded.
+
+### Consequence
+
+Factual approval is not technical runtime authority. MAT-EVID-01A.v1 and
+01B.v1 remain unchanged, 01B remains `bound_unreviewed`, and even an approved
+01C dossier has `FACTUAL_REVIEW_ONLY` authority and cannot permit a positive
+statement. The migration is additive and initially empty. No seed, backfill,
+matrix import, public/admin API, frontend output, pointer, activation,
+production migration, sampling, or deployment is authorized. MED-NORM-01,
+evidence-bound rules, MAT-GOV-03C, public integration, dark staging, and the
+single final external audit remain separate gates.
