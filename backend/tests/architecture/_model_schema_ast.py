@@ -18,6 +18,8 @@ _ALLOWED_FOREIGN_KEYS = frozenset(
         "v2_material_ruleset_snapshots.snapshot_id",
         "v2_material_evidence_manifests.manifest_id",
         "v2_material_evidence_snapshots.snapshot_id",
+        "v2_material_evidence_review_dossiers.review_id",
+        "v2_material_evidence_review_snapshots.review_snapshot_id",
         "v2_material_evidence_runtime_bindings.binding_id",
         "v2_material_evidence_runtime_evaluations.evaluation_id",
         "v2_material_evidence_runtime_pins.pin_id",
