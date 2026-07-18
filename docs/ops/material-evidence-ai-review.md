@@ -72,8 +72,14 @@ input hash and invalidates any previous challenge receipt.
 Use only the authenticated local Claude CLI through
 `run_claude_challenge`. The runner enforces exact model `claude-sonnet-5`, no
 tools, MCP, hooks, Chrome, web or session persistence; it removes secret-bearing
-environment variables, accepts no caller-supplied executable path and writes
-only to a newly created private directory outside the repository. It does not
+environment variables, ignores caller `PATH`, accepts no caller-supplied
+executable path and selects only the exact platform/path/version/digest record
+from the hash-pinned repository trust manifest
+`backend/sealai_v2/material_evidence_ai_review/claude-executable-trust-v1.json`.
+The selected executable digest is checked before and after the run. A manifest,
+path, version or digest mismatch is a fail-closed stop; changing the reviewed
+installation requires a new repository change and review. The runner writes
+only to a newly created private directory outside the repository and does not
 retry.
 
 Accept the transport only when the process returns zero, the envelope is a
@@ -82,9 +88,9 @@ empty, both CLI web counters are exact integer zero, and the closed report binds
 the exact review snapshot/hash and every claim. The persisted result has its
 session ID redacted; only a one-way run hash enters provenance. Persistence
 consumes the in-process receipt exactly once and durably stores the canonical
-audit input, redacted closed CLI envelope, file hashes and Claude-executable
-digest. Adjudication must reconstruct and validate all of that evidence; file
-paths are not a durable substitute.
+audit input, redacted closed CLI envelope, file hashes, Claude-executable
+digest and canonical executable attestation. Adjudication must reconstruct and
+validate all of that evidence; file paths are not a durable substitute.
 
 A timeout, transport error, invalid JSON, wrong model, permission denial,
 incomplete report or hash mismatch is `REVIEW_INCOMPLETE`, not PASS. Do not

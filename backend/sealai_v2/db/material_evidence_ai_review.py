@@ -291,9 +291,11 @@ class MaterialEvidenceAIReviewRepositoryV1:
                 )
             if session.get(V2MaterialEvidenceAIChallenge, challenge.challenge_id):
                 raise ValueError("challenge already exists")
-            canonical_audit_input, canonical_cli_receipt = (
-                receipt.consume_for_persistence(snapshot)
-            )
+            (
+                canonical_audit_input,
+                canonical_cli_receipt,
+                canonical_executable_attestation,
+            ) = receipt.consume_for_persistence(snapshot)
             isolation = challenge.challenger.isolation
             session.add(
                 V2MaterialEvidenceAIChallenge(
@@ -313,6 +315,12 @@ class MaterialEvidenceAIReviewRepositoryV1:
                     cli_result_file_sha256=receipt.cli_result_file_sha256,
                     canonical_cli_receipt_json=canonical_cli_receipt,
                     claude_executable_sha256=receipt.claude_executable_sha256,
+                    canonical_executable_attestation_json=(
+                        canonical_executable_attestation
+                    ),
+                    claude_executable_attestation_sha256=(
+                        receipt.claude_executable_attestation_sha256
+                    ),
                     report_sha256=challenge.report_sha256,
                     process_returncode=receipt.process_returncode,
                     session_id_sha256=receipt.session_id_sha256,
@@ -429,9 +437,15 @@ class MaterialEvidenceAIReviewRepositoryV1:
                     challenge=stored_challenge,
                     canonical_audit_input_json=challenge.canonical_audit_input_json,
                     canonical_cli_receipt_json=challenge.canonical_cli_receipt_json,
+                    canonical_executable_attestation_json=(
+                        challenge.canonical_executable_attestation_json
+                    ),
                     audit_input_file_sha256=challenge.audit_input_file_sha256,
                     cli_result_file_sha256=challenge.cli_result_file_sha256,
                     claude_executable_sha256=challenge.claude_executable_sha256,
+                    claude_executable_attestation_sha256=(
+                        challenge.claude_executable_attestation_sha256
+                    ),
                     process_returncode=challenge.process_returncode,
                     session_id_sha256=challenge.session_id_sha256,
                     runner_receipt_sha256=challenge.runner_receipt_sha256,

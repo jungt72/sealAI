@@ -135,6 +135,7 @@
         "backend/sealai_v2/core/material_reviewed_rules.py",
         "backend/sealai_v2/core/material_rule_coverage.py",
         "backend/sealai_v2/core/material_evidence_ai_review.py",
+        "backend/sealai_v2/material_evidence_ai_review/claude-executable-trust-v1.json",
         "backend/sealai_v2/db/material_rulesets.py",
         "backend/sealai_v2/db/material_shadow.py",
         "backend/sealai_v2/db/material_evidence.py",

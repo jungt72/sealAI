@@ -456,7 +456,10 @@ Evidence source identity and never claims organizational independence; the
 challenger must return a closed independence assessment. Source quality uses a
 closed primary-source set, rule/claim bindings are exact, CLI web counters must
 be zero, and persistence accepts only a revalidated one-shot runner receipt
-before re-deriving every challenge and adjudication.
+whose Claude executable is selected from the repository-hash-pinned exact
+platform/path/version/digest trust manifest. Caller `PATH` is never a selection
+input; the canonical executable attestation is persisted before re-deriving
+every challenge and adjudication.
 
 ### Consequence
 

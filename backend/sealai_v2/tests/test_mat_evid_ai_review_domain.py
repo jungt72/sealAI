@@ -402,16 +402,16 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
         "cfa653f2c7e9a1d7389f18804c0530f998687d4c94bfe339d49e5a2feed28506"
     )
     assert audit_input.audit_input_sha256 == (
-        "bae7e7a142711a2c526682f6db77073aa89e26d1b4714b66c2737b0775b7148e"
+        "2cc0f1adf6313548225e4e319699bad3374e3cb282f5e996c75a17ed3e130c9e"
     )
     assert report_hash == (
         "2b4331dcec56ed65895941ff895b5824293eeef79bbd5ba4c4d8aaf7ca63662d"
     )
     assert challenge.challenge_id == (
-        "mac_a15cb126b2dc16ef81d2bad2fd2b178f6e8951f89050ea97ab8d2e4ff7428604"
+        "mac_5ec8920e53a01b58549487f37719b6ac744b2421e2ea4af0d256f26a8e6dffec"
     )
     assert adjudication.adjudication_id == (
-        "maa_0f447410a54b3dd0386e4f14261ae37807eeb126aa3774e0046f36681168f421"
+        "maa_f4255dd07e8d3bbfae8dbc216cedfd56d0569bd2d3139f13fb9fadab4423451b"
     )
     assert compute_ai_review_audit_sha256({"event": "golden", "sequence": 1}) == (
         "630e79eb4ead1dee89a3f6d88ac4f04c8cebcacc45ab44fadc8ee6b091b85948"
@@ -431,6 +431,13 @@ def test_audit_prompt_publishes_closed_finding_and_independence_vocabularies() -
     assert "hash_or_reference" in required["finding_categories"]
     assert required["source_independence_values"] == [
         item.value for item in SourceIndependenceState
+    ]
+    assert required["claim_severities"] == [
+        "NONE",
+        "CRITICAL",
+        "HIGH",
+        "MEDIUM",
+        "LOW",
     ]
     assert "hash_or_reference" not in required["source_independence_values"]
 
@@ -804,6 +811,8 @@ def test_audit_input_exposes_and_binds_every_structured_identity_preimage() -> N
         "Street 42, 10115 Berlin",
         "Author: Synthetic Person",
         "John Smith",
+        "Prepared by John Smith",
+        "John Smith prepared this source.",
         "Musterstraße 1",
         "DOB: 2000-01-02",
         "Endpoint 192.0.2.42",
@@ -820,6 +829,18 @@ def test_audit_corpus_safety_preflight_blocks_sensitive_content(
     source = payload.sources[0]
     unsafe_source = AISourceContextV1(
         metadata=replace(source.metadata, document_title=unsafe_value)
+    )
+    unsafe_payload = replace(payload, sources=(unsafe_source,))
+    with pytest.raises(AIReviewValidationError) as exc:
+        build_claude_audit_input(AIReviewSnapshotV1.create(BATCH_ID, unsafe_payload))
+    assert exc.value.code is AIReviewErrorCode.SENSITIVE_DATA_FORBIDDEN
+
+
+def test_audit_corpus_safety_preflight_blocks_person_name_in_publisher() -> None:
+    payload, _, _ = _payload()
+    source = payload.sources[0]
+    unsafe_source = AISourceContextV1(
+        metadata=replace(source.metadata, publisher="John Smith")
     )
     unsafe_payload = replace(payload, sources=(unsafe_source,))
     with pytest.raises(AIReviewValidationError) as exc:

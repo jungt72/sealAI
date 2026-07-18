@@ -498,14 +498,17 @@ keep the aggregate immutable. Migration `20260718_0019` is not authorized for
 production execution.
 
 The local runner is one-shot, writes only to a new private directory outside
-the repository, discovers the authenticated `claude` executable without a
-caller override, strips secret-bearing environment variables, disables Claude
-tools/MCP/hooks/web/session persistence, requires exact zero CLI web counters,
-redacts the returned session ID and never retries automatically. Persistence
-consumes the content-validated runner receipt once, stores the canonical audit
-input, redacted CLI envelope and executable digest, and revalidates that durable
-transport evidence before adjudication; challenges and adjudications are then
-canonically re-derived. Primary source
+the repository, ignores caller `PATH`, and selects the authenticated `claude`
+executable only from an owner-reviewed, repository-hash-pinned exact
+platform/path/version/digest manifest. It verifies the resolved binary before
+and after execution, strips secret-bearing environment variables, disables
+Claude tools/MCP/hooks/web/session persistence, requires exact zero CLI web
+counters, redacts the returned session ID and never retries automatically.
+Persistence consumes the content-validated runner receipt once, stores the
+canonical audit input, redacted CLI envelope, executable digest and canonical
+executable attestation, and revalidates that durable transport evidence before
+adjudication; challenges and adjudications are then canonically re-derived.
+Primary source
 quality is a closed enum gate; independence cannot be supplied as a free label;
 the exact frozen publisher identities are compared with presentation-level
 normalization; and the Evidence rule/claim binding set must be exactly equal to

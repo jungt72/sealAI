@@ -71,7 +71,9 @@ from sealai_v2.tests.test_mat_evid_ai_review_domain import (
     _source_identity,
     SHA,
 )
-from sealai_v2.tests.test_mat_evid_ai_review_runner import _fake_claude_on_path
+from sealai_v2.tests.test_mat_evid_ai_review_runner import (
+    _fake_trusted_claude_install,
+)
 
 
 CREATED_AT = "2026-07-18T20:00:00Z"
@@ -165,7 +167,7 @@ def _challenge(
 ) -> ClaudeChallengeRunReceiptV1:
     _, ruleset, evidence = _payload()
     output_index = len(tuple(tmp_path.glob("challenge-output-*")))
-    with _fake_claude_on_path(tmp_path, report_override=report_override):
+    with _fake_trusted_claude_install(tmp_path, report_override=report_override):
         return run_claude_challenge(
             snapshot,
             ruleset=ruleset,
@@ -401,6 +403,13 @@ def test_repository_round_trip_challenge_and_cross_review(tmp_path) -> None:
         )
         assert (
             challenges[0].claude_executable_sha256 == receipt.claude_executable_sha256
+        )
+        assert challenges[0].canonical_executable_attestation_json == json.loads(
+            receipt.claude_executable_attestation_bytes
+        )
+        assert (
+            challenges[0].claude_executable_attestation_sha256
+            == receipt.claude_executable_attestation_sha256
         )
         assert challenges[0].process_returncode == 0
         assert challenges[0].session_id_sha256 == receipt.session_id_sha256

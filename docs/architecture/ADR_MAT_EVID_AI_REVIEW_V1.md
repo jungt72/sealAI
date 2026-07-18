@@ -55,9 +55,10 @@ review snapshot's canonical pair set.
 
 Persistence accepts only the one-shot runner's revalidated execution receipt,
 including the exact frozen-input file, redacted CLI envelope, model-usage,
-permission/web counters, return code, Claude-executable digest, session-ID hash
-and content-addressed receipt hash. The exact canonical input and redacted
-transport envelope are stored with the immutable challenge and revalidated
+permission/web counters, return code, Claude-executable digest, the canonical
+owner-pinned executable attestation, session-ID hash and content-addressed
+receipt hash. The exact canonical input, redacted transport envelope and
+executable attestation are stored with the immutable challenge and revalidated
 before adjudication. A receipt is consumable once in its issuing process; the
 freely constructible domain challenge is insufficient.
 
@@ -99,12 +100,15 @@ At persistence, challenges and adjudications are re-derived against the exact
 stored snapshot and report; publicly constructible domain objects cannot skip
 run separation, input binding, finding coverage or outcome derivation.
 
-The authenticated local `claude` executable is discovered without a caller-
-supplied executable override and invoked once from a new private directory
-outside the repository. Secret-bearing environment variables are removed.
-Input and result are mode `0600`; the returned session identifier is hashed for
-provenance and redacted from disk. There is no API-key fallback or automatic
-retry.
+The authenticated local `claude` executable is selected only from the
+owner-reviewed, repository-hash-pinned platform/path/version/digest manifest
+`claude-executable-trust-v1.json`; caller `PATH` and executable overrides are
+not selection inputs. The resolved executable digest is checked before and
+after execution, and its canonical attestation is part of the durable receipt.
+It is invoked once from a new private directory outside the repository.
+Secret-bearing environment variables are removed. Input and result are mode
+`0600`; the returned session identifier is hashed for provenance and redacted
+from disk. There is no API-key fallback or automatic retry.
 
 ## Consequences
 

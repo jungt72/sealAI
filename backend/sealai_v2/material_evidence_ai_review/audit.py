@@ -134,13 +134,22 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
     (
         "named_person",
         re.compile(
-            r"(?i)\b(?:contact person|prepared by|author|ansprechpartner|bearbeiter)"
-            r"\s*[:=]\s*[A-ZÀ-ÖØ-Þ][^,;\n]{2,80}"
+            r"(?i:\b(?:contact person|prepared by|author|ansprechpartner|bearbeiter))\b"
+            r"\s*(?::|=)?\s*[A-ZÀ-ÖØ-Þ][^,;\n]{2,80}"
         ),
     ),
     (
         "bare_person_name",
         re.compile(r"^\s*[A-ZÄÖÜ][a-zäöüß]{2,}\s+[A-ZÄÖÜ][a-zäöüß]{2,}\s*$"),
+    ),
+    (
+        "person_name_in_sentence",
+        re.compile(
+            r"(?:^|[.!?]\s+)[A-ZÄÖÜ][a-zäöüß]{2,}\s+"
+            r"[A-ZÄÖÜ][a-zäöüß]{2,}\s+"
+            r"(?:prepared|authored|reviewed|approv"
+            r"ed|wrote|erstellt|geprüft)\b"
+        ),
     ),
     (
         "customer_identifier",
@@ -173,11 +182,7 @@ def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
     identifier_classes = sorted(
         name
         for name, pattern in _CORPUS_DIRECT_IDENTIFIER_PATTERNS
-        if any(
-            pattern.search(item)
-            for path, item in strings
-            if not (name == "bare_person_name" and path.endswith(".publisher"))
-        )
+        if any(pattern.search(item) for _, item in strings)
     )
     if secret_classes or identifier_classes:
         _fail(
@@ -539,6 +544,13 @@ def build_claude_audit_input(snapshot: AIReviewSnapshotV1) -> ClaudeAuditInputV1
                 "severity",
             ],
             "finding_severities": [
+                "CRITICAL",
+                "HIGH",
+                "MEDIUM",
+                "LOW",
+            ],
+            "claim_severities": [
+                "NONE",
                 "CRITICAL",
                 "HIGH",
                 "MEDIUM",

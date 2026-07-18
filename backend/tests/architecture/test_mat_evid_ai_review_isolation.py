@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from pathlib import Path
 
 from _model_schema_ast import load_material_schema
@@ -12,6 +14,10 @@ REPO = Path(__file__).resolve().parents[3]
 MODELS = REPO / "backend/sealai_v2/db/models.py"
 MIGRATION = REPO / (
     "backend/sealai_v2/db/migrations/versions/" "20260718_0019_mat_evid_ai_review.py"
+)
+RUNNER = REPO / "backend/sealai_v2/material_evidence_ai_review/runner.py"
+EXECUTABLE_TRUST = REPO / (
+    "backend/sealai_v2/material_evidence_ai_review/" "claude-executable-trust-v1.json"
 )
 EXPECTED = {
     "v2_material_evidence_ai_review_batches": frozenset(
@@ -69,6 +75,8 @@ EXPECTED = {
             "cli_result_file_sha256",
             "canonical_cli_receipt_json",
             "claude_executable_sha256",
+            "canonical_executable_attestation_json",
+            "claude_executable_attestation_sha256",
             "report_sha256",
             "process_returncode",
             "session_id_sha256",
@@ -226,3 +234,28 @@ def test_human_review_contracts_do_not_import_ai_review() -> None:
         assert not any(
             "material_evidence_ai_review" in name for name in _imports(REPO / relative)
         )
+
+
+def test_claude_executable_is_owner_pinned_and_never_resolved_from_path() -> None:
+    source = RUNNER.read_text(encoding="utf-8")
+    assert "shutil.which" not in source
+    assert 'allowed = {\n        "HOME",\n        "LANG"' in source
+    manifest = json.loads(EXECUTABLE_TRUST.read_text(encoding="utf-8"))
+    assert set(manifest) == {"contract_version", "installations", "schema_version"}
+    assert manifest["contract_version"] == ("MAT-EVID-AI-CLAUDE-EXECUTABLE-TRUST.v1")
+    assert manifest["schema_version"] == 1
+    assert len(manifest["installations"]) == 1
+    installation = manifest["installations"][0]
+    assert set(installation) == {
+        "entrypoint",
+        "executable_sha256",
+        "machine",
+        "platform",
+        "resolved_path",
+        "version",
+    }
+    assert Path(installation["entrypoint"]).is_absolute()
+    assert Path(installation["resolved_path"]).is_absolute()
+    assert len(installation["executable_sha256"]) == 64
+    manifest_sha256 = hashlib.sha256(EXECUTABLE_TRUST.read_bytes()).hexdigest()
+    assert f'"{manifest_sha256}"' in source

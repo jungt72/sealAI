@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
+import platform
 import stat
 import subprocess
 from typing import Any
@@ -31,8 +31,28 @@ from sealai_v2.material_evidence_ai_review.audit import (
 
 
 RUN_RECEIPT_DOMAIN = b"sealai:mat-evid-ai-review:claude-run-receipt:v1\x00"
+EXECUTABLE_ATTESTATION_DOMAIN = (
+    b"sealai:mat-evid-ai-review:claude-executable-attestation:v1\x00"
+)
 _RUN_RECEIPT_TOKEN = object()
 _PENDING_RUN_RECEIPTS: dict[str, int] = {}
+_TRUST_MANIFEST_PATH = Path(__file__).with_name("claude-executable-trust-v1.json")
+_TRUST_MANIFEST_FILE_SHA256 = (
+    "af3a817c6dc4c9ce6e9c61bb18897470391ce795a68e3ceffa3e60e3cab20ae1"
+)
+_TRUST_MANIFEST_FIELDS = frozenset(
+    {"contract_version", "installations", "schema_version"}
+)
+_TRUST_INSTALLATION_FIELDS = frozenset(
+    {
+        "entrypoint",
+        "executable_sha256",
+        "machine",
+        "platform",
+        "resolved_path",
+        "version",
+    }
+)
 _SHA256_HEX = frozenset("0123456789abcdef")
 _ENVELOPE_FIELDS = frozenset(
     {
@@ -63,6 +83,16 @@ _SENSITIVE_ENV_MARKERS = (
     "CREDENTIAL",
     "COOKIE",
 )
+_TRUSTED_CHILD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+
+@dataclass(frozen=True, slots=True)
+class _TrustedClaudeExecutableV1:
+    path: Path
+    executable_sha256: str
+    version: str
+    canonical_attestation_bytes: bytes
+    attestation_sha256: str
 
 
 def _canonical_receipt_bytes(value: dict[str, Any]) -> bytes:
@@ -86,6 +116,146 @@ def _canonical_receipt_bytes(value: dict[str, Any]) -> bytes:
         ) from exc
 
 
+def _reject_duplicate_object_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_JSON,
+                "Claude executable trust manifest contains a duplicate key",
+            )
+        result[key] = value
+    return result
+
+
+def _trusted_claude_executable() -> _TrustedClaudeExecutableV1:
+    """Resolve the exact owner-reviewed CLI identity without consulting PATH."""
+
+    try:
+        metadata = _TRUST_MANIFEST_PATH.lstat()
+        raw = _TRUST_MANIFEST_PATH.read_bytes()
+    except OSError as exc:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "Claude executable trust manifest is unavailable",
+        ) from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "Claude executable trust manifest must be a regular non-symlink file",
+        )
+    manifest_sha256 = hashlib.sha256(raw).hexdigest()
+    if manifest_sha256 != _TRUST_MANIFEST_FILE_SHA256:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.HASH_MISMATCH,
+            "Claude executable trust manifest digest drift",
+        )
+    try:
+        manifest = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            object_pairs_hook=_reject_duplicate_object_keys,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_JSON,
+            "Claude executable trust manifest is not strict UTF-8 JSON",
+        ) from exc
+    if type(manifest) is not dict or set(manifest) != _TRUST_MANIFEST_FIELDS:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.UNKNOWN_FIELD,
+            "Claude executable trust manifest fields are not exact",
+        )
+    if (
+        manifest["contract_version"] != "MAT-EVID-AI-CLAUDE-EXECUTABLE-TRUST.v1"
+        or type(manifest["schema_version"]) is not int
+        or manifest["schema_version"] != 1
+        or type(manifest["installations"]) is not list
+    ):
+        raise AIReviewValidationError(
+            AIReviewErrorCode.UNKNOWN_SCHEMA,
+            "Claude executable trust manifest version is unsupported",
+        )
+    platform_name = platform.system().lower()
+    machine = platform.machine().lower()
+    candidates = []
+    for record in manifest["installations"]:
+        if type(record) is not dict or set(record) != _TRUST_INSTALLATION_FIELDS:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.UNKNOWN_FIELD,
+                "Claude executable trust installation fields are not exact",
+            )
+        if any(type(record[field]) is not str for field in record):
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_TYPE,
+                "Claude executable trust installation values must be strings",
+            )
+        if record["platform"] == platform_name and record["machine"] == machine:
+            candidates.append(record)
+    if len(candidates) != 1:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "exactly one owner-reviewed Claude installation must match this platform",
+        )
+    record = candidates[0]
+    expected_digest = record["executable_sha256"]
+    if len(expected_digest) != 64 or not set(expected_digest) <= _SHA256_HEX:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.HASH_MISMATCH,
+            "trusted Claude executable digest is invalid",
+        )
+    entrypoint = Path(record["entrypoint"])
+    expected_resolved = Path(record["resolved_path"])
+    if not entrypoint.is_absolute() or not expected_resolved.is_absolute():
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "trusted Claude executable paths must be absolute",
+        )
+    try:
+        entrypoint_metadata = entrypoint.lstat()
+        resolved = entrypoint.resolve(strict=True)
+        resolved_metadata = resolved.stat()
+    except OSError as exc:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "trusted Claude executable installation is unavailable",
+        ) from exc
+    if (
+        not (
+            stat.S_ISLNK(entrypoint_metadata.st_mode)
+            or stat.S_ISREG(entrypoint_metadata.st_mode)
+        )
+        or resolved != expected_resolved
+        or not stat.S_ISREG(resolved_metadata.st_mode)
+        or resolved_metadata.st_uid not in {0, os.geteuid()}
+        or stat.S_IMODE(resolved_metadata.st_mode) & 0o022
+        or not os.access(resolved, os.X_OK)
+    ):
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "trusted Claude executable ownership, path or mode drift",
+        )
+    executable_sha256 = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    if executable_sha256 != expected_digest:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.HASH_MISMATCH,
+            "trusted Claude executable digest drift",
+        )
+    attestation_value = {
+        "installation": record,
+        "trust_manifest_file_sha256": manifest_sha256,
+    }
+    canonical_attestation = _canonical_receipt_bytes(attestation_value)
+    return _TrustedClaudeExecutableV1(
+        path=resolved,
+        executable_sha256=executable_sha256,
+        version=record["version"],
+        canonical_attestation_bytes=canonical_attestation,
+        attestation_sha256=hashlib.sha256(
+            EXECUTABLE_ATTESTATION_DOMAIN + canonical_attestation
+        ).hexdigest(),
+    )
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class ClaudeChallengeRunReceiptV1:
     challenge: ClaudeChallengeV1
@@ -94,6 +264,8 @@ class ClaudeChallengeRunReceiptV1:
     cli_result_path: str
     cli_result_file_sha256: str
     claude_executable_sha256: str
+    claude_executable_attestation_bytes: bytes
+    claude_executable_attestation_sha256: str
     process_returncode: int
     session_id_sha256: str
     runner_receipt_sha256: str
@@ -107,6 +279,8 @@ class ClaudeChallengeRunReceiptV1:
         cli_result_path: str,
         cli_result_file_sha256: str,
         claude_executable_sha256: str,
+        claude_executable_attestation_bytes: bytes,
+        claude_executable_attestation_sha256: str,
         process_returncode: int,
         session_id_sha256: str,
         runner_receipt_sha256: str,
@@ -123,6 +297,14 @@ class ClaudeChallengeRunReceiptV1:
             ("cli_result_path", cli_result_path),
             ("cli_result_file_sha256", cli_result_file_sha256),
             ("claude_executable_sha256", claude_executable_sha256),
+            (
+                "claude_executable_attestation_bytes",
+                claude_executable_attestation_bytes,
+            ),
+            (
+                "claude_executable_attestation_sha256",
+                claude_executable_attestation_sha256,
+            ),
             ("process_returncode", process_returncode),
             ("session_id_sha256", session_id_sha256),
             ("runner_receipt_sha256", runner_receipt_sha256),
@@ -135,10 +317,16 @@ class ClaudeChallengeRunReceiptV1:
             raise TypeError("challenge must be ClaudeChallengeV1")
         if type(self.process_returncode) is not int or self.process_returncode != 0:
             raise ValueError("successful receipt requires zero process return code")
+        if type(self.claude_executable_attestation_bytes) is not bytes:
+            raise ValueError("Claude executable attestation must be canonical bytes")
         for name, value in (
             ("audit_input_file_sha256", self.audit_input_file_sha256),
             ("cli_result_file_sha256", self.cli_result_file_sha256),
             ("claude_executable_sha256", self.claude_executable_sha256),
+            (
+                "claude_executable_attestation_sha256",
+                self.claude_executable_attestation_sha256,
+            ),
             ("session_id_sha256", self.session_id_sha256),
             ("runner_receipt_sha256", self.runner_receipt_sha256),
         ):
@@ -197,9 +385,17 @@ class ClaudeChallengeRunReceiptV1:
             challenge=self.challenge,
             canonical_audit_input_json=audit_value,
             canonical_cli_receipt_json=envelope,
+            canonical_executable_attestation_json=json.loads(
+                self.claude_executable_attestation_bytes.decode(
+                    "utf-8", errors="strict"
+                )
+            ),
             audit_input_file_sha256=self.audit_input_file_sha256,
             cli_result_file_sha256=self.cli_result_file_sha256,
             claude_executable_sha256=self.claude_executable_sha256,
+            claude_executable_attestation_sha256=(
+                self.claude_executable_attestation_sha256
+            ),
             process_returncode=self.process_returncode,
             session_id_sha256=self.session_id_sha256,
             runner_receipt_sha256=self.runner_receipt_sha256,
@@ -208,7 +404,7 @@ class ClaudeChallengeRunReceiptV1:
 
     def consume_for_persistence(
         self, snapshot: AIReviewSnapshotV1
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         """Consume exactly one receipt issued by this process after a CLI run."""
 
         if _PENDING_RUN_RECEIPTS.pop(self.runner_receipt_sha256, None) != id(self):
@@ -216,7 +412,11 @@ class ClaudeChallengeRunReceiptV1:
                 AIReviewErrorCode.INVALID_AGENT,
                 "runner receipt was not issued by this process or was already consumed",
             )
-        return self._validated_artifacts(snapshot)
+        audit_input, cli_receipt = self._validated_artifacts(snapshot)
+        executable_attestation = json.loads(
+            self.claude_executable_attestation_bytes.decode("utf-8", errors="strict")
+        )
+        return audit_input, cli_receipt, executable_attestation
 
 
 def compute_claude_run_receipt_sha256(
@@ -225,6 +425,7 @@ def compute_claude_run_receipt_sha256(
     audit_input_file_sha256: str,
     cli_result_file_sha256: str,
     claude_executable_sha256: str,
+    claude_executable_attestation_sha256: str,
     process_returncode: int,
     session_id_sha256: str,
 ) -> str:
@@ -233,6 +434,7 @@ def compute_claude_run_receipt_sha256(
         "challenge_id": challenge.challenge_id,
         "cli_result_file_sha256": cli_result_file_sha256,
         "claude_executable_sha256": claude_executable_sha256,
+        "claude_executable_attestation_sha256": (claude_executable_attestation_sha256),
         "process_returncode": process_returncode,
         "session_id_sha256": session_id_sha256,
     }
@@ -254,9 +456,11 @@ def validate_persisted_claude_run_artifacts(
     challenge: ClaudeChallengeV1,
     canonical_audit_input_json: dict[str, Any],
     canonical_cli_receipt_json: dict[str, Any],
+    canonical_executable_attestation_json: dict[str, Any],
     audit_input_file_sha256: str,
     cli_result_file_sha256: str,
     claude_executable_sha256: str,
+    claude_executable_attestation_sha256: str,
     process_returncode: int,
     session_id_sha256: str,
     runner_receipt_sha256: str,
@@ -271,6 +475,10 @@ def validate_persisted_claude_run_artifacts(
         ("audit_input_file_sha256", audit_input_file_sha256),
         ("cli_result_file_sha256", cli_result_file_sha256),
         ("claude_executable_sha256", claude_executable_sha256),
+        (
+            "claude_executable_attestation_sha256",
+            claude_executable_attestation_sha256,
+        ),
         ("session_id_sha256", session_id_sha256),
         ("runner_receipt_sha256", runner_receipt_sha256),
     ):
@@ -283,6 +491,37 @@ def validate_persisted_claude_run_artifacts(
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
             "stored Claude process did not complete successfully",
+        )
+
+    attestation_bytes = _canonical_receipt_bytes(canonical_executable_attestation_json)
+    if hashlib.sha256(
+        EXECUTABLE_ATTESTATION_DOMAIN + attestation_bytes
+    ).hexdigest() != claude_executable_attestation_sha256 or set(
+        canonical_executable_attestation_json
+    ) != {"installation", "trust_manifest_file_sha256"}:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.HASH_MISMATCH,
+            "persisted Claude executable attestation drift",
+        )
+    installation = canonical_executable_attestation_json["installation"]
+    manifest_digest = canonical_executable_attestation_json[
+        "trust_manifest_file_sha256"
+    ]
+    if (
+        type(installation) is not dict
+        or set(installation) != _TRUST_INSTALLATION_FIELDS
+        or any(type(installation[field]) is not str for field in installation)
+        or installation["executable_sha256"] != claude_executable_sha256
+        or installation["version"] != challenge.challenger.agent_version
+        or not Path(installation["entrypoint"]).is_absolute()
+        or not Path(installation["resolved_path"]).is_absolute()
+        or type(manifest_digest) is not str
+        or len(manifest_digest) != 64
+        or not set(manifest_digest) <= _SHA256_HEX
+    ):
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "persisted Claude executable attestation is not owner-bound",
         )
 
     audit_bytes = _canonical_receipt_bytes(canonical_audit_input_json)
@@ -337,6 +576,7 @@ def validate_persisted_claude_run_artifacts(
         audit_input_file_sha256=audit_input_file_sha256,
         cli_result_file_sha256=cli_result_file_sha256,
         claude_executable_sha256=claude_executable_sha256,
+        claude_executable_attestation_sha256=(claude_executable_attestation_sha256),
         process_returncode=process_returncode,
         session_id_sha256=session_id_sha256,
     )
@@ -379,7 +619,6 @@ def _read_private_receipt_file(path_value: str, *, expected_sha256: str) -> byte
 def _safe_environment() -> dict[str, str]:
     allowed = {
         "HOME",
-        "PATH",
         "LANG",
         "LC_ALL",
         "LC_CTYPE",
@@ -400,6 +639,7 @@ def _safe_environment() -> dict[str, str]:
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
             "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1",
             "DISABLE_AUTOUPDATER": "1",
+            "PATH": _TRUSTED_CHILD_PATH,
         }
     )
     return result
@@ -492,10 +732,9 @@ def run_claude_challenge(
         raise ValueError("max_turns must be between 1 and 20")
     if max_budget_usd not in {"5.00", "10.00"}:
         raise ValueError("max_budget_usd must use an owner-bounded value")
-    executable = Path(shutil.which("claude") or "missing-claude").resolve()
-    if not executable.is_file() or not os.access(executable, os.X_OK):
-        raise FileNotFoundError("authenticated Claude CLI executable is unavailable")
-    claude_executable_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
+    trusted_executable = _trusted_claude_executable()
+    executable = trusted_executable.path
+    claude_executable_sha256 = trusted_executable.executable_sha256
     output = Path(output_directory).expanduser().resolve()
     repository = Path(__file__).resolve().parents[4]
     if output == repository or repository in output.parents:
@@ -538,6 +777,11 @@ def run_claude_challenge(
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
             "Claude CLI version receipt is invalid",
+        )
+    if agent_version != trusted_executable.version:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "Claude CLI version differs from the owner-reviewed attestation",
         )
     command = [
         str(executable),
@@ -643,6 +887,7 @@ def run_claude_challenge(
         audit_input_file_sha256=audit_input_file_sha256,
         cli_result_file_sha256=cli_result_file_sha256,
         claude_executable_sha256=claude_executable_sha256,
+        claude_executable_attestation_sha256=(trusted_executable.attestation_sha256),
         process_returncode=completed.returncode,
         session_id_sha256=session_id_sha256,
     )
@@ -653,6 +898,10 @@ def run_claude_challenge(
         cli_result_path=str(cli_result_path),
         cli_result_file_sha256=cli_result_file_sha256,
         claude_executable_sha256=claude_executable_sha256,
+        claude_executable_attestation_bytes=(
+            trusted_executable.canonical_attestation_bytes
+        ),
+        claude_executable_attestation_sha256=(trusted_executable.attestation_sha256),
         process_returncode=completed.returncode,
         session_id_sha256=session_id_sha256,
         runner_receipt_sha256=runner_receipt_sha256,

@@ -1839,6 +1839,7 @@ class V2MaterialEvidenceAIChallenge(Base):
             "length(audit_output_sha256) = 64 AND "
             "length(cli_result_file_sha256) = 64 AND "
             "length(claude_executable_sha256) = 64 AND "
+            "length(claude_executable_attestation_sha256) = 64 AND "
             "length(report_sha256) = 64 AND "
             "length(session_id_sha256) = 64 AND "
             "length(runner_receipt_sha256) = 64 AND process_returncode = 0",
@@ -1879,6 +1880,12 @@ class V2MaterialEvidenceAIChallenge(Base):
         _MATERIAL_RULESET_JSON, nullable=False
     )
     claude_executable_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_executable_attestation_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    claude_executable_attestation_sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
     report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     process_returncode: Mapped[int] = mapped_column(Integer, nullable=False)
     session_id_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
