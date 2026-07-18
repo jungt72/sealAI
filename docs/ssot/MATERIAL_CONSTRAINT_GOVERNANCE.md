@@ -332,6 +332,10 @@ user confirmation of an existing catalog entry can create a canonical
 component. An LLM value is permanently a candidate and cannot satisfy the
 canonical provenance contract. No punctuation, conjunction, fuzzy match, or
 token heuristic establishes a medium or cardinality.
+Resolution accepts only a tenant-bound capability issued after repository
+revalidation of the exact approved Evidence. User confirmation is
+domain-separated HMAC-bound to the verified tenant and subject, confirmation,
+snapshot, and media; caller-supplied provenance strings carry no authority.
 
 Canonical medium components form a stable ordered tuple. Multiple known media
 without relationships remain `multiple + unresolved`. A resolved set requires

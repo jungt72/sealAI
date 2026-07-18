@@ -20,11 +20,13 @@ from sealai_v2.core.material_evidence_review import (
     FactualApprovalState,
 )
 from sealai_v2.core.medium_catalog import (
+    EvidenceVerifiedMediumCatalogSnapshotV1,
     MED_NORM_CONTRACT_VERSION,
     MediumCatalogErrorCode,
     MediumCatalogIntegrityError,
     MediumCatalogSnapshotV1,
     MediumCatalogValidationError,
+    _bind_evidence_verified_medium_catalog,
     compute_audit_sha256,
     compute_validation_sha256,
     parse_catalog_payload,
@@ -118,7 +120,7 @@ class MediumCatalogRepository:
         raw_payload: str | bytes,
         identity: VerifiedIdentity,
         created_at: str,
-    ) -> MediumCatalogSnapshotV1:
+    ) -> EvidenceVerifiedMediumCatalogSnapshotV1:
         self._require_identity(identity)
         timestamp = _metadata(created_at, field="created_at")
         snapshot = MediumCatalogSnapshotV1.from_json(catalog_id, raw_payload)
@@ -186,11 +188,13 @@ class MediumCatalogRepository:
                     created_at=timestamp,
                 )
             )
-        return snapshot
+        return _bind_evidence_verified_medium_catalog(
+            snapshot, tenant_id=identity.tenant_id
+        )
 
     def load_snapshot(
         self, snapshot_id: str, *, identity: VerifiedIdentity
-    ) -> MediumCatalogSnapshotV1:
+    ) -> EvidenceVerifiedMediumCatalogSnapshotV1:
         self._require_identity(identity)
         with self._session_factory() as session:
             row = session.get(V2MediumCatalogSnapshot, snapshot_id)
@@ -205,7 +209,9 @@ class MediumCatalogRepository:
             self._require_tenant(family, identity)
             return self._validated_snapshot(row, family=family, identity=identity)
 
-    def _validated_snapshot(self, row, *, family, identity) -> MediumCatalogSnapshotV1:
+    def _validated_snapshot(
+        self, row, *, family, identity
+    ) -> EvidenceVerifiedMediumCatalogSnapshotV1:
         try:
             canonical_bytes = bytes(row.canonical_bytes)
             payload = parse_catalog_payload(canonical_bytes)
@@ -276,7 +282,9 @@ class MediumCatalogRepository:
                     "catalog creation audit drifted",
                 )
             self._validate_evidence(rebuilt, identity=identity)
-            return rebuilt
+            return _bind_evidence_verified_medium_catalog(
+                rebuilt, tenant_id=identity.tenant_id
+            )
         except MediumCatalogIntegrityError:
             raise
         except Exception as exc:

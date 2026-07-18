@@ -15,11 +15,13 @@ from sealai_v2.core.contracts import (
     MaterialConstraintVerdict,
     MediumCardinality,
     RelationState,
+    VerifiedIdentity,
 )
 from sealai_v2.core.material_constraints import resolve_material_constraint_matches
 from sealai_v2.core.medium_catalog import (
     CanonicalMediumComponentV1,
     CatalogEvidenceProvenanceV1,
+    EvidenceVerifiedMediumCatalogSnapshotV1,
     MediumCatalogEntryV1,
     MediumCatalogErrorCode,
     MediumCatalogSnapshotV1,
@@ -28,7 +30,10 @@ from sealai_v2.core.medium_catalog import (
     MediumIdentityKind,
     MediumRelationshipKind,
     MediumRelationshipV1,
+    NormalizedMaterialEvaluationV1,
     UserConfirmationProvenanceV1,
+    _bind_evidence_verified_medium_catalog,
+    create_user_confirmed_component,
     evaluate_normalized_media,
     parse_catalog_payload,
     derive_media_id,
@@ -46,6 +51,7 @@ MEDIA_C = derive_media_id("Synthetic C", MediumIdentityKind.CHEMICAL_SUBSTANCE)
 REF_A = "mcmp_" + "a" * 32
 REF_B = "mcmp_" + "b" * 32
 REF_C = "mcmp_" + "c" * 32
+IDENTITY = VerifiedIdentity("tenant-a", "session-a", "subject-a")
 GOLDEN = json.loads(
     (Path(__file__).parent / "fixtures/med_norm_01_golden.json").read_text(
         encoding="utf-8"
@@ -82,9 +88,17 @@ def _payload(entries: list[dict] | None = None) -> dict:
     }
 
 
-def _snapshot(entries: list[dict] | None = None) -> MediumCatalogSnapshotV1:
+def _raw_snapshot(entries: list[dict] | None = None) -> MediumCatalogSnapshotV1:
     ordered = sorted(entries or [], key=lambda item: item["media_id"])
     return MediumCatalogSnapshotV1.from_json(CATALOG_ID, json.dumps(_payload(ordered)))
+
+
+def _snapshot(
+    entries: list[dict] | None = None,
+) -> EvidenceVerifiedMediumCatalogSnapshotV1:
+    return _bind_evidence_verified_medium_catalog(
+        _raw_snapshot(entries), tenant_id=IDENTITY.tenant_id
+    )
 
 
 def _relationship(
@@ -145,6 +159,48 @@ def test_snapshot_identity_is_canonical_and_content_addressed() -> None:
     right = _snapshot(list(reversed(entries)))
     assert left == right
     assert left.canonical_bytes == right.canonical_bytes
+
+
+def test_raw_inconsistent_or_unverified_snapshot_cannot_classify() -> None:
+    raw = _raw_snapshot([_entry(MEDIA_A, "Synthetic A")])
+    with pytest.raises(MediumCatalogValidationError) as inconsistent:
+        MediumCatalogSnapshotV1(
+            catalog_id=raw.catalog_id,
+            payload=raw.payload,
+            canonical_bytes=b"{}",
+            content_sha256="0" * 64,
+            snapshot_id="mcs_" + "1" * 64,
+        )
+    assert inconsistent.value.code is MediumCatalogErrorCode.HASH_MISMATCH
+    with pytest.raises(TypeError, match="repository and Evidence verified"):
+        resolve_exact_catalog_values(
+            ("Synthetic A",),
+            snapshot=raw,
+            identity=IDENTITY,  # type: ignore[arg-type]
+        )
+    with pytest.raises(MediumCatalogValidationError, match="repository-issued"):
+        EvidenceVerifiedMediumCatalogSnapshotV1(raw, IDENTITY.tenant_id)
+
+
+def test_verified_catalog_rejects_foreign_tenant_and_duck_type() -> None:
+    snapshot = _snapshot([_entry(MEDIA_A, "Synthetic A")])
+    with pytest.raises(MediumCatalogValidationError, match="another tenant"):
+        resolve_exact_catalog_values(
+            ("Synthetic A",),
+            snapshot=snapshot,
+            identity=VerifiedIdentity("tenant-b", "session-b", "subject-b"),
+        )
+    with pytest.raises(TypeError, match="repository and Evidence verified"):
+        resolve_exact_catalog_values(
+            ("Synthetic A",),
+            snapshot=object(),
+            identity=IDENTITY,  # type: ignore[arg-type]
+        )
+    foreign_entry = _snapshot(
+        [_entry(MEDIA_B, "Synthetic B", claim_ref=CLAIM_B)]
+    ).payload.entries[0]
+    with pytest.raises(MediumCatalogValidationError, match="absent"):
+        CatalogEvidenceProvenanceV1(snapshot, foreign_entry)
 
 
 @pytest.mark.parametrize(
@@ -223,11 +279,18 @@ def test_missing_unknown_ambiguous_and_known_are_distinct() -> None:
             _entry(MEDIA_B, "Synthetic B", aliases=["Shared Alias"], claim_ref=CLAIM_B),
         ]
     )
-    missing = resolve_exact_catalog_values((), snapshot=snapshot)
-    unknown = resolve_exact_catalog_values(("Unlisted",), snapshot=snapshot)
-    ambiguous = resolve_exact_catalog_values(("Shared Alias",), snapshot=snapshot)
+    missing = resolve_exact_catalog_values((), snapshot=snapshot, identity=IDENTITY)
+    unknown = resolve_exact_catalog_values(
+        ("Unlisted",), snapshot=snapshot, identity=IDENTITY
+    )
+    ambiguous = resolve_exact_catalog_values(
+        ("Shared Alias",), snapshot=snapshot, identity=IDENTITY
+    )
     known = resolve_exact_catalog_values(
-        ("Synthetic A",), snapshot=snapshot, component_refs=(REF_A,)
+        ("Synthetic A",),
+        snapshot=snapshot,
+        identity=IDENTITY,
+        component_refs=(REF_A,),
     )
     assert (
         missing.medium_state,
@@ -261,7 +324,9 @@ def test_punctuation_and_conjunctions_never_prove_multiple_media(whole_value) ->
             _entry(MEDIA_B, "Synthetic B", claim_ref=CLAIM_B),
         ]
     )
-    result = resolve_exact_catalog_values((whole_value,), snapshot=snapshot)
+    result = resolve_exact_catalog_values(
+        (whole_value,), snapshot=snapshot, identity=IDENTITY
+    )
     assert result.medium_state is InputResolutionState.UNKNOWN
     assert result.medium_cardinality is MediumCardinality.UNKNOWN
     assert result.components == ()
@@ -277,6 +342,7 @@ def test_structured_multiple_media_are_unresolved_without_explicit_relations() -
     result = resolve_exact_catalog_values(
         ("Synthetic A", "Synthetic B"),
         snapshot=snapshot,
+        identity=IDENTITY,
         component_refs=(REF_A, REF_B),
     )
     assert result.medium_state is InputResolutionState.KNOWN
@@ -297,6 +363,7 @@ def test_structured_multiple_media_require_complete_pairwise_relations() -> None
         resolve_exact_catalog_values(
             ("Synthetic A", "Synthetic B", "Synthetic C"),
             snapshot=snapshot,
+            identity=IDENTITY,
             component_refs=(REF_A, REF_B, REF_C),
             relationships=(_relationship(),),
         )
@@ -304,6 +371,7 @@ def test_structured_multiple_media_require_complete_pairwise_relations() -> None
     resolved = resolve_exact_catalog_values(
         ("Synthetic A", "Synthetic B", "Synthetic C"),
         snapshot=snapshot,
+        identity=IDENTITY,
         component_refs=(REF_A, REF_B, REF_C),
         relationships=(
             _relationship(REF_A, REF_B),
@@ -326,6 +394,7 @@ def test_resolved_pair_rejects_multiple_conflicting_relationship_assertions() ->
         resolve_exact_catalog_values(
             ("Synthetic A", "Synthetic B"),
             snapshot=snapshot,
+            identity=IDENTITY,
             component_refs=(REF_A, REF_B),
             relationships=(
                 _relationship(kind=MediumRelationshipKind.CO_CONTACT),
@@ -343,10 +412,10 @@ def test_generated_component_identity_is_media_order_invariant() -> None:
         ]
     )
     left = resolve_exact_catalog_values(
-        ("Synthetic A", "Synthetic B"), snapshot=snapshot
+        ("Synthetic A", "Synthetic B"), snapshot=snapshot, identity=IDENTITY
     )
     right = resolve_exact_catalog_values(
-        ("Synthetic B", "Synthetic A"), snapshot=snapshot
+        ("Synthetic B", "Synthetic A"), snapshot=snapshot, identity=IDENTITY
     )
     assert tuple(
         (item.component_ref, item.media_id) for item in left.components
@@ -364,26 +433,36 @@ def test_llm_candidate_can_never_become_canonical_provenance() -> None:
 
 def test_user_confirmation_still_pins_exact_catalog_evidence() -> None:
     snapshot = _snapshot([_entry(MEDIA_A, "Synthetic A")])
-    entry = snapshot.payload.entries[0]
-    catalog = CatalogEvidenceProvenanceV1(
-        catalog_snapshot_id=snapshot.snapshot_id,
-        catalog_content_sha256=snapshot.content_sha256,
-        media_id=entry.media_id,
-        entry_sha256=entry.entry_sha256,
-        evidence_review_snapshot_id=entry.evidence_review_snapshot_id,
-        evidence_review_content_sha256=entry.evidence_review_content_sha256,
-        claim_refs=entry.claim_refs,
-    )
-    confirmed = UserConfirmationProvenanceV1(
-        catalog=catalog,
+    confirmed = create_user_confirmed_component(
+        snapshot=snapshot,
+        media_id=MEDIA_A,
+        component_ref=REF_A,
         confirmation_ref="mconf_" + "7" * 32,
-        tenant_ref_hmac="8" * 64,
-        subject_ref_hmac="9" * 64,
+        identity=IDENTITY,
+        hmac_key=b"synthetic-test-key-material-32b!",
         hmac_key_id="medium-confirmation.v1",
     )
-    assert confirmed.catalog.media_id == MEDIA_A
+    assert isinstance(confirmed.provenance, UserConfirmationProvenanceV1)
+    assert confirmed.provenance.catalog.media_id == MEDIA_A
+    assert confirmed.provenance.tenant_ref_hmac != confirmed.provenance.subject_ref_hmac
     with pytest.raises(MediumCatalogValidationError):
-        CanonicalMediumComponentV1(REF_A, MEDIA_B, confirmed)
+        create_user_confirmed_component(
+            snapshot=snapshot,
+            media_id=MEDIA_A,
+            component_ref=REF_A,
+            confirmation_ref="mconf_" + "7" * 32,
+            identity=VerifiedIdentity("tenant-b", "session-b", "subject-b"),
+            hmac_key=b"synthetic-test-key-material-32b!",
+            hmac_key_id="medium-confirmation.v1",
+        )
+    with pytest.raises(MediumCatalogValidationError):
+        UserConfirmationProvenanceV1(
+            catalog=confirmed.provenance.catalog,
+            confirmation_ref="mconf_" + "7" * 32,
+            tenant_ref_hmac="8" * 64,
+            subject_ref_hmac="9" * 64,
+            hmac_key_id="medium-confirmation.v1",
+        )
 
 
 def test_unresolved_input_blocks_without_calling_component_evaluator() -> None:
@@ -396,6 +475,7 @@ def test_unresolved_input_blocks_without_calling_component_evaluator() -> None:
     medium_input = resolve_exact_catalog_values(
         ("Synthetic A", "Synthetic B"),
         snapshot=snapshot,
+        identity=IDENTITY,
         component_refs=(REF_A, REF_B),
     )
 
@@ -408,6 +488,12 @@ def test_unresolved_input_blocks_without_calling_component_evaluator() -> None:
     assert result.positive_statement_allowed is False
 
 
+def test_direct_blocked_result_requires_stable_blocker() -> None:
+    missing = resolve_exact_catalog_values((), snapshot=_snapshot(), identity=IDENTITY)
+    with pytest.raises(ValueError, match="requires a stable blocker"):
+        NormalizedMaterialEvaluationV1(missing, EvaluationState.BLOCKED)
+
+
 def test_each_resolved_medium_is_evaluated_and_attributed() -> None:
     snapshot = _snapshot(
         [
@@ -418,6 +504,7 @@ def test_each_resolved_medium_is_evaluated_and_attributed() -> None:
     medium_input = resolve_exact_catalog_values(
         ("Synthetic A", "Synthetic B"),
         snapshot=snapshot,
+        identity=IDENTITY,
         component_refs=(REF_A, REF_B),
         relationships=(_relationship(),),
     )
@@ -460,6 +547,7 @@ def test_component_and_relationship_order_do_not_change_evaluation() -> None:
         medium_input = resolve_exact_catalog_values(
             observed,
             snapshot=snapshot,
+            identity=IDENTITY,
             component_refs=refs,
             relationships=(relation,),
         )

@@ -59,6 +59,15 @@ compatibility, unrelated, or differently scoped identity claim cannot
 authorize an identity mapping; changing an alias requires new reviewed
 Evidence and a new immutable catalog snapshot.
 
+Raw parsed snapshots are data only. Canonical resolution accepts an exact
+repository-issued capability that binds the tenant after persisted hashes,
+audit records, and current 01C approval have been revalidated. Directly
+constructed or cryptographically consistent but unreviewed snapshots are
+rejected. Catalog provenance contains that capability and the exact entry,
+rather than caller-supplied hash strings. User-confirmation provenance is
+created only by the server factory and domain-separated HMAC-binds the verified
+tenant and subject, confirmation reference, catalog snapshot, and media ID.
+
 The persisted authority is fixed to `NORMALIZATION_ONLY`; it cannot create a
 material verdict, factual approval, recommendation, active pointer, or public
 statement. Postgres remains the future source of record. There is no file,
@@ -66,8 +75,9 @@ cache, latest-snapshot, or last-known-good fallback.
 
 ## Compatibility boundary
 
-The request pipeline, prompt, serializers, frontend, legacy extractor, matrix
-seed, Compose settings, and feature flags remain byte-identical. The existing
+The request pipeline, public runtime maturity response, prompt, serializers,
+frontend, legacy extractor, matrix seed, Compose settings, and feature flags
+remain byte-identical. The existing
 single-medium shadow contract is unchanged. Public adoption belongs to the
 later public-integration package and remains default-off. The canonical
 `MaterialConstraintResult` is still the result for one medium; the new

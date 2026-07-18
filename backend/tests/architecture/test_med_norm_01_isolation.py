@@ -61,6 +61,9 @@ EXPECTED = {
     ),
 }
 UNCHANGED_RUNTIME = {
+    "backend/sealai_v2/config/product_maturity.json": (
+        "59606ffc63256519f7c25bc3154459acf8bf5a5d7e90d1663afc17a725d901df"
+    ),
     "backend/sealai_v2/pipeline/pipeline.py": (
         "3b596540440b27ac34bc1f9ff57b0086e2a599ea12a8ddda3c1572afa1143bcb"
     ),
@@ -140,6 +143,18 @@ def test_request_runtime_does_not_import_medium_catalog() -> None:
         imports = _imports(REPO / relative)
         assert "sealai_v2.core.medium_catalog" not in imports
         assert "sealai_v2.db.medium_catalog" not in imports
+
+
+def test_evidence_verified_catalog_capability_is_repository_only() -> None:
+    allowed = {
+        REPO / "backend/sealai_v2/core/medium_catalog.py",
+        REPO / "backend/sealai_v2/db/medium_catalog.py",
+    }
+    for path in (REPO / "backend/sealai_v2").rglob("*.py"):
+        if path in allowed or "tests" in path.parts:
+            continue
+        source = path.read_text(encoding="utf-8")
+        assert "_bind_evidence_verified_medium_catalog" not in source, path
 
 
 def test_migration_is_additive_empty_and_has_no_runtime_state() -> None:

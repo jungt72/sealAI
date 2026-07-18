@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import hashlib
+import hmac
 import json
 import re
 import unicodedata
@@ -27,6 +28,7 @@ from sealai_v2.core.contracts import (
     MaterialConstraintVerdict,
     MediumCardinality,
     RelationState,
+    VerifiedIdentity,
     material_constraint_match_sort_key,
 )
 
@@ -551,6 +553,42 @@ class MediumCatalogSnapshotV1:
     content_sha256: str
     snapshot_id: str
 
+    def __post_init__(self) -> None:
+        _identifier(
+            self.catalog_id,
+            _CATALOG_ID_RE,
+            path="$.catalog_id",
+            message="catalog_id must match mcf_<32 lowercase hex>",
+        )
+        if type(self.payload) is not MediumCatalogPayloadV1:
+            _fail(
+                MediumCatalogErrorCode.INVALID_TYPE,
+                "snapshot payload must be MediumCatalogPayloadV1",
+            )
+        if type(self.canonical_bytes) is not bytes:
+            _fail(
+                MediumCatalogErrorCode.INVALID_TYPE,
+                "canonical_bytes must be bytes",
+            )
+        canonical = _canonical_json(self.payload.to_dict())
+        content_hash = hashlib.sha256(CONTENT_HASH_DOMAIN + canonical).hexdigest()
+        snapshot_hash = hashlib.sha256(
+            SNAPSHOT_ID_DOMAIN
+            + self.catalog_id.encode("ascii")
+            + b"\x00"
+            + content_hash.encode("ascii")
+        ).hexdigest()
+        if self.canonical_bytes != canonical or self.content_sha256 != content_hash:
+            _fail(
+                MediumCatalogErrorCode.HASH_MISMATCH,
+                "snapshot canonical bytes or content hash mismatch",
+            )
+        if self.snapshot_id != f"mcs_{snapshot_hash}":
+            _fail(
+                MediumCatalogErrorCode.SNAPSHOT_ID_MISMATCH,
+                "snapshot ID does not match catalog and content",
+            )
+
     @classmethod
     def from_json(cls, catalog_id: str, raw: str | bytes) -> "MediumCatalogSnapshotV1":
         _identifier(
@@ -577,15 +615,81 @@ class MediumCatalogSnapshotV1:
         )
 
 
+_VERIFIED_MEDIUM_CATALOG_TOKEN = object()
+
+
+class EvidenceVerifiedMediumCatalogSnapshotV1:
+    """Server capability created only after tenant and 01C verification."""
+
+    __slots__ = ("__snapshot", "__tenant_id")
+
+    def __init__(
+        self,
+        snapshot: MediumCatalogSnapshotV1,
+        tenant_id: str,
+        *,
+        _token: object | None = None,
+    ) -> None:
+        if _token is not _VERIFIED_MEDIUM_CATALOG_TOKEN:
+            raise MediumCatalogValidationError(
+                MediumCatalogErrorCode.INVALID_CONSTANT,
+                "verified catalog snapshots are repository-issued only",
+            )
+        if type(snapshot) is not MediumCatalogSnapshotV1:
+            raise TypeError("snapshot must be MediumCatalogSnapshotV1")
+        self.__snapshot = snapshot
+        self.__tenant_id = _text(tenant_id, path="$.tenant_id")
+
+    @property
+    def snapshot(self) -> MediumCatalogSnapshotV1:
+        return self.__snapshot
+
+    @property
+    def tenant_id(self) -> str:
+        return self.__tenant_id
+
+    @property
+    def catalog_id(self) -> str:
+        return self.__snapshot.catalog_id
+
+    @property
+    def payload(self) -> MediumCatalogPayloadV1:
+        return self.__snapshot.payload
+
+    @property
+    def canonical_bytes(self) -> bytes:
+        return self.__snapshot.canonical_bytes
+
+    @property
+    def content_sha256(self) -> str:
+        return self.__snapshot.content_sha256
+
+    @property
+    def snapshot_id(self) -> str:
+        return self.__snapshot.snapshot_id
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            type(other) is EvidenceVerifiedMediumCatalogSnapshotV1
+            and self.__snapshot == other.__snapshot
+            and self.__tenant_id == other.__tenant_id
+        )
+
+
+def _bind_evidence_verified_medium_catalog(
+    snapshot: MediumCatalogSnapshotV1, *, tenant_id: str
+) -> EvidenceVerifiedMediumCatalogSnapshotV1:
+    """Repository-only capability boundary; runtime imports are forbidden."""
+
+    return EvidenceVerifiedMediumCatalogSnapshotV1(
+        snapshot, tenant_id, _token=_VERIFIED_MEDIUM_CATALOG_TOKEN
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogEvidenceProvenanceV1:
-    catalog_snapshot_id: str
-    catalog_content_sha256: str
-    media_id: str
-    entry_sha256: str
-    evidence_review_snapshot_id: str
-    evidence_review_content_sha256: str
-    claim_refs: tuple[str, ...]
+    catalog: EvidenceVerifiedMediumCatalogSnapshotV1
+    entry: MediumCatalogEntryV1
     authority: MediumClassificationAuthority = (
         MediumClassificationAuthority.CATALOG_EVIDENCE
     )
@@ -596,81 +700,126 @@ class CatalogEvidenceProvenanceV1:
                 MediumCatalogErrorCode.INVALID_CONSTANT,
                 "catalog provenance authority is fixed",
             )
-        for value, pattern, path in (
-            (self.catalog_snapshot_id, _SNAPSHOT_ID_RE, "$.catalog_snapshot_id"),
-            (self.catalog_content_sha256, _SHA256_RE, "$.catalog_content_sha256"),
-            (self.media_id, _MEDIA_ID_RE, "$.media_id"),
-            (self.entry_sha256, _SHA256_RE, "$.entry_sha256"),
-            (
-                self.evidence_review_snapshot_id,
-                _REVIEW_SNAPSHOT_ID_RE,
-                "$.evidence_review_snapshot_id",
-            ),
-            (
-                self.evidence_review_content_sha256,
-                _SHA256_RE,
-                "$.evidence_review_content_sha256",
-            ),
-        ):
-            _identifier(value, pattern, path=path, message="invalid provenance ID")
-        if type(self.claim_refs) is not tuple or not self.claim_refs:
+        if type(self.catalog) is not EvidenceVerifiedMediumCatalogSnapshotV1:
+            raise TypeError("catalog provenance requires a verified snapshot")
+        if type(self.entry) is not MediumCatalogEntryV1:
+            raise TypeError("catalog provenance requires an exact catalog entry")
+        catalog_entry = self.catalog.payload.entry(self.entry.media_id)
+        if catalog_entry is None or catalog_entry != self.entry:
             _fail(
-                MediumCatalogErrorCode.INVALID_TYPE,
-                "provenance claim_refs must be non-empty",
-            )
-        if self.claim_refs != tuple(sorted(set(self.claim_refs))):
-            _fail(
-                MediumCatalogErrorCode.NON_CANONICAL_ORDER,
-                "provenance claim_refs must be unique and ordered",
-            )
-        for claim_ref in self.claim_refs:
-            _identifier(
-                claim_ref,
-                _CLAIM_REF_RE,
-                path="$.claim_refs",
-                message="invalid claim_ref",
+                MediumCatalogErrorCode.DANGLING_REF,
+                "provenance entry is absent from the verified catalog",
             )
 
+    @property
+    def catalog_snapshot_id(self) -> str:
+        return self.catalog.snapshot_id
 
-@dataclass(frozen=True, slots=True)
+    @property
+    def catalog_content_sha256(self) -> str:
+        return self.catalog.content_sha256
+
+    @property
+    def media_id(self) -> str:
+        return self.entry.media_id
+
+    @property
+    def entry_sha256(self) -> str:
+        return self.entry.entry_sha256
+
+    @property
+    def evidence_review_snapshot_id(self) -> str:
+        return self.entry.evidence_review_snapshot_id
+
+    @property
+    def evidence_review_content_sha256(self) -> str:
+        return self.entry.evidence_review_content_sha256
+
+    @property
+    def claim_refs(self) -> tuple[str, ...]:
+        return self.entry.claim_refs
+
+
 class UserConfirmationProvenanceV1:
-    catalog: CatalogEvidenceProvenanceV1
-    confirmation_ref: str
-    tenant_ref_hmac: str
-    subject_ref_hmac: str
-    hmac_key_id: str
-    authority: MediumClassificationAuthority = (
-        MediumClassificationAuthority.USER_CONFIRMATION
+    """Server-created confirmation capability; arbitrary HMAC text is rejected."""
+
+    __slots__ = (
+        "__catalog",
+        "__confirmation_ref",
+        "__hmac_key_id",
+        "__subject_ref_hmac",
+        "__tenant_ref_hmac",
     )
 
-    def __post_init__(self) -> None:
-        if type(self.catalog) is not CatalogEvidenceProvenanceV1:
+    def __init__(
+        self,
+        *,
+        catalog: CatalogEvidenceProvenanceV1,
+        confirmation_ref: str,
+        tenant_ref_hmac: str,
+        subject_ref_hmac: str,
+        hmac_key_id: str,
+        _token: object | None = None,
+    ) -> None:
+        if _token is not _VERIFIED_USER_CONFIRMATION_TOKEN:
+            _fail(
+                MediumCatalogErrorCode.INVALID_CONSTANT,
+                "user confirmation must be server verified",
+            )
+        if type(catalog) is not CatalogEvidenceProvenanceV1:
             _fail(
                 MediumCatalogErrorCode.INVALID_TYPE,
                 "user confirmation requires exact catalog provenance",
             )
-        if self.authority is not MediumClassificationAuthority.USER_CONFIRMATION:
-            _fail(
-                MediumCatalogErrorCode.INVALID_CONSTANT,
-                "confirmation authority is fixed",
-            )
         _identifier(
-            self.confirmation_ref,
+            confirmation_ref,
             _CONFIRMATION_REF_RE,
             path="$.confirmation_ref",
             message="invalid confirmation_ref",
         )
         for field, value in (
-            ("tenant_ref_hmac", self.tenant_ref_hmac),
-            ("subject_ref_hmac", self.subject_ref_hmac),
+            ("tenant_ref_hmac", tenant_ref_hmac),
+            ("subject_ref_hmac", subject_ref_hmac),
         ):
             _identifier(value, _HMAC_RE, path=f"$.{field}", message="invalid HMAC")
         _identifier(
-            self.hmac_key_id,
+            hmac_key_id,
             _STABLE_ID_RE,
             path="$.hmac_key_id",
             message="invalid HMAC key ID",
         )
+        self.__catalog = catalog
+        self.__confirmation_ref = confirmation_ref
+        self.__tenant_ref_hmac = tenant_ref_hmac
+        self.__subject_ref_hmac = subject_ref_hmac
+        self.__hmac_key_id = hmac_key_id
+
+    @property
+    def catalog(self) -> CatalogEvidenceProvenanceV1:
+        return self.__catalog
+
+    @property
+    def confirmation_ref(self) -> str:
+        return self.__confirmation_ref
+
+    @property
+    def tenant_ref_hmac(self) -> str:
+        return self.__tenant_ref_hmac
+
+    @property
+    def subject_ref_hmac(self) -> str:
+        return self.__subject_ref_hmac
+
+    @property
+    def hmac_key_id(self) -> str:
+        return self.__hmac_key_id
+
+    @property
+    def authority(self) -> MediumClassificationAuthority:
+        return MediumClassificationAuthority.USER_CONFIRMATION
+
+
+_VERIFIED_USER_CONFIRMATION_TOKEN = object()
 
 
 ClassificationProvenanceV1 = CatalogEvidenceProvenanceV1 | UserConfirmationProvenanceV1
@@ -905,17 +1054,107 @@ class MediumClassificationCandidateV1:
 
 
 def _catalog_provenance(
-    snapshot: MediumCatalogSnapshotV1, entry: MediumCatalogEntryV1
+    snapshot: EvidenceVerifiedMediumCatalogSnapshotV1,
+    entry: MediumCatalogEntryV1,
 ) -> CatalogEvidenceProvenanceV1:
-    return CatalogEvidenceProvenanceV1(
-        catalog_snapshot_id=snapshot.snapshot_id,
-        catalog_content_sha256=snapshot.content_sha256,
-        media_id=entry.media_id,
-        entry_sha256=entry.entry_sha256,
-        evidence_review_snapshot_id=entry.evidence_review_snapshot_id,
-        evidence_review_content_sha256=entry.evidence_review_content_sha256,
-        claim_refs=entry.claim_refs,
+    return CatalogEvidenceProvenanceV1(snapshot, entry)
+
+
+def _confirmation_digest(
+    key: bytes,
+    *,
+    domain: bytes,
+    identity_value: str,
+    confirmation_ref: str,
+    catalog_snapshot_id: str,
+    media_id: str,
+) -> str:
+    fields = (
+        identity_value,
+        confirmation_ref,
+        catalog_snapshot_id,
+        media_id,
     )
+    payload = bytearray(domain)
+    for field in fields:
+        encoded = field.encode("utf-8")
+        payload.extend(len(encoded).to_bytes(4, "big"))
+        payload.extend(encoded)
+    return hmac.new(key, bytes(payload), hashlib.sha256).hexdigest()
+
+
+def create_user_confirmed_component(
+    *,
+    snapshot: EvidenceVerifiedMediumCatalogSnapshotV1,
+    media_id: str,
+    component_ref: str,
+    confirmation_ref: str,
+    identity: VerifiedIdentity,
+    hmac_key: bytes,
+    hmac_key_id: str,
+) -> CanonicalMediumComponentV1:
+    """Create a canonical component from an explicit server-bound confirmation."""
+
+    if type(snapshot) is not EvidenceVerifiedMediumCatalogSnapshotV1:
+        raise TypeError("snapshot must be repository verified")
+    if type(identity) is not VerifiedIdentity:
+        raise TypeError("identity must be VerifiedIdentity")
+    if snapshot.tenant_id != identity.tenant_id:
+        _fail(
+            MediumCatalogErrorCode.INVALID_ID,
+            "verified catalog belongs to another tenant",
+            path="$.tenant_id",
+        )
+    if type(hmac_key) is not bytes or len(hmac_key) < 32:
+        raise ValueError("hmac_key must contain at least 32 bytes")
+    _identifier(
+        media_id,
+        _MEDIA_ID_RE,
+        path="$.media_id",
+        message="invalid media_id",
+    )
+    _identifier(
+        confirmation_ref,
+        _CONFIRMATION_REF_RE,
+        path="$.confirmation_ref",
+        message="invalid confirmation_ref",
+    )
+    _identifier(
+        hmac_key_id,
+        _STABLE_ID_RE,
+        path="$.hmac_key_id",
+        message="invalid HMAC key ID",
+    )
+    entry = snapshot.payload.entry(media_id)
+    if entry is None:
+        _fail(
+            MediumCatalogErrorCode.DANGLING_REF,
+            "confirmation references an absent catalog entry",
+        )
+    catalog = _catalog_provenance(snapshot, entry)
+    provenance = UserConfirmationProvenanceV1(
+        catalog=catalog,
+        confirmation_ref=confirmation_ref,
+        tenant_ref_hmac=_confirmation_digest(
+            hmac_key,
+            domain=b"sealai.medium-confirmation.tenant.v1\x00",
+            identity_value=identity.tenant_id,
+            confirmation_ref=confirmation_ref,
+            catalog_snapshot_id=snapshot.snapshot_id,
+            media_id=media_id,
+        ),
+        subject_ref_hmac=_confirmation_digest(
+            hmac_key,
+            domain=b"sealai.medium-confirmation.subject.v1\x00",
+            identity_value=identity.subject,
+            confirmation_ref=confirmation_ref,
+            catalog_snapshot_id=snapshot.snapshot_id,
+            media_id=media_id,
+        ),
+        hmac_key_id=hmac_key_id,
+        _token=_VERIFIED_USER_CONFIRMATION_TOKEN,
+    )
+    return CanonicalMediumComponentV1(component_ref, media_id, provenance)
 
 
 def derive_component_ref(
@@ -949,12 +1188,23 @@ def derive_component_ref(
 def resolve_exact_catalog_values(
     observed_values: tuple[str, ...],
     *,
-    snapshot: MediumCatalogSnapshotV1,
+    snapshot: EvidenceVerifiedMediumCatalogSnapshotV1,
+    identity: VerifiedIdentity,
     component_refs: tuple[str, ...] = (),
     relationships: tuple[MediumRelationshipV1, ...] = (),
 ) -> NormalizedMediumInputV1:
     """Resolve whole values only; punctuation and conjunctions are never split."""
 
+    if type(snapshot) is not EvidenceVerifiedMediumCatalogSnapshotV1:
+        raise TypeError("snapshot must be repository and Evidence verified")
+    if type(identity) is not VerifiedIdentity:
+        raise TypeError("identity must be VerifiedIdentity")
+    if snapshot.tenant_id != identity.tenant_id:
+        _fail(
+            MediumCatalogErrorCode.INVALID_ID,
+            "verified catalog belongs to another tenant",
+            path="$.tenant_id",
+        )
     if type(observed_values) is not tuple:
         raise TypeError("observed_values must be a tuple")
     if not observed_values:
@@ -1178,6 +1428,8 @@ class NormalizedMaterialEvaluationV1:
             return
         if self.verdict is not None or self.matches or self.decisive_ref is not None:
             raise ValueError("non-evaluated normalized result cannot carry a verdict")
+        if self.evaluation_state is EvaluationState.BLOCKED and not self.blockers:
+            raise ValueError("blocked normalized result requires a stable blocker")
         if self.evaluation_state is EvaluationState.NO_RULE_DATA and (
             not component_states
             or EvaluationState.NO_RULE_DATA not in component_states
@@ -1306,6 +1558,7 @@ __all__ = [
     "AttributedMaterialMatchV1",
     "CanonicalMediumComponentV1",
     "CatalogEvidenceProvenanceV1",
+    "EvidenceVerifiedMediumCatalogSnapshotV1",
     "MediumCatalogEntryV1",
     "MediumCatalogErrorCode",
     "MediumCatalogIntegrityError",
@@ -1322,6 +1575,7 @@ __all__ = [
     "UserConfirmationProvenanceV1",
     "compute_audit_sha256",
     "compute_validation_sha256",
+    "create_user_confirmed_component",
     "derive_component_ref",
     "derive_media_id",
     "evaluate_normalized_media",

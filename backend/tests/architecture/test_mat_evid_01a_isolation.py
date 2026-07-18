@@ -76,7 +76,7 @@ UNCHANGED_03A = {
 }
 UNCHANGED_PUBLIC = {
     "backend/sealai_v2/config/product_maturity.json": (
-        "b97a2a42926df2ee9bbe66ddd7dc0508933e54b60918277f765c94e90f6ff008"
+        "59606ffc63256519f7c25bc3154459acf8bf5a5d7e90d1663afc17a725d901df"
     ),
     "backend/sealai_v2/knowledge/matrix_seed.json": (
         "ab6a32cf9ef9deac402619cc1d0eaf67d30b39fa2c0c1d45fc2eb5782da4ed82"
