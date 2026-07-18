@@ -398,3 +398,22 @@ frontend output, activation, sampling, or deployment. All material flags stay
 false and sampling stays zero. MAT-GOV-03C cannot start from synthetic tests or
 the gap inventory; it requires a real reviewed rule pack and remains `NO-GO` at
 this boundary.
+
+## RP001-OD-01
+
+### Decision
+
+`NO_MATERIAL_PLACEHOLDER_TYPED_EVIDENCE_SCOPE_V2` is ratified. A
+media-identity claim must use a new closed Evidence Manifest v2 scope variant
+`media_identity` with no `materials` field and exactly one `media_ref`. No
+neutral, sentinel, family, wildcard, or other placeholder material may be used.
+
+### Consequence
+
+MAT-EVID-01A.v1 snapshots and hashes remain immutable and are neither converted
+nor reinterpreted. RP-001 human source and identity curation may continue, but
+media-identity import remains fail-closed until the additive v2 contract is
+implemented and bound explicitly through MAT-EVID-01B, MAT-EVID-01C, and
+MED-NORM. This decision creates no claim, material fact, catalog entry, rule,
+approval, activation, public output, production migration, or deployment
+authority.

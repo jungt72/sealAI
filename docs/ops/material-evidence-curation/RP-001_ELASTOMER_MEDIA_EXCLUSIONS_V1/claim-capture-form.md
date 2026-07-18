@@ -79,8 +79,8 @@ MAT-EVID stores arrays, but RP-001 rule claims must be atomic.
 
 | Field | Human entry | Requirement |
 |---|---|---|
-| `scope.materials[0]` |  | Exactly one value for a rule claim. For a `MEDIA_IDENTITY` claim this remains `OWNER_SCOPE_POLICY_REQUIRED`; do not invent a neutral material value. |
-| `scope.media[0]` |  | Exactly one canonical `med_*` ID for a rule claim. For a MED-NORM identity claim, exactly the derived media ID. |
+| `scope.materials[0]` |  | Exactly one value for a rule claim. For a `MEDIA_IDENTITY` claim this field is forbidden by `RP001-OD-01`; do not invent a placeholder. |
+| `scope.media[0]` |  | Exactly one canonical `med_*` ID for a rule claim. A future v2 MED-NORM identity claim instead uses exactly one scalar `media_ref`. |
 | `scope.conditions[0]` |  | Exactly one value. For a MED-NORM identity claim, exactly the catalog entry's `med-norm-identity-sha256:<hash>` assertion reference. |
 | Additional materials/media/conditions | `NONE` | Must remain `NONE`; split the proposition into another claim if needed. |
 
@@ -145,7 +145,7 @@ Closed document types:
 | Field | Human entry | Requirement |
 |---|---|---|
 | Existing reviewed catalog entry found | `NO` | If `NO`, the RP-001 rule claim remains blocked. |
-| 01A material-scope policy for identity claim | `OWNER_SCOPE_POLICY_REQUIRED` | Current contracts define no neutral value; import remains blocked until owner adjudication. |
+| Evidence scope for identity claim | `MEDIA_IDENTITY_V2_REQUIRED` | `RP001-OD-01` requires a typed v2 `media_identity` scope with no materials and exactly one `media_ref`; import remains blocked until v2 exists end to end. |
 | Canonical name |  | Human-curated; never inferred from the service-gap label. |
 | Identity kind |  | `chemical_substance`, `defined_mixture`, `fluid_class`, `trade_name`, `process_medium`, or `additive_system`. |
 | Exact aliases |  | Complete, unique, NFC and UTF-8-byte sorted; canonical name excluded. |

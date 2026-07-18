@@ -67,9 +67,11 @@ recommendation.
   and exclude canonical name.
 - [ ] The exact identity assertion is supported by currently approved
   `other_technical` evidence.
-- [ ] The mandatory MAT-EVID-01A material scope on each media-identity claim
-  follows an explicit owner-adjudicated policy; no neutral placeholder was
-  invented.
+- [ ] Each media-identity claim uses the typed Evidence Manifest v2
+  `media_identity` scope with no `materials` field and exactly one `media_ref`,
+  as ratified by `RP001-OD-01`.
+- [ ] No material placeholder was invented and no v1 snapshot was converted or
+  reinterpreted.
 - [ ] No LLM output or free-text heuristic creates a canonical classification.
 - [ ] Catalog authority remains `NORMALIZATION_ONLY`; positive statement is
   false.

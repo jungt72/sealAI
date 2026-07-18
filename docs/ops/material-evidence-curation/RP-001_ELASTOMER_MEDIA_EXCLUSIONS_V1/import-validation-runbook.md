@@ -26,12 +26,12 @@ separate MED-NORM identity-evidence workflow first. A MED-NORM
 `other_technical` identity claim is not a MATERIAL-RULES supporting claim and
 must not be mixed into the rule claim set.
 
-Before importing that identity claim, resolve one owner decision explicitly:
-MAT-EVID-01A requires non-empty `scope.materials`, but MED-NORM defines no
-neutral material-scope value for a media-identity claim. The operator must not
-invent a placeholder. Until an owner-approved, contract-consistent scope policy
-exists, source curation may continue but the catalog identity import is
-`BLOCKED_BY_OWNER_SCOPE_POLICY`.
+Owner decision `RP001-OD-01` explicitly forbids a material placeholder for that
+identity claim. The future Evidence Manifest v2 scope must be the typed
+`media_identity` variant with no `materials` field and exactly one `media_ref`.
+MAT-EVID-01A.v1 is not converted or reinterpreted. Until v2 is implemented and
+validated through MAT-EVID-01B, MAT-EVID-01C, and MED-NORM, source curation may
+continue but the catalog identity import is `BLOCKED_PENDING_EVIDENCE_SCOPE_V2`.
 
 ## 1. Deterministic source preparation
 
@@ -123,8 +123,9 @@ tenant identity and verify:
 - the entry binds an exact approved review snapshot/hash;
 - each identity claim is `other_technical`, scoped only to the media ID, with
   the exact `med-norm-identity-sha256:*` condition;
-- the mandatory 01A material scope follows a separately owner-approved policy
-  and was not invented by the operator;
+- each identity claim uses the typed Evidence Manifest v2 `media_identity`
+  scope with no `materials` field and exactly one `media_ref`;
+- no placeholder material was invented and no v1 snapshot was reinterpreted;
 - current approval revalidates before and after use;
 - catalog authority remains `NORMALIZATION_ONLY` and positive statements stay
   false.

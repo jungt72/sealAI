@@ -37,13 +37,15 @@
     "material_evidence:approve"
   ],
   "required_identity_kind": "verified_human",
-  "open_owner_decisions": [
+  "ratified_owner_decisions": [
     {
       "decision_id": "RP001-OD-01",
-      "state": "required_before_media_identity_import",
-      "question": "Which contract-consistent non-empty MAT-EVID-01A materials scope applies to a MED-NORM other_technical identity claim?"
+      "state": "ratified_import_blocked_pending_v2",
+      "decision": "no_material_placeholder_typed_evidence_scope_v2",
+      "required_scope": "media_identity without materials and with exactly one media_ref"
     }
   ],
+  "open_owner_decisions": [],
   "artifacts": [
     "README.md",
     "acceptance-criteria.md",

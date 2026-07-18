@@ -69,11 +69,10 @@ canonical gaps. If the selected medium has no current, approved MED-NORM entry,
 media-identity curation and independent review must complete first. Until then,
 the rule candidate is not import-eligible.
 
-There is one additional contract preflight stop for a new MED-NORM entry:
-MAT-EVID-01A requires a non-empty `scope.materials` value for every claim,
-including an `other_technical` media-identity claim. MED-NORM validates the
-claim's exact media ID and identity-assertion condition but does not define a
-neutral material-scope policy for that claim. The three humans may curate the
-source and identity record now, but no operator may invent that material value
-or import the identity claim until an owner-adjudicated contract-consistent
-scope policy exists.
+Owner decision `RP001-OD-01` closes the additional scope-policy question: a
+media-identity claim must never receive a material placeholder. It requires a
+new typed Evidence scope `media_identity` with no `materials` field and exactly
+one `media_ref`. MAT-EVID-01A.v1 remains immutable and cannot represent that
+scope. The three humans may curate the source and identity record now, but the
+identity claim remains non-importable until the separately implemented and
+validated Evidence Manifest v2 contract is available end to end.

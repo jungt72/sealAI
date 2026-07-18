@@ -32,16 +32,17 @@ def test_package_is_explicitly_non_authoritative_and_non_importable() -> None:
     assert manifest["authority"] == "NONE_WORKSHEET_ONLY"
     assert manifest["import_eligible"] is False
     assert manifest["positive_statement_allowed"] is False
-    assert manifest["open_owner_decisions"] == [
+    assert manifest["ratified_owner_decisions"] == [
         {
             "decision_id": "RP001-OD-01",
-            "state": "required_before_media_identity_import",
-            "question": (
-                "Which contract-consistent non-empty MAT-EVID-01A materials scope "
-                "applies to a MED-NORM other_technical identity claim?"
+            "state": "ratified_import_blocked_pending_v2",
+            "decision": "no_material_placeholder_typed_evidence_scope_v2",
+            "required_scope": (
+                "media_identity without materials and with exactly one media_ref"
             ),
         }
     ]
+    assert manifest["open_owner_decisions"] == []
     assert {
         "claim",
         "material_fact",
