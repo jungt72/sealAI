@@ -2,10 +2,11 @@
 
 Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, the
 owner-accepted non-authoritative MAT-GOV-03B shadow/pinning foundation, and the
-inert MAT-EVID-01A evidence-manifest foundation are implemented default-off
-locally; no material-rule activation, runtime evidence binding, or production
-migration is authorized. MAT-EVID-01B, MAT-GOV-03C, and every activation gate
-remain required. Owner decisions ratified through 2026-07-18.
+inert MAT-EVID-01A evidence-manifest foundation and MAT-EVID-01B fail-closed
+runtime-binding companion are implemented default-off locally; no
+material-rule activation, production migration, or production runtime binding
+is authorized. MAT-EVID-01C, MAT-GOV-03C, and every activation gate remain
+required. Owner decisions ratified through 2026-07-18.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
 P12 to material constraints. It does not add material facts, media classes,
@@ -246,8 +247,9 @@ Technical validity proves only structural and cryptographic consistency. It is
 not factual review, approval, compatibility, recommendation, or release.
 MAT-EVID-01A imports no matrix text, legacy source label, existing evidence
 card, RAG document, URL, seed, backfill, or LLM-generated content. MAT-EVID-01B
-must separately implement fail-closed evaluation binding; MAT-GOV-03C owns the
-still-separate review, approval, and deployment axes.
+separately implements fail-closed evaluation binding. MAT-EVID-01C remains
+required for factual evidence review; MAT-GOV-03C owns the still-separate
+approval and deployment axes.
 
 ## MAT-EVID-01B fail-closed runtime binding
 
