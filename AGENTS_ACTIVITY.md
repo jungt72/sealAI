@@ -23,3 +23,13 @@ Seeds erfunden. Unabhängiger Codex-Review PASS (0 Critical/High/Medium/Low). GA
 korrekt (Exit 20, kein Build/Push/Deploy/SBOM). MAT-GOV-03C bleibt blockiert bis Owner: Primärquellen
 kuratieren, MED-NORM-Review, 3 getrennte Subjects (Creator/Reviewer/Approver), min. 1 freigegebener
 Rule-Pack.
+
+2026-07-18 | Claude Code | Restarbeiten aus Professionalitaets-Assessment | Docker-Image-Retention
+(ops/rotate_docker_images.sh, PR #324, woechentlich So 03:30) + Remediation-PR-Stack-Triage
+(docs/ops/remediation-pr-triage-2026-07-18.md, PR #326: 16 offene PRs sind in Wahrheit 1 gestapelte
+12er-Kette #293-#305 + 1 Standalone-Draft #311 + 2 Dependabot + 7 Alt-PRs, keine PR angefasst) +
+Guard-Health-Check (ops/check_guard_health.sh, PR #327, alle 6h). Beim Bau des Guard-Health-Checks
+lebende Luecke gefunden: disk_safeguard.sh (Cron, User thorsten) ist seit einem upstream-Rewrite ein
+No-Op-Shim fuer Nicht-Root-Aufrufer; der vorgesehene Ersatz sealai-docker-disk-guard.timer war nie
+enabled. Disk-Guard lief seitdem ueber keinen Pfad. Fix braucht einmalig `sudo systemctl enable --now
+sealai-docker-disk-guard.timer` vom Owner (keine passwortlose sudo in dieser Session) -- noch offen.
