@@ -72,3 +72,23 @@ unabhaengig vom Inhalt) -> nach ops/env-prod.sops verschoben; (2) secrets/ ist b
 reserviertes, komplett gitignortes "nie committen"-Verzeichnis in diesem Repo -> nicht verwendet.
 Damit sind jetzt alle 3 vom Owner freigegebenen Restpunkte (Branch/Stash-Cleanup, GATE-11-Wiring,
 .env.prod-Overhaul) abgeschlossen.
+
+2026-07-18 (Nachtrag) | Claude Code | PR-Aufraeumung + Secret-Scan-Struktur-Fund | 13
+remediation-Stack-PRs (#293-#305, #311) geschlossen -- Owner bestaetigte den Stack als tot/
+aufgegeben (Basis bereits als #291 gemerged). 5 alte Alt-PRs geschlossen (#5, #6, #89, #120, #127
+-- alle inhaltlich superseded/V1-Backend-Ziel/bereits andernorts gelandet, einzeln verifiziert).
+3 Dependabot-PRs (#222, #223, #308) geschlossen, NACHDEM ein Branch-Update bei ihnen einen
+Struktur-Fund ausgeloest hat: jeder Branch-Update/Merge, der main ueber den 2026-07-14-
+Remediation-Commit hinweg einholt, laesst den Range-basierten Secret-Scanner die dort bereits
+bekannten, dokumentierten Alt-Funde (certs/tls.key, keycloak/certs/key.pem, ACME-JWK,
+docs/debug_internal_error/live/*, siehe docs/security/credential-rotation-runbook.md) erneut als
+"neu eingefuehrt" markieren -- kein neuer Leak, aber ein strukturelles Problem: JEDER
+Branch-Update ueber diese Grenze hinweg wird das gleiche tun, bis entweder ein separat
+freizugebender History-Rewrite passiert oder gewuenschter Inhalt als frischer Commit direkt auf
+aktuellem main neu erstellt wird (statt den alten Branch zu aktualisieren). Verifiziert an einem
+9 Tage alten Branch (PR #208) -- Alter des Branches ist NICHT der Faktor.
+Noch offen, Owner-Entscheidung noetig: #187 (staging deploy script, DIRTY/CONFLICTING, teils schon
+anders gelandet), #205 (Phase-3A-Governance-Log-Eintrag, DIRTY/CONFLICTING, Inhalt echt fehlend),
+#208 (Phase-3B-Governance-Log-Eintrag, BLOCKED durch obigen Fund, Inhalt echt fehlend). Keine
+Werte je angezeigt/kopiert/geloggt -- nur redigierte CI-Ausgabe gelesen, im Einklang mit dem
+Runbook.
