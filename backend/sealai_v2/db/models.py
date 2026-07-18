@@ -1991,3 +1991,140 @@ class V2MaterialEvidenceRuntimeAuditEvent(Base):
     )
     event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MediumCatalog(Base):
+    """Stable MED-NORM-01 catalog family; no active pointer or lifecycle."""
+
+    __tablename__ = "v2_medium_catalogs"
+    __table_args__ = (
+        CheckConstraint(
+            "length(catalog_id) = 36 AND catalog_id LIKE 'mcf_%'",
+            name="ck_v2_medium_catalog_id",
+        ),
+    )
+
+    catalog_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MediumCatalogSnapshot(Base):
+    """Immutable content-addressed closed media catalog snapshot."""
+
+    __tablename__ = "v2_medium_catalog_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "catalog_id",
+            "content_sha256",
+            name="uq_v2_medium_catalog_snapshot_content",
+        ),
+        CheckConstraint(
+            "length(snapshot_id) = 68 AND snapshot_id LIKE 'mcs_%'",
+            name="ck_v2_medium_catalog_snapshot_id",
+        ),
+        CheckConstraint(
+            "media_catalog_schema_version = 1 AND canonicalization_version = 1 "
+            "AND med_norm_contract_version = 'MED-NORM-01.v1'",
+            name="ck_v2_medium_catalog_snapshot_contract",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64",
+            name="ck_v2_medium_catalog_snapshot_hash",
+        ),
+        CheckConstraint(
+            "runtime_authority = 'NORMALIZATION_ONLY' "
+            "AND positive_statement_allowed IS FALSE",
+            name="ck_v2_medium_catalog_no_positive_authority",
+        ),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    catalog_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("v2_medium_catalogs.catalog_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    media_catalog_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonicalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    med_norm_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    runtime_authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MediumCatalogValidationEvent(Base):
+    """Append-only technical validation for one immutable catalog snapshot."""
+
+    __tablename__ = "v2_medium_catalog_validation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mcv_%'",
+            name="ck_v2_medium_catalog_validation_id",
+        ),
+        CheckConstraint(
+            "validation_state = 'valid' AND error_code = 'none'",
+            name="ck_v2_medium_catalog_validation_state",
+        ),
+        CheckConstraint(
+            "length(validation_sha256) = 64",
+            name="ck_v2_medium_catalog_validation_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_medium_catalog_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    validator_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MediumCatalogAuditEvent(Base):
+    """Append-only creation audit; carries no review or activation state."""
+
+    __tablename__ = "v2_medium_catalog_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mca_%'",
+            name="ck_v2_medium_catalog_audit_id",
+        ),
+        CheckConstraint(
+            "event_type = 'catalog_snapshot_created'",
+            name="ck_v2_medium_catalog_audit_type",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_medium_catalog_audit_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_medium_catalog_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)

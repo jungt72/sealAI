@@ -764,7 +764,7 @@ def test_migration_is_additive_empty_restrictive_and_immutable(tmp_path) -> None
     _upgrade_engine(engine, "20260718_0016")
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) - before == REVIEW_TABLES
-    assert migration_status(engine) == ("20260718_0016", "20260718_0016")
+    assert migration_status(engine) == ("20260718_0016", "20260718_0017")
     with engine.connect() as connection:
         for table in REVIEW_TABLES:
             assert (

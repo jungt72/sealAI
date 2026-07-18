@@ -89,7 +89,7 @@ def test_fresh_migration_creates_only_the_four_03a_tables_and_internal_fks(
         "v2_material_snapshot_validation_events",
         "v2_material_snapshot_audit_events",
     }
-    assert migration_status(engine) == ("20260717_0011", "20260718_0016")
+    assert migration_status(engine) == ("20260717_0011", "20260718_0017")
     expected = {
         "v2_material_ruleset_snapshots": (
             "ruleset_id",
