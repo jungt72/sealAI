@@ -387,6 +387,22 @@ def test_required_source_type_is_checked_against_claim_sources(tmp_path) -> None
     assert exc.value.code is EvidenceReviewErrorCode.SOURCE_TYPE_MISMATCH
 
 
+def test_every_declared_required_source_type_must_be_present(tmp_path) -> None:
+    _engine, reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        _store(
+            reviews,
+            evidence,
+            source_ref,
+            claim_ref,
+            required_source_types=[
+                "manufacturer_datasheet",
+                "peer_reviewed_publication",
+            ],
+        )
+    assert exc.value.code is EvidenceReviewErrorCode.SOURCE_TYPE_MISMATCH
+
+
 def test_exact_source_identity_scope_and_complete_coverage_are_required(
     tmp_path,
 ) -> None:
@@ -539,6 +555,23 @@ def test_strict_json_duplicate_keys_and_duplicate_scope_values_are_rejected(
     assert order_exc.value.code is EvidenceReviewErrorCode.NON_CANONICAL_ORDER
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "review_schema_version",
+        "canonicalization_version",
+        "evidence_manifest_schema_version",
+    ],
+)
+def test_boolean_version_values_are_rejected(tmp_path, field) -> None:
+    _engine, _reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    payload = json.loads(_review_payload(evidence, source_ref, claim_ref))
+    payload[field] = True
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        parse_review_payload(json.dumps(payload))
+    assert exc.value.code is EvidenceReviewErrorCode.UNKNOWN_SCHEMA
+
+
 def test_short_excerpt_limit_and_explicit_unavailable_locator(tmp_path) -> None:
     _engine, reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
     stored = _store(
@@ -596,6 +629,25 @@ def test_revocation_and_quarantine_are_terminal_fail_closed_states(tmp_path) -> 
             identity=_actor("subject:quarantine", APPROVE_ROLE),
             created_at="2026-07-18T14:04:00Z",
         )
+
+
+def test_rejection_is_a_terminal_fail_closed_state(tmp_path) -> None:
+    _engine, reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    stored = _store(reviews, evidence, source_ref, claim_ref)
+    rejected = reviews.record_rejection(
+        stored.review_snapshot_id,
+        identity=_actor("subject:reviewer", REVIEW_ROLE),
+        created_at="2026-07-18T14:01:00Z",
+    )
+    assert rejected.review_state is FactualReviewState.REJECTED
+    assert rejected.approval_state is FactualApprovalState.NOT_APPROVED
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        reviews.record_quarantine(
+            stored.review_snapshot_id,
+            identity=_actor("subject:quarantine", APPROVE_ROLE),
+            created_at="2026-07-18T14:02:00Z",
+        )
+    assert exc.value.code is EvidenceReviewErrorCode.INVALID_TRANSITION
 
 
 def test_tenant_isolation_comes_only_from_verified_identity(tmp_path) -> None:

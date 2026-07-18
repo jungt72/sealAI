@@ -554,7 +554,9 @@ class EvidenceReviewPayloadV1:
 
     def __post_init__(self) -> None:
         if (
-            self.review_schema_version != REVIEW_SCHEMA_VERSION
+            type(self.review_schema_version) is not int
+            or self.review_schema_version != REVIEW_SCHEMA_VERSION
+            or type(self.canonicalization_version) is not int
             or self.canonicalization_version != CANONICALIZATION_VERSION
         ):
             _fail(
@@ -576,7 +578,8 @@ class EvidenceReviewPayloadV1:
             path="$.evidence_content_sha256",
         )
         if (
-            self.evidence_manifest_schema_version != 1
+            type(self.evidence_manifest_schema_version) is not int
+            or self.evidence_manifest_schema_version != 1
             or self.evidence_contract_version != "MAT-EVID-01A.v1"
         ):
             _fail(
@@ -744,10 +747,14 @@ class EvidenceReviewPayloadV1:
             actual_types = {
                 source_types[source_ref] for source_ref in claim.source_refs
             }
-            if not actual_types.intersection(review.required_source_types):
+            required_types = set(review.required_source_types)
+            if not required_types.issubset(actual_types):
+                missing_types = sorted(
+                    item.value for item in required_types - actual_types
+                )
                 _fail(
                     EvidenceReviewErrorCode.SOURCE_TYPE_MISMATCH,
-                    "claim lacks its required source type",
+                    f"claim lacks required source types {missing_types}",
                     path=f"$.claims[{claim_ref}].required_source_types",
                 )
 
@@ -863,9 +870,12 @@ def parse_review_payload(raw: str | bytes) -> EvidenceReviewPayloadV1:
         path="$",
     )
     if (
-        obj["review_schema_version"] != REVIEW_SCHEMA_VERSION
+        type(obj["review_schema_version"]) is not int
+        or obj["review_schema_version"] != REVIEW_SCHEMA_VERSION
+        or type(obj["canonicalization_version"]) is not int
         or obj["canonicalization_version"] != CANONICALIZATION_VERSION
         or obj["mat_evid_review_contract_version"] != MAT_EVID_REVIEW_CONTRACT_VERSION
+        or type(obj["evidence_manifest_schema_version"]) is not int
     ):
         _fail(EvidenceReviewErrorCode.UNKNOWN_SCHEMA, "unknown 01C contract")
     sources: list[ReviewedSourceMetadataV1] = []
@@ -1012,6 +1022,12 @@ def parse_review_payload(raw: str | bytes) -> EvidenceReviewPayloadV1:
         sources=tuple(sorted(sources, key=lambda item: item.source_ref)),
         claims=tuple(sorted(claims, key=lambda item: item.claim_ref)),
         claim_relations=tuple(sorted(relations, key=lambda item: item.key())),
+        review_schema_version=obj["review_schema_version"],
+        canonicalization_version=obj["canonicalization_version"],
+        mat_evid_review_contract_version=_text(
+            obj["mat_evid_review_contract_version"],
+            path="$.mat_evid_review_contract_version",
+        ),
     )
 
 
@@ -1204,6 +1220,7 @@ def transition_review_projection(
         )
     if event_type is ReviewEventType.QUARANTINED:
         if projection.review_state in {
+            FactualReviewState.REJECTED,
             FactualReviewState.REVOKED,
             FactualReviewState.QUARANTINED,
         }:
