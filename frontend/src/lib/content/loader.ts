@@ -1,13 +1,39 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+/**
+ * Evidence scale (docs/seo/baseline.md). Never assign this retroactively for
+ * content you didn't fact-check yourself — that's inventing a technical
+ * claim, exactly what the Leitbild (root AGENTS.md) forbids. Leave it unset;
+ * `reviewStatus` defaults to `"legacy"` for anything written before this
+ * field existed.
+ */
+export type EvidenceLevel =
+  | "A" // primary testing, norm, or published test data
+  | "B" // manufacturer data with clear conditions
+  | "C" // multiple agreeing expert sources
+  | "D" // general orientation value only
+  | "U"; // insufficiently evidenced -- do not present as a recommendation
+
+export type ReviewStatus =
+  | "reviewed" // a named reviewer checked this against sources
+  | "draft" // written, not yet reviewed
+  | "legacy"; // predates this field -- unknown review state, not "unreviewed and wrong"
+
 export type ContentMetadata = {
   title: string;
   description: string;
   category?: string;
   datePublished?: string;
+  /** Falls back to `datePublished` when the article has never been edited since. */
+  dateModified?: string;
   author?: string;
   slug: string;
+  evidenceLevel?: EvidenceLevel;
+  /** Free text, semicolon-separated if more than one (e.g. "DIN 3760; Hersteller-Datenblatt XY"). */
+  sources?: string;
+  reviewStatus: ReviewStatus;
+  reviewedBy?: string;
 };
 
 export type ContentDoc = {
@@ -41,6 +67,17 @@ function parseFrontmatter(fileContent: string, slug: string): ContentDoc {
     contentStart = i + 1;
   }
 
+  const rawEvidenceLevel = (metadata as unknown as Record<string, string>).evidenceLevel;
+  const evidenceLevel: EvidenceLevel | undefined = (["A", "B", "C", "D", "U"] as const).includes(
+    rawEvidenceLevel as EvidenceLevel,
+  )
+    ? (rawEvidenceLevel as EvidenceLevel)
+    : undefined;
+
+  const rawReviewStatus = (metadata as unknown as Record<string, string>).reviewStatus;
+  const reviewStatus: ReviewStatus =
+    rawReviewStatus === "reviewed" || rawReviewStatus === "draft" ? rawReviewStatus : "legacy";
+
   return {
     metadata: {
       title: metadata.title || "Titel fehlt",
@@ -48,7 +85,12 @@ function parseFrontmatter(fileContent: string, slug: string): ContentDoc {
       slug: metadata.slug || slug,
       category: metadata.category,
       datePublished: metadata.datePublished,
+      dateModified: metadata.dateModified || metadata.datePublished,
       author: metadata.author,
+      evidenceLevel,
+      sources: (metadata as unknown as Record<string, string>).sources,
+      reviewStatus,
+      reviewedBy: (metadata as unknown as Record<string, string>).reviewedBy,
     },
     content: lines.slice(contentStart).join("\n").trim(),
   };
@@ -83,4 +125,12 @@ export async function getAllContentDocs(type: "medien" | "werkstoffe" | "wissen"
   const docs = await Promise.all(slugs.map((slug) => getContentDoc(type, slug)));
 
   return docs.filter((doc): doc is ContentDoc => Boolean(doc));
+}
+
+/** German-locale "Stand: 5. Mai 2026" formatting for the visible date shown on article pages. */
+export function formatContentDate(dateStr: string | undefined): string | undefined {
+  if (!dateStr) return undefined;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" }).format(date);
 }

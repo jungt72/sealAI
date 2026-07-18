@@ -201,9 +201,41 @@ def _display_flags(result: PipelineResult) -> dict:
 
 
 def chat_response(result: PipelineResult) -> dict:
-    return {
+    turn_state = result.turn_state
+    case_state = result.case_state
+    response = {
         "answer": result.answer.text,
         "model": result.answer.model,
+        "run": (
+            {
+                "run_id": turn_state.run_id,
+                "status": turn_state.status,
+                "case_id": turn_state.case_id,
+                "case_revision_started": turn_state.case_revision_started,
+                "case_revision_current": turn_state.case_revision_current,
+                "risk_level": turn_state.risk_level,
+                "route_name": turn_state.route_name,
+                "execution_class": turn_state.execution_class,
+                "model_tier": turn_state.model_tier,
+                "verification_mode": turn_state.verification_mode,
+                "policy_version": turn_state.policy_version,
+                "needs_human_review": turn_state.needs_human_review,
+            }
+            if turn_state is not None
+            else None
+        ),
+        "case": (
+            {
+                "case_id": case_state.case_id,
+                "revision": case_state.revision,
+                "schema_version": case_state.schema_version,
+                "fingerprint": case_state.fingerprint,
+                "required_missing": list(case_state.required_missing),
+                "open_conflicts": len(case_state.open_conflicts),
+            }
+            if case_state is not None
+            else None
+        ),
         "grounded": result.grounded,
         "intent": (result.understanding.intent.value if result.understanding else None),
         "citations": [citation(f) for f in result.grounding_facts],
@@ -251,3 +283,16 @@ def chat_response(result: PipelineResult) -> dict:
         # showing on smalltalk/off-topic turns. Render-only — never gates L1/L3/kernel/RAG.
         **_display_flags(result),
     }
+    # Default-off additive fields are omitted, rather than emitted as new null keys,
+    # so each disabled feature preserves the historical JSON shape.
+    if result.material_constraints_enabled:
+        if result.material_constraints is None:
+            raise ValueError(
+                "enabled material-constraint contract requires an explicit result"
+            )
+        response["material_constraints"] = result.material_constraints.to_dict()
+    elif result.material_constraints is not None:
+        raise ValueError("disabled material-constraint contract cannot carry a result")
+    if result.next_question is not None:
+        response["next_question"] = result.next_question.to_dict()
+    return response

@@ -16,6 +16,7 @@ this lands the durable store + a transparent, deterministic relevance.
 
 from __future__ import annotations
 
+from hashlib import sha256
 import re
 
 from sqlalchemy import select
@@ -42,7 +43,7 @@ class PostgresCrossSessionMemory:
         self._sf = session_factory
 
     def relevant_facts(
-        self, *, tenant_id: str, query: str, k: int = 5
+        self, *, tenant_id: str, query: str, k: int = 5, owner_subject: str = ""
     ) -> tuple[RememberedFact, ...]:
         require_tenant(
             TenantContext(tenant_id)
@@ -50,7 +51,11 @@ class PostgresCrossSessionMemory:
         with self._sf() as s:
             rows = (
                 s.execute(
-                    select(V2DurableFact).where(V2DurableFact.tenant_id == tenant_id)
+                    select(V2DurableFact).where(
+                        V2DurableFact.tenant_id == tenant_id,
+                        V2DurableFact.owner_subject
+                        == (owner_subject if owner_subject else None),
+                    )
                 )
                 .scalars()
                 .all()
@@ -60,11 +65,11 @@ class PostgresCrossSessionMemory:
         q = _tokens(query)
         if not q:
             return ()
-        matched = [r for r in rows if q & _tokens(r.feld, r.wert)]
+        matched = [r for r in rows if q & _tokens(r.original_feld or r.feld, r.wert)]
         matched.sort(key=lambda r: r.as_of_turn, reverse=True)  # freshest first
         return tuple(
             RememberedFact(
-                feld=r.feld,
+                feld=r.original_feld or r.feld,
                 wert=r.wert,
                 provenance=r.provenance,
                 as_of_turn=r.as_of_turn,
@@ -73,19 +78,30 @@ class PostgresCrossSessionMemory:
         )
 
     def remember_durable(
-        self, *, tenant_id: str, facts: tuple[RememberedFact, ...]
+        self,
+        *,
+        tenant_id: str,
+        facts: tuple[RememberedFact, ...],
+        owner_subject: str = "",
     ) -> None:
         require_tenant(TenantContext(tenant_id))  # P0
         if not facts:
             return
         with self._sf.begin() as s:
             for f in facts:
-                row = s.get(V2DurableFact, (tenant_id, f.feld))
+                storage_key = (
+                    sha256(f"{owner_subject}\0{f.feld}".encode()).hexdigest()
+                    if owner_subject
+                    else f.feld
+                )
+                row = s.get(V2DurableFact, (tenant_id, storage_key))
                 if row is None:
                     s.add(
                         V2DurableFact(
                             tenant_id=tenant_id,
-                            feld=f.feld,
+                            owner_subject=owner_subject or None,
+                            original_feld=f.feld,
+                            feld=storage_key,
                             wert=f.wert,
                             provenance=f.provenance,
                             as_of_turn=f.as_of_turn,

@@ -2,6 +2,8 @@
 title: "Salzsäure (HCl) — Beständigkeit und Dichtungsauslegung"
 description: "Technische Analyse der chemischen Beständigkeit von Dichtungswerkstoffen gegenüber Salzsäure in industriellen Prozessen."
 category: "Chemische Beständigkeit"
+datePublished: "2026-04-17"
+author: "Thorsten Jung"
 ---
 
 # Salzsäure (HCl) — Chemische Beständigkeit

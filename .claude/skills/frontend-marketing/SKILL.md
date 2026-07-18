@@ -26,7 +26,7 @@ Marketing ships **only** via the sanctioned script — health-gated, with a roll
 anchor read from the running daemon:
 
 ```bash
-bash ops/release-frontend.sh
+./ops/release-frontend.sh
 ```
 
 Build mechanism: a Next.js **standalone** build (`next build` + a `postbuild` that

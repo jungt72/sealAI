@@ -13,6 +13,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from sealai_v2.core.case_state import CaseStateV2
+    from sealai_v2.core.interview.contracts import NextQuestionPayload
     from sealai_v2.core.medium_research import MediumIntelligence
     from sealai_v2.memory.context_assembler import MemoryContextBundle
 
@@ -31,6 +33,9 @@ class ModelConfig:
     # "verifier", "judge", ...) for grouping LlmCallTelemetry — never tenant/case/user data.
     # None → telemetry still works, just unlabeled by stage.
     stage: str | None = None
+    # Provider-native reasoning control. Both current OpenAI reasoning models and
+    # Mistral Small 4 accept this on Chat Completions. None omits the parameter.
+    reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,16 @@ class LlmClient(Protocol):
         self, *, system: str, user: str, model_config: ModelConfig
     ) -> LlmResult: ...
 
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
+    ) -> LlmResult: ...
+
     def generate_stream(
         self, *, system: str, user: str, model_config: ModelConfig
     ) -> "AsyncIterator[LlmStreamEvent]": ...
@@ -116,6 +131,7 @@ class SystemPromptAssembler(Protocol):
         baseline_hardening: bool = False,
         engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
+        knowledge_answer_plan: dict | None = None,
         risk_flags: list[str] | None = None,
     ) -> str: ...
 
@@ -204,10 +220,25 @@ class GroundingFact:
     # card_id. L1-NEUTRAL: the assembler renders only text+quelle, so this never reaches the prompt
     # (byte-identical) → no behavior change, no eval perturbation.
     sources: tuple[str, ...] = ()
-    # Gap #2: provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
-    # cell). L1-neutral (assembler renders text+quelle only). L3 uses it to apply the corrective policy:
-    # a matrix contradiction CORRECTS (reviewed cell), a card contradiction only FLAGs.
+    # Provenance of THIS grounding fact — "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix
+    # cell) | "trap" (owner-reviewed policy/failure-mode fact). L1-neutral (the assembler renders
+    # text+quelle only). L3 still receives matrix and trap catalogs through their dedicated lanes.
     kind: str = "card"
+    # Epistemic claim type from the Fachkarte (definition, family_tendency, safety_caution, ...).
+    # Separate from ``kind`` above, which identifies the provenance lane. This lets retrieval and
+    # fail-closed rendering preserve a balanced overview instead of sorting every card fact alike.
+    claim_kind: str = ""
+    # Engineering-answer facets owned by the reviewed claim metadata. They let retrieval select a
+    # complete answer shape (definition + mechanism + limits + validation, etc.) instead of merely
+    # the semantically nearest passages. L1 receives the plan, not these metadata as new facts.
+    answer_facets: tuple[str, ...] = ()
+    # The card's subject class (material | medium | seal_type | method | general). This is metadata
+    # for deterministic planning/telemetry and never changes the claim's epistemic status.
+    subject_type: str = "general"
+    # Stable claim-level identity when the retrieval backend provides one. Structured knowledge
+    # answers use this instead of the broader card id so evidence coverage can be validated per
+    # engineering facet. Other answer paths continue to use ``card_id`` unchanged.
+    claim_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -228,6 +259,14 @@ class UntrustedContent:
 class AuthError(RuntimeError):
     """Raised when a token cannot be validated (P0 fail-closed). The route maps this → 401; the
     reason string is for logs, NOT for the client (no oracle for an attacker)."""
+
+
+class ConversationAccessDenied(PermissionError):
+    """Raised when a verified subject attempts to access another subject's session.
+
+    API routes deliberately map this to the same not-found response as an unknown session so the
+    ownership check cannot be used as an existence oracle.
+    """
 
 
 @dataclass(frozen=True)
@@ -285,6 +324,437 @@ class Retriever(Protocol):
     ) -> "RetrievalResult": ...
 
 
+class MaterialConstraintVerdict(str, Enum):
+    """The one canonical material-compatibility verdict vocabulary.
+
+    These values are the existing §4 matrix values.  They are intentionally not
+    translated into a second taxonomy: consumers distinguish resolution,
+    relation, and evaluation through their separate state axes.
+    """
+
+    VERTRAEGLICH = "vertraeglich"
+    UNVERTRAEGLICH = "unvertraeglich"
+    BEDINGT = "bedingt"
+
+
+MATRIX_VERDICTS = tuple(verdict.value for verdict in MaterialConstraintVerdict)
+# Backward-compatible private alias used by existing tests/importers.
+_MATRIX_VERDICTS = MATRIX_VERDICTS
+
+
+class InputResolutionState(str, Enum):
+    """Whether one material-constraint input has a canonical identity."""
+
+    KNOWN = "known"
+    MISSING = "missing"
+    UNKNOWN = "unknown"
+    AMBIGUOUS = "ambiguous"
+
+
+class RelationState(str, Enum):
+    """Resolution of the relationship between relevant medium components."""
+
+    UNDETERMINED = "undetermined"
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class MediumCardinality(str, Enum):
+    """Structurally established count of relevant contact media."""
+
+    NONE = "none"
+    SINGLE = "single"
+    MULTIPLE = "multiple"
+    UNKNOWN = "unknown"
+
+
+class EvaluationState(str, Enum):
+    """Outcome of attempting the material-constraint evaluation."""
+
+    EVALUATED = "evaluated"
+    BLOCKED = "blocked"
+    NO_RULE_DATA = "no_rule_data"
+
+
+class MaterialConstraintScopeState(str, Enum):
+    """Explicit material-governance scope; absence is never a wildcard."""
+
+    IN_SCOPE = "in_scope"
+    OUT_OF_SCOPE = "out_of_scope"
+    UNKNOWN = "unknown"
+
+
+class MaterialConstraintBlockerKind(str, Enum):
+    """Stable precedence classes for fail-closed material evaluation."""
+
+    HARD_GATE = "hard_gate"
+    SCOPE = "scope"
+    CONFLICT = "conflict"
+    INPUT = "input"
+    MEDIUM_RELATION = "medium_relation"
+
+
+_MATERIAL_BLOCKER_PRECEDENCE = {
+    MaterialConstraintBlockerKind.HARD_GATE: 0,
+    MaterialConstraintBlockerKind.SCOPE: 1,
+    MaterialConstraintBlockerKind.CONFLICT: 2,
+    MaterialConstraintBlockerKind.INPUT: 3,
+    MaterialConstraintBlockerKind.MEDIUM_RELATION: 4,
+}
+
+
+@dataclass(frozen=True)
+class MaterialConstraintBlocker:
+    kind: MaterialConstraintBlockerKind
+    ref: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, MaterialConstraintBlockerKind):
+            raise TypeError(
+                "material blocker kind must be MaterialConstraintBlockerKind"
+            )
+        if (
+            not self.ref
+            or self.ref != self.ref.strip()
+            or any(ch.isspace() for ch in self.ref)
+        ):
+            raise ValueError("material blocker requires a stable non-whitespace ref")
+
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind.value, "ref": self.ref}
+
+
+def material_constraint_blocker_sort_key(
+    blocker: MaterialConstraintBlocker,
+) -> tuple[int, str]:
+    return (_MATERIAL_BLOCKER_PRECEDENCE[blocker.kind], blocker.ref)
+
+
+@dataclass(frozen=True)
+class MaterialConstraintPreconditions:
+    """Typed pre-rule boundary in binding governance precedence order."""
+
+    scope: MaterialConstraintScopeState = MaterialConstraintScopeState.UNKNOWN
+    hard_gate_refs: tuple[str, ...] = ()
+    conflict_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scope, MaterialConstraintScopeState):
+            raise TypeError("material scope must be MaterialConstraintScopeState")
+        for label, refs in (
+            ("hard_gate_refs", self.hard_gate_refs),
+            ("conflict_refs", self.conflict_refs),
+        ):
+            if len(refs) != len(set(refs)):
+                raise ValueError(f"{label} must be unique")
+            if any(
+                not ref or ref != ref.strip() or any(ch.isspace() for ch in ref)
+                for ref in refs
+            ):
+                raise ValueError(f"{label} require stable non-whitespace refs")
+
+    @property
+    def blockers(self) -> tuple[MaterialConstraintBlocker, ...]:
+        blockers = [
+            MaterialConstraintBlocker(MaterialConstraintBlockerKind.HARD_GATE, ref)
+            for ref in self.hard_gate_refs
+        ]
+        if self.scope is not MaterialConstraintScopeState.IN_SCOPE:
+            blockers.append(
+                MaterialConstraintBlocker(
+                    MaterialConstraintBlockerKind.SCOPE,
+                    f"material-scope:{self.scope.value}",
+                )
+            )
+        blockers.extend(
+            MaterialConstraintBlocker(MaterialConstraintBlockerKind.CONFLICT, ref)
+            for ref in self.conflict_refs
+        )
+        return tuple(sorted(blockers, key=material_constraint_blocker_sort_key))
+
+
+def _validate_material_input(
+    name: str, value: str, state: InputResolutionState
+) -> None:
+    present = bool(value.strip())
+    if state is InputResolutionState.MISSING:
+        if present:
+            raise ValueError(f"{name} marked missing must not carry a value")
+        return
+    if not present:
+        raise ValueError(f"{name} state {state.value} requires the observed input")
+
+
+def _validate_medium_relation(
+    medium_state: InputResolutionState,
+    medium_cardinality: MediumCardinality,
+    relation_state: RelationState,
+) -> None:
+    allowed = {
+        InputResolutionState.MISSING: {
+            (MediumCardinality.NONE, RelationState.UNDETERMINED)
+        },
+        InputResolutionState.UNKNOWN: {
+            (MediumCardinality.UNKNOWN, RelationState.UNDETERMINED)
+        },
+        InputResolutionState.AMBIGUOUS: {
+            (MediumCardinality.UNKNOWN, RelationState.UNDETERMINED)
+        },
+        InputResolutionState.KNOWN: {
+            (MediumCardinality.SINGLE, RelationState.NOT_APPLICABLE),
+            (MediumCardinality.MULTIPLE, RelationState.UNRESOLVED),
+            (MediumCardinality.MULTIPLE, RelationState.RESOLVED),
+        },
+    }
+    if (medium_cardinality, relation_state) not in allowed[medium_state]:
+        raise ValueError(
+            "invalid medium_state, medium_cardinality, and relation_state combination"
+        )
+
+
+@dataclass(frozen=True)
+class MaterialConstraintQuery:
+    """Typed input boundary for material-constraint evaluation.
+
+    Material and medium resolution are independent from their relationship.
+    Empty strings are therefore never interpreted as wildcard scope by the
+    canonical evaluator.
+    """
+
+    material: str
+    medium: str
+    material_state: InputResolutionState
+    medium_state: InputResolutionState
+    medium_cardinality: MediumCardinality
+    relation_state: RelationState
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.material_state, InputResolutionState):
+            raise TypeError("material_state must be InputResolutionState")
+        if not isinstance(self.medium_state, InputResolutionState):
+            raise TypeError("medium_state must be InputResolutionState")
+        if not isinstance(self.medium_cardinality, MediumCardinality):
+            raise TypeError("medium_cardinality must be MediumCardinality")
+        if not isinstance(self.relation_state, RelationState):
+            raise TypeError("relation_state must be RelationState")
+        _validate_material_input("material", self.material, self.material_state)
+        _validate_material_input("medium", self.medium, self.medium_state)
+        _validate_medium_relation(
+            self.medium_state, self.medium_cardinality, self.relation_state
+        )
+
+    @property
+    def evaluable(self) -> bool:
+        return (
+            self.material_state is InputResolutionState.KNOWN
+            and self.medium_state is InputResolutionState.KNOWN
+            and self.medium_cardinality is MediumCardinality.SINGLE
+            and self.relation_state is RelationState.NOT_APPLICABLE
+        )
+
+
+@dataclass(frozen=True)
+class MaterialConstraintMatch:
+    """One applicable matrix rule, bound to its stable cell reference."""
+
+    rule_ref: str
+    verdict: MaterialConstraintVerdict
+    statement: str
+    source_ref: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.verdict, MaterialConstraintVerdict):
+            raise TypeError("match verdict must be MaterialConstraintVerdict")
+        if not self.rule_ref.strip():
+            raise ValueError("material-constraint match requires a stable rule_ref")
+        if not self.statement.strip():
+            raise ValueError("material-constraint match requires a rule statement")
+        if not self.source_ref.strip():
+            raise ValueError("material-constraint match requires a neutral source_ref")
+        if self.source_ref != f"matrix-cell:{self.rule_ref}":
+            raise ValueError("source_ref must equal matrix-cell:<rule_ref>")
+
+    @property
+    def evidence_binding_state(self) -> str:
+        """MAT-EVID-01 has not bound this neutral rule reference to evidence."""
+
+        return "unbound"
+
+    def to_dict(self) -> dict:
+        return {
+            "rule_ref": self.rule_ref,
+            "verdict": self.verdict.value,
+            "statement": self.statement,
+            "source_ref": self.source_ref,
+            "evidence_binding_state": self.evidence_binding_state,
+        }
+
+
+_MATERIAL_VERDICT_PRECEDENCE = {
+    MaterialConstraintVerdict.UNVERTRAEGLICH: 0,
+    MaterialConstraintVerdict.BEDINGT: 1,
+    MaterialConstraintVerdict.VERTRAEGLICH: 2,
+}
+
+
+def material_constraint_match_sort_key(
+    match: MaterialConstraintMatch,
+) -> tuple[int, str, str, str]:
+    """Stable serialized order for every canonical material-rule match."""
+
+    return (
+        _MATERIAL_VERDICT_PRECEDENCE[match.verdict],
+        match.rule_ref,
+        match.statement,
+        match.source_ref,
+    )
+
+
+@dataclass(frozen=True)
+class MaterialConstraintResult:
+    """Canonical, disqualify-only result for one material-constraint evaluation.
+
+    ``verdict`` is populated only for ``EVALUATED``.  Orthogonal input,
+    relation, and evaluation states make the absence of a verdict unambiguous.
+    Every applicable ``bedingt`` match remains available through ``conditions``
+    even if an incompatible rule wins the overall precedence.
+    """
+
+    material_state: InputResolutionState
+    medium_state: InputResolutionState
+    medium_cardinality: MediumCardinality
+    relation_state: RelationState
+    evaluation_state: EvaluationState
+    verdict: MaterialConstraintVerdict | None = None
+    matches: tuple[MaterialConstraintMatch, ...] = ()
+    decisive_ref: str | None = None
+    blockers: tuple[MaterialConstraintBlocker, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.material_state, InputResolutionState):
+            raise TypeError("material_state must be InputResolutionState")
+        if not isinstance(self.medium_state, InputResolutionState):
+            raise TypeError("medium_state must be InputResolutionState")
+        if not isinstance(self.medium_cardinality, MediumCardinality):
+            raise TypeError("medium_cardinality must be MediumCardinality")
+        if not isinstance(self.relation_state, RelationState):
+            raise TypeError("relation_state must be RelationState")
+        if not isinstance(self.evaluation_state, EvaluationState):
+            raise TypeError("evaluation_state must be EvaluationState")
+        if self.verdict is not None and not isinstance(
+            self.verdict, MaterialConstraintVerdict
+        ):
+            raise TypeError("result verdict must be MaterialConstraintVerdict")
+        if any(
+            not isinstance(item, MaterialConstraintBlocker) for item in self.blockers
+        ):
+            raise TypeError("result blockers must be MaterialConstraintBlocker values")
+        if len({(item.kind, item.ref) for item in self.blockers}) != len(self.blockers):
+            raise ValueError("material blockers must be unique")
+        if self.blockers != tuple(
+            sorted(self.blockers, key=material_constraint_blocker_sort_key)
+        ):
+            raise ValueError("material blockers must use canonical precedence order")
+        _validate_medium_relation(
+            self.medium_state, self.medium_cardinality, self.relation_state
+        )
+        inputs_evaluable = (
+            self.material_state is InputResolutionState.KNOWN
+            and self.medium_state is InputResolutionState.KNOWN
+            and self.medium_cardinality is MediumCardinality.SINGLE
+            and self.relation_state is RelationState.NOT_APPLICABLE
+        )
+        if self.evaluation_state is EvaluationState.EVALUATED:
+            if self.blockers:
+                raise ValueError("evaluated result cannot carry blockers")
+            if not inputs_evaluable:
+                raise ValueError("evaluated result requires evaluable input states")
+            if self.verdict is None or not self.matches or self.decisive_ref is None:
+                raise ValueError(
+                    "evaluated material-constraint result requires verdict, matches, and decisive_ref"
+                )
+            if self.decisive_ref not in {match.rule_ref for match in self.matches}:
+                raise ValueError("decisive_ref must identify an applicable match")
+            if len({match.rule_ref for match in self.matches}) != len(self.matches):
+                raise ValueError(
+                    "material-constraint matches require unique rule_ref values"
+                )
+            if self.matches != tuple(
+                sorted(self.matches, key=material_constraint_match_sort_key)
+            ):
+                raise ValueError("material-constraint matches must use canonical order")
+            if self.verdict is not self.matches[0].verdict:
+                raise ValueError(
+                    "result verdict must match the strongest canonical match"
+                )
+            if self.decisive_ref != self.matches[0].rule_ref:
+                raise ValueError("decisive_ref must identify the first canonical match")
+            return
+        if (
+            self.evaluation_state is EvaluationState.NO_RULE_DATA
+            and not inputs_evaluable
+        ):
+            raise ValueError("no_rule_data requires otherwise evaluable inputs")
+        if self.evaluation_state is EvaluationState.NO_RULE_DATA and self.blockers:
+            raise ValueError("no_rule_data result cannot carry blockers")
+        if (
+            self.evaluation_state is EvaluationState.BLOCKED
+            and inputs_evaluable
+            and not self.blockers
+        ):
+            raise ValueError(
+                "blocked evaluable result requires an explicit precondition blocker"
+            )
+        if self.verdict is not None or self.matches or self.decisive_ref is not None:
+            raise ValueError(
+                "non-evaluated material-constraint result cannot carry verdict or rule matches"
+            )
+
+    @property
+    def conditions(self) -> tuple[MaterialConstraintMatch, ...]:
+        """All simultaneously applicable opaque ``bedingt`` rules."""
+
+        return tuple(
+            match
+            for match in self.matches
+            if match.verdict is MaterialConstraintVerdict.BEDINGT
+        )
+
+    @property
+    def disqualified(self) -> bool:
+        return self.verdict is MaterialConstraintVerdict.UNVERTRAEGLICH
+
+    @property
+    def requires_resolution(self) -> bool:
+        return self.evaluation_state is not EvaluationState.EVALUATED or bool(
+            self.conditions
+        )
+
+    @property
+    def positive_statement_allowed(self) -> bool:
+        return False
+
+    def to_dict(self) -> dict:
+        payload = {
+            "material_state": self.material_state.value,
+            "medium_state": self.medium_state.value,
+            "medium_cardinality": self.medium_cardinality.value,
+            "relation_state": self.relation_state.value,
+            "evaluation_state": self.evaluation_state.value,
+            "disqualified": self.disqualified,
+            "requires_resolution": self.requires_resolution,
+            "positive_statement_allowed": self.positive_statement_allowed,
+            "conditions": [condition.to_dict() for condition in self.conditions],
+            "blockers": [blocker.to_dict() for blocker in self.blockers],
+        }
+        if self.verdict is not None:
+            payload["verdict"] = self.verdict.value
+            payload["decisive_ref"] = self.decisive_ref
+            payload["matches"] = [match.to_dict() for match in self.matches]
+        return payload
+
+
 @dataclass(frozen=True)
 class MatrixCell:
     """One cell of the §4 Verträglichkeitsmatrix (build-spec §4: "relational, abfragbar — Medium ×
@@ -302,7 +772,7 @@ class MatrixCell:
     werkstoff: str  # one canonical material
     medium: str  # canonical medium, or "" for mechanical-condition cells
     bedingung: str  # qualitative condition tag, or ""
-    bewertung: str  # "vertraeglich" | "unvertraeglich" | "bedingt"
+    bewertung: MaterialConstraintVerdict
     begruendung: (
         str  # the grounded verdict text (faithful restatement of the reviewed source)
     )
@@ -312,11 +782,12 @@ class MatrixCell:
     ]  # reviewed source id(s): trap-correct:… / owner:… / eval:… / FK-…
     sources: tuple[str, ...] = ()  # primary citations (norm/datasheet), if any
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.bewertung, MaterialConstraintVerdict):
+            raise TypeError("MatrixCell.bewertung must be MaterialConstraintVerdict")
+
     def quelle(self) -> str:
         return f"Verträglichkeitsmatrix · {self.id} (reviewed; {', '.join(self.provenance)})"
-
-
-_MATRIX_VERDICTS = ("vertraeglich", "unvertraeglich", "bedingt")
 
 
 @runtime_checkable
@@ -480,6 +951,9 @@ class Answer:
     model: str
     grounding_facts: tuple[GroundingFact, ...] = ()
     finish_reason: str | None = None
+    # Internal claim projection for selective LLM verification. Empty keeps the
+    # legacy full-answer verifier path; it is never serialized to the client.
+    verification_claims: tuple[str, ...] = ()
 
 
 class VerifierAction(str, Enum):
@@ -536,6 +1010,7 @@ class SessionContext:
     repository key — both mandatory (P0). Memory is per-session: absent session ⇒ memory is inert."""
 
     session_id: str
+    owner_subject: str = ""
 
 
 @dataclass(frozen=True)
@@ -576,6 +1051,19 @@ class RememberedFact:
     wert: str
     provenance: str = "distilled-from-conversation"
     as_of_turn: int = 0
+    unit: str = ""
+    status: str = "stated"
+    source_ref: str = ""
+    observed_at: str = ""
+    document_id: str = ""
+    document_version: str = ""
+    page: int | None = None
+    bbox: tuple[float, float, float, float] | None = None
+    confidence: float | None = None
+
+
+class CaseRevisionConflict(RuntimeError):
+    """The case changed after generation started; stale output must not be committed."""
 
 
 @dataclass(frozen=True)
@@ -587,10 +1075,31 @@ class MemoryView:
     window: tuple[Turn, ...] = ()
     case_state: tuple[RememberedFact, ...] = ()
     durable: tuple[RememberedFact, ...] = ()
+    case_state_v2: "CaseStateV2 | None" = None
 
     @property
     def is_empty(self) -> bool:
-        return not (self.window or self.case_state or self.durable)
+        return not (
+            self.window or self.case_state or self.durable or self.case_state_v2
+        )
+
+
+@dataclass(frozen=True)
+class TurnState:
+    """Immutable execution identity bound to the case revision used for this answer."""
+
+    run_id: str
+    case_id: str
+    case_revision_started: int
+    case_revision_current: int
+    status: str
+    risk_level: str = "standard"
+    route_name: str | None = None
+    execution_class: str | None = None
+    model_tier: str | None = None
+    verification_mode: str | None = None
+    policy_version: str | None = None
+    needs_human_review: bool = False
 
 
 @dataclass(frozen=True)
@@ -614,6 +1123,8 @@ class Case:
     seal_spec: dict | None = (
         None  # {material?, type?, form?, designation?} — populated later
     )
+    material_state: InputResolutionState | None = None
+    material_candidates: tuple[str, ...] = ()
     provenance: tuple[
         str, ...
     ] = ()  # per-field origin (carried as the typed slots grow)
@@ -633,17 +1144,36 @@ class Case:
         Lazy import keeps ``contracts`` (the base module) free of any import-cycle risk."""
         seal_spec: dict | None = None
         medium: dict | None = None
+        material_state: InputResolutionState | None = None
+        material_candidates: tuple[str, ...] = ()
         if question:
             from sealai_v2.core.medium_extract import extract_media
-            from sealai_v2.core.seal_spec_extract import extract_seal_spec
+            from sealai_v2.core.seal_spec_extract import (
+                extract_material_candidates,
+                extract_seal_spec,
+            )
 
             seal_spec = extract_seal_spec(question)
+            material_candidates = extract_material_candidates(question)
+            material_state = (
+                InputResolutionState.MISSING
+                if not material_candidates
+                else InputResolutionState.KNOWN
+                if len(material_candidates) == 1
+                else InputResolutionState.AMBIGUOUS
+            )
             media = extract_media(question)
             if media:
                 # name = primary (display); matched = ALL media → the stage folds the kernel
                 # over every one so a co-mentioned disqualifying medium is never dropped.
                 medium = {"name": media[0], "matched": list(media)}
-        return cls(facts=tuple(case_state), seal_spec=seal_spec, medium=medium)
+        return cls(
+            facts=tuple(case_state),
+            seal_spec=seal_spec,
+            medium=medium,
+            material_state=material_state,
+            material_candidates=material_candidates,
+        )
 
     def to_prompt_context(self) -> list[dict]:
         """The byte-identical prompt projection: ``[{"feld","wert"}]`` over the case-state facts.
@@ -659,7 +1189,13 @@ class ConversationMemory(Protocol):
     adapter pattern). Tenant scope is a MANDATORY repository-layer parameter (P0 — server-side only).
     The concrete store also carries the user-control + history surface (view/edit/delete/clear/list)."""
 
-    def recall(self, *, tenant_id: str, session_id: str) -> MemoryView: ...
+    def assert_session_access(
+        self, *, tenant_id: str, session_id: str, owner_subject: str
+    ) -> None: ...
+
+    def recall(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> MemoryView: ...
 
     def record_turn(
         self,
@@ -670,7 +1206,19 @@ class ConversationMemory(Protocol):
         answer: str,
         facts: tuple["RememberedFact", ...] = (),
         now: str | None = None,
+        expected_case_revision: int | None = None,
+        owner_subject: str = "",
     ) -> None: ...
+
+    def merge_facts(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        facts: tuple["RememberedFact", ...],
+        expected_case_revision: int | None = None,
+        owner_subject: str = "",
+    ) -> int: ...
 
 
 @runtime_checkable
@@ -681,11 +1229,15 @@ class CrossSessionMemory(Protocol):
     scope mandatory (P0)."""
 
     def relevant_facts(
-        self, *, tenant_id: str, query: str, k: int = 5
+        self, *, tenant_id: str, query: str, k: int = 5, owner_subject: str = ""
     ) -> tuple["RememberedFact", ...]: ...
 
     def remember_durable(
-        self, *, tenant_id: str, facts: tuple["RememberedFact", ...]
+        self,
+        *,
+        tenant_id: str,
+        facts: tuple["RememberedFact", ...],
+        owner_subject: str = "",
     ) -> None: ...
 
 
@@ -699,6 +1251,8 @@ class PipelineResult:
     flags: Flags
     understanding: Understanding | None
     answer: Answer
+    case_state: "CaseStateV2 | None" = None
+    turn_state: TurnState | None = None
     grounded: bool = False
     verified: bool = False
     cited: bool = False
@@ -719,6 +1273,11 @@ class PipelineResult:
     # material + medium). Backend owns the verdict; never affirms suitability (E4-1). A
     # render/serializer surface only - never injected into L1/L3 (the prompt stays unchanged).
     gegencheck: dict | None = None
+    # MAT-GOV-01 canonical result. Additive and default-off: the legacy Gegencheck
+    # projection above remains the public compatibility field until separately
+    # activated. The serializer omits this key entirely while the flag is off.
+    material_constraints: MaterialConstraintResult | None = None
+    material_constraints_enabled: bool = False
     # V2.2 INC-COVERAGE-GATE (§4): the deterministic case-level coverage_status (IN/PARTIAL/ANALOG/OUT)
     # + per-axis grounding, or None when the gate is OFF. Kernel-owned (I-COV-1); a render/serializer
     # surface that (once coupled, §5) BOUNDS the allowed L1 mode — the LLM never sets it.
@@ -775,6 +1334,10 @@ class PipelineResult:
     # per-route chat-UI display flags (route_prompt_matrix) so smalltalk turns stop showing
     # "Technische Vorbewertung"/"Belege". None on every path where classification did not run.
     route_name: str | None = None
+    # Adaptive interview Phase 0/1: the canonical backend-owned next question. It remains None
+    # unless the active feature flag is explicitly enabled; shadow mode persists/logs the same
+    # decision without exposing this field to the client.
+    next_question: "NextQuestionPayload | None" = None
 
 
 # The seven credibility axes (eval seed-set v0). Used by the scorer/report.

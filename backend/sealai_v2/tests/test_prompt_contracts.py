@@ -39,6 +39,7 @@ _EXPECTED_TEMPLATE_VARS = {
         "durable_context",
         "engineering_flags",
         "grounding_facts",
+        "knowledge_answer_plan",
         "material_params",
         "medium_hint_context",
         "not_computed",

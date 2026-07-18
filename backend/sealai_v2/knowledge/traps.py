@@ -18,7 +18,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from sealai_v2.core.contracts import HARD_GATES
+from sealai_v2.core.contracts import HARD_GATES, GroundingFact
+from sealai_v2.core.text_match import query_tokens, tag_matches
 
 _CATALOG_DIR = Path(__file__).resolve().parent
 _DEFAULT_FILE = _CATALOG_DIR / "trap_catalog.json"
@@ -50,6 +51,11 @@ class TrapEntry:
     applies_to: tuple[
         str, ...
     ] = ()  # medium/topic tags gating `correct_recommendation`
+    # Optional owner-curated high-precision retrieval surface for facts that must reach L1 before
+    # drafting. This is deliberately explicit rather than inferred from prose or selected by an LLM.
+    retrieval_terms: tuple[str, ...] = ()
+    retrieval_min_hits: int = 0
+    sources: tuple[str, ...] = ()
 
     @property
     def reviewed(self) -> bool:
@@ -59,6 +65,11 @@ class TrapEntry:
     def has_split(self) -> bool:
         """True iff this trap carries a topic-scoped recommendation (→ L3 gates it on `applies_to`)."""
         return bool(self.correct_recommendation.strip())
+
+    @property
+    def corrective(self) -> bool:
+        """Only source-evidenced policy entries may supply a replacement fact."""
+        return self.reviewed and bool(self.sources) and bool(self.correct.strip())
 
 
 @dataclass(frozen=True)
@@ -94,6 +105,9 @@ def _entry(raw: dict, review_state: str) -> TrapEntry:
         correct_general=str(raw.get("correct_general", "")),
         correct_recommendation=str(raw.get("correct_recommendation", "")),
         applies_to=tuple(str(a) for a in raw.get("applies_to", [])),
+        retrieval_terms=tuple(str(t) for t in raw.get("retrieval_terms", [])),
+        retrieval_min_hits=int(raw.get("retrieval_min_hits", 0)),
+        sources=tuple(str(source) for source in raw.get("sources", [])),
     )
 
 
@@ -136,6 +150,17 @@ def load_traps(path: Path | None = None) -> TrapCatalog:
                     raise ValueError(
                         f"{e.id}: correct_recommendation requires a non-empty applies_to"
                     )
+            if e.retrieval_terms:
+                if e.review_state != "reviewed":
+                    raise ValueError(
+                        f"{e.id}: only reviewed traps may define retrieval_terms"
+                    )
+                if not 1 <= e.retrieval_min_hits <= len(e.retrieval_terms):
+                    raise ValueError(
+                        f"{e.id}: retrieval_min_hits must be within retrieval_terms"
+                    )
+            elif e.retrieval_min_hits:
+                raise ValueError(f"{e.id}: retrieval_min_hits requires retrieval_terms")
             entries.append(e)
     if not entries:
         raise ValueError("trap catalog is empty")
@@ -143,4 +168,63 @@ def load_traps(path: Path | None = None) -> TrapCatalog:
         entries=tuple(entries),
         version=str(data.get("version", "")),
         source=str(data.get("source", "")),
+    )
+
+
+def retrieve_reviewed_trap_facts(
+    catalog: TrapCatalog | None, question: str, *, k: int = 3
+) -> tuple[GroundingFact, ...]:
+    """Return high-precision reviewed policy facts relevant before generation.
+
+    Only entries with an explicit owner-curated retrieval surface participate. Draft traps and
+    prose-derived similarity are excluded, preserving the "no LLM grounds LLM" boundary.
+    """
+    if catalog is None or k <= 0:
+        return ()
+    q_norm = (question or "").lower()
+    q_tokens = query_tokens(q_norm)
+    matches: list[tuple[int, TrapEntry]] = []
+    for entry in catalog.reviewed():
+        if not entry.corrective:
+            continue
+        if not entry.retrieval_terms:
+            continue
+        hits = reviewed_trap_retrieval_hits(entry, q_norm, q_tokens=q_tokens)
+        if hits >= entry.retrieval_min_hits:
+            matches.append((hits, entry))
+    matches.sort(key=lambda item: (-item[0], item[1].id))
+    return tuple(
+        GroundingFact(
+            text=entry.correct,
+            quelle=(
+                f"Geprüfter Fallen-Katalog · {entry.id} "
+                f"({', '.join(entry.provenance)})"
+            ),
+            card_id=entry.id,
+            sources=entry.sources,
+            kind="trap",
+        )
+        for _hits, entry in matches[:k]
+    )
+
+
+def reviewed_trap_retrieval_hits(
+    entry: TrapEntry, question: str, *, q_tokens: set[str] | None = None
+) -> int:
+    """Count owner-curated activation terms for one high-precision trap.
+
+    L1 prefetch and L3 catalog scoping share this exact matcher so a policy fact cannot be
+    considered relevant before generation but off-topic during verification, or vice versa.
+    Entries without an explicit retrieval surface return zero and remain governed by the broad
+    verifier catalog behavior.
+    """
+    q_norm = (question or "").lower()
+    tokens = q_tokens if q_tokens is not None else query_tokens(q_norm)
+    return sum(1 for term in entry.retrieval_terms if tag_matches(term, tokens, q_norm))
+
+
+def reviewed_trap_retrieval_matches(entry: TrapEntry, question: str) -> bool:
+    """Whether an explicitly scoped reviewed trap is active for this question."""
+    return bool(entry.retrieval_terms) and (
+        reviewed_trap_retrieval_hits(entry, question) >= entry.retrieval_min_hits
     )

@@ -33,6 +33,7 @@ def revalidate(
     tenant_id: str,
     store: MemoryStore,
     now: str,
+    owner_subject: str = "",
 ) -> tuple[MemoryItem, ...]:
     """PURE aside from the injected ``store`` (a duck-typed read, no Qdrant/network here) — every
     candidate id is looked up fresh; anything missing (purged, or never existed), not injectable
@@ -44,7 +45,11 @@ def revalidate(
     what it doesn't know, it doesn't guess around a gap)."""
     valid: list[MemoryItem] = []
     for item_id in candidate_ids:
-        item = store.get_item(tenant_id=tenant_id, item_id=item_id)
+        item = store.get_item(
+            tenant_id=tenant_id,
+            item_id=item_id,
+            owner_subject=owner_subject,
+        )
         if item is None:
             continue
         if not item.is_injectable:
@@ -64,6 +69,8 @@ def retrieve_memory(
     store: MemoryStore,
     now: str,
     k: int = 5,
+    collection: str = MEMORY_COLLECTION,
+    owner_subject: str = "",
 ) -> tuple[MemoryItem, ...]:
     """Qdrant top-k with a HARD tenant filter (server-side, never client-supplied — same P0
     discipline as Fachkarten retrieval), then mandatory Postgres revalidation. Returns AUTHORITATIVE
@@ -71,11 +78,14 @@ def retrieve_memory(
     from qdrant_client.models import FieldCondition, Filter, MatchAny
 
     qvec = next(iter(embedder.embed([query]))).tolist()
-    tenant_filter = Filter(
-        must=[FieldCondition(key="tenant_id", match=MatchAny(any=[tenant_id]))]
-    )
+    must = [FieldCondition(key="tenant_id", match=MatchAny(any=[tenant_id]))]
+    if owner_subject:
+        must.append(
+            FieldCondition(key="owner_subject", match=MatchAny(any=[owner_subject]))
+        )
+    tenant_filter = Filter(must=must)
     res = qdrant_client.query_points(
-        MEMORY_COLLECTION,
+        collection,
         query=qvec,
         using=_DENSE,
         limit=max(k, k * _CANDIDATE_OVERFETCH_FACTOR),
@@ -83,5 +93,11 @@ def retrieve_memory(
         with_payload=False,  # deliberately unread — see module docstring
     )
     candidate_ids = [str(p.id) for p in res.points]
-    valid = revalidate(candidate_ids, tenant_id=tenant_id, store=store, now=now)
+    valid = revalidate(
+        candidate_ids,
+        tenant_id=tenant_id,
+        store=store,
+        now=now,
+        owner_subject=owner_subject,
+    )
     return valid[:k]

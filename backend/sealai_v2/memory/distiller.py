@@ -12,12 +12,14 @@ orchestration over the injected client + assembler — no I/O of its own (the cl
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Protocol
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from sealai_v2.core.contracts import LlmClient, ModelConfig, RememberedFact
 from sealai_v2.memory.integrity import numerics
+from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 
 
 class DistillPrompt(Protocol):
@@ -41,15 +43,17 @@ class DistillStats:
         return self.dropped / self.proposed if self.proposed else 0.0
 
 
-def _extract_json(raw: str) -> str:
-    """Best-effort: pull the first {...} block, tolerating code fences (mirrors ``stages``)."""
-    s = raw.strip()
-    if s.startswith("```"):
-        s = s.strip("`")
-        if "\n" in s:
-            s = s.split("\n", 1)[1]
-    start, end = s.find("{"), s.rfind("}")
-    return s[start : end + 1] if start != -1 and end > start else s
+class _DistilledFact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    feld: str = Field(max_length=255)
+    wert: str = Field(max_length=2000)
+
+
+class _DistillOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    facts: list[_DistilledFact] = Field(default_factory=list, max_length=32)
 
 
 class Distiller:
@@ -74,12 +78,23 @@ class Distiller:
         unused (conservative: assistant content is never a remembered fact) — kept in the signature
         so capturing the system's recommendation as a remembered claim can be added later without a
         call-site change."""
-        res = await self._client.generate(
-            system=self._assembler.distill_prompt(),
-            user=question,
-            model_config=self._model_config,
+        try:
+            output, _ = await generate_structured(
+                self._client,
+                output_type=_DistillOutput,
+                schema_name="sealingai_distilled_facts",
+                system=self._assembler.distill_prompt(),
+                user=question,
+                model_config=self._model_config,
+            )
+        except StructuredOutputError:
+            return ()
+        facts = tuple(
+            RememberedFact(feld=item.feld.strip(), wert=item.wert.strip())
+            for item in output.facts
+            if item.feld.strip() and item.wert.strip()
         )
-        return self._trace_numerics(self._parse(res.text), question)
+        return self._trace_numerics(facts, question)
 
     def _trace_numerics(
         self, facts: tuple[RememberedFact, ...], source: str
@@ -100,17 +115,3 @@ class Distiller:
             else:
                 self._dropped += 1
         return tuple(kept)
-
-    @staticmethod
-    def _parse(raw: str) -> tuple[RememberedFact, ...]:
-        try:
-            data = json.loads(_extract_json(raw))
-            facts: list[RememberedFact] = []
-            for it in data.get("facts", []):
-                feld = str(it.get("feld", "")).strip()
-                wert = str(it.get("wert", "")).strip()
-                if feld and wert:  # skip incomplete entries
-                    facts.append(RememberedFact(feld=feld, wert=wert))
-            return tuple(facts)
-        except (ValueError, KeyError, TypeError, AttributeError):
-            return ()  # fail safe — never corrupt the case-state with a guessed fact

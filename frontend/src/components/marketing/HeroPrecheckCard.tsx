@@ -92,10 +92,10 @@ export function HeroPrecheckCard() {
   }
 
   const selectClass =
-    "w-full rounded-[12px] border border-border bg-white px-3 py-2.5 text-[14px] text-foreground outline-none transition focus:border-seal-blue focus:ring-2 focus:ring-seal-blue/15";
+    "w-full rounded-[12px] border border-border bg-[#FAFAF9] px-3 py-2.5 text-[14px] text-foreground outline-none transition focus:border-seal-blue focus:ring-2 focus:ring-seal-blue/15";
 
   return (
-    <div className="w-full rounded-xl border border-border bg-white p-5 sm:p-6">
+    <div className="w-full rounded-xl border border-border bg-[#FAFAF9] p-5 sm:p-6">
       <div className="flex items-center gap-2 text-seal-blue">
         <Gauge size={18} strokeWidth={1.6} aria-hidden />
         <h2 className="text-[15px] font-semibold text-foreground">Dichtungsfall vorprüfen</h2>
@@ -197,7 +197,7 @@ export function HeroPrecheckCard() {
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className={`text-[13px] font-semibold ${TONE[result.status]}`}>{result.statusLabel}</span>
-            <span className="rounded-full border border-border bg-white px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            <span className="rounded-full border border-border bg-[#FAFAF9] px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
               Datenqualität: {result.dataQualityLabel}
             </span>
           </div>

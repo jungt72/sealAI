@@ -27,6 +27,7 @@ _R = TrapEntry(
     gates=("confident_wrong",),
     provenance=("eval:TRAP-02",),
     review_state="reviewed",
+    sources=("test-source",),
 )
 
 

@@ -14,6 +14,8 @@ is the default for every existing call site.
 from __future__ import annotations
 
 import asyncio
+import email.utils
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -25,6 +27,89 @@ from sealai_v2.core.contracts import (
     TokenUsage,
 )
 from sealai_v2.llm.telemetry import LlmCallTelemetry, TelemetrySink
+
+
+def _content_text(content: Any) -> str:
+    """Normalize OpenAI-compatible text content while discarding reasoning-only parts.
+
+    OpenAI currently returns a string for Chat Completions, while Mistral Small 4 may return a
+    content-part list containing a private ``thinking`` part followed by a public ``text`` part.
+    The adapter boundary owns that provider difference; core callers always receive plain text.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts = content if isinstance(content, list) else [content]
+    output: list[str] = []
+    for part in parts:
+        if isinstance(part, dict):
+            part_type = part.get("type")
+            value = part.get("text")
+        else:
+            part_type = getattr(part, "type", None)
+            value = getattr(part, "text", None)
+        if part_type in {"thinking", "reasoning"}:
+            continue
+        if isinstance(value, str):
+            output.append(value)
+            continue
+        nested = getattr(value, "value", None)
+        if isinstance(nested, str):
+            output.append(nested)
+    return "".join(output)
+
+
+def _parse_retry_duration(value: object) -> float | None:
+    """Parse common HTTP/OpenAI retry reset formats without depending on SDK exception types."""
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))  # i5-ok: protocol retry duration
+    except ValueError:
+        pass
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(ms|s|m|h)", raw)
+    if match:
+        amount, unit = float(match.group(1)), match.group(2)
+        seconds_per_unit = {  # i5-ok: protocol retry duration unit conversion
+            "ms": 0.001,  # i5-ok: protocol retry duration unit conversion
+            "s": 1.0,  # i5-ok: protocol retry duration unit conversion
+            "m": 60.0,  # i5-ok: protocol retry duration unit conversion
+            "h": 3600.0,  # i5-ok: protocol retry duration unit conversion
+        }
+        return amount * seconds_per_unit[unit]
+    try:
+        retry_at = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if retry_at.tzinfo is None:
+        return None
+    return max(
+        0.0,  # i5-ok: protocol retry duration
+        retry_at.timestamp() - time.time(),
+    )
+
+
+def _retry_delay_s(exc: Exception, attempt: int) -> float:
+    """Prefer provider reset hints; otherwise use bounded exponential backoff for transient calls."""
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    retry_after_ms = _parse_retry_duration(headers.get("retry-after-ms"))
+    hinted = [
+        duration
+        for value in (
+            headers.get("retry-after"),
+            headers.get("x-ratelimit-reset-requests"),
+            headers.get("x-ratelimit-reset-tokens"),
+        )
+        if (duration := _parse_retry_duration(value)) is not None
+    ]
+    if retry_after_ms is not None:
+        hinted.append(retry_after_ms / 1000.0)  # i5-ok: milliseconds to seconds
+    fallback = min(2.0 ** (attempt - 1), 30.0)  # i5-ok: retry timing constants
+    return max([fallback, *hinted])
 
 
 def _parse_usage(resp: Any) -> TokenUsage | None:
@@ -118,6 +203,8 @@ class OpenAiLlmClient:
             kwargs["temperature"] = model_config.temperature
         if model_config.max_output_tokens is not None:
             kwargs["max_completion_tokens"] = model_config.max_output_tokens
+        if model_config.reasoning_effort is not None:
+            kwargs["reasoning_effort"] = model_config.reasoning_effort
         if model_config.cache_key is not None:
             # Mistral/OpenAI prompt caching: opt-in via a stable key; the doctrine prefix then
             # bills at 10% on cache hits. extra_body passes through regardless of SDK version.
@@ -130,7 +217,34 @@ class OpenAiLlmClient:
         kwargs = self._build_request_kwargs(
             system=system, user=user, model_config=model_config
         )
+        return await self._generate_with_kwargs(kwargs, model_config=model_config)
 
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
+    ) -> LlmResult:
+        """Use the provider's strict JSON Schema mode, then let the caller validate locally too."""
+        kwargs = self._build_request_kwargs(
+            system=system, user=user, model_config=model_config
+        )
+        kwargs["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "strict": True,
+                "schema": json_schema,
+            },
+        }
+        return await self._generate_with_kwargs(kwargs, model_config=model_config)
+
+    async def _generate_with_kwargs(
+        self, kwargs: dict[str, Any], *, model_config: ModelConfig
+    ) -> LlmResult:
         started = time.monotonic()
         last_exc: Exception | None = None
         attempts = 0  # counts only REAL (transient) failures — param adaptations don't consume budget
@@ -150,7 +264,7 @@ class OpenAiLlmClient:
                     error_type=None,
                 )
                 return LlmResult(
-                    text=choice.message.content or "",
+                    text=_content_text(choice.message.content),
                     model=getattr(resp, "model", model_config.model),
                     finish_reason=getattr(choice, "finish_reason", None),
                     usage=usage,
@@ -175,7 +289,7 @@ class OpenAiLlmClient:
                 last_exc = exc
                 attempts += 1
                 if attempts < self._max_retries:
-                    backoff = min(2.0 ** (attempts - 1), 8.0)  # i5-ok: Retry-Backoff
+                    backoff = _retry_delay_s(exc, attempts)
                     await asyncio.sleep(backoff)
         assert (
             last_exc is not None
@@ -232,9 +346,10 @@ class OpenAiLlmClient:
                         fr = getattr(choice0, "finish_reason", None)
                         if fr is not None:
                             finish_reason = fr
-                        delta = getattr(
+                        raw_delta = getattr(
                             getattr(choice0, "delta", None), "content", None
                         )
+                        delta = _content_text(raw_delta)
                         if delta:
                             buffer.append(delta)
                             yielded_any = True

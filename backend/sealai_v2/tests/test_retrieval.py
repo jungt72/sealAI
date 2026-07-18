@@ -9,39 +9,147 @@ import pytest
 
 from sealai_v2.knowledge.fachkarten import Claim, Fachkarte, FachkartenCatalog
 from sealai_v2.knowledge.retrieval import InProcessRetriever, _card_severity
+from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
 def _r() -> InProcessRetriever:
-    return InProcessRetriever()
+    return InProcessRetriever(independently_reviewed_test_catalog())
 
 
-def test_grounds_epdm_mineraloel():
+def test_owner_attested_epdm_mineraloel_claim_is_grounding():
     res = asyncio.run(
         _r().retrieve(
             "EPDM-O-Ringe quellen in unserem Hydrauliköl, woran liegt das?",
             tenant_id="t",
         )
     )
-    assert res.grounded
-    assert "FK-EPDM-MINERALOEL" in {f.card_id for f in res.grounding_facts}
-    assert all(f.text and f.card_id for f in res.grounding_facts)
+    facts = [f for f in res.grounding_facts if f.card_id == "FK-EPDM-MINERALOEL"]
+    assert facts
+    assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
 
 
-def test_grounds_fkm_dampf():
+def test_owner_attested_fkm_dampf_claim_is_grounding():
     res = asyncio.run(
         _r().retrieve("FKM für Heißdampf-Sterilisation bei 140 °C", tenant_id="t")
     )
-    assert "FK-FKM-DAMPF" in {f.card_id for f in res.grounding_facts}
+    facts = [f for f in res.grounding_facts if f.card_id == "FK-FKM-DAMPF"]
+    assert facts
+    assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
 
 
-def test_grounds_foodgrade_over_plain_epdm():
+def test_broad_ptfe_overview_is_grounded_with_one_explicit_material_scope_hit():
+    res = asyncio.run(_r().retrieve("Bitte gib mir Details zu PTFE.", tenant_id="t"))
+
+    ptfe = [f for f in res.grounding_facts if f.card_id == "FK-PTFE-KALTFLUSS"]
+    assert len(ptfe) >= 5
+    assert any("thermoplast" in fact.text.lower() for fact in ptfe)
+    assert any("füllstoff" in fact.text.lower() for fact in ptfe)
+
+
+def test_bare_material_name_is_an_overview_request():
+    res = asyncio.run(_r().retrieve("PTFE", tenant_id="t"))
+
+    assert "FK-PTFE-KALTFLUSS" in {f.card_id for f in res.grounding_facts}
+
+
+def test_overview_prefers_a_reviewed_material_card_over_draft_only_ties():
+    reviewed = _card("FK-REVIEWED", "definition", material="ptfe", medium="unused")
+    draft = Fachkarte(
+        id="FK-DRAFT-SAFETY",
+        scope={"material": ["ptfe"]},
+        claims=(
+            Claim(
+                text="draft-only safety note",
+                review_state="draft",
+                provenance=("draft:x",),
+                kind="safety_nogo",
+            ),
+        ),
+        review_state="draft",
+        provenance=("draft:x",),
+    )
+    res = asyncio.run(
+        InProcessRetriever(FachkartenCatalog(cards=(draft, reviewed))).retrieve(
+            "Details zu PTFE", tenant_id="t", k=1
+        )
+    )
+
+    assert {fact.card_id for fact in res.grounding_facts} == {"FK-REVIEWED"}
+
+
+def test_owner_attested_foodgrade_claims_are_grounding():
     res = asyncio.run(
         _r().retrieve(
             "lebensmittelechte Dichtung für eine Schokoladen-Anlage, EPDM food-grade?",
             tenant_id="t",
         )
     )
-    assert "FK-FOODGRADE-FETT" in {f.card_id for f in res.grounding_facts}
+    facts = [f for f in res.grounding_facts if f.card_id == "FK-FOODGRADE-FETT"]
+    assert facts
+    assert all("owner domain-expert attestation" in f.sources[0] for f in facts)
+
+
+def test_exact_medium_hit_does_not_pull_unrelated_lexical_cards():
+    res = asyncio.run(
+        _r().retrieve(
+            "Welche möglichst günstige Dichtung für Aceton bei 180 °C?",
+            tenant_id="t",
+        )
+    )
+
+    assert {f.card_id for f in res.grounding_facts} == {"FK-FKM-AMIN-LAUGE-KETON"}
+
+
+def test_rwdr_case_keeps_seal_profile_when_nbr_is_also_named():
+    res = asyncio.run(
+        _r().retrieve(
+            "RWDR 40x62x8 NBR bei 6000 U/min, Temperatur noch unbekannt",
+            tenant_id="t",
+        )
+    )
+
+    assert "FK-RWDR-ENGINEERING-PROFILE" in {
+        fact.card_id for fact in res.grounding_facts
+    }
+
+
+def test_schokolade_ruehrwerk_case_retrieves_food_and_seal_profiles():
+    res = asyncio.run(
+        _r().retrieve(
+            "Rührwerk für Schokolade, Welle läuft unrund, produktberührt, CIP bis 100 °C",
+            tenant_id="t",
+        )
+    )
+
+    card_ids = {fact.card_id for fact in res.grounding_facts}
+    assert {"FK-FOODGRADE-FETT", "FK-GLRD-ENGINEERING-PROFILE"} <= card_ids
+
+
+def test_high_pressure_gas_case_includes_reviewed_medium_method():
+    res = asyncio.run(
+        _r().retrieve(
+            "Welche Dichtung für ein Hochdruck-Erdgasventil, 200 bar, mit schnellen Druckwechseln?",
+            tenant_id="t",
+        )
+    )
+
+    assert "FK-MEDIUM-ENGINEERING-METHOD" in {
+        fact.card_id for fact in res.grounding_facts
+    }
+
+
+def test_unknown_process_medium_retrieves_only_the_reviewed_selection_method():
+    res = asyncio.run(
+        _r().retrieve(
+            "Welcher Dichtungswerkstoff passt für ein eher exotisches Prozessmedium, "
+            "zu dem es keine geprüfte Verträglichkeitsangabe gibt?",
+            tenant_id="t",
+        )
+    )
+
+    assert "FK-MEDIUM-ENGINEERING-METHOD" in {
+        fact.card_id for fact in res.grounding_facts
+    }
 
 
 def test_offtopic_is_vorlaeufig():
@@ -69,7 +177,11 @@ def _mixed_catalog() -> FachkartenCatalog:
             Claim(
                 text="EPDM is reviewed-grounded here.",
                 review_state="reviewed",
+                sources=("test-source",),
                 provenance=("owner:qtest",),
+                reviewed_by="test-domain-reviewer",
+                reviewed_at="2026-07-11T00:00:00Z",
+                review_expires_at="2099-07-11T00:00:00Z",
             ),
             Claim(
                 text="EPDM draft note, unverified.",
@@ -113,8 +225,12 @@ def _card(cid, kind, *, material="fkm", medium="testmedium"):
             Claim(
                 text=f"{material} claim of kind {kind}.",
                 review_state="reviewed",
+                sources=("test-source",),
                 provenance=("owner:x",),
                 kind=kind,
+                reviewed_by="test-domain-reviewer",
+                reviewed_at="2026-07-11T00:00:00Z",
+                review_expires_at="2099-07-11T00:00:00Z",
             ),
         ),
         review_state="reviewed",
@@ -147,8 +263,12 @@ def test_card_severity_takes_the_max_across_multiple_claims():
             Claim(
                 text="a",
                 review_state="reviewed",
+                sources=("test-source",),
                 provenance=("owner:x",),
                 kind="family_tendency",
+                reviewed_by="test-domain-reviewer",
+                reviewed_at="2026-07-11T00:00:00Z",
+                review_expires_at="2099-07-11T00:00:00Z",
             ),
             Claim(
                 text="b",
@@ -193,8 +313,12 @@ def test_relevance_still_beats_claim_severity():
             Claim(
                 text="fkm claim",
                 review_state="reviewed",
+                sources=("test-source",),
                 provenance=("owner:x",),
                 kind="family_tendency",
+                reviewed_by="test-domain-reviewer",
+                reviewed_at="2026-07-11T00:00:00Z",
+                review_expires_at="2099-07-11T00:00:00Z",
             ),
         ),
         review_state="reviewed",

@@ -1,0 +1,126 @@
+{
+  "schema_version": "1.0",
+  "ssot_version": "2.0",
+  "updated_at": "2026-07-17",
+  "status_values": [
+    "verified_available",
+    "beta",
+    "pilot",
+    "in_build",
+    "planned",
+    "out_of_scope"
+  ],
+  "horizons": {
+    "H0": {
+      "name": "Governance",
+      "status": "in_build",
+      "public_label": "Im Aufbau"
+    },
+    "H1": {
+      "name": "Knowledge Core",
+      "status": "in_build",
+      "public_label": "Im Aufbau"
+    },
+    "H2": {
+      "name": "Case Core",
+      "status": "in_build",
+      "public_label": "Im Aufbau"
+    },
+    "H3": {
+      "name": "Engineering & Failure",
+      "status": "planned",
+      "public_label": "Geplant"
+    },
+    "H4": {
+      "name": "Manufacturer Network",
+      "status": "planned",
+      "public_label": "Geplant"
+    },
+    "H5": {
+      "name": "Lifecycle",
+      "status": "planned",
+      "public_label": "Geplant"
+    }
+  },
+  "modes": {
+    "knowledge": {
+      "horizon": "H1",
+      "status": "in_build",
+      "activation_gate": "M15",
+      "activation_blockers": [
+        "independent_domain_review_of_seed_claims",
+        "exact_final_adjudicated_replay"
+      ]
+    },
+    "comparison": {
+      "horizon": "H1",
+      "status": "in_build",
+      "activation_gate": "M15",
+      "activation_blockers": [
+        "independent_domain_review_of_seed_claims",
+        "exact_final_adjudicated_replay"
+      ]
+    },
+    "engineering": {
+      "horizon": "H3",
+      "status": "in_build",
+      "activation_gate": "G3"
+    },
+    "case": {
+      "horizon": "H2",
+      "status": "in_build",
+      "activation_gate": "G6"
+    },
+    "failure": {
+      "horizon": "H3",
+      "status": "planned",
+      "activation_gate": "G8"
+    },
+    "substitution": {
+      "horizon": "H3",
+      "status": "planned",
+      "activation_gate": "G8"
+    },
+    "manufacturer_fit": {
+      "horizon": "H4",
+      "status": "planned",
+      "activation_gate": "M8"
+    },
+    "lifecycle": {
+      "horizon": "H5",
+      "status": "planned",
+      "activation_gate": "G8"
+    }
+  },
+  "capabilities": {
+    "material_constraints": {
+      "horizon": "H3",
+      "status": "in_build",
+      "implementation_status": "mat_gov_03b_local_shadow_default_off_sampling_zero",
+      "contract_version": "MAT-GOV-03B",
+      "activation_gate": "G8",
+      "activation_blockers": [
+        "MAT-GOV-03B-independent-audit-and-owner-acceptance",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
+        "MED-NORM-01",
+        "material_rule_evidence",
+        "tested_shadow_purge_and_maintenance_role",
+        "mat_gov_02_payload_and_hard_gate_followups",
+        "owner_activation"
+      ],
+      "scope_limit": "local_non_authoritative_pointerless_shadow_foundation_no_production_migration_or_sampling"
+    },
+    "adaptive_interview_rwdr": {
+      "horizon": "H2",
+      "status": "pilot",
+      "implementation_status": "production_active_limited_rwdr",
+      "pack_id": "rwdr.v1",
+      "pack_version": "1.0.1",
+      "activation_gate": "G8",
+      "activation_blockers": [],
+      "scope_limit": "explicit_rwdr_cases_only",
+      "activation_decision": "ODR-10"
+    }
+  }
+}

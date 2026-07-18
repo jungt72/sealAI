@@ -3,7 +3,7 @@ title: "EPDM-Dichtung: Medien, Temperaturgrenzen und offene Prüfpunkte"
 description: "EPDM technisch einordnen: typische Einsatzfelder, kritische Medien und Angaben, die vor einer Herstellerprüfung benötigt werden."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # EPDM-Dichtung: Medien, Temperaturgrenzen und offene Prüfpunkte

@@ -201,6 +201,17 @@ def test_stage_none_without_alternatives_keyword():
     )
 
 
+def test_generic_replacement_and_comparison_are_not_partner_requests():
+    registry = _reg(_partner("A"))
+    for question in (
+        "Meine alte Dichtung ist kaputt. Wie finde ich Ersatz?",
+        "Schlüssel den RWDR auf und finde etwas Vergleichbares.",
+        "Sind diese beiden Dichtungen austauschbar?",
+        "Ist Hersteller A technisch dasselbe wie Hersteller B?",
+    ):
+        assert stages.alternativen(registry, question, None, tenant_id="t1") is None
+
+
 def test_stage_none_without_verdict_asks_for_assessment_first():
     # L6 "Matching folgt dem Verdikt, nie umgekehrt" (Relay-Increment P0-C, owner Leitbild-Audit
     # 2026-07-02): the keyword gate alone used to be sufficient. A first-turn manufacturer

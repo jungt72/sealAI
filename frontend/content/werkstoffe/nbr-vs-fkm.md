@@ -3,7 +3,7 @@ title: "NBR vs FKM: Dichtungen für Öl, Temperatur und Medien vergleichen"
 description: "NBR und FKM technisch vergleichen: Ölkontakt, Temperaturgrenzen, Additive, Kostenlogik und notwendige RFQ-Daten."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # NBR vs FKM: Dichtungen für Öl, Temperatur und Medien vergleichen

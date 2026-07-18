@@ -45,3 +45,9 @@ def test_api_v2_health_alias():
     res = TestClient(app).get("/api/v2/health")
     assert res.status_code == 200
     assert res.json() == {"status": "ok", "service": "sealai_v2"}
+
+
+def test_metrics_endpoint_is_exposed_for_internal_prometheus_scraping():
+    res = TestClient(app).get("/metrics")
+    assert res.status_code == 200
+    assert "http_requests_total" in res.text

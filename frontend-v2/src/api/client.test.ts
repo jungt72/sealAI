@@ -95,6 +95,16 @@ describe("ApiClient (check 5: fail-closed; talks only to /api/v2 + Bearer)", () 
     await expect(client.chatStream("hi", () => undefined)).rejects.toBeInstanceOf(ApiError);
   });
 
+  it("chatStream: rejects an unsupported version before consuming frames", async () => {
+    const response = sseResponse([
+      `event: result\ndata: ${JSON.stringify(RESULT_PAYLOAD)}\n\n`,
+    ]);
+    response.headers.set("X-SealingAI-Stream-Version", "99");
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(response)));
+    const client = new ApiClient(() => "tok", () => undefined);
+    await expect(client.chatStream("hi")).rejects.toMatchObject({ status: 502 });
+  });
+
   it("chatStream: a stream that ends without a result frame rejects (fail-closed)", async () => {
     vi.stubGlobal(
       "fetch",
@@ -217,7 +227,7 @@ describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
     );
   });
 
-  it("editFact/forgetFact/forgetAll/submitParams append ?case_id= only when given", async () => {
+  it("editFact/forgetFact/forgetAll/submitParams/refreshInterview append ?case_id= only when given", async () => {
     const fetchFn = mockFetch(200, {});
     const client = new ApiClient(() => "tok", () => undefined);
     await client.editFact("medium", "Wasser");
@@ -238,6 +248,11 @@ describe("ApiClient — 'Fälle'-Sidebar: optional caseId threading", () => {
     expect(String(fetchFn.mock.calls[4][0])).toBe(
       "/api/v2/conversations/current/facts?case_id=case-42",
     );
+    await client.refreshInterview("case-42");
+    expect(String(fetchFn.mock.calls[5][0])).toBe(
+      "/api/v2/conversations/current/interview/refresh?case_id=case-42",
+    );
+    expect((fetchFn.mock.calls[5][1] as RequestInit).method).toBe("POST");
   });
 
   it("listCases targets GET /api/v2/conversations and returns the case list", async () => {

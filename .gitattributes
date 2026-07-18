@@ -3,3 +3,11 @@
 *.pt filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
+docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/worksheet.csv -diff -text
+
+# Never render historical credential/raw-auth payloads in review diffs.
+certs/tls.key -diff
+keycloak/certs/key.pem -diff
+nginx/certbot/accounts/** -diff
+docs/debug_internal_error/20251222T100929Z/** -diff
+docs/debug_internal_error/live/** -diff

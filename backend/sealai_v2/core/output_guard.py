@@ -419,6 +419,136 @@ def evaluate_render(
     )
 
 
+def _case_open_inputs(question: str) -> tuple[str, ...]:
+    """Return discriminating, non-numeric design inputs for a blocked case answer."""
+    low = (question or "").casefold()
+    if any(
+        alias in low
+        for alias in (
+            "rwdr",
+            "radialwellendichtring",
+            "radial-wellendichtring",
+            "simmerring",
+            "wellendichtring",
+        )
+    ):
+        return (
+            "Druckdifferenz mit Druckspitzen und Druckrichtung sowie exakte Mediumbezeichnung einschließlich Additiven.",
+            "Wellenhärte, Rauheit und Drallfreiheit sowie Rundlauf und Exzentrizität am Dichtsitz.",
+            "Einbauraum und Montageweg, geforderte Lebensdauer und Leckage sowie Art und Menge des Schmutzeintrags.",
+        )
+    if "o-ring" in low or "oring" in low:
+        return (
+            "Exakter Compound, Medium einschließlich Additiven sowie Temperatur- und Druckkollektiv.",
+            "Nutgeometrie, Verpressung, Nutfüllung und Extrusionsspalt einschließlich Toleranzen.",
+            "Bewegungsart, Lastwechsel, Oberflächen, Montageweg, Lebensdauer- und Leckageanforderung.",
+        )
+    if any(alias in low for alias in ("gleitringdichtung", "gleitdichtung", "glrd")):
+        return (
+            "Mediumzusammensetzung, Feststoff- und Gasanteil sowie Temperatur-, Druck- und Drehzahlkollektiv.",
+            "Wellen- und Gehäuseschnittstellen, Betriebsweise einschließlich Anfahren, Stillstand und Trockenlaufgefahr.",
+            "Dichtungsanordnung, Werkstoffpaarung, Hilfssystem und zulässige Leckage beziehungsweise Lebensdauer.",
+        )
+    return ()
+
+
+def fail_closed_answer(contract: dict, *, question: str = "") -> str:
+    """Build a useful terminal fallback solely from contract-approved content.
+
+    This runs only after one failed regeneration. Every technical line is copied from an allowed
+    claim or required clause assembled by the kernel, so the fallback cannot invent a material,
+    number, source, or recommendation.
+    """
+    claims = list(contract.get("allowed_claims", ()))
+    is_general = contract.get("status") == "GENERAL"
+    if is_general:
+        # An overview is pedagogical, not an incident report: definition and balanced family
+        # tendencies precede cautions. Stable sorting preserves retrieval's diversified order for
+        # repeated kinds. Suitability contracts retain their safety-first severity ordering below.
+        kind_priority = {
+            "definition": 0,
+            "family_tendency": 1,
+            "system_dependent": 2,
+            "safety_caution": 3,
+            "qualification_required": 4,
+            "regulatory_status": 5,
+            "safety_nogo": 6,
+            "example_value": 7,
+        }
+        claims.sort(key=lambda claim: kind_priority.get(claim.get("claim_kind"), 8))
+    else:
+        priority = {"disqualify": 0, "caution": 1, "info": 2}
+        claims.sort(
+            key=lambda claim: (
+                priority.get(claim.get("severity"), 3),
+                claim.get("id", ""),
+            )
+        )
+    open_inputs = _case_open_inputs(question)
+    if is_general and open_inputs:
+        sections = [
+            "Technische Vorprüfung auf Basis der geprüften Quellen. Eine Bauform- oder "
+            "Werkstofffreigabe ist mit den vorliegenden Angaben noch nicht belastbar."
+        ]
+    elif is_general:
+        sections = [
+            "Zu dieser Wissensfrage kann ich aus den aktuell geprüften Quellen "
+            "Folgendes belastbar festhalten:"
+        ]
+    else:
+        sections = [
+            "Die technische Antwort konnte auf Basis der geprüften Informationen nicht "
+            "widerspruchsfrei ausgegeben werden. Belastbar festhalten kann ich:"
+        ]
+    approved = list(
+        dict.fromkeys(
+            claim.get("text", "").strip()
+            for claim in claims
+            if claim.get("text", "").strip()
+        )
+    )
+    if approved:
+        sections.append("\n".join(f"- {text}" for text in approved[:5]))
+    else:
+        sections.append(
+            "Für eine belastbare technische Einordnung fehlen derzeit geprüfte Grundlagen."
+        )
+    labels = {
+        "umfangsgeschwindigkeit": "Umfangsgeschwindigkeit",
+        "pv_wert": "PV-Wert",
+        "verpressung_prozent": "Verpressung",
+    }
+    values = []
+    for value in contract.get("allowed_values", ()):
+        name = labels.get(value.get("calc_id"), value.get("name", "Berechneter Wert"))
+        values.append(
+            f"- {name}: {value.get('value')} {value.get('unit', '')}".rstrip()
+        )
+        values.extend(
+            f"  - {warning}"
+            for warning in value.get("warnings", ())
+            if str(warning).strip()
+        )
+    if values:
+        sections.append("**Deterministisch berechnet**\n" + "\n".join(values))
+    if open_inputs:
+        sections.append(
+            "**Für die belastbare Auswahl noch erforderlich**\n"
+            + "\n".join(f"- {item}" for item in open_inputs)
+        )
+    required = [
+        str(clause).strip()
+        for clause in contract.get("required_clauses", ())
+        if str(clause).strip()
+    ]
+    sections.append(
+        "\n".join(required)
+        if required
+        else "Bitte die konkrete Auswahl gegen Datenblatt und Herstellerangaben prüfen."
+    )
+    return "\n\n".join(sections)
+
+
 def known_inputs(
     text: str, policy: ContractPolicy = DEFAULT_POLICY
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:

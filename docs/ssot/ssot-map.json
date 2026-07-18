@@ -1,0 +1,200 @@
+{
+  "schema_version": "1.0",
+  "ssot": {
+    "version": "2.0",
+    "status": "ratified",
+    "ratified_at": "2026-07-10",
+    "source": "docs/ssot/sealingAI_SSoT_v2.0.docx",
+    "source_sha256": "066dd803b7013fa8b7fdcac4703dee63c3fb183a55d7ef4e2cca76e963802580"
+  },
+  "hard_gates": {
+    "G1": {
+      "name": "Tenant",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/security/tenant.py",
+        "backend/sealai_v2/tests/test_tenant_guard.py"
+      ]
+    },
+    "G2": {
+      "name": "Evidence",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/knowledge/ledger.py",
+        "backend/sealai_v2/db/models.py",
+        "backend/sealai_v2/db/migrations/versions/20260711_0004_claim_evidence_contract.py",
+        "backend/sealai_v2/db/migrations/versions/20260712_0007_claim_identity.py",
+        "backend/sealai_v2/knowledge/traps.py",
+        "backend/sealai_v2/config/settings.py",
+        "backend/sealai_v2/api/routes/knowledge_review.py"
+      ]
+    },
+    "G3": {
+      "name": "Kernel",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/core/calc",
+        "backend/tests/architecture/test_i5_narration_no_numbers.py"
+      ]
+    },
+    "G4": {
+      "name": "Approval",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/core/framing.py",
+        "backend/sealai_v2/tests/test_api_framing.py"
+      ]
+    },
+    "G5": {
+      "name": "Neutrality",
+      "status": "partial",
+      "evidence": [
+        "backend/sealai_v2/knowledge/manufacturer_capability.py",
+        "backend/sealai_v2/knowledge/verified_partner_registry.py",
+        "backend/sealai_v2/api/routes/capabilities.py"
+      ]
+    },
+    "G6": {
+      "name": "Audit",
+      "status": "implemented",
+      "evidence": [
+        "backend/sealai_v2/core/decision_records.py",
+        "backend/sealai_v2/db/case_decisions.py",
+        "backend/sealai_v2/api/routes/case_records.py"
+      ]
+    },
+    "G7": {
+      "name": "Release",
+      "status": "implemented",
+      "evidence": [
+        "ops/release-backend-v2.sh",
+        ".github/workflows/deploy.yml"
+      ]
+    },
+    "G8": {
+      "name": "Scope",
+      "status": "partial",
+      "evidence": [
+        "docs/ssot/product-maturity.json",
+        "backend/sealai_v2/config/settings.py",
+        "docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md"
+      ]
+    }
+  },
+  "changes": {
+    "M1": "implemented",
+    "M2": "implemented",
+    "M3": "partial",
+    "M4": "external_review_required",
+    "M5": "partial",
+    "M6": "implemented",
+    "M7": "partial",
+    "M8": "partial",
+    "M9": "partial",
+    "M10": "implemented",
+    "M11": "owner_inputs_required",
+    "M12": "pilot_required",
+    "M13": "separate_plan_required",
+    "M14": "not_implemented",
+    "M15": "adjudicated_replay_required",
+    "M16": "instrumentation_required"
+  },
+  "capabilities": {
+    "material_constraints": {
+      "status": "in_build_default_off",
+      "implementation_status": "mat_rules_01_inert_reviewed_pack_seam_all_required_coverage_evidence_gap_default_off_sampling_zero",
+      "contract_version": "MAT-RULES-01.v1",
+      "activation_gate": "G8",
+      "activation_blockers": [
+        "MAT-GOV-03C",
+        "reviewed_media_catalog_content",
+        "real_reviewed_material_rule_content",
+        "tested_shadow_purge_and_maintenance_role",
+        "mat_gov_02_payload_and_hard_gate_followups",
+        "owner_activation"
+      ],
+      "evidence": [
+        "docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md",
+        "docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md",
+        "docs/architecture/ADR_MAT_GOV_03B_SHADOW_PINNING.md",
+        "docs/architecture/ADR_MAT_EVID_01A_PERSISTENCE.md",
+        "docs/architecture/ADR_MAT_EVID_01B_RUNTIME_BINDING.md",
+        "docs/architecture/ADR_MAT_EVID_01C_FACTUAL_REVIEW.md",
+        "docs/architecture/ADR_MED_NORM_01_CATALOG.md",
+        "docs/architecture/ADR_MAT_RULES_01_REVIEWED_PACK.md",
+        "backend/sealai_v2/core/material_rulesets.py",
+        "backend/sealai_v2/core/material_shadow.py",
+        "backend/sealai_v2/core/material_evidence.py",
+        "backend/sealai_v2/core/material_evidence_binding.py",
+        "backend/sealai_v2/core/material_evidence_review.py",
+        "backend/sealai_v2/core/medium_catalog.py",
+        "backend/sealai_v2/core/material_reviewed_rules.py",
+        "backend/sealai_v2/core/material_rule_coverage.py",
+        "backend/sealai_v2/db/material_rulesets.py",
+        "backend/sealai_v2/db/material_shadow.py",
+        "backend/sealai_v2/db/material_evidence.py",
+        "backend/sealai_v2/db/material_evidence_binding.py",
+        "backend/sealai_v2/db/material_evidence_review.py",
+        "backend/sealai_v2/db/medium_catalog.py",
+        "backend/sealai_v2/db/material_reviewed_rules.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0011_mat_gov_03a_snapshots.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0012_mat_gov_03b_shadow.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0013_mat_gov_03b_leases.py",
+        "backend/sealai_v2/db/migrations/versions/20260718_0014_mat_evid_01a.py",
+        "backend/sealai_v2/db/migrations/versions/20260718_0015_mat_evid_01b_runtime.py",
+        "backend/sealai_v2/db/migrations/versions/20260718_0016_mat_evid_01c_review.py",
+        "backend/sealai_v2/db/migrations/versions/20260718_0017_med_norm_01_catalog.py",
+        "backend/sealai_v2/core/material_constraints.py",
+        "backend/sealai_v2/tests/test_material_constraints.py",
+        "backend/sealai_v2/tests/test_mat_gov_02.py",
+        "backend/sealai_v2/tests/test_interview_governance.py",
+        "backend/sealai_v2/tests/test_mat_gov_03a_domain.py",
+        "backend/sealai_v2/tests/test_mat_gov_03a_persistence.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_contract.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_persistence.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_resolver.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_worker.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_api.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_postgres.py",
+        "backend/sealai_v2/tests/test_mat_evid_01a_domain.py",
+        "backend/sealai_v2/tests/test_mat_evid_01a_persistence.py",
+        "backend/sealai_v2/tests/test_mat_evid_01a_postgres.py",
+        "backend/sealai_v2/tests/test_mat_evid_01b_domain.py",
+        "backend/sealai_v2/tests/test_mat_evid_01b_persistence.py",
+        "backend/sealai_v2/tests/test_mat_evid_01b_postgres.py",
+        "backend/sealai_v2/tests/test_mat_evid_01c_review.py",
+        "backend/sealai_v2/tests/test_mat_evid_01c_postgres.py",
+        "backend/sealai_v2/tests/test_material_reviewed_rules.py",
+        "backend/sealai_v2/tests/test_material_rule_coverage.py",
+        "backend/tests/architecture/test_mat_gov_03a_isolation.py",
+        "backend/tests/architecture/test_mat_evid_01a_isolation.py",
+        "backend/tests/architecture/test_mat_evid_01b_isolation.py",
+        "backend/tests/architecture/test_mat_evid_01c_isolation.py",
+        "backend/tests/architecture/test_material_reviewed_rules_isolation.py",
+        "docs/ssot/material-rule-coverage-v1.json"
+      ]
+    },
+    "adaptive_interview_rwdr": {
+      "status": "production_active_limited_rwdr",
+      "pack_id": "rwdr.v1",
+      "pack_version": "1.0.1",
+      "policy_version": "adaptive-interview.lexicographic.1.0.0",
+      "evidence": [
+        "docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md",
+        "docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md",
+        "docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/README.md",
+        "docs/ssot/OWNER_DECISION_REGISTER.md",
+        "backend/sealai_v2/core/interview/",
+        "backend/sealai_v2/knowledge/domain_packs/rwdr.v1.json",
+        "backend/sealai_v2/eval/interview_shadow_review.py",
+        "backend/sealai_v2/eval/seed_cases/rwdr_shadow_review_v2.json",
+        "backend/sealai_v2/db/migrations/versions/20260714_0010_rwdr_pack_1_0_1_cutover.py",
+        "frontend-v2/src/components/Answer.tsx",
+        "frontend-v2/src/components/ChatPane.tsx",
+        "docs/ssot/review-invalidations/RWDR_SHADOW_CONTROLLED_V1_INVALIDATION.md",
+        "backend/sealai_v2/tests/test_adaptive_interview_policy.py",
+        "backend/sealai_v2/tests/test_interview_shadow_review.py"
+      ]
+    }
+  }
+}

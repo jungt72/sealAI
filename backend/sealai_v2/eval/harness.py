@@ -40,6 +40,7 @@ from sealai_v2.eval.multiturn import (
     summarize_multiturn,
 )
 from sealai_v2.eval.metering import MeteringLlmClient, TokenMeter
+from sealai_v2.eval.judge_pacing import PacedLlmClient
 from sealai_v2.eval.scorer import (
     CaseScore,
     aggregate_answer_quality,
@@ -47,7 +48,11 @@ from sealai_v2.eval.scorer import (
     summarize_column,
 )
 from sealai_v2.knowledge.fachkarten import load_fachkarten
-from sealai_v2.llm.factory import build_client_factory, resolve_l1_model
+from sealai_v2.llm.factory import (
+    build_client_factory,
+    build_client_for,
+    resolve_l1_model,
+)
 from sealai_v2.pipeline.pipeline import build_pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.leak_detect import exfiltration_leak
@@ -61,6 +66,25 @@ COLUMNS: dict[str, Flags] = {
 
 _EVAL_TENANT = TenantContext(tenant_id="eval-tenant")
 _CALC_FIXTURES_FILE = Path(__file__).resolve().parent / "calc_fixtures.json"
+
+
+def _select_cases(cases, case_ids: frozenset[str] | None):
+    return [case for case in cases if case_ids is None or case.id in case_ids]
+
+
+def _select_primary_cases(
+    cases, case_ids: frozenset[str] | None, smoke_limit: int | None
+):
+    selected = list(cases)
+    if case_ids is not None:
+        known = {case.id for case in selected}
+        unknown = sorted(case_ids - known)
+        if unknown:
+            raise ValueError(f"unknown primary eval case ids: {unknown}")
+        selected = _select_cases(selected, case_ids)
+    if smoke_limit:
+        selected = selected[:smoke_limit]
+    return selected
 
 
 def _percentile(values: list[float], pct: float) -> float | None:
@@ -99,6 +123,7 @@ class Record:
     answer_text: str
     answer_model: str
     error: str | None
+    judge_error: str | None
     judge: JudgeResult
     score: CaseScore
     verifier: VerifierVerdict | None = (
@@ -170,8 +195,18 @@ async def _run_unit(
     # client (``judge_client``), decoupled from the helper client. Default → pipeline.client
     # (keeps the offline harness tests byte-identical, where no dedicated judge client is passed).
     jc = judge_client if judge_client is not None else pipeline.client
+    judge_error = None
     if error is None and answer_text:
-        judge = await judge_answer(jc, judge_cfg, case, answer_text, column)
+        try:
+            judge = await judge_answer(jc, judge_cfg, case, answer_text, column)
+        except Exception as exc:  # noqa: BLE001 — preserve the paid subject answer for judge retry
+            judge_error = f"{type(exc).__name__}: {exc}"
+            judge = JudgeResult(
+                case_id=case.id,
+                column=column,
+                parse_ok=False,
+                raw=f"(judge error: {judge_error})"[:6000],
+            )
     else:
         judge = JudgeResult(
             case_id=case.id, column=column, parse_ok=False, raw=f"(no answer: {error})"
@@ -184,6 +219,7 @@ async def _run_unit(
         answer_text=answer_text,
         answer_model=answer_model,
         error=error,
+        judge_error=judge_error,
         judge=judge,
         score=score_case(case, judge),
         verifier=verifier,
@@ -199,7 +235,10 @@ async def _run_unit(
 
 
 async def _run_multiturn(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> dict | None:
     """Run the class-A multi-turn cases live (memory + memory_fabrication + re-ask both halves).
     Returns a JSON-able block (results + summary) or None when memory is disabled (no measurement)."""
@@ -211,7 +250,9 @@ async def _run_multiturn(
     async def _reask_judge(answer_text: str, known: tuple[str, ...]) -> dict[str, bool]:
         return await judge_no_reask(jc, judge_cfg, answer_text, known)
 
-    cases = load_multiturn_cases()
+    cases = _select_cases(load_multiturn_cases(), case_ids)
+    if not cases:
+        return None
     results = []
     errors: list[str] = []
     for case in cases:  # sequential — keeps the distiller drop-rate attribution clean
@@ -271,14 +312,17 @@ async def _run_multiturn(
 
 
 async def _run_edge(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Run the Konversations-Rand (EDGE) class (M6a-B) through the EXISTING single-turn unit + judge
     + scorer (no new runner). One pass (column ``edge``, flags_on — edge behavior is orthogonal to
     the compliance/safety flags). Returns (records, errors); the records are folded into the canonical
     record list so they appear in the worksheet (``edge_overreach`` is HUMAN-FINAL) and the
     adjudication recompute, while the column filter keeps them OUT of the non-edge no-regression."""
-    cases = load_edge_cases()
+    cases = _select_cases(load_edge_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -299,14 +343,17 @@ async def _run_edge(
 
 
 async def _run_archetype(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """archetype_fit class (G5, V2.1 Inc 1) — runs the archetype-recognition cases through the EXISTING
     single-turn unit + judge + scorer (column ``archetype``, flags_on). Folded into the canonical
     records; excluded from the non-edge no-regression by column. A CREDIBILITY/axes class (NO new hard
     gate — the 8 Schranken stay fixed): it measures whether the recognised archetype's interview
     questions + blind spots surface. Owner is the factual oracle (axis 1 / any gate human-final)."""
-    cases = load_archetype_cases()
+    cases = _select_cases(load_archetype_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -327,7 +374,11 @@ async def _run_archetype(
 
 
 async def _run_calibration(
-    pipeline, judge_cfg: ModelConfig, judge_client=None, fixtures=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    fixtures=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """confident_correct_vs_hedge class (C4, V2.1 Inc 2) — runs the calibration cases through the
     EXISTING single-turn unit + judge + scorer (column ``calibration``, flags_on). Folded into the
@@ -336,7 +387,7 @@ async def _run_calibration(
     the kern-fix-01 restraint guard (CALIB-RESTRAINT-01). Calc params come from the eval fixtures
     (the v-limit case needs d1_mm/rpm); the restraint case has NO fixture by design. Owner is the
     factual oracle (axis 1 / any gate human-final)."""
-    cases = load_calibration_cases()
+    cases = _select_cases(load_calibration_cases(), case_ids)
     fixtures = fixtures or {}
     records: list[Record] = []
     errors: list[str] = []
@@ -359,7 +410,10 @@ async def _run_calibration(
 
 
 async def _run_beratungs_ux(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Beratungs-UX class (V2.1 Inc 3) — runs the consultative-UX regression cases through the EXISTING
     single-turn unit + judge + scorer (column ``beratungs_ux``, flags_on). Folded into the canonical
@@ -367,7 +421,7 @@ async def _run_beratungs_ux(
     three cases carry an EXISTING hard gate (walked_into_trap / confident_wrong) — no new Schranke. NO
     calc fixtures by design (UX cases test conversation behaviour; the speed-trap is named qualitatively).
     Owner is the factual oracle (axis 1 / any gate human-final)."""
-    cases = load_beratungs_ux_cases()
+    cases = _select_cases(load_beratungs_ux_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -389,7 +443,10 @@ async def _run_beratungs_ux(
 
 
 async def _run_loesungserarbeitung(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Lösungserarbeitung class (V2.1 Inc 4) — runs the depth/epistemic-boundary regression cases through
     the EXISTING single-turn unit + judge + scorer (column ``loesungserarbeitung``, flags_on). Folded into
@@ -397,7 +454,7 @@ async def _run_loesungserarbeitung(
     carry an EXISTING hard gate (invented_precision / confident_wrong) — no new Schranke. NO calc fixtures
     by design (the cases test what L1 may ASSERT, not parametric precision). Owner is the factual oracle
     (axis 1 / any gate human-final)."""
-    cases = load_loesungserarbeitung_cases()
+    cases = _select_cases(load_loesungserarbeitung_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -419,12 +476,15 @@ async def _run_loesungserarbeitung(
 
 
 async def _run_alternativen(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Alternativen (ALTERNATIVEN) class (Modus F, V2.1) - capable-manufacturer cases (column
     ``alternativen``, flags_on). Measures §3.9 neutrality + no invented makers + honest no-data
     (Dim. 6 empty). Owner is the factual oracle (axis 1 human-final)."""
-    cases = load_alternativen_cases()
+    cases = _select_cases(load_alternativen_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -445,13 +505,16 @@ async def _run_alternativen(
 
 
 async def _run_decode(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Decode (DECODE) class (Modus G, V2.1) - designation-decode cases through the EXISTING
     single-turn unit + judge + scorer (column ``decode``, flags_on). The equivalence case is
     gate-relevant (confident_wrong) - a false "X = Y" interchange claim is a deploy-blocking
     violation (§9.2). Owner is the factual oracle (axis 1 / any gate human-final)."""
-    cases = load_decode_cases()
+    cases = _select_cases(load_decode_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -472,7 +535,10 @@ async def _run_decode(
 
 
 async def _run_diagnose(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Diagnose (DIAGNOSE) class (Modus D, V2.1) - runs the symptom cases through the EXISTING
     single-turn unit + judge + scorer (column ``diagnose``, flags_on). Folded into the canonical
@@ -480,7 +546,7 @@ async def _run_diagnose(
     hard gate): measures honest, plausible, vorlaeufig-framed diagnosis (Dim. 5 all-draft) with the
     manufacturer-defer, no invented number, and the discriminating follow-up on an unclear symptom.
     Owner is the factual oracle (axis 1 human-final)."""
-    cases = load_diagnose_cases()
+    cases = _select_cases(load_diagnose_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -501,7 +567,10 @@ async def _run_diagnose(
 
 
 async def _run_gegencheck(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str]]:
     """Gegencheck (GEGENCHECK) class (Modus E, V2.1) - runs the existing-seal-check cases through the
     EXISTING single-turn unit + judge + scorer (column ``gegencheck``, flags_on). Folded into the
@@ -510,7 +579,7 @@ async def _run_gegencheck(
     incompatible with the grounded reason, surface the conditional's condition, and never affirm
     suitability for the compatible / no-data case. Owner is the factual oracle (axis 1 human-final).
     No calc fixtures (compatibility cases need none)."""
-    cases = load_gegencheck_cases()
+    cases = _select_cases(load_gegencheck_cases(), case_ids)
     records: list[Record] = []
     errors: list[str] = []
     for case in cases:
@@ -531,7 +600,10 @@ async def _run_gegencheck(
 
 
 async def _run_injection(
-    pipeline, judge_cfg: ModelConfig, judge_client=None
+    pipeline,
+    judge_cfg: ModelConfig,
+    judge_client=None,
+    case_ids: frozenset[str] | None = None,
 ) -> tuple[list[Record], list[str], dict | None]:
     """Run the Injektion/Sicherheit (INJECTION) class (M6b) through the EXISTING single-turn unit +
     judge + scorer (no new runner) — that path yields the HUMAN-FINAL ``injection_override`` (judge
@@ -539,7 +611,7 @@ async def _run_injection(
     ``leak_detect`` over each answer vs the static system-prompt + the reviewed-claim texts. Returns
     (records, errors, exfiltration-block). Records fold into the canonical list (worksheet +
     adjudicate); exfiltration is reported agent-final (not a worksheet tick)."""
-    cases = load_injection_cases()
+    cases = _select_cases(load_injection_cases(), case_ids)
     if not cases:
         return [], [], None
     # reference for the deterministic leak check: the static doctrine prompt + reviewed claim texts.
@@ -596,12 +668,40 @@ async def run_eval(
     timestamp: str,
     columns: dict[str, Flags] | None = None,
     smoke_limit: int | None = None,
+    include_auxiliary: bool = True,
+    case_ids: frozenset[str] | None = None,
     client_factory=None,
 ) -> dict:
     columns = columns or COLUMNS
-    cases = load_cases()
-    if smoke_limit:
-        cases = cases[:smoke_limit]
+    primary_cases = load_cases()
+    if case_ids is not None:
+        all_known_ids = {
+            case.id
+            for suite in (
+                primary_cases,
+                load_multiturn_cases(),
+                load_edge_cases(),
+                load_injection_cases(),
+                load_archetype_cases(),
+                load_calibration_cases(),
+                load_beratungs_ux_cases(),
+                load_loesungserarbeitung_cases(),
+                load_gegencheck_cases(),
+                load_diagnose_cases(),
+                load_decode_cases(),
+                load_alternativen_cases(),
+            )
+            for case in suite
+        }
+        unknown = sorted(case_ids - all_known_ids)
+        if unknown:
+            raise ValueError(f"unknown eval case ids: {unknown}")
+    primary_case_ids = (
+        frozenset(case_ids & {case.id for case in primary_cases})
+        if case_ids is not None
+        else None
+    )
+    cases = _select_primary_cases(primary_cases, primary_case_ids, smoke_limit)
 
     # Per-role provider factory (cached): an all-openai cell shares ONE client across roles
     # (byte-identical to the old single-client path). SUBJECT roles (L1/L3/helpers) are metered
@@ -613,18 +713,55 @@ async def run_eval(
     factory = client_factory or build_client_factory(settings)
     meter = TokenMeter()
 
-    def subject_client_for(provider: str):
-        return MeteringLlmClient(factory(provider), meter)
+    subject_clients: dict[str, MeteringLlmClient] = {}
+
+    def subject_client_for(provider: str) -> MeteringLlmClient:
+        if provider not in subject_clients:
+            raw_client = factory(provider)
+            subject_clients[provider] = MeteringLlmClient(
+                raw_client
+                if offline
+                else PacedLlmClient(
+                    raw_client,
+                    max_concurrency=settings.eval_subject_concurrency,
+                    min_interval_s=settings.eval_subject_min_interval_s,
+                ),
+                meter,
+            )
+        return subject_clients[provider]
 
     l1_model = settings.l1_model if offline else await resolve_l1_model(settings)
     pipeline = build_pipeline(
         settings, client_for=subject_client_for, l1_model=l1_model
     )
-    judge_client = factory(settings.judge_provider or settings.provider)
+    judge_provider = settings.judge_provider or settings.provider
+    # The judge has its own provider budget and is never on the user-serving path. Give live evals
+    # a dedicated, rate-aware client; controlled offline tests retain their injected fake unchanged.
+    raw_judge_client = (
+        factory(judge_provider)
+        if offline
+        else build_client_for(
+            settings,
+            judge_provider,
+            max_retries=settings.eval_judge_max_retries,
+        )
+    )
+    judge_client = (
+        raw_judge_client
+        if offline
+        else PacedLlmClient(
+            raw_judge_client,
+            max_concurrency=settings.eval_judge_concurrency,
+            min_interval_s=settings.eval_judge_min_interval_s,
+        )
+    )
     judge_cfg = ModelConfig(
         model=settings.judge_model,
         temperature=settings.judge_temperature,
+        max_output_tokens=settings.eval_judge_max_output_tokens,
         cache_key="sealai-v2-judge",
+        stage="judge",
+        reasoning_effort=settings.eval_judge_reasoning_effort,
     )
 
     fixtures = _load_calc_fixtures()
@@ -659,14 +796,24 @@ async def run_eval(
     # ONLY this measurement. Sequential per case: each gets its own session (tenant+session isolated)
     # and the few cases keep the drop-rate attribution clean. Memory is orthogonal to the compliance/
     # safety flags, so it runs once (no per-column fan-out).
-    multiturn = await _run_multiturn(pipeline, judge_cfg, judge_client=judge_client)
+    multiturn = (
+        None
+        if not include_auxiliary
+        else await _run_multiturn(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
+    )
 
     # M6a-B — Konversations-Rand (EDGE) class. Runs after the (frozen) non-edge sets; the non-edge
     # `summaries` above are the no-regression anchor vs the m6a-memory baseline. The edge records are
     # folded into the canonical `records` (column `edge` → excluded from the non-edge summaries, but
     # present in the worksheet for the HUMAN-FINAL `edge_overreach` adjudication + the recompute).
-    edge_records, edge_errors = await _run_edge(
-        pipeline, judge_cfg, judge_client=judge_client
+    edge_records, edge_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_edge(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     edge = (
         {
@@ -684,8 +831,12 @@ async def run_eval(
     # M6b — Injektion/Sicherheit class. injection_override is human-final (folds via the worksheet,
     # so the records join the canonical list); exfiltration is agent-final deterministic (the leak
     # sub-block). Excluded from the non-edge no-regression by column.
-    inj_records, inj_errors, inj_exfil = await _run_injection(
-        pipeline, judge_cfg, judge_client=judge_client
+    inj_records, inj_errors, inj_exfil = (
+        ([], [], None)
+        if not include_auxiliary
+        else await _run_injection(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     injection = (
         {
@@ -704,8 +855,12 @@ async def run_eval(
     # archetype_fit (G5, V2.1 Inc 1) — runs after the frozen non-edge sets (the `summaries` above stay
     # the no-regression anchor). Folded in under column `archetype` (excluded from the non-edge
     # summaries by the column filter); a CREDIBILITY/axes class — NO new hard gate (the 8 stay fixed).
-    arch_records, arch_errors = await _run_archetype(
-        pipeline, judge_cfg, judge_client=judge_client
+    arch_records, arch_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_archetype(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     archetype = (
         {
@@ -724,8 +879,16 @@ async def run_eval(
     # honest hedge; + the kern-fix-01 restraint guard). Folded under column `calibration` (excluded
     # from the non-edge summaries by the column filter); CREDIBILITY/axes class — NO new hard gate.
     # Appended BEFORE the parametric block so CALIB-RESTRAINT-01 is in the agent-final parametric gate.
-    calib_records, calib_errors = await _run_calibration(
-        pipeline, judge_cfg, judge_client=judge_client, fixtures=fixtures
+    calib_records, calib_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_calibration(
+            pipeline,
+            judge_cfg,
+            judge_client=judge_client,
+            fixtures=fixtures,
+            case_ids=case_ids,
+        )
     )
     calibration = (
         {
@@ -744,8 +907,12 @@ async def run_eval(
     # Abruf / Prioritätsleiter). Folded under column `beratungs_ux` (excluded from the non-edge
     # summaries by the column filter). Mostly CREDIBILITY/axes; three cases carry an EXISTING hard gate
     # (walked_into_trap / confident_wrong) — no new Schranke. Appended BEFORE the parametric block.
-    bux_records, bux_errors = await _run_beratungs_ux(
-        pipeline, judge_cfg, judge_client=judge_client
+    bux_records, bux_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_beratungs_ux(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     beratungs_ux = (
         {
@@ -764,8 +931,12 @@ async def run_eval(
     # abschieben, OHNE zu erfinden). Folded under column `loesungserarbeitung` (excluded from the non-edge
     # summaries by the column filter). ALL five cases carry an EXISTING hard gate (invented_precision /
     # confident_wrong) — no new Schranke. Appended BEFORE the parametric block.
-    loes_records, loes_errors = await _run_loesungserarbeitung(
-        pipeline, judge_cfg, judge_client=judge_client
+    loes_records, loes_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_loesungserarbeitung(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     loesungserarbeitung = (
         {
@@ -784,8 +955,12 @@ async def run_eval(
     # surface the conditional's condition, never affirm the compatible). Folded under column
     # `gegencheck` (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes
     # class - NO new hard gate. Appended BEFORE the parametric block (same agent-final gate coverage).
-    gc_records, gc_errors = await _run_gegencheck(
-        pipeline, judge_cfg, judge_client=judge_client
+    gc_records, gc_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_gegencheck(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     gegencheck = (
         {
@@ -803,8 +978,12 @@ async def run_eval(
     # Diagnose (DIAGNOSE, Modus D, V2.1) - symptom cases. Folded under column `diagnose`
     # (excluded from the non-edge summaries by the column filter); CREDIBILITY/axes - NO new hard
     # gate. Appended BEFORE the parametric block (same agent-final gate coverage).
-    dg_records, dg_errors = await _run_diagnose(
-        pipeline, judge_cfg, judge_client=judge_client
+    dg_records, dg_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_diagnose(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     diagnose = (
         {
@@ -822,8 +1001,12 @@ async def run_eval(
     # Decode (DECODE, Modus G, V2.1) - designation-decode cases. Folded under column `decode`
     # (excluded from the non-edge summaries by the column filter); the equivalence case is
     # gate-relevant (confident_wrong, §9.2). Appended BEFORE the parametric block.
-    dc_records, dc_errors = await _run_decode(
-        pipeline, judge_cfg, judge_client=judge_client
+    dc_records, dc_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_decode(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     decode = (
         {
@@ -840,8 +1023,12 @@ async def run_eval(
 
     # Alternativen (ALTERNATIVEN, Modus F) - neutral capable-manufacturer cases. Folded under
     # column `alternativen`; CREDIBILITY/axes - NO new hard gate.
-    al_records, al_errors = await _run_alternativen(
-        pipeline, judge_cfg, judge_client=judge_client
+    al_records, al_errors = (
+        ([], [])
+        if not include_auxiliary
+        else await _run_alternativen(
+            pipeline, judge_cfg, judge_client=judge_client, case_ids=case_ids
+        )
     )
     alternativen = (
         {
@@ -888,8 +1075,25 @@ async def run_eval(
         if l3_on
         else "M1"
     )
+    from sealai_v2.config.runtime_profile import (
+        runtime_profile,
+        runtime_profile_hash,
+    )
+
+    evaluated_case_ids = sorted(
+        {record.case.id for record in records}
+        | {
+            str(case["case_id"])
+            for case in (multiturn or {}).get("cases", ())
+            if case.get("case_id")
+        }
+    )
     manifest = {
         "run_label": run_label,
+        "evaluation_scope": "targeted_cases" if case_ids is not None else "full_suite",
+        "requested_case_ids": sorted(case_ids) if case_ids is not None else None,
+        "evaluated_case_ids": evaluated_case_ids,
+        "n_evaluated_case_ids": len(evaluated_case_ids),
         "git_sha": git_sha,
         # eval↔deploy binding (the V2 deploy gate keys on tree_hash): the served-runtime CONTENT
         # hash (ops/tree-hash.sh — the single source of truth) + whether that content had
@@ -897,6 +1101,10 @@ async def run_eval(
         # validate-then-commit points at the PRE-fix commit; tree_hash binds the actual content.
         "tree_hash": tree_hash,
         "dirty": dirty,
+        # Full behavior binding: tree_hash covers source bytes; this profile covers the
+        # environment-driven model, trust-layer and retrieval behavior those bytes serve.
+        "runtime_profile": runtime_profile(settings),
+        "runtime_profile_hash": runtime_profile_hash(settings),
         "timestamp": timestamp,
         "milestone": milestone,
         "subject": (
@@ -957,12 +1165,29 @@ async def run_eval(
         },  # m6a-memory no-regression anchor
         "columns": list(columns.keys()),
         "n_cases": len(cases),
+        "auxiliary_suites_included": include_auxiliary,
         "concurrency": settings.concurrency,
+        "subject_pacing": {
+            "concurrency": settings.eval_subject_concurrency,
+            "min_interval_s": settings.eval_subject_min_interval_s,
+        },
+        "judge_pacing": {
+            "concurrency": settings.eval_judge_concurrency,
+            "min_interval_s": settings.eval_judge_min_interval_s,
+            "max_retries": settings.eval_judge_max_retries,
+            "max_output_tokens": settings.eval_judge_max_output_tokens,
+            "reasoning_effort": settings.eval_judge_reasoning_effort,
+        },
         "scoring_split": (
             "LLM-judge: rubric-adherence only (axes 2-7); axis 1 (Faktische Korrektheit) and the "
             "3 hard gates are HUMAN-FINAL via the worksheet."
         ),
         "errors": [r.error for r in records if r.error]
+        + [
+            f"judge::{r.case.id}/{r.column}::{r.judge_error}"
+            for r in records
+            if r.judge_error
+        ]
         + [f"multiturn::{e}" for e in (multiturn or {}).get("errors", [])]
         + [f"edge::{e}" for e in (edge or {}).get("errors", [])]
         + [f"injection::{e}" for e in (injection or {}).get("errors", [])]

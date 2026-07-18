@@ -15,6 +15,7 @@ import type {
   ConfirmationResponse,
   ContributePayload,
   ConversationMemory,
+  InterviewRefreshResponse,
   LegalAcceptancePayload,
   LegalAcceptanceStatus,
   ParamItem,
@@ -99,6 +100,10 @@ export class ApiClient {
     }
     if (res.status === 404 || res.status === 405) return this.chat(message, caseId);
     if (!res.ok || !res.body) throw new ApiError(res.status, `request failed (${res.status})`);
+    const streamVersion = res.headers.get("X-SealingAI-Stream-Version");
+    if (streamVersion !== null && streamVersion !== "1") {
+      throw new ApiError(502, `unsupported stream schema (${streamVersion})`);
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -146,6 +151,13 @@ export class ApiClient {
   }
   memory(caseId?: string): Promise<ConversationMemory> {
     return this.req(this.withCase("/conversations/current/memory", caseId));
+  }
+  /** Reconciles persisted case facts with the active adaptive-interview controller. Shadow-only and
+   * disabled deployments return `next_question: null`; the client never infers controller state. */
+  refreshInterview(caseId?: string): Promise<InterviewRefreshResponse> {
+    return this.req(this.withCase("/conversations/current/interview/refresh", caseId), {
+      method: "POST",
+    });
   }
   /** M8 kernel channel: the deterministic compute for the current session (the Berechnungen panel's
    * source). Backend-only numbers — the client never computes. */

@@ -78,6 +78,12 @@ def run_recall_eval(
 ):
     """Ingest the Fachkarten + run the truth set through BOTH retrievers. Returns
     ``(qd_rows, qd_summary, inp_rows, inp_summary)``. Caller owns the collection lifecycle."""
+    if settings.database_url:
+        raise RuntimeError(
+            "retrieval scratch eval refuses a configured production database"
+        )
+    if not settings.qdrant_collection.startswith("sealai_eval_"):
+        raise RuntimeError("retrieval eval collection must start with 'sealai_eval_'")
     cases = json.loads(_TRUTH.read_text(encoding="utf-8"))["cases"]
     ingest_fachkarten(settings)
     qd_rows = asyncio.run(
@@ -93,7 +99,8 @@ def main() -> None:
     s = Settings()
     if not s.qdrant_url:
         raise SystemExit(
-            "set SEALAI_V2_QDRANT_URL + SEALAI_V2_QDRANT_COLLECTION (a throwaway) to run"
+            "set SEALAI_V2_QDRANT_URL and a SEALAI_V2_QDRANT_COLLECTION starting "
+            "with sealai_eval_ to run"
         )
     qd_rows, qd_sum, inp_rows, inp_sum = run_recall_eval(s)
     print("=== recall@k — PROVISIONAL (truth set is owner-reviewed) ===")

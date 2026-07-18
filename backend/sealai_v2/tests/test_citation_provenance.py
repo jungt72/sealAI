@@ -10,6 +10,7 @@ from sealai_v2.api.serializers import citation
 from sealai_v2.core.contracts import Flags, GroundingFact
 from sealai_v2.knowledge.retrieval import InProcessRetriever
 from sealai_v2.prompts.assembler import PromptAssembler
+from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
 def test_citation_surfaces_primary_source_not_card_id():
@@ -36,11 +37,14 @@ def test_citation_fallback_when_no_primary_source_hides_card_id():
 
 def test_retrieval_propagates_claim_primary_sources_to_grounding_fact():
     r = asyncio.run(
-        InProcessRetriever().retrieve(
+        InProcessRetriever(independently_reviewed_test_catalog()).retrieve(
             "O-Ring Verpressung statische Nut Auslegung", tenant_id="t"
         )
     )
-    assert any("Parker O-Ring Handbook" in f.sources for f in r.grounding_facts)
+    assert any(
+        any("Parker O-Ring Handbook" in source for source in fact.sources)
+        for fact in r.grounding_facts
+    )
 
 
 def test_sources_field_is_L1_neutral_byte_identical_prompt():

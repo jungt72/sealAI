@@ -47,7 +47,7 @@ export function TeamUseCases() {
     <section
       id={teamUseCases.id}
       data-header-theme="light"
-      className="section-anchor border-t border-border bg-[#FAFAFB]"
+      className="section-anchor bg-[#FAFAF9]"
     >
       <div className="marketing-section py-20 lg:py-28">
         <div className="text-center">
@@ -72,7 +72,7 @@ export function TeamUseCases() {
             type="button"
             aria-label="Vorherige Karte"
             onClick={() => scrollByCards(-1)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white text-foreground transition-colors hover:border-seal-blue/40"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-[#FAFAF9] text-foreground transition-colors hover:border-seal-blue/40"
           >
             <ArrowLeft size={16} aria-hidden="true" />
           </button>
@@ -80,7 +80,7 @@ export function TeamUseCases() {
             type="button"
             aria-label="Nächste Karte"
             onClick={() => scrollByCards(1)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-white text-foreground transition-colors hover:border-seal-blue/40"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-[#FAFAF9] text-foreground transition-colors hover:border-seal-blue/40"
           >
             <ArrowRight size={16} aria-hidden="true" />
           </button>
@@ -100,7 +100,7 @@ export function TeamUseCases() {
               <article
                 key={card.key}
                 data-carousel-item
-                className="snap-item flex h-[240px] w-[520px] shrink-0 overflow-hidden rounded-[20px] border border-border bg-white shadow-[0_4px_18px_rgba(15,23,42,0.06)] sm:h-[260px] sm:w-[560px] lg:w-[600px]"
+                className="snap-item flex h-[240px] w-[520px] shrink-0 overflow-hidden rounded-[20px] border border-border bg-[#FAFAF9] shadow-[0_4px_18px_rgba(15,23,42,0.06)] sm:h-[260px] sm:w-[560px] lg:w-[600px]"
               >
                 <div className="flex w-[42%] shrink-0 items-center justify-center bg-[linear-gradient(160deg,#F4F5F6_0%,#EBEDEF_100%)]">
                   <Icon size={44} strokeWidth={1.3} className="text-seal-blue/70" aria-hidden="true" />

@@ -1,20 +1,24 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ─────────────────────────────────────────────────────────────────────────────
 # ops/release-backend-v2.sh — THE ONLY sanctioned V2 (`backend-v2`) deploy.
 #
 # Closes the bypass found in the deploy-gate audit: the V1 deploy-gate hook only
 # watches ops/release-backend.sh and checks V1 sentinels, so a raw
 # `docker compose … --profile v2 up --build backend-v2` shipped UNGATED. This
-# wrapper binds the deploy to an adjudicated eval-REPLAY of the EXACT served tree
-# and bakes a start-time marker so a raw build refuses to run.
+# wrapper supports explicit release stages and bakes a start-time marker so
+# a raw build refuses to run: `candidate` is restricted to explicitly declared
+# non-production environments and `final` binds production to an adjudicated replay.
 #
 # Gate chain:
 #   1. TREE_HASH = ops/tree-hash.sh backend/sealai_v2   (served-runtime content)
-#   2. ops/v2_deploy_gate.py → an adjudicated run with that tree_hash, all gated
-#      axes schranken_quota_final == 1.0; else exit 2 (refuse — no deploy).
-#   3. Rollback rung: tag the RUNNING image (read from the daemon) before the flip.
-#   4. Build with --build-arg GATE_TREE_HASH=$TREE_HASH → recreate only backend-v2.
-#   5. Smoke: health (internal+public) · kern one-shot (PV=50.0 / v=16,755) ·
+#   2. Pull the immutable candidate, verify its signed SLSA provenance + SPDX
+#      SBOM, then derive its secret-free runtime-profile hash.
+#   3. final: ops/v2_deploy_gate.py -> an adjudicated run with that exact tree,
+#      L1 and runtime profile; all gated axes are clean. There is no waiver path.
+#   4. Rollback rung, verified pre-migration backup and Alembic migration,
+#      idempotent knowledge-ledger bootstrap + derived-index drain, then recreate
+#      backend-v2 + its durable worker from the same image.
+#   5. Smoke: health (internal+public) · worker · kern one-shot (PV=50.0 / v=16,755) ·
 #      restart-survival. RED at any point → HALT, NO ledger line, print rollback.
 #   6. Ledger: append ops/deploy-ledger.jsonl (machine-readable commit→deploy
 #      index) + print a ready GOVERNANCE_LOG paste-block (prose stays owner-authored).
@@ -23,75 +27,246 @@
 # logic (step 2, ops/v2_deploy_gate.py) is unit-tested offline.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+usage() {
+  cat <<'EOF'
+usage: ops/release-backend-v2.sh [--candidate|--final|--low-risk-emergency]
+
+  --candidate         Deploy an explicitly unvalidated candidate only when
+                       APP_ENV is development, test, or staging. Never
+                       accepted for production.
+  --final             Deploy a final release. Requires a fully adjudicated
+                       eval replay. This is the default when no option is
+                       supplied.
+  --low-risk-emergency
+                       Deploy to production under a GATE-11 scoped low-risk
+                       emergency approval instead of a full eval-REPLAY.
+                       Requires a valid GATE-11 approval receipt (see
+                       docs/ops/gate-11-low-risk-emergency-corridor.md);
+                       image provenance is still verified in full.
+EOF
+}
+
+RELEASE_STAGE="final"
+case "${1:-}" in
+  --candidate)           RELEASE_STAGE="candidate"; shift ;;
+  --final)               shift ;;
+  --low-risk-emergency)  RELEASE_STAGE="low-risk-emergency"; shift ;;
+  "")         ;;
+  --help|-h)   usage; exit 0 ;;
+  *)           usage >&2; echo "release-backend-v2: unknown option: $1" >&2; exit 2 ;;
+esac
+[[ $# -eq 0 ]] || { usage >&2; echo "release-backend-v2: unexpected arguments: $*" >&2; exit 2; }
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+if [[ "${RELEASE_STAGE}" == "low-risk-emergency" ]]; then
+  production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" low-risk-emergency-deploy
+else
+  production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+fi
+RELEASE_GATE_DECISION="${PRODUCTION_RELEASE_GATE_DECISION}"
+APPROVED_SOURCE_SHA="${PRODUCTION_RELEASE_APPROVED_SOURCE_SHA}"
+[[ "${APPROVED_SOURCE_SHA}" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] || {
+  echo "release-backend-v2: release gate did not return an approved source parent" >&2
+  exit 2
+}
+# shellcheck source=production-storage-lease.sh
+source /usr/local/libexec/sealai/production-storage-lease.sh
+acquire_production_storage_lease
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
 
 SERVICE="backend-v2"
+WORKER_SERVICE="backend-v2-worker"
 RUNS_DIR="backend/sealai_v2/eval/runs"
-LEDGER="ops/deploy-ledger.jsonl"
 COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2)
+BACKEND_IMAGE_REF="${BACKEND_V2_IMAGE:-}"
+LOCAL_BACKEND_IMAGE="sealai-backend-v2:local"
+ROLLBACK_IMAGE_OVERRIDE="${SEALAI_V2_ROLLBACK_IMAGE:-}"
 
 die() { echo "release-backend-v2: $*" >&2; exit 1; }
+env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
+
+DEPLOY_ENV="$(env_prod APP_ENV)"
+DEPLOY_ENV="${DEPLOY_ENV:-production}"
+
+echo ">> release stage = ${RELEASE_STAGE}"
+if [[ "${RELEASE_STAGE}" == "candidate" ]]; then
+  case "${DEPLOY_ENV}" in
+    development|test|staging) ;;
+    *) die "candidate releases are forbidden for APP_ENV=${DEPLOY_ENV}; production requires --final" ;;
+  esac
+  echo "!! CANDIDATE: paid eval replay intentionally deferred; this is not final release approval." >&2
+fi
+if [[ "${RELEASE_STAGE}" == "final" && -z "${BACKEND_IMAGE_REF}" ]]; then
+  die "final releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
+fi
+if [[ "${RELEASE_STAGE}" == "low-risk-emergency" && -z "${BACKEND_IMAGE_REF}" ]]; then
+  die "low-risk-emergency releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
+fi
+
+# Production is an artifact promotion. Never deploy bytes from an uncommitted
+# worktree because the content hash would no longer describe the served code.
+if [[ -n "$(git status --porcelain)" ]]; then
+  die "worktree is dirty; commit and deploy the exact reviewed commit"
+fi
+GATE_CONTROL_GIT_SHA="$(git rev-parse HEAD)"
+SOURCE_GIT_SHA="${APPROVED_SOURCE_SHA}"
+[[ "$(git rev-parse HEAD^)" == "${SOURCE_GIT_SHA}" ]] \
+  || die "Gate-10 source parent changed after release authorization"
+RUNTIME_DIR="${SEALAI_RUNTIME_DIR:-${REPO_ROOT}/.runtime}"
+LEDGER="${RUNTIME_DIR}/deploy-ledger.jsonl"
+mkdir -p "${RUNTIME_DIR}"
 
 # ── 1. served-runtime content hash (single source of truth) ──────────────────
-TREE_HASH="$(bash ops/tree-hash.sh)"
+TREE_HASH="$(/bin/bash -p ops/tree-hash.sh)"
 [ -n "${TREE_HASH}" ] || die "empty tree_hash from ops/tree-hash.sh"
 echo ">> served tree_hash = ${TREE_HASH}"
+
+# Preserve the running rollback artifact BEFORE a local build can replace the service image tag.
+# Docker/BuildKit may remove an untagged manifest-list record while its container keeps running;
+# reading/tagging it after the build is therefore too late. If that metadata is already missing,
+# accept only an explicit, secret-free reconstructed image whose baked revision + served-tree hash
+# exactly match the running container labels. Never `docker commit` a production container: its
+# Config includes runtime environment values and can therefore contain secrets.
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+ROLLBACK_STAMP="$(date -u +%Y%m%d-%H%M%S)"
+RUNNING_IMAGE_REF="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
+[[ -n "${RUNNING_IMAGE_REF}" ]] || die "cannot read running ${SERVICE} image from the daemon"
+RUNNING_REVISION="$(docker inspect "${SERVICE}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' 2>/dev/null || true)"
+RUNNING_TREE_HASH="$(docker inspect "${SERVICE}" --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' 2>/dev/null || true)"
+ROLLBACK_SOURCE="${RUNNING_IMAGE_REF}"
+if ! docker image inspect "${ROLLBACK_SOURCE}" >/dev/null 2>&1; then
+  [[ -n "${ROLLBACK_IMAGE_OVERRIDE}" ]] || die "running image metadata ${RUNNING_IMAGE_REF} is missing; rebuild that exact revision/tree as a secret-free image and retry with SEALAI_V2_ROLLBACK_IMAGE=<image>"
+  docker image inspect "${ROLLBACK_IMAGE_OVERRIDE}" >/dev/null 2>&1 \
+    || die "rollback override image does not exist: ${ROLLBACK_IMAGE_OVERRIDE}"
+  OVERRIDE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${ROLLBACK_IMAGE_OVERRIDE}")"
+  OVERRIDE_TREE_HASH="$(docker image inspect --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' "${ROLLBACK_IMAGE_OVERRIDE}")"
+  [[ -n "${RUNNING_REVISION}" && "${OVERRIDE_REVISION}" == "${RUNNING_REVISION}" ]] \
+    || die "rollback override revision ${OVERRIDE_REVISION:-<missing>} does not match running revision ${RUNNING_REVISION:-<missing>}"
+  [[ -n "${RUNNING_TREE_HASH}" && "${OVERRIDE_TREE_HASH}" == "${RUNNING_TREE_HASH}" ]] \
+    || die "rollback override tree ${OVERRIDE_TREE_HASH:-<missing>} does not match running tree ${RUNNING_TREE_HASH:-<missing>}"
+  ROLLBACK_SOURCE="${ROLLBACK_IMAGE_OVERRIDE}"
+  echo "!! running image metadata missing; using identity-matched rollback override ${ROLLBACK_SOURCE}" >&2
+fi
+docker run --rm --entrypoint python "${ROLLBACK_SOURCE}" \
+  -m sealai_v2.config.build_identity verify >/dev/null \
+  || die "rollback source failed immutable identity verification: ${ROLLBACK_SOURCE}"
+ROLLBACK_HOLD_TAG="sealai-backend-v2:rollback-hold-${RUNNING_REVISION:0:8}-${ROLLBACK_STAMP}"
+docker tag "${ROLLBACK_SOURCE}" "${ROLLBACK_HOLD_TAG}"
+ROLLBACK_FROM="$(docker image inspect --format '{{.Id}}' "${ROLLBACK_HOLD_TAG}")"
+echo ">> rollback artifact preserved before build: ${ROLLBACK_HOLD_TAG} -> ${ROLLBACK_FROM}"
 
 # ── 1b. served L1 id (P1.6): the SAME runtime config the container reads. tree_hash binds the CODE
 # but not the model, so an .env-only L1 swap would otherwise ship on a stale eval. The container reads
 # .env.prod (SEALAI_V2_ prefix); resolve provider/model with the settings.py defaults (provider→openai,
-# model→gpt-5.1) — pure config, no models.list() (the gate stays network-free). Read directly from
+# model→gpt-5.5) — pure config, no models.list() (the gate stays network-free). Read directly from
 # .env.prod (the file --env-file feeds the container) rather than the shell env. ──────────────────
-env_prod() { sed -n "s/^$1=//p" .env.prod | tail -n1; }
 SERVED_L1_PROVIDER="$(env_prod SEALAI_V2_L1_PROVIDER)"; SERVED_L1_PROVIDER="${SERVED_L1_PROVIDER:-openai}"
-SERVED_L1_MODEL="$(env_prod SEALAI_V2_L1_MODEL)";       SERVED_L1_MODEL="${SERVED_L1_MODEL:-gpt-5.1}"
+SERVED_L1_MODEL="$(env_prod SEALAI_V2_L1_MODEL)";       SERVED_L1_MODEL="${SERVED_L1_MODEL:-gpt-5.5}"
 SERVED_L1="${SERVED_L1_PROVIDER}/${SERVED_L1_MODEL}"
 [ -n "${SERVED_L1_PROVIDER}" ] && [ -n "${SERVED_L1_MODEL}" ] || die "could not resolve served L1 from .env.prod"
 echo ">> served L1 = ${SERVED_L1}"
 
-# ── 2. GATE: ###EVAL-GATE-DISABLED-TEMP### (owner-authorized 2026-06-30 — the adjudicated eval-REPLAY
-# is too costly per small iteration deploy). TO RESTORE FOR FINAL: delete the fallback block below and
-# UNCOMMENT the original gate block (between the ###EVAL-GATE markers). The deploy then again refuses
-# unless an adjudicated eval-REPLAY validates the exact served tree + L1.
-# ###EVAL-GATE-ORIGINAL-BEGIN###
-# if ! MATCH="$(python ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}")"; then
-#   echo "!! refusing deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH} + L1 ${SERVED_L1}" >&2
-#   echo "!! run + adjudicate an eval-REPLAY for this exact served tree AND L1, then retry." >&2
-#   exit 2
-# fi
-# RUN_LABEL="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
-# GIT_SHA="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
-# DIRTY="$(printf '%s' "${MATCH}" | python -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
-# echo ">> gate PASS — validated by run '${RUN_LABEL}' (git ${GIT_SHA}, dirty=${DIRTY}, L1=${SERVED_L1})"
-# ###EVAL-GATE-ORIGINAL-END###
-# --- TEMP no-eval fallback (remove this block when restoring the gate) ---
-RUN_LABEL="no-eval-$(git rev-parse --short HEAD 2>/dev/null || echo manual)"
-GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo '')"
-DIRTY="$(test -n "$(git status --porcelain 2>/dev/null)" && echo true || echo false)"
-echo ">> ⚠️  EVAL-GATE DISABLED (owner-authorized, temporary) — deploying tree ${TREE_HASH} WITHOUT an adjudicated eval-REPLAY (L1=${SERVED_L1}, git=${GIT_SHA}, dirty=${DIRTY})"
+# ── 2. prepare immutable candidate (no live state changes) ───────────────────
+if [[ -n "${BACKEND_IMAGE_REF}" ]]; then
+  [[ "${BACKEND_IMAGE_REF}" == *@sha256:* ]] || die "BACKEND_V2_IMAGE must be pinned as tag@sha256:digest"
+  echo ">> pulling immutable backend-v2 image ${BACKEND_IMAGE_REF}"
+  docker pull "${BACKEND_IMAGE_REF}" >/dev/null
+  IMAGE_TREE_HASH="$(docker image inspect --format '{{index .Config.Labels "io.sealai.served-tree-hash"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
+  IMAGE_REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${BACKEND_IMAGE_REF}" 2>/dev/null || true)"
+  [[ "${IMAGE_TREE_HASH}" == "${TREE_HASH}" ]] || die "image tree hash ${IMAGE_TREE_HASH:-<missing>} does not match served tree ${TREE_HASH}"
+  [[ "${IMAGE_REVISION}" == "${SOURCE_GIT_SHA}" ]] || die "image revision ${IMAGE_REVISION:-<missing>} does not match approved source ${SOURCE_GIT_SHA}"
+  /bin/bash -p ops/verify-image-attestations.sh \
+    "${BACKEND_IMAGE_REF}" "${SOURCE_GIT_SHA}" ".github/workflows/build-and-push.yml" \
+    || die "candidate image provenance or SBOM attestation verification failed"
+  PREPARED_IMAGE="${BACKEND_IMAGE_REF}"
+else
+  echo "!! non-production local candidate has no signed registry attestations" >&2
+  echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
+  "${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" --build-arg "SOURCE_GIT_SHA=${SOURCE_GIT_SHA}" "${SERVICE}"
+  PREPARED_IMAGE="$(docker image inspect --format '{{.Id}}' "${LOCAL_BACKEND_IMAGE}" 2>/dev/null || true)"
+  [[ -n "${PREPARED_IMAGE}" ]] || die "could not resolve locally built candidate image"
+fi
 
-# ── 3. rollback rung: tag the RUNNING image (from the daemon, never memory) ───
-ROLLBACK_FROM="$(docker inspect "${SERVICE}" --format '{{.Image}}' 2>/dev/null || true)"
-[ -n "${ROLLBACK_FROM}" ] || die "cannot read running ${SERVICE} image from the daemon"
-TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo ">> deriving secret-free runtime behavior profile from candidate image"
+RUNTIME_PROFILE_HASH="$("${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.config.runtime_profile --hash)"
+[[ "${RUNTIME_PROFILE_HASH}" =~ ^[0-9a-f]{64}$ ]] || die "invalid runtime profile hash: ${RUNTIME_PROFILE_HASH:-<empty>}"
+echo ">> runtime profile = ${RUNTIME_PROFILE_HASH}"
+
+# ── 3. RELEASE STAGE: candidate defers; final proves; low-risk-emergency is
+#      authorized by the GATE-11 approval receipt itself (already validated
+#      above by production_release_gate_check), not by an eval-REPLAY ────────
+if [[ "${RELEASE_STAGE}" == "final" ]]; then
+  if ! MATCH="$(/usr/bin/python3 -I ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
+    echo "!! refusing FINAL deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}, L1 ${SERVED_L1}, runtime profile ${RUNTIME_PROFILE_HASH}" >&2
+    echo "!! provide either a complete adjudicated replay or the approved fully adjudicated targeted remediation under this exact production profile, then retry." >&2
+    exit 2
+  fi
+  RUN_LABEL="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin)["run_label"])')"
+  EVAL_GIT_SHA="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("git_sha") or "")')"
+  EVAL_DIRTY="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(str(json.load(sys.stdin).get("dirty")).lower())')"
+  EVAL_EVIDENCE_TYPE="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("evidence_type") or "full_replay")')"
+  EVAL_BASELINE_LABEL="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("baseline_run_label") or "")')"
+  EVAL_STATUS="passed"
+  echo ">> final gate PASS — ${EVAL_EVIDENCE_TYPE} run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
+elif [[ "${RELEASE_STAGE}" == "low-risk-emergency" ]]; then
+  RUN_LABEL="gate11-low-risk-emergency-${SOURCE_GIT_SHA:0:8}"
+  EVAL_GIT_SHA=""
+  EVAL_DIRTY=""
+  EVAL_EVIDENCE_TYPE="gate11_low_risk_emergency_corridor"
+  EVAL_BASELINE_LABEL=""
+  EVAL_STATUS="bypassed_via_gate11"
+  echo ">> low-risk-emergency gate PASS — eval-REPLAY intentionally bypassed under the GATE-11 scoped corridor (approval already validated against the excluded-path diff, ancestor check, and expiry by production_release_gate_check above)"
+else
+  RUN_LABEL="candidate-no-eval-${SOURCE_GIT_SHA:0:8}"
+  EVAL_GIT_SHA=""
+  EVAL_DIRTY=""
+  EVAL_EVIDENCE_TYPE="candidate"
+  EVAL_BASELINE_LABEL=""
+  EVAL_STATUS="pending"
+  echo ">> candidate gate PASS — paid eval deferred; deterministic release controls remain active"
+fi
+
+# ── 4. rollback rung: promote the artifact preserved before candidate preparation ───────────────
 ROLLBACK_TAG="sealai-backend-v2:rollback-pre-${RUN_LABEL}-$(date -u +%Y%m%d-%H%M%S)"
-docker tag "${ROLLBACK_FROM}" "${ROLLBACK_TAG}"
+docker tag "${ROLLBACK_HOLD_TAG}" "${ROLLBACK_TAG}"
+docker image rm "${ROLLBACK_HOLD_TAG}" >/dev/null 2>&1 || true
 echo ">> rollback rung: ${ROLLBACK_TAG} -> ${ROLLBACK_FROM}"
 
-# ── 4. build (marker baked in) + recreate ONLY backend-v2 ────────────────────
-echo ">> building ${SERVICE} with GATE_TREE_HASH=${TREE_HASH}"
-"${COMPOSE[@]}" build --build-arg "GATE_TREE_HASH=${TREE_HASH}" "${SERVICE}"
-"${COMPOSE[@]}" up -d --no-deps --force-recreate "${SERVICE}"
+echo ">> creating verified pre-migration backup"
+MIGRATION_BACKUP="$(ENV_FILE="${REPO_ROOT}/.env.prod" /bin/bash -p ops/backup_v2_database.sh)"
+[[ -f "${MIGRATION_BACKUP}" ]] || die "pre-migration backup was not created"
+echo ">> pre-migration backup = ${MIGRATION_BACKUP}"
+
+echo ">> applying V2 Alembic migrations with the gated image"
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.db.migrate upgrade
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.db.migrate check
+
+echo ">> reconciling governed knowledge states into Postgres system-of-record"
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.knowledge.bootstrap
+echo ">> synchronizing the ledger-derived knowledge index before traffic switch"
+"${COMPOSE[@]}" run --rm --no-deps --entrypoint python "${SERVICE}" \
+  -m sealai_v2.knowledge.outbox_worker drain-all --batch-size 100
+
+"${COMPOSE[@]}" up -d --no-build --no-deps --force-recreate "${SERVICE}" "${WORKER_SERVICE}"
 IMAGE_SHA="$(docker inspect "${SERVICE}" --format '{{.Image}}')"
 echo ">> live ${SERVICE} image = ${IMAGE_SHA}"
 
 # ── 5. smoke — RED anywhere → HALT, no ledger, print the rollback path ────────
 rollback_hint() {
   echo "!! SMOKE RED — NOT writing the ledger. Rollback path:" >&2
-  echo "   docker tag ${ROLLBACK_TAG} sealai-backend-v2:latest && \\" >&2
-  echo "   ${COMPOSE[*]} up -d --no-deps --force-recreate ${SERVICE}" >&2
+  echo "   pre-migration database backup: ${MIGRATION_BACKUP:-<not-created>}" >&2
+  echo "   BACKEND_V2_IMAGE=${ROLLBACK_TAG} ${COMPOSE[*]} up -d --no-build --no-deps --force-recreate ${SERVICE} ${WORKER_SERVICE}" >&2
 }
 smoke_fail() { rollback_hint; exit 1; }
 
@@ -104,6 +279,21 @@ for i in $(seq 1 30); do
 done
 docker exec "${SERVICE}" curl -fsS http://127.0.0.1:8001/health >/dev/null || { echo "!! internal /health failed" >&2; smoke_fail; }
 curl -fsS -m 8 https://sealingai.com/api/v2/health >/dev/null || { echo "!! public /api/v2/health failed" >&2; smoke_fail; }
+
+echo ">> smoke: durable outbox worker"
+for i in $(seq 1 30); do
+  worker_health="$(docker inspect "${WORKER_SERVICE}" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' 2>/dev/null || true)"
+  [ "${worker_health}" = "healthy" ] && break
+  [ "${i}" -eq 30 ] && { echo "!! ${WORKER_SERVICE} is not healthy (last=${worker_health})" >&2; smoke_fail; }
+  sleep 2
+done
+docker exec "${WORKER_SERVICE}" python -m sealai_v2.memory.outbox_daemon --healthcheck || {
+  echo "!! outbox worker readiness probe failed" >&2
+  smoke_fail
+}
+
+echo ">> smoke: immutable image identity"
+docker exec "${SERVICE}" python -m sealai_v2.config.build_identity verify >/dev/null || smoke_fail
 
 echo ">> smoke: kern one-shot (PV=50.0 / v=16,755)"
 docker exec -i "${SERVICE}" python - <<'PY' || smoke_fail
@@ -127,30 +317,50 @@ for i in $(seq 1 30); do
 done
 
 # ── 6. ledger (machine-readable commit→deploy index) + GOVERNANCE_LOG paste ───
-LINE="$(python - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$GIT_SHA" "$DIRTY" "$ROLLBACK_FROM" "$SERVED_L1" <<'PY'
+LINE="$(/usr/bin/python3 -I - "$TS" "$TREE_HASH" "$RUN_LABEL" "$IMAGE_SHA" "$SOURCE_GIT_SHA" "$GATE_CONTROL_GIT_SHA" "$ROLLBACK_FROM" "$SERVED_L1" "$BACKEND_IMAGE_REF" "$RUNTIME_PROFILE_HASH" "$MIGRATION_BACKUP" "$RELEASE_STAGE" "$EVAL_STATUS" <<'PY'
 import json, sys
-ts, tree_hash, run_label, image_sha, git_sha, dirty, rollback_from, served_l1 = sys.argv[1:9]
+ts, tree_hash, run_label, image_sha, source_git_sha, gate_control_git_sha, rollback_from, served_l1, backend_image, runtime_profile_hash, migration_backup, release_stage, eval_status = sys.argv[1:14]
 print(json.dumps({
     "ts": ts, "tree_hash": tree_hash, "run_label": run_label,
-    "image_sha": image_sha, "git_sha": git_sha,
-    "dirty": dirty == "true", "rollback_from": rollback_from,
-    "l1": served_l1,
+    "image_sha": image_sha, "git_sha": source_git_sha,
+    "gate_control_git_sha": gate_control_git_sha,
+    "dirty": False, "rollback_from": rollback_from,
+    "l1": served_l1, "backend_image": backend_image or None,
+    "runtime_profile_hash": runtime_profile_hash,
+    "pre_migration_backup": migration_backup,
+    "release_stage": release_stage,
+    "eval_status": eval_status,
 }))
 PY
 )"
 printf '%s\n' "${LINE}" >> "${LEDGER}"
 echo ">> ledger appended: ${LEDGER}"
 
+if [[ "${RELEASE_STAGE}" == "final" ]]; then
+  if [[ "${EVAL_EVIDENCE_TYPE}" == targeted_remediation* ]]; then
+    RELEASE_EVIDENCE="Validated by targeted remediation \`${RUN_LABEL}\` against immutable full baseline \`${EVAL_BASELINE_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`, dirty=false). Only the owner-approved failed topics were rerun and fully adjudicated; this is explicitly not represented as a new full replay."
+  else
+    RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
+  fi
+elif [[ "${RELEASE_STAGE}" == "low-risk-emergency" ]]; then
+  RELEASE_EVIDENCE="NOT validated by eval-REPLAY. Deployed under the GATE-11 scoped low-risk emergency corridor \`${RUN_LABEL}\` (source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`): the approval receipt bound an owner-reviewed diff excluding all GATE-11-restricted paths, an owner diff-read confirmation, a hashed test-evidence reference, and a ≤4h expiry, independently re-checked against the actual commit range by production_release_gate.py. This is explicitly not represented as final-release eval evidence."
+else
+  RELEASE_EVIDENCE="Live candidate only. Paid eval-REPLAY intentionally deferred (eval_status=pending); this deployment is not final-release evidence."
+fi
+
 cat <<EOF
 
 ================ GOVERNANCE_LOG paste-block (owner-authored prose) ================
-## ${TS} — V2 PROD deploy: \`backend-v2\` rebuild — gated via ops/release-backend-v2.sh (run ${RUN_LABEL})
+## ${TS} — V2 ${RELEASE_STAGE} deploy: \`backend-v2\` promotion via ops/release-backend-v2.sh (run ${RUN_LABEL})
 
-**Gated deploy** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` validated by adjudicated
-eval-REPLAY \`${RUN_LABEL}\` (git \`${GIT_SHA}\`, dirty=${DIRTY}); all gated axes Schranken-quota(final)=1.000.
+**Release stage: ${RELEASE_STAGE}** — tree_hash \`${TREE_HASH}\` + L1 \`${SERVED_L1}\` + runtime profile \`${RUNTIME_PROFILE_HASH}\`.
+${RELEASE_EVIDENCE}
+- approved source commit = \`${SOURCE_GIT_SHA}\`; dedicated Gate-10 control commit = \`${GATE_CONTROL_GIT_SHA}\`
 - new live \`sealai-backend-v2:latest\` = \`${IMAGE_SHA}\`
+- promoted image ref = \`${BACKEND_IMAGE_REF:-local-build}\`
 - rollback rung (read from the daemon) = \`${ROLLBACK_FROM}\`, tagged \`${ROLLBACK_TAG}\`
 - smoke GREEN: health internal+public; kern one-shot (v=16,755 / PV=50.0); restart-survival.
+- worker GREEN: process running and outbox daemon importable.
 - ledger: ${LEDGER}
 ==================================================================================
 EOF

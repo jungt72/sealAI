@@ -137,7 +137,7 @@ def test_briefing_vorlaeufig_when_ungrounded():
 def test_no_invention_only_snapshot_facts():
     # the template must format ONLY snapshot data — never add a number/material/fact
     b = ArtifactRenderer().briefing(_snapshot()).body
-    assert "EPDM" not in b and "20 m/s" not in b and "75–90" not in b
+    assert "EPDM" not in b and "20 m/s" not in b and "60–85" not in b
     assert "12.5664" in b  # the one computed value IS rendered, exactly
 
 

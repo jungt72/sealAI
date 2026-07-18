@@ -19,8 +19,13 @@ from sealai_v2.api.confirmation import build_param_confirmation
 from sealai_v2.api.deps import current_identity, get_pipeline
 from sealai_v2.api.serializers import compute_response
 from sealai_v2.core.calc.derived import recompute_derived
-from sealai_v2.core.contracts import RememberedFact, VerifiedIdentity
+from sealai_v2.core.contracts import (
+    ConversationAccessDenied,
+    RememberedFact,
+    VerifiedIdentity,
+)
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewEvaluation
 
 router = APIRouter(prefix="/api/v2/conversations", tags=["conversations"])
 
@@ -35,6 +40,30 @@ def _memory(pipeline: Pipeline):
     return pipeline.memory
 
 
+def _require_session_access(mem, identity: VerifiedIdentity, session_id: str) -> None:
+    try:
+        mem.assert_session_access(
+            tenant_id=identity.tenant_id,
+            session_id=session_id,
+            owner_subject=identity.subject,
+        )
+    except ConversationAccessDenied as exc:
+        raise HTTPException(status_code=404, detail="conversation not found") from exc
+
+
+def _visible_next_question(
+    pipeline: Pipeline, evaluation: AdaptiveInterviewEvaluation | None
+) -> dict | None:
+    """Expose controller state only in active mode; shadow mode remains invisible."""
+    if (
+        not pipeline.adaptive_interview_enabled
+        or evaluation is None
+        or evaluation.next_question is None
+    ):
+        return None
+    return evaluation.next_question.to_dict()
+
+
 @router.get("")
 async def list_conversations(
     identity: VerifiedIdentity = Depends(current_identity),
@@ -47,7 +76,9 @@ async def list_conversations(
     # V2Session row record_turn creates hadn't landed yet. Flushes ALL of this tenant's pending
     # remembers (not one session_id) because this endpoint reads across every case at once.
     await pipeline.flush_all_memory(tenant_id=identity.tenant_id)
-    summaries = _memory(pipeline).sessions(tenant_id=identity.tenant_id)
+    summaries = _memory(pipeline).sessions(
+        tenant_id=identity.tenant_id, owner_subject=identity.subject
+    )
     return {
         "cases": [
             {
@@ -69,16 +100,55 @@ async def view_memory(
 ) -> dict:
     mem = _memory(pipeline)
     session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
     # P2: a background distill may still be in flight — flush first, so the chips re-fetch
     # right after /chat already sees the fresh case-state (and the history shows the turn).
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    cs = mem.case_state(tenant_id=identity.tenant_id, session_id=session_id)
-    hist = mem.history(tenant_id=identity.tenant_id, session_id=session_id)
+    cs = mem.case_state(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    hist = mem.history(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
     return {
         "case_state": [
             {"feld": f.feld, "wert": f.wert, "provenance": f.provenance} for f in cs
         ],
         "history": [{"role": t.role, "text": t.text} for t in hist],
+    }
+
+
+@router.post("/current/interview/refresh")
+async def refresh_interview(
+    case_id: CaseIdParam = None,
+    identity: VerifiedIdentity = Depends(current_identity),
+    pipeline: Pipeline = Depends(get_pipeline),
+) -> dict:
+    """Reconcile the current case and return the active controller's next question.
+
+    POST is intentional: reconciliation persists reconstructable pending-question state. The
+    endpoint is user- and tenant-scoped exactly like the memory mutation surface. In shadow-only
+    or disabled mode it returns ``null`` and never exposes the controller decision.
+    """
+    mem = _memory(pipeline)
+    session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
+    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
+    evaluation = pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+        # Projection refreshes (reload/case switch) are not new user decisions and must not inflate
+        # append-only shadow telemetry. Chat and fact mutations retain their normal observation.
+        persist_shadow=False,
+    )
+    return {
+        "case_id": session_id,
+        "next_question": _visible_next_question(pipeline, evaluation),
     }
 
 
@@ -105,6 +175,7 @@ async def edit_fact(
     provenance = body.origin if body.origin in _EDIT_ORIGINS else "user-edited"
     mem = _memory(pipeline)
     session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
     # P2 flush-then-mutate: a pending distill must land BEFORE the user's write, never after
     # it (the user edit is the stronger, later provenance — it must win).
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
@@ -114,10 +185,24 @@ async def edit_fact(
         feld=feld,
         wert=body.wert,
         provenance=provenance,
+        owner_subject=identity.subject,
     )
     # M8: a settled input change → recompute + replace the derived slice (no stale kernel value)
-    pipeline.recompute_derived_for(tenant_id=identity.tenant_id, session_id=session_id)
-    return {"status": "ok"}
+    pipeline.recompute_derived_for(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    evaluation = pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    return {
+        "status": "ok",
+        "case_id": session_id,
+        "next_question": _visible_next_question(pipeline, evaluation),
+    }
 
 
 class FactBatchItem(BaseModel):
@@ -148,6 +233,7 @@ async def submit_facts(
     if pipeline.engine is None:
         raise HTTPException(status_code=503, detail="compute not enabled")
     session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
     # P2 flush-then-mutate: a pending distill lands before the form writes (mirror edit_fact)
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
     for it in body.items:
@@ -157,13 +243,29 @@ async def submit_facts(
             feld=it.feld,
             wert=it.wert,
             provenance="user-form",
+            owner_subject=identity.subject,
         )
     # one recompute over the merged settled inputs (persists the derived slice), then confirm
-    comp = pipeline.compute_for(tenant_id=identity.tenant_id, session_id=session_id)
-    settled = mem.case_state(tenant_id=identity.tenant_id, session_id=session_id)
-    return build_param_confirmation(
+    comp = pipeline.compute_for(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    evaluation = pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    settled = mem.case_state(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    confirmation = build_param_confirmation(
         [it.model_dump() for it in body.items], settled, comp
     )
+    confirmation["next_question"] = _visible_next_question(pipeline, evaluation)
+    return confirmation
 
 
 @router.post("/current/preview")
@@ -197,13 +299,32 @@ async def forget_fact(
 ) -> dict:
     mem = _memory(pipeline)
     session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
     # P2 flush-then-mutate: the pending distill lands first, then the forget — a late distill
     # must never re-create what the user just deleted.
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    mem.delete_fact(tenant_id=identity.tenant_id, session_id=session_id, feld=feld)
+    mem.delete_fact(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        feld=feld,
+        owner_subject=identity.subject,
+    )
     # M8: forgetting a parent input → recompute → its derived child is evicted (no stale value)
-    pipeline.recompute_derived_for(tenant_id=identity.tenant_id, session_id=session_id)
-    return {"status": "ok"}
+    pipeline.recompute_derived_for(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    evaluation = pipeline.refresh_adaptive_interview(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    return {
+        "status": "ok",
+        "case_id": session_id,
+        "next_question": _visible_next_question(pipeline, evaluation),
+    }
 
 
 @router.delete("/current")
@@ -214,7 +335,15 @@ async def forget_all(
 ) -> dict:
     mem = _memory(pipeline)
     session_id = case_id or identity.session_id
+    _require_session_access(mem, identity, session_id)
     # P2 flush-then-mutate: "alles vergessen" is final — flush the pending distill, THEN clear.
     await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    mem.clear(tenant_id=identity.tenant_id, session_id=session_id)
-    return {"status": "ok"}
+    mem.clear(
+        tenant_id=identity.tenant_id,
+        session_id=session_id,
+        owner_subject=identity.subject,
+    )
+    pipeline.clear_adaptive_interview(
+        tenant_id=identity.tenant_id, session_id=session_id
+    )
+    return {"status": "ok", "case_id": session_id, "next_question": None}

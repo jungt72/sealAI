@@ -7,6 +7,9 @@ when ``SEALAI_V2_OPENAI_API_KEY`` is unset (see ``llm.factory``).
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,10 +32,17 @@ class Settings(BaseSettings):
     # The MODEL strings live below; these pick which provider's client backs each role, so a
     # mixed cell (e.g. L1=mistral, L3=openai) is a pure config flip — no call-site change. ---
     l1_provider: str | None = None
+    # Deterministic execution policy's economical online tier. This is separate
+    # from helper_provider: it renders real user answers, not extraction metadata.
+    standard_provider: str = "mistral"
     verifier_provider: str | None = None
     helper_provider: str | None = (
         None  # backs BOTH understand + distill (one helper knob)
     )
+    # Bounded semantic router for natural-language turns that the deterministic fast paths cannot
+    # classify. It has its own role so routing cost/latency can evolve independently from answer
+    # generation and extraction helpers.
+    router_provider: str = "mistral"
     judge_provider: str | None = (
         None  # eval-only; the matrix holds the judge fixed at baseline
     )
@@ -44,23 +54,28 @@ class Settings(BaseSettings):
     auth_audience: str | None = None
     auth_tenant_claim: str = "tenant_id"
 
-    # --- model tiers (build-spec §3): strong frontier for L1; cheaper for judge/helper ---
-    l1_model: str = "gpt-5.1"  # decision #1: OpenAI's strongest GPT; resolved against models.list() at runtime
-    judge_model: str = (
-        "gpt-4.1-mini"  # decision #1: cheaper tier (rubric-adherence is constrained)
-    )
+    # --- model tiers: Small 4 standard, current broadly available OpenAI frontier for complex cases ---
+    standard_model: str = "mistral-small-2603"
+    l1_model: str = "gpt-5.5"
+    judge_model: str = "gpt-5.4-mini-2026-03-17"
     helper_model: str = (
-        "gpt-4.1-mini"  # soft `understand` intent — cheap, annotate-only
+        "gpt-5.4-mini"  # soft `understand` intent — cheap, annotate-only
     )
+    router_model: str = "ministral-8b-2512"
     # L3 verifier (M2): strong-frontier, same as L1 for the FIRST measured L3 (owner decision #1);
     # model is config so a cross-vendor swap is a thin adapter + a config flip, no core change.
-    verifier_model: str = "gpt-5.1"
+    verifier_model: str = "gpt-5.4-mini"
     l1_temperature: float | None = None  # None → omit (max model-family compatibility)
     judge_temperature: float | None = 0.0
     helper_temperature: float | None = 0.0
+    router_temperature: float | None = 0.0
+    router_max_output_tokens: int = 96
+    router_confidence_threshold: float = 0.9
+    router_timeout_s: float = 4.0
     verifier_temperature: float | None = (
         None  # None → omit (model-family compatibility)
     )
+    standard_temperature: float | None = None
 
     # --- flag defaults (production baseline = default-on; harness overrides per column) ---
     default_compliance_hint: bool = True
@@ -71,9 +86,28 @@ class Settings(BaseSettings):
     # model, stage, cache hit/miss counts, latency, status — never raw prompt/answer text). A
     # logging call cannot change pipeline output, so this defaults ON; incident-only kill-switch.
     llm_telemetry_enabled: bool = True
+    metrics_enabled: bool = True
     concurrency: int = 6
     request_timeout_s: float = 180.0
     max_retries: int = 3
+    openai_max_concurrency: int = 2
+    openai_min_interval_s: float = 0.0
+    mistral_max_concurrency: int = 1
+    mistral_min_interval_s: float = 0.5
+    # Eval-only provider controls. They apply only to the replay; serving keeps its independent
+    # concurrency policy. A shared provider client is paced across all subject roles, so an eval
+    # cannot turn six case workers into a burst of helper/L1/L3 requests.
+    eval_subject_concurrency: int = 1
+    eval_subject_min_interval_s: float = 3.0
+    eval_judge_concurrency: int = 1
+    eval_judge_min_interval_s: float = 3.0
+    eval_judge_max_retries: int = 8
+    # The judge returns a compact rubric JSON object. Bound its completion reservation so OpenAI's
+    # TPM admission control reflects the actual response shape instead of an open-ended default.
+    eval_judge_max_output_tokens: int = 1024
+    # Rubric adherence is a bounded classification task. Low effort is both sufficient and
+    # materially faster than the model-family default; the human oracle remains final on facts.
+    eval_judge_reasoning_effort: str = "low"
     understand_enabled: bool = True
     # L3 is an always-on CORE trust layer (Prinzipien §2), NOT a feature flag. This toggle is an
     # incident-only kill-switch (default = enforced); set False only to restore service.
@@ -81,6 +115,39 @@ class Settings(BaseSettings):
     # L2 grounding (M3): retrieve reviewed Fachkarten into L1/L3. Default ON (core trust layer);
     # off → every answer is "vorläufig". Not a product feature flag — an incident kill-switch.
     ground_enabled: bool = True
+    # Compatibility verdicts are technical claims. The legacy matrix remains
+    # inactive until every cell has typed source evidence and applicability.
+    compatibility_matrix_enabled: bool = False
+    # MAT-GOV-01 typed material-constraint result. Default-OFF and additive: while
+    # disabled the pipeline emits only the historical Gegencheck field and the
+    # serialized response remains key-for-key unchanged.
+    material_constraints_enabled: bool = False
+    # MAT-GOV-03B: pointerless, invisible and non-authoritative shadow
+    # evaluation.  All switches are independent from the visible material
+    # constraint flag and default off.  No setting ever contains a snapshot ID.
+    material_ruleset_shadow_enabled: bool = False
+    material_ruleset_shadow_persistence_enabled: bool = False
+    material_ruleset_shadow_sampling_enabled: bool = False
+    material_ruleset_shadow_sampling_basis_points: int = 0
+    material_ruleset_shadow_environment: (
+        Literal["development", "staging", "production"] | None
+    ) = None
+    material_ruleset_shadow_redis_url: str | None = None
+    material_ruleset_shadow_hmac_active_key_id: str | None = None
+    material_ruleset_shadow_hmac_keyring_json: SecretStr | None = None
+    material_ruleset_shadow_evaluator_version: str = "MAT-GOV-03B.eval.v1"
+    material_ruleset_shadow_kernel_version: str = "MAT-GOV-02.kernel.v1"
+    material_ruleset_shadow_poll_interval_s: int = 15
+    material_ruleset_shadow_lease_s: int = 60
+    material_ruleset_shadow_db_timeout_s: int = 2
+    material_ruleset_shadow_retry_base_s: int = 5
+    material_ruleset_shadow_retry_max_s: int = 300
+    material_ruleset_shadow_claim_timeout_s: int = 60
+    material_ruleset_shadow_max_attempts: int = 5
+    # MAT-EVID-01B: technical, non-authoritative companion binding inside the
+    # already isolated shadow worker. It never changes the request pipeline or
+    # public result and defaults off independently from every 03B switch.
+    material_evidence_runtime_binding_enabled: bool = False
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
@@ -131,6 +198,13 @@ class Settings(BaseSettings):
     # routes, only reaches the L1 prompt as advisory context L1 may mention in its own words. OFF by
     # default — wired but inert (golden byte-identical) until explicitly verified live.
     pack_suggestion_enabled: bool = False
+    # Adaptive Bedarfsanalyse Phase 0/1 (rwdr.v1). Both the active response surface and the
+    # cost-neutral shadow measurement require the pack gate. All three flags are default-OFF;
+    # the controller performs no LLM call and is not constructed while both mode flags are false.
+    adaptive_interview_enabled: bool = False
+    adaptive_interview_shadow_enabled: bool = False
+    adaptive_interview_pack_rwdr_enabled: bool = False
+    adaptive_interview_shadow_reporting_enabled: bool = False
     # P0-B (owner Leitbild-Audit 2026-07-02): widens the output_guard (forbidden phrase / invented
     # number / invented material) to turns WITHOUT a gegencheck_verdict — requires
     # response_contract_enabled=True. Never touches the L1 prompt/Renderer-Modus (guard-only contract,
@@ -152,25 +226,167 @@ class Settings(BaseSettings):
     # invention); OFF -> byte-identical. Flip via SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED.
     material_param_table_enabled: bool = False
     # Phase 2B (LangGraph-suitability audit): conservative route classification
-    # (pipeline/routing.py). OFF (default) -> classify_route() is never called; the pipeline is
-    # strictly byte-identical to pre-Phase-2B behavior. ON -> a route is computed per turn from
+    # (pipeline/routing.py). False: classify_route() is never called; the pipeline is
+    # strictly byte-identical to pre-Phase-2B behavior. True: a route is computed per turn from
     # deterministic engineering signals (dimensions, pressure/temperature/rpm, PV, compression,
     # leakage/RFQ/replacement language, comparative-suitability claims, an already-known
     # material+medium pairing, or a non-empty accumulated case-state) + the already-running
-    # understand() intent. The router can only make the system MORE conservative: any engineering
-    # signal, or any doubt (missing/unklar intent), always forces the existing full engineering
-    # pipeline (unchanged L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero
-    # engineering signals were found -- may skip the LLM-based L3 verifier (Phase 2B safety
-    # correction: a stress test found real false-negatives on general_sealing_knowledge/
-    # material_knowledge's keyword signals against real eval questions, incl. injection fixtures
-    # -- both routes stay L3=True). When skipped, the EXISTING deterministic run_parametric_guard
-    # fallback (already used when the verifier is disabled) still runs -- no new guard invented.
+    # understand() intent -- UNLESS execution_policy_enabled is ALSO True, in which case
+    # pipeline.py uses classify_route_deterministic (no understand()/intent input at all) as the
+    # route decision instead, and this flag's own routing computation is telemetry-only (see
+    # pipeline.py's execution_policy_enabled vs. route_optimization_enabled branch). The router
+    # can only make the system MORE conservative: any engineering signal, or any doubt
+    # (missing/unklar intent), always forces the existing full engineering pipeline (unchanged
+    # L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero engineering signals were
+    # found -- may skip the LLM-based L3 verifier (Phase 2B safety correction: a stress test found
+    # real false-negatives on general_sealing_knowledge/material_knowledge's keyword signals
+    # against real eval questions, incl. injection fixtures -- both routes stay L3=True). When
+    # skipped, the EXISTING deterministic run_parametric_guard fallback (already used when the
+    # verifier is disabled) still runs -- no new guard invented.
     route_optimization_enabled: bool = False
+    # Hybrid routing: deterministic engineering guards and known fast paths remain authoritative;
+    # only otherwise-unclassified free language is sent to the bounded semantic classifier.
+    semantic_router_enabled: bool = False
+    # Deterministic-first one-shot D1/S0/S1/C1/C2/H1 policy. While false, the
+    # legacy single-generator + broad L3 behavior remains available for replay.
+    execution_policy_enabled: bool = False
+    # Provider-native TechnicalAnswer JSON followed by deterministic rendering.
+    # Kept flag-gated so historical free-text replay artifacts remain reproducible.
+    structured_answer_enabled: bool = False
+    exact_answer_cache_enabled: bool = False
+    exact_answer_cache_max_entries: int = 512
+    exact_answer_cache_ttl_s: float = 3600.0
+    # SSoT M15/G8: general sealing knowledge, material knowledge, and material
+    # comparison are a separately activated product mode. The mode remains
+    # fail-closed until its complete reference set and exact final replay have
+    # been human-adjudicated. Engineering case work and smalltalk are unaffected.
+    knowledge_mode_enabled: bool = False
+    # Back-office claim adjudication is independent from serving H1 answers.
+    # It may be enabled for reviewers while knowledge_mode_enabled stays false.
+    knowledge_review_enabled: bool = False
+    # H2 write/read surface for immutable cases and decisions.
+    case_decision_records_enabled: bool = False
+    # Capability submission/review plane. Technical fit and handoff depend on it
+    # but activate separately.
+    capability_profiles_enabled: bool = False
+    # SSoT H4/G5: technical manufacturer fit is based only on independently
+    # verified Capability Profiles. Commercial membership is not an input.
+    manufacturer_fit_enabled: bool = False
+    # Lead handoff is a separate activation and additionally requires a valid
+    # commercial routing relationship and legal readiness.
+    manufacturer_handoff_enabled: bool = False
+
+    @model_validator(mode="after")
+    def validate_product_mode_dependencies(self) -> "Settings":
+        if not 0.0 <= self.router_confidence_threshold <= 1.0:
+            raise ValueError("router_confidence_threshold must be between 0 and 1")
+        if self.router_max_output_tokens < 32:
+            raise ValueError("router_max_output_tokens must be at least 32")
+        if self.router_timeout_s <= 0:
+            raise ValueError("router_timeout_s must be positive")
+        if self.material_constraints_enabled and not self.compatibility_matrix_enabled:
+            raise ValueError(
+                "material_constraints_enabled requires compatibility_matrix_enabled"
+            )
+        if self.material_ruleset_shadow_persistence_enabled and not (
+            self.material_ruleset_shadow_enabled
+        ):
+            raise ValueError(
+                "material shadow persistence requires material_ruleset_shadow_enabled"
+            )
+        if self.material_ruleset_shadow_sampling_enabled and not (
+            self.material_ruleset_shadow_enabled
+            and self.material_ruleset_shadow_persistence_enabled
+        ):
+            raise ValueError("material shadow sampling requires shadow and persistence")
+        if self.material_ruleset_shadow_sampling_basis_points != 0:
+            raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
+        if self.material_evidence_runtime_binding_enabled and not (
+            self.material_ruleset_shadow_enabled
+            and self.material_ruleset_shadow_persistence_enabled
+        ):
+            raise ValueError("runtime evidence binding requires shadow and persistence")
+        shadow_times = {
+            "poll_interval": self.material_ruleset_shadow_poll_interval_s,
+            "lease": self.material_ruleset_shadow_lease_s,
+            "db_timeout": self.material_ruleset_shadow_db_timeout_s,
+            "retry_base": self.material_ruleset_shadow_retry_base_s,
+            "retry_max": self.material_ruleset_shadow_retry_max_s,
+            "claim_timeout": self.material_ruleset_shadow_claim_timeout_s,
+            "max_attempts": self.material_ruleset_shadow_max_attempts,
+        }
+        if any(type(value) is not int or value <= 0 for value in shadow_times.values()):
+            raise ValueError(
+                "material shadow timeouts and attempts must be positive integers"
+            )
+        if self.material_ruleset_shadow_lease_s <= (
+            self.material_ruleset_shadow_poll_interval_s
+        ):
+            raise ValueError("material shadow lease must exceed the polling interval")
+        if self.material_ruleset_shadow_retry_max_s < (
+            self.material_ruleset_shadow_retry_base_s
+        ):
+            raise ValueError("material shadow retry maximum must cover its base")
+        if self.material_ruleset_shadow_enabled:
+            required = {
+                "database_url": self.database_url,
+                "material_ruleset_shadow_environment": (
+                    self.material_ruleset_shadow_environment
+                ),
+                "material_ruleset_shadow_redis_url": (
+                    self.material_ruleset_shadow_redis_url
+                ),
+                "material_ruleset_shadow_hmac_active_key_id": (
+                    self.material_ruleset_shadow_hmac_active_key_id
+                ),
+                "material_ruleset_shadow_hmac_keyring_json": (
+                    self.material_ruleset_shadow_hmac_keyring_json
+                ),
+            }
+            missing = sorted(name for name, value in required.items() if not value)
+            if missing:
+                raise ValueError(
+                    "material shadow requires server-side configuration: "
+                    + ", ".join(missing)
+                )
+            from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+
+            ShadowHmacKeyring.from_json(
+                self.material_ruleset_shadow_hmac_keyring_json.get_secret_value(),
+                active_key_id=self.material_ruleset_shadow_hmac_active_key_id,
+            )
+        if (
+            self.adaptive_interview_enabled or self.adaptive_interview_shadow_enabled
+        ) and not self.adaptive_interview_pack_rwdr_enabled:
+            raise ValueError(
+                "adaptive interview modes require adaptive_interview_pack_rwdr_enabled"
+            )
+        if (
+            self.adaptive_interview_shadow_reporting_enabled
+            and not self.adaptive_interview_pack_rwdr_enabled
+        ):
+            raise ValueError(
+                "adaptive interview shadow reporting requires "
+                "adaptive_interview_pack_rwdr_enabled"
+            )
+        if self.manufacturer_fit_enabled and not self.capability_profiles_enabled:
+            raise ValueError(
+                "manufacturer_fit_enabled requires capability_profiles_enabled"
+            )
+        if self.manufacturer_handoff_enabled and not (
+            self.capability_profiles_enabled and self.manufacturer_fit_enabled
+        ):
+            raise ValueError(
+                "manufacturer_handoff_enabled requires capability profiles and fit"
+            )
+        return self
+
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
-    # smalltalk_navigation prompt family. OFF (default) -> Pipeline.run() is byte-identical to
-    # pre-Phase-2D behavior even with route_optimization_enabled=True (the smalltalk generator is
-    # never constructed, so there is nothing to branch to). ON -> ONLY takes effect when ALL of
-    # the following hold for a turn: route_optimization_enabled is True, the classified route is
+    # smalltalk_navigation prompt family. False: Pipeline.run() is byte-identical to
+    # pre-Phase-2D behavior even with route_optimization_enabled/execution_policy_enabled True
+    # (the smalltalk generator is never constructed, so there is nothing to branch to). True:
+    # ONLY takes effect when ALL of the following hold for a turn: a route was actually computed
+    # (route_optimization_enabled OR execution_policy_enabled is True), the classified route is
     # smalltalk_navigation, forced_full_pipeline is False, and deterministic_signal_count is 0 --
     # in that case (and only that case) the compact, fully-static smalltalk_navigation.jinja
     # prompt + the existing cheap helper-tier model answer the turn instead of the full L1
@@ -211,6 +427,23 @@ class Settings(BaseSettings):
     # activation is a separate, later, owner-gated step (same pattern as Phase 2D/3A).
     # Env: SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED.
     draft_token_streaming_enabled: bool = False
+    # INC-CALC-ROUTE-RELEVANCE: prompt-relevance fix for the calc-kernel context that leaks into
+    # knowledge-question answers. compute()/stages.compute runs UNCONDITIONALLY for every turn,
+    # BEFORE route classification, so a `calc` (incl. its `not_computed` entries when kernel inputs
+    # are missing) exists on every turn — even a purely conceptual one. Feeding that calc into the
+    # L1 prompt on a route whose route_prompt_matrix.py `kernel` flag is False (general_sealing_
+    # knowledge / material_knowledge / smalltalk_navigation) made the LLM notice+comment on off-topic
+    # kernel quantities the user never asked about (the real report: a "function of an RWDR" question
+    # got a confusing "Umfangsgeschwindigkeit: nicht berechenbar — Eingaben fehlen (d1_mm, rpm)"
+    # tangent, then had to be output_guard-corrected). When True AND route classification actually
+    # ran (route_optimization_enabled) AND the classified route's `kernel` flag is False, the L1
+    # generator's prompt construction receives an EMPTY CalcResult() instead of the real calc. This
+    # is PURELY a prompt-relevance fix: the real `calc` is UNCHANGED for the guard contract, L3
+    # verify(), and the response payload's computed/not_computed fields — no safety/transparency
+    # check is weakened. Default False → byte-identical to today when off. Production activation is a
+    # separate, later, owner-gated step (same pattern as Phase 2D/3A/3B).
+    # Env: SEALAI_V2_SUPPRESS_CALC_FOR_NON_KERNEL_ROUTES_ENABLED.
+    suppress_calc_for_non_kernel_routes_enabled: bool = False
     # Recent EXCHANGES kept verbatim in the L1 working window (older turns drop off; the structured
     # case-state is what survives — build-spec §7 "strukturierter Zustand überlebt Summarisierung").
     memory_window_turns: int = 6
@@ -226,6 +459,14 @@ class Settings(BaseSettings):
     # Keycloak realm role for the manufacturer SELF-SERVICE surface (manage own partner record + leads).
     # Env: SEALAI_V2_AUTH_MANUFACTURER_ROLE.
     auth_manufacturer_role: str = "manufacturer"
+    # Independent capability-review role. Admin or manufacturer roles alone do
+    # not authorize technical verification.
+    auth_capability_reviewer_role: str = "capability_reviewer"
+    # Independent human domain/evidence reviewer for technical claims.
+    auth_knowledge_reviewer_role: str = "knowledge_reviewer"
+    # Human review role for decision records. This records an internal technical
+    # review only; manufacturer/component release remains external.
+    auth_decision_reviewer_role: str = "decision_reviewer"
 
     # Legal-by-Design (Phase B): fail-closed-gates chat/briefing/anfrage/compute on a CURRENT
     # (version-matching) V2LegalAcceptance row per tenant. OFF by default — the draft legal texts
@@ -256,10 +497,18 @@ class Settings(BaseSettings):
     qdrant_url: str | None = (
         None  # e.g. http://qdrant:6333; UNSET → in-process forced (fail-safe)
     )
-    qdrant_collection: str = (
-        "sealai_v2_fachkarten"  # OWN collection, separate from the V1 stack
-    )
+    qdrant_collection: str = "sealai_v2_knowledge_v1"  # ledger-derived index; legacy direct-write collection stays rollback-only
+    # Memory uses the same embedding provider but a physically separate, tenant-scoped index. Keep
+    # the name configurable so an embedding-model/dimension migration can create a new collection
+    # without mutating the rollback collection in place.
+    memory_qdrant_collection: str = "sealai_v2_memory"
     qdrant_api_key: str | None = None  # value never logged
+    # Durable outbox worker controls. The worker is a separate process so queue delivery survives
+    # API restarts; these values are operational knobs, not product behavior.
+    outbox_poll_interval_s: int = 10
+    outbox_batch_size: int = 50
+    outbox_max_attempts: int = 5
+    outbox_claim_timeout_s: int = 300
     # Embedding model: the PROD path is the OpenAI API ("text-embedding-3-small", 1536-dim) — strong on
     # German, reuses OPENAI_API_KEY, and crucially NO local model so NO RAM/OOM (the local e5-large model
     # OOM'd the 7.6 GB host). DATA leaves the box for the embedding call (it IS an API) — this is NOT a

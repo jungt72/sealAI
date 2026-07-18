@@ -11,6 +11,7 @@ from sealai_v2.eval.general_guard_eval import (
     GENERAL_GUARD_KNOWN_LIMITATION_CASES,
     seed_general_guard_overblock_report,
 )
+from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
 def test_realistic_grounded_answers_never_overblock():
@@ -45,3 +46,35 @@ def test_known_limitations_still_correctly_block():
         assert detail["action"] == "BLOCK", detail
         kinds = {v["kind"] for v in detail["violations"]}
         assert case["expected_violation_kind"] in kinds, (case["id"], kinds)
+
+
+def test_reviewed_ptfe_card_preserves_external_and_internal_evidence_types():
+    card = next(
+        c
+        for c in independently_reviewed_test_catalog().cards
+        if c.id == "FK-PTFE-KALTFLUSS"
+    )
+    reviewed = card.reviewed_claims()
+
+    assert len(reviewed) >= 5
+    assert any("thermoplast" in claim.text.lower() for claim in reviewed)
+    assert any("füllstoff" in claim.text.lower() for claim in reviewed)
+    evidenced = [claim for claim in reviewed if claim.evidence]
+    assert len(evidenced) >= 5
+    evidence = [item for claim in evidenced for item in claim.evidence]
+    assert all(
+        item["source_type"]
+        in {
+            "external_technical_reference",
+            "internal_domain_expert_attestation",
+        }
+        for item in evidence
+    )
+    assert any(
+        item["source_type"] == "internal_domain_expert_attestation" for item in evidence
+    )
+    assert all(
+        "https://" in item["citation"]
+        for item in evidence
+        if item["source_type"] == "external_technical_reference"
+    )

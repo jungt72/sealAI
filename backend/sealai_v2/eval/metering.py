@@ -84,3 +84,29 @@ class MeteringLlmClient:
         )
         self._meter.add(model_config.model, res.usage)
         return res
+
+    async def generate_structured(
+        self,
+        *,
+        system: str,
+        user: str,
+        model_config: ModelConfig,
+        schema_name: str,
+        json_schema: dict,
+    ) -> LlmResult:
+        """Preserve the production client's provider-native JSON Schema path while metering."""
+        native = getattr(self._inner, "generate_structured", None)
+        if native is None:
+            res = await self._inner.generate(
+                system=system, user=user, model_config=model_config
+            )
+        else:
+            res = await native(
+                system=system,
+                user=user,
+                model_config=model_config,
+                schema_name=schema_name,
+                json_schema=json_schema,
+            )
+        self._meter.add(model_config.model, res.usage)
+        return res

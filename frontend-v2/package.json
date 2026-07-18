@@ -15,7 +15,7 @@
     "verify": "npm run check:boundary && npm run check:terminology && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "jspdf": "^2.5.2",
+    "jspdf": "^4.2.1",
     "katex": "0.16.45",
     "react": "18.2.0",
     "react-dom": "18.2.0",
@@ -33,7 +33,7 @@
     "@vitejs/plugin-react": "6.0.1",
     "jsdom": "29.0.1",
     "typescript": "5.9.3",
-    "vite": "8.0.10",
+    "vite": "8.1.4",
     "vitest": "4.1.2"
   }
 }

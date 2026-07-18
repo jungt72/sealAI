@@ -91,6 +91,25 @@ def test_two_case_ids_from_the_same_identity_stay_fully_isolated():
     assert any("FKM" in t.text for t in h2) and not any("EPDM" in t.text for t in h2)
 
 
+def test_same_tenant_user_cannot_continue_another_users_case_id():
+    client, pipeline = make_client()
+    first = client.post(
+        "/api/v2/chat",
+        json={"message": "privater Fall", "case_id": "shared-id"},
+        headers=auth("tok-A"),
+    )
+    assert first.status_code == 200
+
+    denied = client.post(
+        "/api/v2/chat",
+        json={"message": "Übernahmeversuch", "case_id": "shared-id"},
+        headers=auth("tok-A2"),
+    )
+    assert denied.status_code == 404
+    history = pipeline.memory.history(tenant_id="tenant-A", session_id="shared-id")
+    assert not any("Übernahmeversuch" in turn.text for turn in history)
+
+
 def test_case_id_never_crosses_the_tenant_boundary():
     # tok-A naming tenant-B's real session id as case_id must still write under tenant-A — the
     # token, never the client-supplied case_id, decides the tenant (P0).

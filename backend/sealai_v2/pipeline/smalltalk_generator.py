@@ -4,11 +4,15 @@ Deliberately a SEPARATE, minimal class from ``core.l1_generator.L1Generator`` �
 it, not an inheritance of it. ``L1Generator`` (the engineering trust-spine generator) is untouched
 by Phase 2D; nothing here can change its behavior. This class only ever takes a bare ``question``
 (no grounding/case/calc/coverage/contract/memory context) because the compact
-``smalltalk_navigation.jinja`` system prompt is fully static and the route precondition
-(``pipeline.routing.classify_route`` finding zero deterministic engineering signals AND a
-``gespraech`` intent) already guarantees there is nothing case-relevant to pass through — passing
-dynamic context here would contradict the very precondition that made this route safe to use in
-the first place.
+``smalltalk_navigation.jinja`` system prompt is fully static and the route precondition already
+guarantees there is nothing case-relevant to pass through — passing dynamic context here would
+contradict the very precondition that made this route safe to use in the first place. That
+precondition is produced by whichever router ``Pipeline.run()`` is using for the turn: when
+``Settings.execution_policy_enabled`` is True, ``pipeline.routing.classify_route_deterministic``
+(rule-based on the raw question text, no LLM intent involved) must have found zero deterministic
+engineering signals and classified the route as ``smalltalk_navigation``; when it is False,
+``pipeline.routing.classify_route`` finding zero deterministic engineering signals AND a
+``gespraech`` intent (from ``understand()``) plays the same role instead.
 """
 
 from __future__ import annotations

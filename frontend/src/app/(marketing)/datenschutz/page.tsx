@@ -1,13 +1,14 @@
 import { Metadata } from "next";
 import Link from "next/link";
 
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = createMetadata({
   title: "Datenschutzerklärung",
   description:
     "Datenschutzerklärung für sealingAI — Verantwortlicher, Verarbeitungszwecke, Rechtsgrundlagen, Betroffenenrechte.",
   path: "/datenschutz",
+  image: DEFAULT_OG_IMAGE,
 });
 
 export default function DatenschutzPage() {

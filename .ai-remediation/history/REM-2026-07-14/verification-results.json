@@ -1,0 +1,94 @@
+{
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "captured_at": "2026-07-14T14:47:44Z",
+  "source_repository_commit": "35690352c68750c7fbbcbbd6ea46b13571c43f08",
+  "production_commit_at_capture": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "superseded": true,
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "updated_at": "2026-07-14T14:47:44Z",
+  "overall_status": "IN_PROGRESS",
+  "checks": [
+    {
+      "check_id": "REPO-FETCH-001",
+      "scope": "local_repository",
+      "status": "PASSED",
+      "summary": "Origin refs fetched and pruned; origin/main fingerprint recorded."
+    },
+    {
+      "check_id": "PROD-FINGERPRINT-001",
+      "scope": "production_read_only",
+      "status": "PASSED",
+      "summary": "Expected clean production commit and healthy core services re-confirmed."
+    },
+    {
+      "check_id": "PROD-STOP-CONDITIONS-001",
+      "scope": "production_read_only",
+      "status": "PASSED_WITH_RISK",
+      "summary": "No immediate stop condition triggered; storage remains critical at 95 percent and Redis remains near maxmemory."
+    },
+    {
+      "check_id": "FINDINGS-REVERIFY-001",
+      "scope": "repository_and_production",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Reverification found 22 confirmed and one partially confirmed finding; no finding was removed or reduced by the four commits after production."
+    },
+    {
+      "check_id": "POST-PRODUCTION-COMMITS-001",
+      "scope": "repository_git_objects",
+      "status": "PASSED",
+      "summary": "Two content commits and two merge commits affect only offline RWDR shadow review, seed cases, tests, domain pack, and documentation; none changes an audited remediation path."
+    },
+    {
+      "check_id": "P0-SECRET-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Seventeen credential, raw-diagnostic, and ACME runtime artifacts were removed; full non-ignored worktree scanning, redaction, hooks, CI, lifecycle, rotation, permission, and history plans are implemented and locally tested. Production rotation, permission repair, and history rewrite remain gated."
+    },
+    {
+      "check_id": "P0-SECRET-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Fifteen scanner/control tests, twenty-one affected backend tests, three frontend auth-token tests, one SEO redaction test, Ruff, hook shell syntax, workflow YAML, fail-closed invalid-tree behavior, and diff checks passed."
+    },
+    {
+      "check_id": "PROD-PARALLEL-CHANGE-001",
+      "scope": "production_read_only",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Production independently advanced from ab91faf4 to clean detached commit 6e5608c3 while remediation was active. Backend and worker use the same new digest and core services are healthy, but the local release freeze did not govern that external event; remediation performed no production mutation."
+    },
+    {
+      "check_id": "P0-STORAGE-GUARD-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Fail-closed 75/85/80 disk guard, exact filesystem binding, global storage-mutation lease, structured redacted events, external-alert contract, release freeze, and hash-bound control bootstrap are implemented and tested locally; none is deployed."
+    },
+    {
+      "check_id": "P0-BACKUP-SAFETY-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Postgres and Qdrant backup lifecycle, capacity reserve, checksum, no-clobber, retention, encrypted-offsite receipt, and exact restore contracts passed local tests. External object storage, key lifecycle, and two isolated full restore drills remain unavailable."
+    },
+    {
+      "check_id": "P0-GATE03-001",
+      "scope": "local_worktree",
+      "status": "PASSED_WITH_RISK",
+      "summary": "Exact image-ID cleanup planning and execution reject drift, protected or indeterminate objects, signal interruption, weak recovery evidence, and insufficient reclaim. No prune, image removal, or other production cleanup was run."
+    },
+    {
+      "check_id": "P0-STORAGE-TESTS-001",
+      "scope": "local_worktree",
+      "status": "PASSED",
+      "summary": "Independent post-merge verification passed 198 P0-B tests with one expected macOS skip, 7 evaluation or tree-hash tests, 5 remediation-control tests, Ruff, 43 shell syntax checks, 34 structured-file parses, Compose validation, 306 frontend tests and build, npm audit with zero vulnerabilities, and diff checks."
+    },
+    {
+      "check_id": "P0-REDIS-DISCOVERY-001",
+      "scope": "production_read_only",
+      "status": "PASSED_WITH_RISK",
+      "summary": "A bounded read-only aggregate inventory found 193992 DB0 keys, only two expirations, 1040855672 bytes used of 1073741824, and no V2 clients. Nearly all persistent objects map to the retired V1 LangGraph checkpointer; owner confirmation, recovery proof, code controls, and every Gate-04 mutation remain pending."
+    }
+  ],
+  "production_mutations_performed": false,
+  "secret_values_recorded": false
+}

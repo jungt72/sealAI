@@ -2,14 +2,15 @@
 #
 # Validates the EXACT prod artifacts: the generated conf is a byte-copy of nginx/default.conf with
 # the include applied by ops/v2-flip.sh (run ./ops/staging/gen-staging-conf.sh first); the SPA is
-# the same frontend-v2/dist the prod nginx will mount. nginx-staging dual-homes onto the live
+# the isolated frontend-v2/.build/dashboard-candidate output. Production's live
+# frontend-v2/dist bind mount is never a normal build target. nginx-staging dual-homes onto the live
 # sealai_default network so the shared conf's literal upstreams (sealai-frontend, sealai-backend,
 # sealai-keycloak, …) resolve at startup. backend-v2-staging carries the sealai-backend-v2 alias
 # ONLY on the staging net — prod nginx can never resolve it (isolation by construction); its
 # alias-free sealai_default attachment exists solely to reach sealai-keycloak for JWKS.
 #
 #   ./ops/staging/gen-staging-conf.sh
-#   docker compose --env-file .env.prod -f ops/staging/docker-compose.staging.yml --profile v2 up -d --build
+#   ./ops/staging/up-staging-v2.sh   # release gate (build) + installed global storage lease
 #   BASE_URL=https://sealingai.com:8443 ./ops/smoke-v2.sh
 #   docker compose --env-file .env.prod -f ops/staging/docker-compose.staging.yml --profile v2 down   # teardown after Phase 2
 name: sealai-staging
@@ -24,7 +25,7 @@ services:
     - ./conf/default.conf:/etc/nginx/conf.d/default.conf:ro
     - ./conf/snippets:/etc/nginx/snippets:ro
     - ../../nginx/00-tuning.conf:/etc/nginx/conf.d/00-tuning.conf:ro
-    - ../../frontend-v2/dist:/usr/share/nginx/v2-client:ro
+    - ../../frontend-v2/.build/dashboard-candidate:/usr/share/nginx/v2-client:ro
     - ../../nginx/www:/var/www/certbot:ro
     - /etc/letsencrypt:/etc/letsencrypt:ro
     - ../../nginx/certs/config:/etc/letsencrypt-analytics:ro

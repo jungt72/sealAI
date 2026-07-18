@@ -105,6 +105,23 @@ def test_create_candidate_enqueues_and_drain_syncs_it(db_url):
     assert points[0].payload["status"] == "candidate"
 
 
+def test_drain_targets_configured_versioned_collection(db_url):
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    client = _FakeQdrantClient()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=client,
+        embedder=_FakeEmbedder(),
+        now="2026-07-03T01:00:00Z",
+        collection="sealai_v2_memory_local_minilm_v1",
+    )
+
+    assert result.synced == 1
+    assert client.upserted[0][0] == "sealai_v2_memory_local_minilm_v1"
+
+
 def test_drain_calls_qdrant_delete_for_a_delete_event_type_not_upsert(db_url):
     # Patch 10: memory/purge.py's reap job enqueues event_type="delete" rows — the drain must call
     # qdrant_client.delete for these, NOT re-upsert the item's last known state (the bug this test
@@ -250,6 +267,26 @@ def test_backoff_window_blocks_an_immediate_retry_pass(db_url):
     )
     assert after_window.claimed == 1
     assert after_window.synced == 1
+
+
+def test_stale_processing_lease_is_reclaimed_after_worker_restart(db_url):
+    _store(db_url).create_candidate(_item())
+    sm = make_sessionmaker(make_engine(db_url))
+    with sm() as s:
+        row = s.scalars(select(V2MemoryOutbox)).one()
+        row.status = "processing"
+        row.processed_at = "2026-07-03T00:00:00Z"
+        s.commit()
+
+    result = drain_outbox(
+        sm,
+        qdrant_client=_FakeQdrantClient(),
+        embedder=_FakeEmbedder(),
+        now="2026-07-03T01:00:00Z",
+        claim_timeout_seconds=300,
+    )
+    assert result.claimed == 1
+    assert result.synced == 1
 
 
 def test_drain_syncs_from_its_own_snapshot_even_after_the_item_is_hard_deleted(db_url):

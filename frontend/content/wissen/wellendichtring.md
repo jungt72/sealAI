@@ -3,7 +3,7 @@ title: "Wellendichtring: Funktion, Grenzen und Anfrageparameter"
 description: "Technische Orientierung zu Wellendichtringen: Funktion, typische Grenzen und die Angaben, die für eine Herstellerprüfung benötigt werden."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Wellendichtring: Funktion, Grenzen und Angaben für eine Herstellerprüfung

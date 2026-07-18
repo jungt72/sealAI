@@ -11,8 +11,9 @@ Usage:
 real owner/trap provenance or a primary source. This tool validates and merges; it does not decide
 what belongs in the card (see ``knowledge/promote.py``'s module docstring).
 
-To then push the new card live to Qdrant WITHOUT re-embedding the whole catalog, run
-``ops/ingest_new_card.py`` inside the backend-v2 container afterward (separate, network-touching step).
+To publish the reviewed artifact before the next release, run ``ops/ingest_new_card.py`` inside the
+backend-v2 container. It imports through Postgres and the durable outbox; Qdrant is never written
+directly.
 """
 
 from __future__ import annotations

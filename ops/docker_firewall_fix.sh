@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 DRY_RUN=0
 MODE="relaxed"
@@ -50,7 +52,7 @@ network_from_address() {
   if [[ -z "$addr" ]]; then
     return 1
   fi
-  ADDR="$addr" python3 -c "import ipaddress, os, sys; addr=os.environ.get('ADDR'); sys.stdout.write(str(ipaddress.ip_network(addr, strict=False)))"
+  ADDR="$addr" /usr/bin/python3 -I -c "import ipaddress, os, sys; addr=os.environ.get('ADDR'); sys.stdout.write(str(ipaddress.ip_network(addr, strict=False)))"
 }
 
 parse_args() {
@@ -284,7 +286,10 @@ fi
 
 require_command ip
 require_command iptables
-require_command python3
+[[ -x /usr/bin/python3 ]] || {
+  log "fatal: /usr/bin/python3 is not installed"
+  exit 1
+}
 
 PORTS_ARRAY=()
 IFS=',' read -r -a raw_ports <<< "$PORTS"
@@ -363,7 +368,7 @@ if [[ "$RUN_TESTS" -eq 1 ]]; then
     log "fatal: stack smoke script $STACK_SMOKE missing or not executable"
     exit 1
   fi
-  if ! "$STACK_SMOKE"; then
+  if ! /bin/bash -p "$STACK_SMOKE"; then
     smoke_code=$?
     case "$smoke_code" in
       11) log "services not running (compose/systemd issue)" ;;

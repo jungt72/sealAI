@@ -6,11 +6,14 @@ import { Menu, X } from "lucide-react";
 
 import { PARTNER_HREF, REGISTER_HREF } from "@/lib/marketing/homeContent";
 
-const LOGIN_HREF = "/login";
+// The dashboard owns its OIDC/PKCE session. Sending the primary product login through the
+// marketing app's separate Auth.js client first created two parallel login transactions and made a
+// stale Keycloak form capable of ending on Auth.js' generic Configuration error page.
+const LOGIN_HREF = "/dashboard/";
 
-/** Must match the header's rendered height (h-[76px] below) and the
+/** Must match the header's rendered height (h-[56px] below) and the
  * `.section-anchor { scroll-margin-top }` value in globals.css. */
-const HEADER_HEIGHT = 76;
+const HEADER_HEIGHT = 56;
 
 type HeaderState = "hero" | "solid-light" | "solid-dark";
 
@@ -100,8 +103,11 @@ export function MarketingHeader() {
   }, [open]);
 
   return (
-    <header data-state={state} className="marketing-header fixed inset-x-0 top-0 z-50">
-      <div className="marketing-section relative flex h-[76px] items-center justify-between">
+    <header
+      data-state={state}
+      className={`marketing-header fixed inset-x-0 top-0 z-50 ${state === "hero" ? "" : "backdrop-blur-xl"}`}
+    >
+      <div className="marketing-section relative flex h-[56px] items-center justify-between">
         <nav className="hidden items-center gap-8 lg:flex" aria-label="Hauptnavigation">
           {LEFT_NAV.map(([label, href]) => (
             <Link
@@ -135,16 +141,20 @@ export function MarketingHeader() {
             ))}
           </nav>
           <Link
-            href={LOGIN_HREF}
+            href={REGISTER_HREF}
             className="hidden text-[13px] font-medium text-current/75 transition-colors hover:text-current lg:inline-flex"
           >
-            Login
+            Registrieren
           </Link>
           <Link
-            href={REGISTER_HREF}
-            className="hidden h-9 items-center rounded-full border border-current/35 px-4 text-[13px] font-medium text-current transition-colors hover:bg-current/8 hover:border-current/55 lg:inline-flex"
+            href={LOGIN_HREF}
+            className={`hidden h-9 items-center rounded-full px-4 text-[13px] font-medium shadow-[0_1px_10px_rgba(15,23,42,0.08)] transition-colors lg:inline-flex ${
+              state === "hero"
+                ? "border border-white bg-[#FAFAF9] text-[#0a121f] hover:bg-[#FAFAF9]/90"
+                : "border border-seal-blue bg-seal-blue text-white hover:bg-seal-blue/92"
+            }`}
           >
-            Registrieren
+            Login
           </Link>
           <button
             ref={menuButtonRef}
@@ -168,7 +178,7 @@ export function MarketingHeader() {
             className="fixed inset-0 z-40 bg-black/40"
             onClick={() => setOpen(false)}
           />
-          <div className="fixed inset-x-0 top-[76px] z-40 border-t border-border bg-[#FAFAF9] shadow-xl">
+          <div className="fixed inset-x-0 top-[56px] z-40 bg-[#FAFAF9]/90 shadow-xl backdrop-blur-xl">
             <div className="marketing-section flex items-center justify-between py-3">
               <span className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Menü</span>
               <button
@@ -192,20 +202,20 @@ export function MarketingHeader() {
                   {label}
                 </Link>
               ))}
-              <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
-                <Link
-                  href={LOGIN_HREF}
-                  onClick={() => setOpen(false)}
-                  className="py-2 text-[14px] font-medium text-foreground/85"
-                >
-                  Login
-                </Link>
+              <div className="mt-2 flex flex-col gap-2 pt-3">
                 <Link
                   href={REGISTER_HREF}
                   onClick={() => setOpen(false)}
-                  className="inline-flex h-11 items-center justify-center rounded-full border border-seal-blue/30 text-[14px] font-semibold text-seal-blue"
+                  className="py-2 text-[14px] font-medium text-foreground/85"
                 >
                   Registrieren
+                </Link>
+                <Link
+                  href={LOGIN_HREF}
+                  onClick={() => setOpen(false)}
+                  className="inline-flex h-11 items-center justify-center rounded-full border border-seal-blue/30 text-[14px] font-semibold text-seal-blue"
+                >
+                  Login
                 </Link>
               </div>
             </nav>

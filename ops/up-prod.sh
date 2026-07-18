@@ -1,33 +1,36 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-sealai}"
-BACKEND_DATA_VOLUME="${COMPOSE_PROJECT_NAME}_backend-data"
-BACKEND_RUNTIME_UID="${BACKEND_RUNTIME_UID:-1000}"
-BACKEND_RUNTIME_GID="${BACKEND_RUNTIME_GID:-1000}"
-
-prepare_backend_volume() {
-  echo ">> Preparing backend runtime volume: ${BACKEND_DATA_VOLUME}"
-  docker volume create "$BACKEND_DATA_VOLUME" >/dev/null
-  docker run --rm \
-    --user 0:0 \
-    --entrypoint sh \
-    -v "${BACKEND_DATA_VOLUME}:/app/data" \
-    postgres:15 \
-    -lc "mkdir -p /app/data/models /app/data/uploads && chown -R ${BACKEND_RUNTIME_UID}:${BACKEND_RUNTIME_GID} /app/data && chmod 2775 /app/data /app/data/models /app/data/uploads"
-}
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+production_release_gate_check \
+  "${SCRIPT_DIR}/production_release_gate.py" recovery-start-existing
 
 echo ">> Validating .env.prod and pinned production image refs"
-"$SCRIPT_DIR/check-env-drift.sh" prod
+/bin/bash -p "$SCRIPT_DIR/check-env-drift.sh" prod
 
 cd "$REPO_ROOT"
-prepare_backend_volume
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml pull backend keycloak gotenberg tika
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml up -d --remove-orphans backend keycloak gotenberg tika
 
-# Nginx resolves Docker upstream container IPs at startup. Refresh it after
-# backend/Keycloak recreation so public smoke does not hit stale upstreams.
-echo ">> Refreshing nginx upstreams"
-docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml restart nginx
+# During the release freeze this path is intentionally limited to starting
+# containers which already exist. `compose start` cannot build, pull, create,
+# recreate, remove or migrate an artifact.
+COMPOSE=(docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.deploy.yml --profile v2 --profile frontend-container)
+SERVICES=(postgres redis qdrant gotenberg tika keycloak nginx frontend backend-v2 backend-v2-worker)
+
+missing=()
+for service in "${SERVICES[@]}"; do
+  [[ -n "$("${COMPOSE[@]}" ps -aq "$service")" ]] || missing+=("$service")
+done
+if (( ${#missing[@]} > 0 )); then
+  printf 'up-prod: recovery requires existing containers; missing:' >&2
+  printf ' %s' "${missing[@]}" >&2
+  printf '\n' >&2
+  exit 1
+fi
+
+echo ">> Starting existing production containers (no pull/build/create/recreate)"
+"${COMPOSE[@]}" start "${SERVICES[@]}"

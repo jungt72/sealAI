@@ -4,7 +4,10 @@ facts."""
 
 from __future__ import annotations
 
-from sealai_v2.tests._apiutil import auth, make_client
+from sealai_v2.db.interview import InProcessInterviewRepository
+from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
+from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewService
+from sealai_v2.tests._apiutil import auth, make_client, make_pipeline
 
 
 def _seed(pipeline, tenant, session, feld, wert):
@@ -16,7 +19,58 @@ def _seed(pipeline, tenant, session, feld, wert):
         question="q",
         answer="a",
         facts=(RememberedFact(feld, wert),),
+        owner_subject="user-A" if tenant == "tenant-A" else "user-B",
     )
+
+
+def _interview_pipeline(*, active: bool):
+    pipeline = make_pipeline()
+    pipeline.adaptive_interview_enabled = active
+    pipeline.adaptive_interview_service = AdaptiveInterviewService(
+        pack=load_rwdr_v1_pack(), repository=InProcessInterviewRepository()
+    )
+    return pipeline
+
+
+def test_interview_refresh_returns_current_active_rwdr_question():
+    client, pipeline = make_client(_interview_pipeline(active=True))
+    _seed(pipeline, "tenant-A", "sess-A", "dichtungstyp", "RWDR")
+
+    response = client.post(
+        "/api/v2/conversations/current/interview/refresh", headers=auth("tok-A")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["case_id"] == "sess-A"
+    question = response.json()["next_question"]
+    assert question["pack_id"] == "rwdr.v1"
+    assert question["pack_version"] == "1.0.1"
+    assert question["question_id"] == "rwdr.q.application_goal"
+
+
+def test_interview_refresh_never_exposes_shadow_only_decision():
+    client, pipeline = make_client(_interview_pipeline(active=False))
+    _seed(pipeline, "tenant-A", "sess-A", "dichtungstyp", "RWDR")
+
+    response = client.post(
+        "/api/v2/conversations/current/interview/refresh", headers=auth("tok-A")
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"case_id": "sess-A", "next_question": None}
+
+
+def test_interview_refresh_enforces_same_user_case_ownership():
+    client, pipeline = make_client(_interview_pipeline(active=True))
+    _seed(pipeline, "tenant-A", "private-A", "dichtungstyp", "RWDR")
+
+    response = client.post(
+        "/api/v2/conversations/current/interview/refresh",
+        params={"case_id": "private-A"},
+        headers=auth("tok-A2"),
+    )
+
+    assert response.status_code == 404
 
 
 def test_view_edit_forget_roundtrip():
@@ -117,6 +171,34 @@ def test_list_conversations_never_leaks_across_tenants():
     r = client.get("/api/v2/conversations", headers=auth("tok-A"))
     case_ids = {c["case_id"] for c in r.json()["cases"]}
     assert case_ids == {"sess-A"}
+
+
+def test_same_tenant_user_cannot_list_read_or_mutate_another_users_conversation():
+    client, pipeline = make_client()
+    _seed(pipeline, "tenant-A", "private-A", "medium", "Öl")
+
+    listed = client.get("/api/v2/conversations", headers=auth("tok-A2"))
+    assert listed.status_code == 200
+    assert listed.json()["cases"] == []
+
+    read = client.get(
+        "/api/v2/conversations/current/memory",
+        params={"case_id": "private-A"},
+        headers=auth("tok-A2"),
+    )
+    assert read.status_code == 404
+
+    edit = client.put(
+        "/api/v2/conversations/current/facts/medium",
+        params={"case_id": "private-A"},
+        json={"wert": "HACKED"},
+        headers=auth("tok-A2"),
+    )
+    assert edit.status_code == 404
+    assert (
+        pipeline.memory.case_state(tenant_id="tenant-A", session_id="private-A")[0].wert
+        == "Öl"
+    )
 
 
 def test_case_id_query_param_overrides_the_tokens_session_for_view_memory():

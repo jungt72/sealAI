@@ -18,6 +18,11 @@ class FakeLlmClient:
             text=self.response_text, model=model_config.model, finish_reason="stop"
         )
 
+    async def generate_structured(
+        self, *, system, user, model_config, schema_name, json_schema
+    ) -> LlmResult:
+        return await self.generate(system=system, user=user, model_config=model_config)
+
 
 class DistillRoutingFakeLlmClient:
     """Routes by the system prompt: a memory-distill call (its prompt opens with "extrahierst
@@ -37,6 +42,11 @@ class DistillRoutingFakeLlmClient:
         self.calls.append({"system": system, "user": user, "model": model_config.model})
         text = self.distill_json if self._DISTILL_MARKER in system else self.answer
         return LlmResult(text=text, model=model_config.model, finish_reason="stop")
+
+    async def generate_structured(
+        self, *, system, user, model_config, schema_name, json_schema
+    ) -> LlmResult:
+        return await self.generate(system=system, user=user, model_config=model_config)
 
 
 class ScriptedFakeLlmClient:
@@ -60,3 +70,8 @@ class ScriptedFakeLlmClient:
         text = self.responses[self._i]
         self._i += 1
         return LlmResult(text=text, model=model_config.model, finish_reason="stop")
+
+    async def generate_structured(
+        self, *, system, user, model_config, schema_name, json_schema
+    ) -> LlmResult:
+        return await self.generate(system=system, user=user, model_config=model_config)

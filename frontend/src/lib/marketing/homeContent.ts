@@ -21,7 +21,7 @@ export const PARTNER_HREF = "/kontakt";
 export const TEASER_STORAGE_KEY = "sealingai.homepageTeaserState";
 
 export const heroContent = {
-  headline: "Sealing | Intelligence.",
+  headline: "Sealing Intelligence für Dichtungstechnik",
   subline:
     "Die zentrale Anlaufstelle für Wissen, Bewertung und Orientierung in der industriellen Dichtungstechnik.",
   cta: "sealingAI entdecken",
@@ -163,9 +163,10 @@ export const faqItems = [
   },
 ];
 
-/** Footer columns. Legal links are kept even where the page does not exist yet
- * (TODO: create Impressum/Datenschutz/Nutzungsbedingungen + /kontakt) — never
- * broken. Non-existent product routes point to on-page anchors, not thin pages. */
+/** Footer columns. `/impressum` is kept linked even though the page 404s today —
+ * it needs real Handelsregister/Geschäftsführer/USt-ID data (docs/seo/baseline.md),
+ * not a broken-link fix. Non-existent product routes point to on-page anchors,
+ * not thin pages. */
 export const footerColumns = [
   {
     title: "Plattform",
@@ -201,6 +202,8 @@ export const footerColumns = [
       { label: "Dichtungstypen", href: "/wissen" },
       { label: "Werkstoffe", href: "/werkstoffe" },
       { label: "Schadensanalyse", href: "/wissen" },
+      { label: "Methodik", href: "/methodik" },
+      { label: "Quellen & Prüfstatus", href: "/quellen" },
     ],
   },
   {

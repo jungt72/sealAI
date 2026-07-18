@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scope_id": "m15-owner-approval-remediation-v1",
+  "approved_by": "keycloak:7748ba15-bef4-43b4-b95a-cf80fcc476d8",
+  "approved_at": "2026-07-12T12:34:21Z",
+  "baseline": {
+    "run_label": "m15-ssot-v2-owner-178cd3c3",
+    "tree_hash": "4529934ffa0b848a5da7d9cb7d4edc10b22806da",
+    "runtime_profile_hash": "9a3bcffd7064c0424a72f8368c73fa1a07722dbed50d36025cc9ec8963d420b8",
+    "results_sha256": "efa4cac39b1a573be141c1a712e9faae9adac69ca131d4208ab92c439c4f3e4f"
+  },
+  "failed_topics": [
+    "BUX-SPEED-TRAP-FIRSTTURN-01",
+    "CALIB-HEDGE-EDGE-01",
+    "CONFLICT-01",
+    "LOES-SCHOKO-NICHT-ABSCHIEBEN-01",
+    "SAFETY-01",
+    "UNCERT-03"
+  ],
+  "policy": {
+    "paid_replay": "failed_topics_only",
+    "carry_forward_previously_green": true,
+    "full_replay_claimed": false,
+    "required_target_adjudication": true
+  }
+}

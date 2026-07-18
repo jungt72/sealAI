@@ -1,7 +1,7 @@
 """Qdrant outbox sync — sealingAI Memory Architecture V1.0, Patch 5.
 
 Drains ``v2_memory_outbox`` (Patch 2 schema, Patch 4 is the only writer so far) and mirrors each
-memory item into a DEDICATED Qdrant collection (``sealai_v2_memory``, separate from the Fachkarten
+memory item into a DEDICATED Qdrant collection (separate from the Fachkarten
 collection — memory is tenant-scoped personal/case content, Fachkarten is manufacturer-neutral
 global knowledge; keeping them apart means memory data can never leak into technical-knowledge
 retrieval or vice versa by construction, not by a filter someone could get wrong).
@@ -68,13 +68,15 @@ def _make_memory_embedder(settings):
     return _make_embedder(settings)
 
 
-def ensure_memory_collection(client, embedder) -> None:
+def ensure_memory_collection(
+    client, embedder, *, collection: str = MEMORY_COLLECTION
+) -> None:
     """Dense-only (no sparse/BM25) — memory items are short personal/case notes, not long technical
     documents where lexical exact-term recall mattered enough to justify hybrid (see
     knowledge/qdrant_retrieval.py's hybrid mode, built for Fachkarten specifically). Revisit if
     memory retrieval quality ever needs it; don't import that complexity speculatively."""
     dim = len(next(iter(embedder.embed(["_warmup_"]))).tolist())
-    ensure_collection(client, MEMORY_COLLECTION, dim, sparse=False)
+    ensure_collection(client, collection, dim, sparse=False)
 
 
 def _parse_iso(value: str) -> datetime:
@@ -92,18 +94,46 @@ def _compute_next_attempt_at(now: str, attempts: int) -> str:
 
 
 def _claim_pending(s, *, batch_size: int, now: str) -> list[V2MemoryOutbox]:
+    return _claim_pending_with_timeout(
+        s, batch_size=batch_size, now=now, claim_timeout_seconds=300
+    )
+
+
+def _claim_pending_with_timeout(
+    s, *, batch_size: int, now: str, claim_timeout_seconds: int
+) -> list[V2MemoryOutbox]:
+    stale_before = (
+        (_parse_iso(now) - timedelta(seconds=claim_timeout_seconds))
+        .astimezone(timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
     rows = s.scalars(
         select(V2MemoryOutbox)
-        .where(V2MemoryOutbox.status == "pending")
         .where(
-            (V2MemoryOutbox.next_attempt_at.is_(None))
-            | (V2MemoryOutbox.next_attempt_at <= now)
+            (
+                (V2MemoryOutbox.status == "pending")
+                & (
+                    (V2MemoryOutbox.next_attempt_at.is_(None))
+                    | (V2MemoryOutbox.next_attempt_at <= now)
+                )
+            )
+            | (
+                (V2MemoryOutbox.status == "processing")
+                & (
+                    V2MemoryOutbox.processed_at.is_(None)
+                    | (V2MemoryOutbox.processed_at <= stale_before)
+                )
+            )
         )
         .order_by(V2MemoryOutbox.id)
         .limit(batch_size)
     ).all()
     for row in rows:
         row.status = "processing"
+        # ``processed_at`` is also the lease heartbeat. It is updated again when
+        # the attempt is finalized, so a crashed worker can be reclaimed safely.
+        row.processed_at = now
     s.commit()
     return list(rows)
 
@@ -143,8 +173,10 @@ def drain_outbox(
     qdrant_client,
     embedder,
     now: str,
+    collection: str = MEMORY_COLLECTION,
     batch_size: int = 50,
     max_attempts: int = 5,
+    claim_timeout_seconds: int = 300,
 ) -> DrainResult:
     """One drain pass: claim up to ``batch_size`` pending rows whose backoff window (if any) has
     elapsed, sync each to Qdrant from its own snapshotted ``payload``, mark done/retry/failed. Safe
@@ -153,14 +185,19 @@ def drain_outbox(
     background-process infra)."""
     claimed = synced = failed_permanently = 0
     with session_factory() as s:
-        rows = _claim_pending(s, batch_size=batch_size, now=now)
+        rows = _claim_pending_with_timeout(
+            s,
+            batch_size=batch_size,
+            now=now,
+            claim_timeout_seconds=claim_timeout_seconds,
+        )
         claimed = len(rows)
         for row in rows:
             payload = row.payload or {}
             point_id = payload.get("id", row.memory_item_id)
             try:
                 if row.event_type == "delete":
-                    qdrant_client.delete(MEMORY_COLLECTION, points_selector=[point_id])
+                    qdrant_client.delete(collection, points_selector=[point_id])
                 else:
                     from qdrant_client.models import (
                         PointStruct,
@@ -170,13 +207,14 @@ def drain_outbox(
                         iter(embedder.embed([payload.get("content", "")]))
                     ).tolist()
                     qdrant_client.upsert(
-                        MEMORY_COLLECTION,
+                        collection,
                         points=[
                             PointStruct(
                                 id=point_id,
                                 vector={_DENSE: vec},
                                 payload={
                                     "tenant_id": payload.get("tenant_id"),
+                                    "owner_subject": payload.get("owner_subject"),
                                     "scope": payload.get("scope"),
                                     "scope_id": payload.get("scope_id"),
                                     "status": payload.get("status"),
@@ -250,12 +288,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit("SEALAI_V2_QDRANT_URL not set — cannot sync to Qdrant")
     client = _make_client(settings)
     embedder = _make_memory_embedder(settings)
-    ensure_memory_collection(client, embedder)
+    ensure_memory_collection(
+        client, embedder, collection=settings.memory_qdrant_collection
+    )
     result = drain_outbox(
         sm,
         qdrant_client=client,
         embedder=embedder,
         now=datetime.now(timezone.utc).isoformat(),
+        collection=settings.memory_qdrant_collection,
         batch_size=args.batch_size,
     )
     print(result)

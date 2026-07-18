@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,8 @@ def _parse_role_overrides(model_args, provider_args) -> dict:
 
 
 def _git_sha() -> str:
+    if value := os.getenv("SEALAI_EVAL_GIT_SHA"):
+        return value.strip()
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -61,10 +64,19 @@ def _tree_binding() -> tuple[str, bool]:
     cannot give (under validate-then-commit, HEAD is the pre-fix commit but the eval'd content is the
     fix). Best-effort: ``("unknown", False)`` if git or the script is unavailable.
     """
+    if tree_hash := os.getenv("SEALAI_EVAL_TREE_HASH"):
+        dirty = os.getenv("SEALAI_EVAL_DIRTY", "false").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        return tree_hash.strip(), dirty
+
     repo = Path(__file__).resolve().parents[3]
     try:
         tree_hash = subprocess.check_output(
-            ["bash", str(repo / "ops" / "tree-hash.sh")],
+            ["/bin/bash", "-p", str(repo / "ops" / "tree-hash.sh")],
             cwd=str(repo),
             text=True,
         ).strip()
@@ -82,6 +94,7 @@ def _tree_binding() -> tuple[str, bool]:
                 ":(exclude)backend/sealai_v2/eval",
                 ":(exclude)backend/sealai_v2/tests",
                 "backend/requirements-v2.txt",
+                "backend/.dockerignore",
                 "backend/Dockerfile.v2",
                 "backend/docker-entrypoint-v2.sh",
             ],
@@ -106,6 +119,14 @@ def main() -> None:
         help="comma list of flag columns to run (subset of: flags_off, flags_on)",
     )
     ap.add_argument(
+        "--case-ids",
+        default=None,
+        help=(
+            "comma-separated case ids across primary and auxiliary suites; only these cases "
+            "are executed (targeted remediation mode)"
+        ),
+    )
+    ap.add_argument(
         "--run-dir", default=None, help="output dir (default eval/runs/<label>)"
     )
     ap.add_argument(
@@ -113,6 +134,14 @@ def main() -> None:
         action="store_true",
         help="recompute final numbers from human_review_worksheet.md (no LLM call) and "
         "re-render report.md; does not run the eval",
+    )
+    ap.add_argument(
+        "--rejudge-failed",
+        action="store_true",
+        help=(
+            "retry only failed/missing judge cells from results.json; reuses stored subject "
+            "answers and never calls L1/helper/verifier"
+        ),
     )
     ap.add_argument(
         "--model",
@@ -158,6 +187,20 @@ def main() -> None:
 
     overrides = _parse_role_overrides(args.model, args.provider)
     settings = Settings(**overrides)
+    case_ids = (
+        frozenset(item.strip() for item in args.case_ids.split(",") if item.strip())
+        if args.case_ids
+        else None
+    )
+    if args.rejudge_failed:
+        from sealai_v2.eval.rejudge import rejudge_failed
+
+        out = asyncio.run(rejudge_failed(run_dir, settings, case_ids=case_ids))
+        print(f"\n=== targeted judge retry: {out['run_label']} ===")
+        print(f"rejudged: {', '.join(out['rejudged_cells'])}")
+        print(f"remaining errors: {out['remaining_errors'] or 'none'}")
+        print(f"Artifacts: {run_dir}")
+        return
     columns = {k: COLUMNS[k] for k in args.columns.split(",") if k in COLUMNS}
     if not columns:
         raise SystemExit(
@@ -165,7 +208,6 @@ def main() -> None:
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
     tree_hash, dirty = _tree_binding()
     out = asyncio.run(
         run_eval(
@@ -178,6 +220,8 @@ def main() -> None:
             timestamp=timestamp,
             columns=columns,
             smoke_limit=args.smoke,
+            include_auxiliary=args.smoke is None,
+            case_ids=case_ids,
         )
     )
     print(f"\n=== M1 eval-REPLAY: {args.label} ===")

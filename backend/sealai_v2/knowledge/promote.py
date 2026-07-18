@@ -10,8 +10,8 @@ doctrine — draft->reviewed stays a separate, deliberate, human-judgment step, 
 only makes the MECHANICAL merge safe (validated before a single byte is written), fast, and
 git-diff-friendly (a normal JSON append, not a hand-edit that risks the circularity invariants).
 
-The Qdrant side (pushing the new card live without re-embedding the whole catalog) is a SEPARATE
-concern — see ``ops/ingest_new_card.py``, which only runs where Qdrant/OpenAI credentials exist.
+Runtime publication is a separate, durable concern: ``ops/ingest_new_card.py`` imports the reviewed
+seed into the Postgres ledger and drains its outbox. It never writes Qdrant directly.
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@ title: "Dichtung chemikalienbeständig: Medien, Konzentration und Prüfgrenzen"
 description: "Chemikalienbeständige Dichtungen fachlich vorqualifizieren: Medium, Konzentration, Temperatur, Werkstoffrichtung und Herstellerprüfung."
 category: "Medienbeständigkeit"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Dichtung chemikalienbeständig: Medien, Konzentration und Prüfgrenzen

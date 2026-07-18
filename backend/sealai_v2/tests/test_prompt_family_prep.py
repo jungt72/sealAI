@@ -244,11 +244,23 @@ class TestRoutePromptMatrixIsInactiveAndComplete:
         for plan in ROUTE_PROMPT_MATRIX:
             assert plan.streaming is (plan.route is RouteName.SMALLTALK_NAVIGATION)
 
-    def test_matrix_is_not_imported_by_pipeline_py(self) -> None:
-        """Structural proof the matrix stays inactive: pipeline.py must not import it."""
+    def test_pipeline_py_reads_only_the_matrix_kernel_flag(self) -> None:
+        """Structural proof the matrix stays MOSTLY documentary. INC-CALC-ROUTE-RELEVANCE activated
+        the FIRST pipeline-side read of the table: the ``kernel`` column, via ``plan_for``, so the
+        L1 prompt on a kernel=False route no longer gets off-topic calc context (the RWDR-function/
+        Umfangsgeschwindigkeit bug). Guard that this stays the ONLY pipeline-side matrix consumption
+        — pipeline.py reads ``plan_for(...).kernel`` and imports the read-only ``plan_for`` accessor,
+        but does NOT touch the RoutePromptPlan dataclass or the still-documentary intent columns
+        (prompt_family / model_class / rag / l3 / streaming / cache_strategy / activation_status),
+        which stay intent-only until their own separately-reviewed activation."""
         import pathlib
+        import re
 
         pipeline_src = (
             pathlib.Path(__file__).resolve().parents[1] / "pipeline" / "pipeline.py"
         ).read_text()
-        assert "route_prompt_matrix" not in pipeline_src
+        # The one sanctioned matrix access: read a route's kernel flag via the plan_for accessor.
+        assert re.search(r"plan_for\([^)]*\)\.kernel", pipeline_src)
+        assert "import plan_for" in pipeline_src
+        # It must NOT reach for the raw dataclass or consume any other (still-documentary) column.
+        assert "RoutePromptPlan" not in pipeline_src

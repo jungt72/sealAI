@@ -66,10 +66,19 @@ class PromptAssembler:
         baseline_hardening: bool = False,
         engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
+        knowledge_answer_plan: dict | None = None,
         risk_flags: list[str] | None = None,
     ) -> str:
         flags = flags or Flags()
-        gf = [{"text": f.text, "quelle": f.quelle} for f in (grounding_facts or [])]
+        gf = [
+            {
+                "text": f.text,
+                "quelle": f.quelle,
+                "card_id": getattr(f, "card_id", ""),
+                "claim_id": getattr(f, "claim_id", ""),
+            }
+            for f in (grounding_facts or [])
+        ]
         return self._template.render(
             anrede=anrede,
             grounding_facts=gf,
@@ -91,6 +100,7 @@ class PromptAssembler:
             baseline_hardening=baseline_hardening,
             engineering_flags=engineering_flags or [],
             material_params=material_params or None,
+            knowledge_answer_plan=knowledge_answer_plan or None,
             # Legal-by-Design Phase D: empty/None -> {% if risk_flags %} never renders ->
             # byte-identical prompt. Only non-empty when risk_flag_prompt_enabled is on (see
             # pipeline.py's generator.generate() call sites).

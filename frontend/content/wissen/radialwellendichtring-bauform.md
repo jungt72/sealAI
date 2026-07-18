@@ -3,7 +3,7 @@ title: "Radialwellendichtring Bauform: Auswahlkriterien vor der Herstellerprüfu
 description: "Bauformen von Radialwellendichtringen technisch einordnen: Staublippe, Gehäusemantel, Druck, Medium und Einbauraum."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Radialwellendichtring Bauform: Auswahlkriterien vor der Herstellerprüfung

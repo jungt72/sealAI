@@ -3,7 +3,7 @@ title: "O-Ring Material: NBR, FKM, EPDM, PTFE und Prüfpunkte"
 description: "O-Ring-Materialien technisch vorqualifizieren: Medium, Temperatur, Druck, Schnurstärke, Nut, Bewegung und Herstellerfreigabe."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # O-Ring Material: NBR, FKM, EPDM, PTFE und Prüfpunkte

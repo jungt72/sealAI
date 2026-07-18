@@ -28,7 +28,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sealai_v2.core.contracts import CalcResult, GroundingFact
+from sealai_v2.core.contracts import (
+    CalcResult,
+    EvaluationState,
+    GroundingFact,
+    MaterialConstraintResult,
+    MaterialConstraintVerdict,
+)
+from sealai_v2.core.coverage import MATRIX_COMPATIBLE_NEUTRAL_REASON
 from sealai_v2.core.response_contract_policy import DEFAULT_POLICY, ContractPolicy
 
 # ── contract status (the SS-coupled answer mode) ────────────────────────────────────────────────
@@ -40,6 +47,10 @@ STATUS_COVERED_RECOMMENDATION = "COVERED_RECOMMENDATION"
 # reaches the L1 prompt/renderer (see build_guard_contract's docstring for why); used only as a
 # policy.forbidden_by_status lookup key (defaults to (), like every other status, Phase 4b).
 STATUS_GENERAL = "GENERAL"
+MATRIX_COMPATIBLE_NEUTRAL_TEXT = (
+    "Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine "
+    "Eignungs- oder Freigabeaussage."
+)
 
 # coverage_status (core/coverage.py) -> contract status. A grounded NO (disqualified -> coverage IN)
 # maps to COVERED_RECOMMENDATION: the MODE is assertive-because-grounded; the CONTENT is a negative
@@ -71,6 +82,7 @@ class AllowedClaim:
         str, ...
     ] = ()  # owner-verified primary sources (Parker handbook, ISO ...)
     kind: str = "card"  # provenance lane: "card" (Fachkarte) | "matrix" (Verträglichkeitsmatrix)
+    claim_kind: str = ""  # Fachkarte epistemics; empty for matrix/trap/legacy facts
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +91,7 @@ class AllowedClaim:
             "severity": self.severity,
             "sources": list(self.sources),
             "kind": self.kind,
+            "claim_kind": self.claim_kind,
         }
 
 
@@ -92,9 +105,10 @@ class ResponseContract:
     allowed_values: tuple[dict, ...]
     forbidden_phrases: tuple[str, ...]
     coverage_status: str  # the raw coverage_status, kept for the trace / SS9 flywheel
+    reason_code: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        payload = {
             "status": self.status,
             "coverage_status": self.coverage_status,
             "allowed_claims": [c.to_dict() for c in self.allowed_claims],
@@ -104,6 +118,9 @@ class ResponseContract:
             "allowed_values": list(self.allowed_values),
             "forbidden_phrases": list(self.forbidden_phrases),
         }
+        if self.reason_code:
+            payload["reason_code"] = self.reason_code
+        return payload
 
 
 def _missing_fields(calc: CalcResult | None) -> list[str]:
@@ -133,6 +150,8 @@ def _severity(gf: GroundingFact, disqualified: bool, basis: str | None) -> str:
     # Coarse v1: the case-level gegencheck verdict tags the MATRIX facts; card facts are supporting
     # info. (The per-claim 8-value epistemics live on the Fachkarte Claim, not propagated to the
     # GroundingFact — a later refinement, owner-tracked.)
+    if gf.kind == "trap":
+        return "caution"
     if gf.kind == "matrix":
         if disqualified:
             return "disqualify"
@@ -151,6 +170,7 @@ def _allowed_claims(
             severity=_severity(gf, disqualified, basis),
             sources=gf.sources,
             kind=gf.kind,
+            claim_kind=gf.claim_kind,
         )
         for gf in grounding_facts
     )
@@ -174,15 +194,27 @@ def _allowed_values(calc: CalcResult | None) -> tuple[dict, ...]:
     if calc is None:
         return ()
     return tuple(
-        {"name": cv.name, "value": cv.value, "unit": cv.unit, "calc_id": cv.calc_id}
+        {
+            "name": cv.name,
+            "value": cv.value,
+            "unit": cv.unit,
+            "calc_id": cv.calc_id,
+            "warnings": list(cv.warnings),
+        }
         for cv in calc.computed
     )
 
 
 def _required_clauses(
-    status: str, missing_fields: list[str], policy: ContractPolicy
+    status: str,
+    missing_fields: list[str],
+    policy: ContractPolicy,
+    *,
+    neutral_material_compatibility: bool = False,
 ) -> tuple[str, ...]:
     clauses = list(policy.required_clauses.get(status, ()))
+    if neutral_material_compatibility:
+        clauses.insert(0, MATRIX_COMPATIBLE_NEUTRAL_TEXT)
     fields = ", ".join(missing_fields)
     if status == STATUS_NEEDS_CLARIFICATION and missing_fields:
         clauses.insert(0, policy.clarification_template.format(fields=fields))
@@ -209,6 +241,7 @@ def build_contract(
     grounding_facts: tuple[GroundingFact, ...],
     gegencheck_verdict: dict | None,
     calc: CalcResult | None,
+    material_constraints: MaterialConstraintResult | None = None,
     policy: ContractPolicy = DEFAULT_POLICY,
 ) -> ResponseContract | None:
     """Assemble the deterministic answer-contract from a turn's grounded evidence. Returns None for
@@ -226,16 +259,33 @@ def build_contract(
         missing.insert(0, "Medium")
 
     status = _contract_status(coverage_status, basis)
+    neutral_material_compatibility = bool(
+        material_constraints is not None
+        and material_constraints.evaluation_state is EvaluationState.EVALUATED
+        and material_constraints.verdict is MaterialConstraintVerdict.VERTRAEGLICH
+    )
+    if neutral_material_compatibility and status == STATUS_COVERED_RECOMMENDATION:
+        status = STATUS_COVERED_CAUTION
     claims = _allowed_claims(grounding_facts, disqualified, basis)
+    if neutral_material_compatibility:
+        claims = tuple(claim for claim in claims if claim.kind != "matrix")
     return ResponseContract(
         status=status,
         allowed_claims=claims,
-        required_clauses=_required_clauses(status, missing, policy),
+        required_clauses=_required_clauses(
+            status,
+            missing,
+            policy,
+            neutral_material_compatibility=neutral_material_compatibility,
+        ),
         missing_fields=tuple(missing),
         allowed_materials=_allowed_materials(claims, policy.material_vocab),
         allowed_values=_allowed_values(calc),
         forbidden_phrases=_forbidden_phrases(status, policy),
         coverage_status=coverage_status,
+        reason_code=(
+            MATRIX_COMPATIBLE_NEUTRAL_REASON if neutral_material_compatibility else ""
+        ),
     )
 
 

@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -14,7 +16,7 @@ COMPOSE_ARGS=(
 CATEGORY_SERVICES=11
 CATEGORY_CURL=33
 
-STACK_SERVICES=(backend keycloak redis)
+STACK_SERVICES=(backend-v2 keycloak redis)
 
 ERROR_PREFIX="[stack-smoke]"
 SERVICE_ATTEMPTS="${STACK_SMOKE_SERVICE_ATTEMPTS:-45}"
@@ -32,24 +34,20 @@ dump_diagnostics() {
   docker compose "${COMPOSE_ARGS[@]}" ps
 
   echo
-  echo "=== docker compose logs (backend/keycloak/redis, tail 200) ==="
-  docker compose "${COMPOSE_ARGS[@]}" logs --tail 200 backend keycloak redis
+  echo "=== docker compose logs (backend-v2/keycloak/redis, tail 200) ==="
+  docker compose "${COMPOSE_ARGS[@]}" --profile v2 logs --tail 200 backend-v2 keycloak redis
 
   echo
   echo "=== public backend health ==="
-  curl -k -i -sS --max-time 10 https://sealingai.com/api/agent/health || true
+  curl -k -i -sS --max-time 10 https://sealingai.com/api/v2/health || true
 
   echo
   echo "=== keycloak oidc metadata ==="
   curl -k -i -sS --max-time 10 "$KEYCLOAK_OIDC_URL" || true
 
   echo
-  echo "=== backend internal health ==="
-  docker compose "${COMPOSE_ARGS[@]}" exec -T backend sh -lc 'curl -i -sS --max-time 5 http://127.0.0.1:8000/health' || true
-
-  echo
-  echo "=== backend internal api health path ==="
-  docker compose "${COMPOSE_ARGS[@]}" exec -T backend sh -lc 'curl -i -sS --max-time 5 http://127.0.0.1:8000/api/agent/health' || true
+  echo "=== backend-v2 internal health ==="
+  docker compose "${COMPOSE_ARGS[@]}" --profile v2 exec -T backend-v2 sh -lc 'curl -i -sS --max-time 5 http://127.0.0.1:8001/health' || true
 
   if command -v ufw >/dev/null 2>&1; then
     echo
@@ -92,13 +90,13 @@ services_ready() {
   local healthy
 
   running="$(
-    docker compose "${COMPOSE_ARGS[@]}" \
-      ps --status running --format '{{.Service}}' backend keycloak redis
+      docker compose "${COMPOSE_ARGS[@]}" --profile v2 \
+      ps --status running --format '{{.Service}}' backend-v2 keycloak redis
   )"
 
   healthy="$(
-    docker compose "${COMPOSE_ARGS[@]}" \
-      ps --format '{{.Service}} {{.Health}}' backend keycloak redis
+    docker compose "${COMPOSE_ARGS[@]}" --profile v2 \
+      ps --format '{{.Service}} {{.Health}}' backend-v2 keycloak redis
   )"
 
   for service in "${STACK_SERVICES[@]}"; do
@@ -165,7 +163,7 @@ http_get_with_retries() {
 
 check_public_backend_health() {
   http_get_with_retries \
-    "https://sealingai.com/api/agent/health" \
+    "https://sealingai.com/api/v2/health" \
     '"status":"ok"' \
     "public backend health"
 }

@@ -1,4 +1,4 @@
-"""Fachkarten loader + circularity-guard (two review paths) + the bootstrap faithfulness."""
+"""Fachkarten loader, evidence gate, and bootstrap faithfulness."""
 
 from __future__ import annotations
 
@@ -15,35 +15,82 @@ def _write(tmp_path, cards):
     return p
 
 
-def test_seed_loads_nine_reviewed_cards():
-    # Updated 2026-06-28 (8-kind taxonomy + 38-card provisional promotion, GPT-5.5 round 4: 522/522
-    # claims clean -> GO): the seed grew from 9 owner-grounded reviewed cards to 47 (9 reviewed + 38
-    # draft/provisional) — the REVIEWED count is the invariant that must hold, not the total.
+def test_seed_carries_the_independent_owner_review_without_promoting_drafts():
     cat = load_fachkarten()
-    assert len(cat.reviewed()) == 9
-    assert len(cat.cards) == 47
-    # circularity guard held: every reviewed claim is owner/trap-grounded (path i) or sourced (path ii)
-    # — checked across ALL cards (a draft card's reviewed_claims() is always empty by construction, so
-    # this is equivalent to iterating cat.reviewed(), just doesn't assume which cards are reviewed).
-    for c in cat.cards:
-        for cl in c.reviewed_claims():
-            assert cl.owner_grounded or cl.sources, f"{c.id}: ungrounded reviewed claim"
+    assert len(cat.reviewed()) == 17
+    assert cat.by_id("FK-PHARMA-SIP-VALIDIERUNG").review_state == "reviewed"
+    assert cat.by_id("FK-ERSATZDICHTUNG-IDENTIFIKATION").review_state == "reviewed"
+    assert len(cat.cards) == 55
+    assert sum(len(card.reviewed_claims()) for card in cat.cards) == 79
+    assert sum(len(card.draft_claims()) for card in cat.cards) == 522
+    assert sum(len(card.quarantined_claims()) for card in cat.cards) == 0
 
 
-def test_seed_provenance_is_owner_grounded():
-    # reviewed = owner-grounded: each REVIEWED card names a path-(i) grounding origin —
-    # owner:/eval:/trap-correct: (require a grounding prefix, NOT merely non-empty). The
-    # trap-correct:-only assertion was an over-narrow M3 artifact; FK-ORING-VERPRESSUNG is
-    # bootstrapped from the owner-confirmed CALC-02 eval seed → provenance eval:CALC-02 +
-    # owner:nutauslegung (still owner-grounded path (i)).
-    # Scoped to cat.reviewed() (not cat.cards): the 38 draft/provisional cards (2026-06-28 promotion)
-    # are LLM-researched (provenance "claude-research:...") by design — draft claims carry no source
-    # requirement (fachkarten.py's circularity guard only fires for review_state="reviewed"), so this
-    # owner-grounding invariant was always meant for reviewed cards only.
-    grounding = ("owner", "eval:", "trap-correct:")
+def test_reviewed_seed_requires_explicit_evidence_grounding():
     cat = load_fachkarten()
     for c in cat.reviewed():
-        assert any(p.startswith(grounding) for p in c.provenance), c.id
+        assert all(claim.sources for claim in c.reviewed_claims()), c.id
+
+
+def test_reviewed_nbr_profile_uses_user_facing_german_orthography():
+    card = load_fachkarten().by_id("FK-NBR-UEBERBLICK")
+    text = " ".join(claim.text for claim in card.claims)
+    for ascii_spelling in (
+        "ungesaettigt",
+        "hoeher",
+        "Mineraloele",
+        "Bestaendigkeit",
+        "Schlaeuche",
+        "geprueft",
+    ):
+        assert ascii_spelling not in text
+    for german_spelling in (
+        "ungesättigter",
+        "Mineralöle",
+        "Beständigkeit",
+        "Schläuche",
+    ):
+        assert german_spelling in text
+
+
+def test_source_refresh_binds_high_risk_claims_to_exact_primary_evidence():
+    cat = load_fachkarten()
+
+    ptfe = cat.by_id("FK-PTFE-ENGINEERING-PROFILE")
+    temperature = next(claim for claim in ptfe.claims if "Turcon T01" in claim.text)
+    assert "Edition June 2026" in temperature.sources[0]
+    assert "Table 3, page 7" in temperature.sources[0]
+    assert (
+        "171d5881149e03a5592b0497b6f4d77356dee96bf8e805fe2d91e570f49e5f93"
+        in temperature.sources[0]
+    )
+
+    rwdr = cat.by_id("FK-RWDR-ENGINEERING-PROFILE")
+    shaft = next(claim for claim in rwdr.claims if "mindestens 45 HRC" in claim.text)
+    assert "Laboroptimum von Rt 2 Mikrometer" in shaft.text
+    assert "Ra 0,2 bis 0,5 Mikrometer" in shaft.text
+    assert "page 41, Edition April 2026" in shaft.sources[0]
+    assert (
+        "9b1d5310574e8da4726c7f0406bd9a10685cd4ce0c71c2b9962520b76ae1fd38"
+        in shaft.sources[0]
+    )
+
+
+def test_oring_gland_fill_uses_parker_section_3_7_contract():
+    card = load_fachkarten().by_id("FK-ORING-VERPRESSUNG")
+    claim = next(item for item in card.claims if "Nutfüllung" in item.text)
+    assert "60 bis 85 Prozent" in claim.text
+    assert "75 Prozent als Optimum" in claim.text
+    assert "mindestens 10 Prozent freien Nutraum" in claim.text
+    assert "Section 3.7 Gland Fill, page 3-9" in claim.sources[0]
+    assert "75–90" not in claim.text
+
+
+def test_active_fkm_steam_claim_uses_correct_orthography():
+    card = load_fachkarten().by_id("FK-FKM-DAMPF")
+    text = " ".join(claim.text for claim in card.claims)
+    assert "versprödet" in text
+    assert "verspröttet" not in text
 
 
 def test_foodgrade_carries_owner_vmq_nuance():
@@ -54,7 +101,7 @@ def test_foodgrade_carries_owner_vmq_nuance():
     assert any(p.startswith("owner") for p in nuance[0].provenance)
 
 
-def test_reviewed_claim_without_owner_or_source_is_load_error(tmp_path):
+def test_reviewed_claim_without_source_is_quarantined(tmp_path):
     bad = [
         {
             "id": "FK-BAD",
@@ -70,11 +117,12 @@ def test_reviewed_claim_without_owner_or_source_is_load_error(tmp_path):
             ],
         }
     ]
-    with pytest.raises(ValueError, match="LLM erdet LLM"):
-        load_fachkarten(_write(tmp_path, bad))
+    claim = load_fachkarten(_write(tmp_path, bad)).by_id("FK-BAD").claims[0]
+    assert claim.review_state == "quarantined"
+    assert claim.quarantined
 
 
-def test_path_i_owner_confirmed_needs_no_source(tmp_path):
+def test_owner_confirmation_without_source_is_not_authoritative(tmp_path):
     ok = [
         {
             "id": "FK-OWN",
@@ -90,9 +138,9 @@ def test_path_i_owner_confirmed_needs_no_source(tmp_path):
             ],
         }
     ]
-    assert (
-        load_fachkarten(_write(tmp_path, ok)).by_id("FK-OWN").review_state == "reviewed"
-    )
+    card = load_fachkarten(_write(tmp_path, ok)).by_id("FK-OWN")
+    assert card.review_state == "draft"
+    assert card.claims[0].review_state == "quarantined"
 
 
 def test_path_ii_deep_research_with_primary_source_is_reviewed(tmp_path):
@@ -108,6 +156,9 @@ def test_path_ii_deep_research_with_primary_source_is_reviewed(tmp_path):
                     "review_state": "reviewed",
                     "sources": ["ISO 23936-2"],
                     "provenance": ["deep-research"],
+                    "reviewed_by": "domain-reviewer:alice",
+                    "reviewed_at": "2026-07-11T10:00:00Z",
+                    "review_expires_at": "2099-07-11T10:00:00Z",
                 }
             ],
         }
@@ -115,6 +166,56 @@ def test_path_ii_deep_research_with_primary_source_is_reviewed(tmp_path):
     assert (
         load_fachkarten(_write(tmp_path, ok)).by_id("FK-RES").review_state == "reviewed"
     )
+
+
+def test_model_review_marker_is_not_independent_human_review(tmp_path):
+    cards = [
+        {
+            "id": "FK-AI",
+            "review_state": "reviewed",
+            "provenance": ["deep-research"],
+            "scope": {"material": ["FKM"]},
+            "claims": [
+                {
+                    "text": "Source-backed but not human-adjudicated",
+                    "review_state": "reviewed",
+                    "sources": ["ISO 23936-2"],
+                    "provenance": ["deep-research"],
+                    "reviewed_by": "review:codex",
+                    "reviewed_at": "2026-07-11T10:00:00Z",
+                    "review_expires_at": "2099-07-11T10:00:00Z",
+                }
+            ],
+        }
+    ]
+
+    claim = load_fachkarten(_write(tmp_path, cards)).cards[0].claims[0]
+    assert claim.quarantined
+
+
+def test_release_bootstrap_is_not_independent_human_review(tmp_path):
+    cards = [
+        {
+            "id": "FK-BOOTSTRAP",
+            "review_state": "reviewed",
+            "provenance": ["release-bootstrap"],
+            "scope": {"material": ["FKM"]},
+            "claims": [
+                {
+                    "text": "Source-backed but only release-imported",
+                    "review_state": "reviewed",
+                    "sources": ["ISO 23936-2"],
+                    "provenance": ["release-bootstrap"],
+                    "reviewed_by": "release-bootstrap",
+                    "reviewed_at": "2026-07-11T10:00:00Z",
+                    "review_expires_at": "2099-07-11T10:00:00Z",
+                }
+            ],
+        }
+    ]
+
+    claim = load_fachkarten(_write(tmp_path, cards)).cards[0].claims[0]
+    assert claim.quarantined
 
 
 def test_draft_claim_needs_no_source(tmp_path):
@@ -138,7 +239,7 @@ def test_draft_claim_needs_no_source(tmp_path):
     assert not cat.by_id("FK-DRAFT").reviewed_claims()
 
 
-def test_reviewed_card_without_reviewed_claim_is_error(tmp_path):
+def test_declared_reviewed_card_without_evidenced_claim_is_downgraded(tmp_path):
     bad = [
         {
             "id": "FK-X",
@@ -148,8 +249,7 @@ def test_reviewed_card_without_reviewed_claim_is_error(tmp_path):
             "claims": [{"text": "d", "review_state": "draft", "provenance": ["m"]}],
         }
     ]
-    with pytest.raises(ValueError):
-        load_fachkarten(_write(tmp_path, bad))
+    assert load_fachkarten(_write(tmp_path, bad)).by_id("FK-X").review_state == "draft"
 
 
 def test_claim_kind_defaults_to_family_tendency(tmp_path):

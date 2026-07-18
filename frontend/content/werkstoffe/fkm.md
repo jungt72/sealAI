@@ -3,7 +3,7 @@ title: "FKM-Dichtung: Medien, Temperatur und Grenzen vor der Herstellerprüfung"
 description: "FKM/Viton technisch einordnen und die offenen Betriebsdaten für eine belastbare Herstellerprüfung sichtbar machen."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # FKM-Dichtung: Medien, Temperatur und Grenzen vor der Herstellerprüfung

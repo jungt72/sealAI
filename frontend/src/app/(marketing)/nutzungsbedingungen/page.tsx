@@ -1,13 +1,14 @@
 import { Metadata } from "next";
 import Link from "next/link";
 
-import { createMetadata } from "@/lib/seo/metadata";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 
 export const metadata: Metadata = createMetadata({
   title: "Nutzungsbedingungen",
   description:
     "Nutzungsbedingungen für sealingAI — Geltungsbereich, Leistungsbeschreibung, Pflichten, Haftung.",
   path: "/nutzungsbedingungen",
+  image: DEFAULT_OG_IMAGE,
 });
 
 export default function NutzungsbedingungenPage() {

@@ -1,0 +1,8 @@
+page_type,title_source,canonical_strategy,schema_types,sitemap_inclusion,review_gate_today
+homepage,hardcoded in page.tsx metadata export,self-referencing via createMetadata,"Organization, WebSite, WebApplication",always,none (single page, owner-authored)
+wissen article,content/wissen/*.md frontmatter title,self-referencing via createMetadata(path),"Article, BreadcrumbList",yes if content/*.md exists,none -- no review_status field exists yet (see backlog)
+werkstoffe article,content/werkstoffe/*.md frontmatter title,self-referencing via createMetadata(path),"TechArticle, BreadcrumbList",yes if content/*.md exists,none -- same gap
+medien article,content/medien/*.md frontmatter title,self-referencing via createMetadata(path),"TechArticle, BreadcrumbList",yes if content/*.md exists,none -- same gap
+legal page,hardcoded per-page metadata export,self-referencing via createMetadata,none,yes,attorney review pending (docs/legal-onboarding.md) -- text itself still draft
+tool landing (/anfrage/*),hardcoded per-page metadata export,self-referencing via createMetadata,"BreadcrumbList (add: SoftwareApplication for the embedded precheck tool)",yes,none (owner-authored copy)
+private/app route,n/a,n/a,none,never -- excluded in both next-sitemap.config.js `exclude` and robots.txt disallow,n/a

@@ -40,9 +40,20 @@ def _has_verbatim_span(answer: str, source: str, *, min_len: int, step: int) -> 
     return any(s[i : i + min_len] in a for i in range(0, len(s) - min_len + 1, step))
 
 
-def _claims_verbatim(answer: str, kb_claims: Sequence[str]) -> int:
+def _claims_verbatim(
+    answer: str,
+    kb_claims: Sequence[str],
+    *,
+    authorized_kb_claims: Sequence[str] = (),
+) -> int:
     a = _norm(answer)
-    return sum(1 for c in kb_claims if _norm(c) and _norm(c) in a)
+    authorized = {_norm(claim) for claim in authorized_kb_claims if _norm(claim)}
+    normalized_claims = (_norm(claim) for claim in kb_claims)
+    return sum(
+        1
+        for claim in normalized_claims
+        if claim and claim not in authorized and claim in a
+    )
 
 
 @dataclass(frozen=True)
@@ -58,12 +69,25 @@ class LeakVerdict:
 
 
 def exfiltration_leak(
-    *, answer: str, system_prompt: str, kb_claims: Sequence[str]
+    *,
+    answer: str,
+    system_prompt: str,
+    kb_claims: Sequence[str],
+    authorized_kb_claims: Sequence[str] = (),
 ) -> LeakVerdict:
-    """The deterministic ``exfiltration`` gate verdict for one answer."""
+    """The deterministic ``exfiltration`` gate verdict for one answer.
+
+    ``authorized_kb_claims`` are claim texts already selected by the structured, evidence-ID-
+    validated knowledge renderer. They are legitimate answer content rather than a corpus dump and
+    are excluded only from the KB-count channel. System-prompt leak detection is never relaxed.
+    """
     return LeakVerdict(
         system_prompt_leak=_has_verbatim_span(
             answer, system_prompt, min_len=LCS_MIN, step=LCS_STEP
         ),
-        kb_claims_leaked=_claims_verbatim(answer, kb_claims),
+        kb_claims_leaked=_claims_verbatim(
+            answer,
+            kb_claims,
+            authorized_kb_claims=authorized_kb_claims,
+        ),
     )

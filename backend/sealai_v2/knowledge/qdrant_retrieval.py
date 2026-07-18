@@ -24,6 +24,10 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sealai_v2.core.contracts import GroundingFact, RetrievalResult
+from sealai_v2.core.knowledge_answer import (
+    build_knowledge_answer_plan,
+    facets_for_payload,
+)
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, load_fachkarten
 
@@ -42,7 +46,7 @@ _POINT_NAMESPACE = uuid.UUID(
 )  # uuid5 NAMESPACE_URL
 _REVIEWED_BACKFILL_FACTOR = 24
 _REVIEWED_BACKFILL_MAX_CANDIDATES = 128
-_REVIEWED_BACKFILL_MAX_FACTS = 2
+_REVIEWED_BACKFILL_TARGET_FACTS = 3
 # Incident note (2026-07-03): this ratio is SCALE-DEPENDENT — it only makes sense relative to the
 # score distribution it was calibrated against. Dense cosine similarity decays gently across rank
 # (e.g. top=0.69, rank~68/128=0.58 — still 84% of top), so 0.75 lets a genuinely-relevant reviewed
@@ -86,6 +90,10 @@ def _hits_to_result(points) -> RetrievalResult:
             card_id=p.get("card_id", ""),
             sources=tuple(p.get("sources", ())),
             kind="card",
+            claim_kind=p.get("claim_kind", ""),
+            answer_facets=tuple(p.get("answer_facets", ())),
+            subject_type=p.get("subject_type", "general"),
+            claim_id=str(p.get("claim_id") or ""),
         )
         bucket = reviewed if p.get("review_state") == "reviewed" else provisional
         bucket.append(fact)
@@ -110,6 +118,17 @@ def _score(point) -> float | None:
 
 def _payload(point) -> dict:
     return getattr(point, "payload", None) or {}
+
+
+def _point_identity(point) -> tuple[str, str]:
+    payload = _payload(point)
+    claim_id = str(payload.get("claim_id") or "")
+    if claim_id:
+        return ("claim_id", claim_id)
+    return (
+        str(payload.get("card_id") or ""),
+        str(payload.get("claim_text") or ""),
+    )
 
 
 def _scope_dim(point, dim: str) -> tuple[str, ...]:
@@ -155,6 +174,119 @@ def _matches_material_scope(point, material_tokens: set[str]) -> bool:
     ) or _card_id_matches_material(point, material_tokens)
 
 
+def _point_matches_subject(point, subject: str) -> bool:
+    needle = subject.lower()
+    payload = _payload(point)
+    scope = payload.get("scope", {}) or {}
+    values = [
+        str(value).lower()
+        for dim in ("material", "medium", "application", "property")
+        for value in scope.get(dim, ())
+    ]
+    return needle in str(payload.get("card_id", "")).lower() or any(
+        needle == value or needle in value for value in values
+    )
+
+
+def _select_knowledge_overview(
+    points, k: int, query: str, *, allow_case_subject_profile: bool = False
+):
+    """Select a facet-balanced reviewed evidence set for a broad knowledge question.
+
+    Vector similarity answers "which passages resemble the text?", not "which facets make a useful
+    engineering overview?". This deterministic post-retrieval policy covers the required answer
+    facets and balances comparison subjects. It only reorders already-retrieved reviewed claims and
+    never creates content. Focused application questions keep native semantic ranking because the
+    answer planner returns ``None`` for them.
+    """
+    candidates = list(points)
+    limit = max(0, k)
+    if not candidates or limit == 0:
+        return None
+    material_terms = tuple(
+        dict.fromkeys(
+            value
+            for point in candidates
+            for value in _scope_dim(point, "material")
+            if value
+        )
+    )
+    plan = build_knowledge_answer_plan(
+        query,
+        material_terms=material_terms,
+        allow_case_subject_profile=allow_case_subject_profile,
+    )
+    if plan is None:
+        return None
+    eligible = [
+        point
+        for point in candidates
+        if _review_state(point) == "reviewed"
+        and (
+            not plan.subjects
+            or any(_point_matches_subject(point, subject) for subject in plan.subjects)
+        )
+    ]
+    if not eligible:
+        return None
+    if plan.subject_type in {"seal_type", "medium"}:
+        typed = [
+            point
+            for point in eligible
+            if _payload(point).get("subject_type") == plan.subject_type
+        ]
+        if typed:
+            eligible = typed
+    if plan.subject_type == "material" and plan.subjects:
+        subject_specific = [
+            point
+            for point in eligible
+            if any(
+                subject.lower() in str(_payload(point).get("card_id", "")).lower()
+                for subject in plan.subjects
+            )
+        ]
+        covered_subjects = {
+            subject
+            for subject in plan.subjects
+            if any(
+                subject.lower() in str(_payload(point).get("card_id", "")).lower()
+                for point in subject_specific
+            )
+        }
+        if covered_subjects == set(plan.subjects):
+            eligible = subject_specific
+
+    selected: list = []
+    used: set[int] = set()
+    subject_slots = plan.subjects if plan.comparison and plan.subjects else ("",)
+    for facet in plan.required_facets:
+        for subject in subject_slots:
+            for index, point in enumerate(eligible):
+                if index in used or facet not in facets_for_payload(_payload(point)):
+                    continue
+                if subject and not _point_matches_subject(point, subject):
+                    continue
+                selected.append(point)
+                used.add(index)
+                break
+            if len(selected) >= limit:
+                break
+        if len(selected) >= limit:
+            break
+    for index, point in enumerate(eligible):
+        if len(selected) >= limit:
+            break
+        if index not in used:
+            selected.append(point)
+    return selected if len(selected) >= min(3, limit) else None
+
+
+def _select_material_overview(points, k: int, query: str):
+    """Backward-compatible name retained for tests and downstream imports."""
+    return _select_knowledge_overview(points, k, query)
+
+
 class _ScoredPoint:
     """Minimal (payload, score) carrier matching ``ScoredPoint``'s ``.payload``/``.score`` duck-type —
     used to substitute the qdrant-native score with the cross-encoder's score after ``_rerank_points``,
@@ -193,13 +325,14 @@ def _select_points_with_reviewed_backfill(
     *,
     min_relative_score: float = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE,
 ):
-    """Return the normal top-k, plus a tiny reviewed backfill when top-k is draft-only.
+    """Return the normal top-k, plus enough reviewed facts to ground the answer usefully.
 
     Production Qdrant stores many draft points for broad material topics. A general query such as
     "Informationen zu PTFE" can therefore rank relevant but unreviewed overview claims above the few
-    reviewed safety/caveat cards. The output contract treats only reviewed claims as grounding_facts,
-    so a draft-only top-k makes the turn falsely ungrounded even though reviewed knowledge exists just
-    below the cutoff. Keep the original top-k intact, then add a small, score-bounded reviewed tail.
+    reviewed safety/caveat cards. The output contract treats only reviewed claims as grounding_facts.
+    One reviewed point among four drafts technically grounds the turn, but leaves a broad knowledge
+    question with an unusably narrow one-claim contract. Keep the original top-k intact, then add a
+    small, score-bounded reviewed tail until the reviewed target is reached.
 
     ``min_relative_score`` is SCALE-DEPENDENT (see the constant's docstring) — callers on a non-dense
     score scale (RRF fusion) MUST pass the matching mode-specific ratio, not the dense default.
@@ -207,10 +340,11 @@ def _select_points_with_reviewed_backfill(
     limit = max(0, k)
     candidates = list(points)
     selected = candidates[:limit]
+    reviewed_count = sum(_review_state(p) == "reviewed" for p in selected)
     if (
         limit == 0
         or not candidates
-        or any(_review_state(p) == "reviewed" for p in selected)
+        or reviewed_count >= _REVIEWED_BACKFILL_TARGET_FACTS
     ):
         return selected
 
@@ -250,7 +384,8 @@ def _select_points_with_reviewed_backfill(
             if _card_id_matches_material(p, material_tokens)
         ]
 
-    for _idx, point in eligible[:_REVIEWED_BACKFILL_MAX_FACTS]:
+    missing_reviewed = _REVIEWED_BACKFILL_TARGET_FACTS - reviewed_count
+    for _idx, point in eligible[:missing_reviewed]:
         selected.append(point)
     return selected
 
@@ -261,6 +396,8 @@ def claim_points(catalog: FachkartenCatalog):
     PURE (no optional-dep import) so it is unit-tested directly."""
     for card in catalog.cards:
         for idx, claim in enumerate(card.claims):
+            if claim.quarantined:
+                continue
             pid = str(
                 uuid.uuid5(_POINT_NAMESPACE, f"{card.id}:{idx}")
             )  # idempotent upsert key
@@ -268,7 +405,16 @@ def claim_points(catalog: FachkartenCatalog):
                 "card_id": card.id,
                 "review_state": claim.review_state,
                 "claim_text": claim.text,
+                "claim_kind": claim.kind,
+                "answer_facets": list(claim.answer_facets),
+                "subject_type": card.subject_type,
                 "sources": list(claim.sources),
+                "evidence": list(claim.evidence),
+                "reviewed_by": claim.reviewed_by,
+                "reviewed_at": claim.reviewed_at,
+                "review_expires_at": claim.review_expires_at,
+                "uncertainty": claim.uncertainty,
+                "transferability": claim.transferability,
                 "provenance": list(card.provenance),
                 "scope": {k: list(v) for k, v in card.scope.items()},
                 "tenant_id": GLOBAL_TENANT,
@@ -399,11 +545,19 @@ def ensure_collection(
 def ingest_fachkarten(
     settings, *, client=None, embedder=None, catalog=None, sparse_embedder=None
 ) -> int:
-    """Embed every Fachkarten claim (``passage:``) + upsert into Qdrant. Idempotent (uuid5 point ids
+    """Eval-only scratch-index loader. Production writes are rejected when a DB is configured.
+
+    Embed every Fachkarten claim (``passage:``) + upsert into Qdrant. Idempotent (uuid5 point ids
     → re-seed overwrites; a claim flipping draft→reviewed updates in place). Returns #points upserted.
     When ``settings.qdrant_hybrid_enabled``, also embeds + upserts a ``sparse`` (BM25) vector alongside
     ``dense`` — the collection must already have both vectors declared (``ensure_collection(...,
     sparse=True)``, called below with the same flag)."""
+    if getattr(settings, "database_url", None):
+        raise RuntimeError(
+            "direct Fachkarten-to-Qdrant writes are disabled when Postgres is configured; "
+            "write the knowledge ledger and drain its outbox"
+        )
+
     from qdrant_client.models import PointStruct, SparseVector  # lazy
 
     client = client or _make_client(settings)
@@ -442,12 +596,10 @@ def ingest_fachkarten(
 
 
 def delete_card_points(client, collection: str, card_id: str) -> int:
-    """Delete every point whose payload ``card_id`` matches, via a Qdrant filter — not by
-    recomputing the uuid5 point ids (``claim_points``'s scheme), which would require knowing the
-    OLD card's exact claim count and ordering, information the caller may not have. Used by
-    ``ops/ingest_new_card.py`` to clean up a draft's stale points once it has been promoted into a
-    proper reviewed card under a new id (2026-07-04 RAG audit: draft points otherwise accumulate in
-    Qdrant forever — nothing else ever removes them). Returns the pre-delete point count; deleting
+    """Legacy/eval cleanup helper; production retirement belongs to the knowledge ledger.
+
+    Delete every point whose payload ``card_id`` matches, via a Qdrant filter rather than
+    recomputing legacy point IDs. Returns the pre-delete point count; deleting
     zero matching points (card_id not present) is a safe no-op, not an error."""
     from qdrant_client.models import FieldCondition, Filter, MatchValue
 
@@ -470,6 +622,7 @@ class QdrantFachkartenRetriever:
         embedder=None,
         sparse_embedder=None,
         reranker=None,
+        knowledge_ledger=None,
     ) -> None:
         self._collection = settings.qdrant_collection
         self._client = client or _make_client(settings)
@@ -491,6 +644,10 @@ class QdrantFachkartenRetriever:
         self._reranker = reranker or (
             _make_reranker(settings) if self._rerank_enabled else None
         )
+        # Production injects the Postgres ledger. Keeping this optional preserves
+        # the pure Qdrant adapter as a hermetic retrieval-quality instrument, but
+        # ``pipeline._build_retriever`` never enables Qdrant in production without it.
+        self._knowledge_ledger = knowledge_ledger
 
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
@@ -517,7 +674,12 @@ class QdrantFachkartenRetriever:
             return RetrievalResult()
 
     def _retrieve_sync(self, query: str, tenant_id: str, k: int) -> RetrievalResult:
-        from qdrant_client.models import FieldCondition, Filter, MatchAny  # lazy
+        from qdrant_client.models import (  # lazy
+            FieldCondition,
+            Filter,
+            MatchAny,
+            MatchValue,
+        )
 
         tenant_filter = Filter(
             must=[
@@ -553,18 +715,100 @@ class QdrantFachkartenRetriever:
             points = res.points
             min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE
 
+        # Semantic ranking is intentionally broad, but a complete engineering overview must not lose
+        # one required profile claim merely because that claim's wording is less similar to the short
+        # user query. Augment explicit knowledge turns with the reviewed subject profile through exact
+        # payload filters. Qdrant still contributes only candidate IDs/order; Postgres revalidates every
+        # appended claim below before it can ground an answer.
+        material_terms = tuple(
+            dict.fromkeys(
+                value
+                for point in points
+                for value in _scope_dim(point, "material")
+                if value
+            )
+        )
+        overview_plan = build_knowledge_answer_plan(
+            query,
+            material_terms=material_terms,
+            allow_case_subject_profile=True,
+        )
+        profile_must = None
+        if overview_plan is not None and overview_plan.subject_type in {
+            "material",
+            "medium",
+            "seal_type",
+        }:
+            profile_must = [
+                FieldCondition(
+                    key="tenant_id",
+                    match=MatchAny(any=[tenant_id, GLOBAL_TENANT]),
+                ),
+                FieldCondition(key="review_state", match=MatchValue(value="reviewed")),
+                FieldCondition(
+                    key="subject_type",
+                    match=MatchValue(value=overview_plan.subject_type),
+                ),
+            ]
+            subject_scope_key = {
+                "material": "scope.material",
+                "seal_type": "scope.application",
+            }.get(overview_plan.subject_type)
+            if subject_scope_key and overview_plan.subjects:
+                profile_must.append(
+                    FieldCondition(
+                        key=subject_scope_key,
+                        match=MatchAny(any=list(overview_plan.subjects)),
+                    )
+                )
+            elif overview_plan.subject_type != "medium":
+                profile_must = None
+
+        if profile_must is not None:
+            profile_points, _next_offset = self._client.scroll(
+                self._collection,
+                scroll_filter=Filter(must=profile_must),
+                limit=128,
+                with_payload=True,
+                with_vectors=False,
+            )
+            seen = {_point_identity(point) for point in points}
+            for point in profile_points:
+                identity = _point_identity(point)
+                if identity not in seen:
+                    points.append(point)
+                    seen.add(identity)
+
+        if self._knowledge_ledger is not None:
+            claim_ids = tuple(
+                str(_payload(point).get("claim_id") or "") for point in points
+            )
+            canonical = self._knowledge_ledger.resolve_claims(
+                claim_ids, tenant_id=tenant_id
+            )
+            # Drop legacy, retired and rejected index entries. Every payload field
+            # used below comes from Postgres, while Qdrant contributes only score/order.
+            points = [
+                _ScoredPoint(canonical[claim_id], _score(point) or 0.0)
+                for point, claim_id in zip(points, claim_ids)
+                if claim_id in canonical
+            ]
+
         # Backfill selection MUST run on the retrieval-native score scale (dense or RRF, whichever the
         # branch above produced) BEFORE any reranking — the cross-encoder only rescores its own top-N
         # slice, leaving the untouched tail on the old scale, so comparing a post-rerank top_score
         # against a pre-rerank tail score would silently mix two incompatible scales (same incident).
-        selected = _select_points_with_reviewed_backfill(
+        overview_selected = _select_knowledge_overview(
+            points, k, query, allow_case_subject_profile=True
+        )
+        selected = overview_selected or _select_points_with_reviewed_backfill(
             points, k, query, min_relative_score=min_relative_score
         )
 
         # Rerank is a pure ORDERING refinement over the already-selected small set (top-k + backfill,
         # never more than k + _REVIEWED_BACKFILL_MAX_FACTS), not a pre-filter over the wide candidate
         # pool — keeps it cheap and keeps its score scale fully isolated from backfill selection.
-        if self._rerank_enabled and selected:
+        if self._rerank_enabled and selected and overview_selected is None:
             selected = _rerank_points(
                 query,
                 selected,

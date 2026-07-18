@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ops/smoke-v2.sh — V2 cutover smoke (staging Phase 2 + prod Phase 3 step 5).
 #
 #   BASE_URL=https://sealingai.com:8443 ./ops/smoke-v2.sh           # staging
@@ -10,6 +10,8 @@
 # Authed leg (TOKEN set): chat round-trip, memory view (claim-alignment proof), briefing with
 # Geltungsrahmen, forget-all cleanup.
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 BASE_URL="${BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"

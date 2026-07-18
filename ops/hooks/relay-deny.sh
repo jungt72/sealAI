@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 cmd="$(cat | jq -r '.tool_input.command // empty')"
 case "$cmd" in
   *"git merge"*|*"git push"*|*v2-flip*|*release-backend*|*"docker compose up"*)

@@ -2657,3 +2657,92 @@ deferred scaffolds (#38, keep-with-note); prune .env.prod.bak (after key rotatio
 - UI hygiene: removed raw `not_computed` internal-key exposure from the cockpit critical surface; live Right Rail no longer shows `d1_mm`, `rpm`, `p_bar`, or `v_m_s`.
 - Verification: `check:boundary`, TypeScript, targeted Vitest suite, and `backend/sealai_v2/tests/test_api_compute.py` green. Live browser check on case `b6734cb0-c470-4222-ba1a-0d7e157617b2` shows `3,53 m/s` and `1,77 bar·m/s`, new asset `index-CgvG6V6x.js`, no console CSP/font warnings, and no internal keys in the rail.
 - Deploy: `backend-v2` via `ops/release-backend-v2.sh`, image `sha256:390b0e96993725f081d75a4407af1e3318ae28a510380be845818e29a2783b78`, rollback tag `sealai-backend-v2:rollback-pre-no-eval-966fb7d2-20260705-173215`; frontend-v2 dist swapped from `/tmp/sealai-frontend-v2-right-rail-20260705173201` with backup `/tmp/sealai-frontend-v2-dist-backup-20260705173257.tgz`.
+
+---
+
+## 2026-07-12T14:44:58Z — SSoT v2.0 production promotion with explicit owner eval waiver
+
+**Approval and evidence status.** The product owner (`mail@thorsten-jung.de`) explicitly directed a
+production deploy without further paid OpenAI evaluation because the eval cost was disproportionate.
+This release is therefore recorded as `release_stage=owner-waiver` and
+`eval_status=waived_by_owner`, **not** as an eval pass. PRs
+[#271](https://github.com/jungt72/sealAI/pull/271) and
+[#272](https://github.com/jungt72/sealAI/pull/272) materialized the audited waiver stage and the
+versioned local-embedding collections; PR
+[#273](https://github.com/jungt72/sealAI/pull/273) fixed the post-deploy prose renderer without
+changing the live runtime.
+
+**Supply chain and runtime identity.** The promoted runtime is commit
+`b6b35bd8152cb1e5468452cb1759144db30a2447`, served tree
+`41b69c6c2f3f3d6d56017b79ceda8dddcf2dc97e`, runtime profile
+`0508fa465b23c5ec327fa61c00a42e5836085d7b8ae6206e787622f857aae83e`, and immutable image
+`sha256:e06dd8ffef5a1eb91083ede0af141413a34d32463ff0f11c3fdd9977de9f7a68`. GitHub-signed build
+provenance and SPDX SBOM attestations were verified, including offline transparency-log proof,
+before any state change.
+
+**Embedding-cost migration.** OpenAI returned `insufficient_quota` not only for eval judging but for
+the production embedding worker. The deployment therefore moved dense retrieval to the pre-staged
+local `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` model. New collections were
+created rather than mutating the rollback data:
+
+- `sealai_v2_knowledge_local_minilm_v1`: green, 601 reviewed ledger claims, 384 dimensions.
+- `sealai_v2_memory_local_minilm_v1`: green, tenant-memory lane, 384 dimensions.
+- Rollback collections remain green and untouched: `sealai_v2_fachkarten_hybrid` (615 points,
+  1536-dimensional OpenAI vectors) and `sealai_v2_memory` (1536 dimensions).
+
+The pre-traffic outbox drain completed `claimed=1202`, `synced=1202`,
+`failed_permanently=0`. Live retrieval smoke tests returned eight reviewed and zero provisional facts
+for both "Technische Details zu PTFE" and "Vergleiche NBR und PTFE"; the comparison result included
+both `FK-NBR-UEBERBLICK` and `FK-PTFE-ENGINEERING-PROFILE`.
+
+**Failure/recovery evidence.** An earlier owner-waiver attempt on commit `40599d70` stopped before the
+traffic switch when the OpenAI embedding call returned `insufficient_quota`. The database was restored
+from the verified pre-attempt dump before work continued, and the old API recovered healthy. No
+partially indexed ledger state was carried into the successful release.
+
+**Live and rollback proof.** Both `backend-v2` and `backend-v2-worker` are healthy on the same image;
+public marketing and `/api/v2/health` return HTTP 200; immutable build identity, database schema,
+worker heartbeat/dependencies, calculation smoke (`v=16.755`, `PV=50.0`), and restart survival are
+green. Rollback assets:
+
+- image tag `sealai-backend-v2:rollback-pre-owner-waiver-no-eval-b6b35bd8-20260712-144509`
+  (`sha256:84b7750e425808b5aded75ab9c2d98685fe0733cb7ff8c08b9d29349f8f424d9`);
+- verified database dump
+  `/home/thorsten/sealai-backups/pre-migration/sealai_v2-pre-migration-2026-07-12_14-45-09.dump`;
+- pre-switch environment snapshot `.runtime/env.prod.pre-local-embed-20260712-144410`;
+- the unchanged legacy Qdrant collections listed above.
+
+**Browser boundary.** Password authentication for the test account succeeds and Keycloak then
+requires its configured TOTP enrollment. That security requirement was not bypassed. The authenticated
+chat UI therefore still needs a one-time TOTP setup for that account before a full browser conversation
+can be repeated; this does not weaken the API, worker, retrieval, auth-redirect, or runtime evidence
+above.
+
+---
+
+## 2026-07-12T16:48:14Z — Production L1 switched to Mistral-only budget mode
+
+**Owner direction and scope.** After the owner confirmed that no further paid OpenAI eval should run,
+the remaining production OpenAI dependency was removed from the answer path by changing only
+`SEALAI_V2_L1_PROVIDER` and `SEALAI_V2_L1_MODEL`. L1/frontier, standard generation, L3 verification,
+understanding, and distillation now all use `mistral/mistral-small-2603`; retrieval and memory embeddings
+remain local on `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`. The eval-only judge
+configuration was not executed.
+
+**Controlled config promotion.** The immutable signed image and served tree were unchanged:
+`sha256:e06dd8ffef5a1eb91083ede0af141413a34d32463ff0f11c3fdd9977de9f7a68` and
+`41b69c6c2f3f3d6d56017b79ceda8dddcf2dc97e`. Compose was rendered and validated before API and worker
+were recreated with the digest-pinned image. The new answer-affecting runtime profile is
+`a340525275dea774fece181e537a82b4819683f5323b2c407c9c9b4c46be7e54`.
+
+**Verification and rollback.** API and worker returned healthy, local and public health checks passed,
+and both public marketing and `/api/v2/health` returned HTTP 200. One minimal Mistral connectivity smoke
+returned exactly `OK` using 31 total tokens. Runtime logs after the restart contained no OpenAI call,
+quota error, exception, or traceback. Rollback is the environment snapshot
+`.runtime/env.prod.pre-mistral-frontier-20260712-164814` (SHA-256
+`6dbd6a64ec38066a693e822f66411748f4a345630c4b1a9d408687d0f583ca78`) followed by a digest-pinned
+recreate of `backend-v2` and `backend-v2-worker`.
+
+**Evidence status.** This is an explicit budget-mode configuration change under the existing owner
+waiver. It is live-tested but not eval-adjudicated and must not be represented as an eval pass. The
+full release eval remains deferred until the owner authorizes the final paid release assessment.

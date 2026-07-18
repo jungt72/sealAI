@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from sealai_v2.core.contracts import ModelConfig, TokenUsage
-from sealai_v2.llm.client import OpenAiLlmClient, _parse_usage
+from sealai_v2.llm.client import OpenAiLlmClient, _parse_usage, _retry_delay_s
 from sealai_v2.llm.telemetry import LlmCallTelemetry
 
 
@@ -202,3 +202,20 @@ def test_telemetry_emitted_on_error_path() -> None:
     assert ev.error_type == "RuntimeError"
     assert ev.prompt_tokens == 0
     assert ev.cached_tokens == 0
+
+
+def test_retry_delay_honors_openai_reset_headers() -> None:
+    class _RateLimited(Exception):
+        response = SimpleNamespace(
+            headers={
+                "retry-after-ms": "250",
+                "x-ratelimit-reset-requests": "2s",
+                "x-ratelimit-reset-tokens": "1500ms",
+            }
+        )
+
+    assert _retry_delay_s(_RateLimited(), attempt=1) == pytest.approx(2.0)
+
+
+def test_retry_delay_falls_back_to_bounded_exponential_backoff() -> None:
+    assert _retry_delay_s(RuntimeError("transient"), attempt=6) == pytest.approx(30.0)

@@ -2,16 +2,34 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, FileText, Gauge, SearchCheck, ShieldCheck } from "lucide-react";
 import { TrackedLink } from "@/components/analytics/TrackedLink";
-import { createMetadata } from "@/lib/seo/metadata";
+import { PrecheckDemoSection } from "@/components/marketing/PrecheckDemoSection";
+import { createMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
+import { generatePrecheckToolSchema } from "@/lib/seo/jsonLd";
 
-const startRequestHref = "/dashboard";
+/**
+ * The hero/final CTAs point at the free precheck tool (`#precheck-demo`,
+ * below), not straight at the login-gated dashboard. "Fall klären" meaning
+ * "clarify your case" while the button skips past the actual clarifying step
+ * to a login wall was the exact funnel gap this page existed to fix — the
+ * tool's own internal button is the (honestly labeled, lock-icon'd) hop to
+ * `/dashboard/new`.
+ */
+const precheckToolHref = "#precheck-demo";
 
 export const metadata: Metadata = createMetadata({
   title: "Dichtung Anfrage vorbereiten: Fall klären vor Herstellerkontakt",
   description:
     "sealingAI klärt deinen Dichtungsfall, macht offene Punkte sichtbar und bereitet eine herstellerprüfbare Anfragebasis vor. Keine finale Auslegungsfreigabe.",
   path: "/anfrage/dichtung-auslegen-lassen",
+  image: DEFAULT_OG_IMAGE,
 });
+
+function JsonLd() {
+  const schema = generatePrecheckToolSchema();
+  return (
+    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
+  );
+}
 
 const requiredFields = [
   "Anwendung und Dichtungsart",
@@ -45,6 +63,7 @@ const steps = [
 export default function DichtungAuslegenLassenPage() {
   return (
     <div className="flex flex-col">
+      <JsonLd />
       <section className="border-b border-border/50 py-20 md:py-28">
         <div className="mx-auto grid max-w-7xl gap-12 px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
@@ -61,7 +80,7 @@ export default function DichtungAuslegenLassenPage() {
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
               <TrackedLink
-                href={startRequestHref}
+                href={precheckToolHref}
                 analyticsEvent="landing_cta_clicked"
                 analyticsPayload={{ cta: "fall_jetzt_klaeren", location: "rfq_landing_hero" }}
                 className="group inline-flex items-center gap-3 rounded-full bg-seal-blue px-8 py-4 text-lg font-bold text-white shadow-xl transition-all hover:opacity-90 active:scale-95"
@@ -92,6 +111,8 @@ export default function DichtungAuslegenLassenPage() {
           </aside>
         </div>
       </section>
+
+      <PrecheckDemoSection />
 
       <section className="py-20">
         <div className="mx-auto max-w-7xl px-6">
@@ -192,7 +213,7 @@ export default function DichtungAuslegenLassenPage() {
             </p>
           </div>
           <TrackedLink
-            href={startRequestHref}
+            href={precheckToolHref}
             analyticsEvent="landing_cta_clicked"
             analyticsPayload={{ cta: "dichtungsfall_klaeren", location: "rfq_landing_final_cta" }}
             className="inline-flex shrink-0 items-center gap-3 rounded-full bg-white px-8 py-4 text-lg font-bold text-seal-blue transition-all hover:bg-seal-light-blue active:scale-95"

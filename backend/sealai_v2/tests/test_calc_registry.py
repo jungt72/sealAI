@@ -23,6 +23,15 @@ def test_seed_loads_three_reviewed_with_bound_code():
         assert d.provenance and d.validity and d.impl is not None
 
 
+def test_calc_registry_does_not_bypass_human_review_for_gland_fill_guidance():
+    calc = load_calc_registry().by_id("verpressung_prozent")
+    assert calc is not None
+    rendered_contract = " ".join((*calc.assumptions, calc.source))
+    assert "Nutfüllung" not in rendered_contract
+    assert "60–85" not in rendered_contract
+    assert "75 %" not in rendered_contract
+
+
 def test_cascade_edge_pv_consumes_v():
     reg = load_calc_registry()
     pv = reg.by_id("pv_wert")

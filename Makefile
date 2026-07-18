@@ -11,13 +11,14 @@ SHELL := /bin/bash
 BASE ?= http://localhost:8000
 BACKEND_CONTAINER ?= backend
 NETWORK_BACKEND ?=
+PYTHON ?= python3
 
 # ------------------------------------------------------------------------------
 # Hilfe
 # ------------------------------------------------------------------------------
 .PHONY: help
 help: ## Diese Hilfe anzeigen
-	@echo "Verfügbare Targets:\n"; \
+	@printf 'Verfügbare Targets:\n\n'; \
 	awk 'BEGIN{FS=":.*?## "}; /^[a-zA-Z0-9_\-]+:.*?## /{printf "  \033[36m%-28s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ------------------------------------------------------------------------------
@@ -94,11 +95,32 @@ docker-pytest-backend: ## Pytest im Compose-Netz (BASE=http://$(BACKEND_CONTAINE
 	@echo "Running pytest in docker (network=$(NETWORK_BACKEND)), BASE=http://$(BACKEND_CONTAINER):8000"
 	@docker run --rm --network $(NETWORK_BACKEND) -v $$PWD/tests:/tests python:3.12-slim \
 		sh -lc 'pip install -q pytest requests && BASE="http://$(BACKEND_CONTAINER):8000" pytest -q /tests/test_consult_e2e.py'
-.PHONY: test
-test:
-\tdocker exec -t -w /app backend python -m pytest -q
-.PHONY: test bench
-test:
+# ------------------------------------------------------------------------------
+# Current V2 monorepo quality gates
+# ------------------------------------------------------------------------------
+.PHONY: test test-v2 lint-v2 architecture-v2 frontend-v2 verify-v2 tree-hash test-v1-container bench-v1
+test: test-v2 ## Aktuelle V2-Backendtests ausführen
+
+test-v2: ## Vollständige hermetische V2-Python-Suite
+	PYTHONPATH=backend $(PYTHON) -m pytest backend/sealai_v2 --noconftest -q
+
+lint-v2: ## V2-Python formatieren prüfen und linten
+	$(PYTHON) -m ruff format --check backend/sealai_v2 backend/tests
+	$(PYTHON) -m ruff check backend/sealai_v2 backend/tests
+
+architecture-v2: ## Import- und Modulgrenzen prüfen
+	PYTHONPATH=backend $(PYTHON) -m pytest backend/tests/architecture --noconftest -q
+
+frontend-v2: ## Dashboard: Grenzen, Typen, Tests und Produktionsbuild
+	npm --prefix frontend-v2 run verify
+
+verify-v2: lint-v2 architecture-v2 test-v2 frontend-v2 ## Gesamter lokale V2-Freigabenachweis
+
+tree-hash: ## Kanonischen Backend-V2 Release-Hash ausgeben
+	/bin/bash -p ops/tree-hash.sh
+
+test-v1-container: ## Legacy-V1-Pytest im laufenden Container
 	docker exec -t -w /app backend python -m pytest -q
-bench:
+
+bench-v1: ## Legacy-V1-Benchmarks im laufenden Container
 	docker exec -t -w /app backend python scripts/run_benchmarks.py

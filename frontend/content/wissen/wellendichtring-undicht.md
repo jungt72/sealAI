@@ -3,7 +3,7 @@ title: "Wellendichtring undicht: Ursachen eingrenzen und Anfragebasis vorbereite
 description: "Leckageursachen bei Wellendichtringen strukturiert erfassen: Betriebsdaten, Fehlerbild und offene Punkte für Hersteller oder Spezialist."
 category: "Dichtungswissen"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # Wellendichtring undicht: Ursachen eingrenzen und Anfragebasis vorbereiten

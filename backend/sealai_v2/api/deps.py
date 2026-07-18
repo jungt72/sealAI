@@ -98,6 +98,83 @@ def get_partner_registry():
     return InProcessPartnerRegistry()
 
 
+@lru_cache(maxsize=1)
+def get_capability_store():
+    """Technical manufacturer capabilities, separate from commercial partners."""
+    s = get_settings()
+    if s.database_url:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.manufacturer_capability import (
+            PostgresManufacturerCapabilityStore,
+        )
+
+        return PostgresManufacturerCapabilityStore(
+            make_sessionmaker(make_engine(s.database_url))
+        )
+    from sealai_v2.knowledge.manufacturer_capability import (
+        InProcessManufacturerCapabilityStore,
+    )
+
+    return InProcessManufacturerCapabilityStore()
+
+
+@lru_cache(maxsize=1)
+def get_case_decision_store():
+    """Durable decision system-of-record with a hermetic in-process test fallback."""
+    s = get_settings()
+    if s.database_url:
+        from sealai_v2.db.case_decisions import PostgresCaseDecisionStore
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+
+        return PostgresCaseDecisionStore(make_sessionmaker(make_engine(s.database_url)))
+    from sealai_v2.core.decision_records import InProcessCaseDecisionStore
+
+    return InProcessCaseDecisionStore()
+
+
+@lru_cache(maxsize=1)
+def get_interview_shadow_store():
+    """Tenant-scoped shadow telemetry store for the admin-only aggregate report."""
+    settings = get_settings()
+    if not settings.adaptive_interview_shadow_reporting_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "product_mode_unavailable",
+                "mode": "adaptive_interview_shadow_reporting",
+                "maturity": "implemented_default_off",
+            },
+        )
+    if settings.database_url:
+        from sealai_v2.db.engine import make_engine, make_sessionmaker
+        from sealai_v2.db.interview import PostgresInterviewRepository
+
+        return PostgresInterviewRepository(
+            make_sessionmaker(make_engine(settings.database_url))
+        )
+    pipeline = get_pipeline()
+    service = pipeline.adaptive_interview_service
+    if service is not None:
+        return service.repository
+    raise HTTPException(
+        status_code=503,
+        detail="adaptive interview shadow telemetry is unavailable",
+    )
+
+
+@lru_cache(maxsize=1)
+def get_knowledge_ledger():
+    """Authoritative Postgres review queue; never falls back to process memory."""
+    from sealai_v2.knowledge.ledger import build_knowledge_ledger
+
+    settings = get_settings()
+    if not settings.database_url:
+        raise HTTPException(
+            status_code=503, detail="authoritative knowledge ledger is unavailable"
+        )
+    return build_knowledge_ledger(settings)
+
+
 def require_admin(
     identity: VerifiedIdentity = Depends(current_identity),
 ) -> VerifiedIdentity:
@@ -120,6 +197,26 @@ def require_manufacturer(
     s = get_settings()
     if s.auth_manufacturer_role not in identity.roles or not identity.hersteller_id:
         raise HTTPException(status_code=403, detail="manufacturer role required")
+    return identity
+
+
+def require_capability_reviewer(
+    identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Independent technical-review role; admin/manufacturer alone is insufficient."""
+    if settings.auth_capability_reviewer_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="capability reviewer role required")
+    return identity
+
+
+def require_knowledge_reviewer(
+    identity: VerifiedIdentity = Depends(current_identity),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Independent human domain/evidence reviewer for authoritative claims."""
+    if settings.auth_knowledge_reviewer_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="knowledge reviewer role required")
     return identity
 
 
@@ -171,4 +268,14 @@ def require_legal_acceptance(
             status_code=403,
             detail="legal_acceptance_required",
         )
+    return identity
+
+
+def require_decision_reviewer(
+    identity: VerifiedIdentity = Depends(require_legal_acceptance),
+    settings: Settings = Depends(get_settings),
+) -> VerifiedIdentity:
+    """Human technical-review role; never a manufacturer/component release role."""
+    if settings.auth_decision_reviewer_role not in identity.roles:
+        raise HTTPException(status_code=403, detail="decision reviewer role required")
     return identity

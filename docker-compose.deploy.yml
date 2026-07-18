@@ -48,10 +48,10 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-sealai}
       KC_DB_USERNAME: ${KC_DB_USERNAME:-sealai}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD required — set in .env or .env.prod}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?KEYCLOAK_ADMIN required — set in .env or .env.prod}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD
-        required — set in .env or .env.prod}
+      # KCRAW preserves literal '$' sequences instead of treating them as
+      # SmallRye Config expressions. POSTGRES_PASSWORD is the single source for
+      # the shared Postgres role used by this deployment.
+      KCRAW_DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required — set in .env or .env.prod}
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: 'true'
       KC_HOSTNAME: ${KC_HOSTNAME:-https://sealingai.com}
@@ -63,9 +63,18 @@ services:
     - '9000'
     image: ${KEYCLOAK_IMAGE:?KEYCLOAK_IMAGE required — set pinned image ref in .env.prod}
     pull_policy: ${KEYCLOAK_PULL_POLICY:-always}
-    env_file:
-    - path: ./.env.prod
-      required: false
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - >-
+        /bin/bash -ec 'exec 3<>/dev/tcp/127.0.0.1/9000;
+        printf "HEAD /health/ready HTTP/1.0\r\n\r\n" >&3;
+        IFS= read -r status <&3;
+        [[ "$$status" == *" 200 "* ]]'
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     networks:
       default:
         aliases:
@@ -75,7 +84,7 @@ services:
     container_name: nginx
     depends_on:
       keycloak:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
     ports:
     - 80:80
@@ -106,6 +115,8 @@ services:
     container_name: backend-v2
     profiles:
     - v2
+    image: ${BACKEND_V2_IMAGE:-sealai-backend-v2:local}
+    pull_policy: ${BACKEND_V2_PULL_POLICY:-missing}
     build:
       context: ./backend
       dockerfile: Dockerfile.v2
@@ -126,6 +137,9 @@ services:
       # change until someone actually needs to override a Keycloak role name.
       SEALAI_V2_AUTH_ADMIN_ROLE: ${SEALAI_V2_AUTH_ADMIN_ROLE:-admin}
       SEALAI_V2_AUTH_MANUFACTURER_ROLE: ${SEALAI_V2_AUTH_MANUFACTURER_ROLE:-manufacturer}
+      SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE: ${SEALAI_V2_AUTH_CAPABILITY_REVIEWER_ROLE:-capability_reviewer}
+      SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE: ${SEALAI_V2_AUTH_KNOWLEDGE_REVIEWER_ROLE:-knowledge_reviewer}
+      SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE: ${SEALAI_V2_AUTH_DECISION_REVIEWER_ROLE:-decision_reviewer}
       # Ops hardening (2026-07-03): the 6 documented "incident-only kill-switches" (their own
       # settings.py docstrings say they're meant to be env-flippable in an emergency) had no
       # compose passthrough either — same gap, higher stakes (a real incident is exactly the
@@ -134,18 +148,46 @@ services:
       SEALAI_V2_UNDERSTAND_ENABLED: ${SEALAI_V2_UNDERSTAND_ENABLED:-true}
       SEALAI_V2_VERIFY_ENABLED: ${SEALAI_V2_VERIFY_ENABLED:-true}
       SEALAI_V2_GROUND_ENABLED: ${SEALAI_V2_GROUND_ENABLED:-true}
+      SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED: ${SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED:-false}
+      SEALAI_V2_MATERIAL_CONSTRAINTS_ENABLED: ${SEALAI_V2_MATERIAL_CONSTRAINTS_ENABLED:-false}
+      SEALAI_V2_MATERIAL_EVIDENCE_RUNTIME_BINDING_ENABLED: ${SEALAI_V2_MATERIAL_EVIDENCE_RUNTIME_BINDING_ENABLED:-false}
       SEALAI_V2_COMPUTE_ENABLED: ${SEALAI_V2_COMPUTE_ENABLED:-true}
       SEALAI_V2_MEMORY_ENABLED: ${SEALAI_V2_MEMORY_ENABLED:-true}
       SEALAI_V2_DISTILL_ENABLED: ${SEALAI_V2_DISTILL_ENABLED:-true}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — set in .env or .env.prod}
-      # V2 per-role model config (eval-validated by adjudicated run v21-gpt51-gate): L1=gpt-5.1
-      # (only model holding the Gegencheck/§9.2 calibration); L3 verifier + helper on Mistral
-      # Small 4 (independent check + cost). Values come from .env.prod via --env-file substitution.
+      # V2 deterministic-first execution: Mistral Small 4 is the standard answer tier;
+      # GPT-5.5 is reserved for complex/high-risk routed cases. The runtime-profile hash binds
+      # this entire policy and model set to the adjudicated replay used by the release gate.
       SEALAI_V2_PROVIDER: ${SEALAI_V2_PROVIDER:-mistral}
       SEALAI_V2_L1_PROVIDER: ${SEALAI_V2_L1_PROVIDER:-openai}
-      SEALAI_V2_L1_MODEL: ${SEALAI_V2_L1_MODEL:-gpt-5.1}
+      SEALAI_V2_L1_MODEL: ${SEALAI_V2_L1_MODEL:-gpt-5.5}
+      SEALAI_V2_STANDARD_PROVIDER: ${SEALAI_V2_STANDARD_PROVIDER:-mistral}
+      SEALAI_V2_STANDARD_MODEL: ${SEALAI_V2_STANDARD_MODEL:-mistral-small-2603}
+      SEALAI_V2_VERIFIER_PROVIDER: ${SEALAI_V2_VERIFIER_PROVIDER:-mistral}
       SEALAI_V2_VERIFIER_MODEL: ${SEALAI_V2_VERIFIER_MODEL:-mistral-small-2603}
+      SEALAI_V2_HELPER_PROVIDER: ${SEALAI_V2_HELPER_PROVIDER:-mistral}
       SEALAI_V2_HELPER_MODEL: ${SEALAI_V2_HELPER_MODEL:-mistral-small-2603}
+      SEALAI_V2_ROUTER_PROVIDER: ${SEALAI_V2_ROUTER_PROVIDER:-mistral}
+      SEALAI_V2_ROUTER_MODEL: ${SEALAI_V2_ROUTER_MODEL:-ministral-8b-2512}
+      SEALAI_V2_ROUTER_TEMPERATURE: ${SEALAI_V2_ROUTER_TEMPERATURE:-0.0}
+      SEALAI_V2_ROUTER_MAX_OUTPUT_TOKENS: ${SEALAI_V2_ROUTER_MAX_OUTPUT_TOKENS:-96}
+      SEALAI_V2_ROUTER_CONFIDENCE_THRESHOLD: ${SEALAI_V2_ROUTER_CONFIDENCE_THRESHOLD:-0.9}
+      SEALAI_V2_ROUTER_TIMEOUT_S: ${SEALAI_V2_ROUTER_TIMEOUT_S:-4.0}
+      SEALAI_V2_JUDGE_PROVIDER: ${SEALAI_V2_JUDGE_PROVIDER:-openai}
+      SEALAI_V2_JUDGE_MODEL: ${SEALAI_V2_JUDGE_MODEL:-gpt-5.4-mini-2026-03-17}
+      SEALAI_V2_EVAL_JUDGE_REASONING_EFFORT: ${SEALAI_V2_EVAL_JUDGE_REASONING_EFFORT:-low}
+      SEALAI_V2_EVAL_JUDGE_MAX_OUTPUT_TOKENS: ${SEALAI_V2_EVAL_JUDGE_MAX_OUTPUT_TOKENS:-1024}
+      SEALAI_V2_EXECUTION_POLICY_ENABLED: ${SEALAI_V2_EXECUTION_POLICY_ENABLED:-true}
+      SEALAI_V2_STRUCTURED_ANSWER_ENABLED: ${SEALAI_V2_STRUCTURED_ANSWER_ENABLED:-true}
+      SEALAI_V2_EXACT_ANSWER_CACHE_ENABLED: ${SEALAI_V2_EXACT_ANSWER_CACHE_ENABLED:-true}
+      # SSoT M15/G5: explicit product activation gates. Both fail closed until
+      # their independent evidence, review, and release requirements are met.
+      SEALAI_V2_KNOWLEDGE_MODE_ENABLED: ${SEALAI_V2_KNOWLEDGE_MODE_ENABLED:-false}
+      SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED: ${SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED:-false}
+      SEALAI_V2_CASE_DECISION_RECORDS_ENABLED: ${SEALAI_V2_CASE_DECISION_RECORDS_ENABLED:-false}
+      SEALAI_V2_CAPABILITY_PROFILES_ENABLED: ${SEALAI_V2_CAPABILITY_PROFILES_ENABLED:-false}
+      SEALAI_V2_MANUFACTURER_FIT_ENABLED: ${SEALAI_V2_MANUFACTURER_FIT_ENABLED:-false}
+      SEALAI_V2_MANUFACTURER_HANDOFF_ENABLED: ${SEALAI_V2_MANUFACTURER_HANDOFF_ENABLED:-false}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY required for the V2 Mistral roles}
       # LangSmith observability (V2 tracing seam: wrap_openai + @traceable, fail-open/observation-only).
       # Values from .env.prod via --env-file interpolation; default OFF so a missing config never traces.
@@ -166,7 +208,8 @@ services:
       SEALAI_V2_REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD required — set in .env or .env.prod}@redis:6379/1
       SEALAI_V2_REDIS_NAMESPACE: ${SEALAI_V2_REDIS_NAMESPACE:-sealai_v2}
       QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
-      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_fachkarten}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge_v1}
+      SEALAI_V2_MEMORY_QDRANT_COLLECTION: ${SEALAI_V2_MEMORY_QDRANT_COLLECTION:-sealai_v2_memory}
       # Phase-1 Qdrant semantic retrieval (eval-validated by adjudicated run v21-qdrant-gate-4).
       # Flip via .env.prod (SEALAI_V2_RETRIEVER_BACKEND=qdrant); the retriever FAIL-SAFES to the
       # in-process keyword matcher on a missing dep / unreachable Qdrant / missing collection.
@@ -197,6 +240,11 @@ services:
       # response, NOT yet injected into the L1 prompt — see memory/context_assembler.py). Needs both
       # database_url AND qdrant_url set to actually construct a service; off/unset → fully inert.
       SEALAI_V2_MEMORY_CONTEXT_ENABLED: ${SEALAI_V2_MEMORY_CONTEXT_ENABLED:-false}
+      SEALAI_V2_SUPPRESS_CALC_FOR_NON_KERNEL_ROUTES_ENABLED: ${SEALAI_V2_SUPPRESS_CALC_FOR_NON_KERNEL_ROUTES_ENABLED:-false}
+      SEALAI_V2_OUTBOX_POLL_INTERVAL_S: ${SEALAI_V2_OUTBOX_POLL_INTERVAL_S:-10}
+      SEALAI_V2_OUTBOX_BATCH_SIZE: ${SEALAI_V2_OUTBOX_BATCH_SIZE:-50}
+      SEALAI_V2_OUTBOX_MAX_ATTEMPTS: ${SEALAI_V2_OUTBOX_MAX_ATTEMPTS:-5}
+      SEALAI_V2_OUTBOX_CLAIM_TIMEOUT_S: ${SEALAI_V2_OUTBOX_CLAIM_TIMEOUT_S:-300}
       # Kandidaten-Spezifikation (Produktspec v3.1): wired but OFF by default — owner governance gate
       # (expert Fachfreigabe + DIN-Lizenz + UI-Sprache). L1-neutral render surface; flip when cleared.
       SEALAI_V2_PRODUKTSPEC_ENABLED: ${SEALAI_V2_PRODUKTSPEC_ENABLED:-false}
@@ -204,6 +252,10 @@ services:
       # OFF by default (annotate-only via the understand stage; never gates/routes). Byte-identical
       # when unset.
       SEALAI_V2_PACK_SUGGESTION_ENABLED: ${SEALAI_V2_PACK_SUGGESTION_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_PACK_RWDR_ENABLED:-false}
+      SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED: ${SEALAI_V2_ADAPTIVE_INTERVIEW_SHADOW_REPORTING_ENABLED:-false}
       # V2.2 INC-COVERAGE-GATE: deterministic case-level coverage_status, wired but OFF by default —
       # goes productive only when the extended eval ruler is green (I-CAL-1). Byte-identical when unset.
       SEALAI_V2_COVERAGE_GATE_ENABLED: ${SEALAI_V2_COVERAGE_GATE_ENABLED:-false}
@@ -227,6 +279,7 @@ services:
       # here. Defaults match settings.py's own defaults, so this is additive-only, zero behavior
       # change until the owner explicitly sets both true in .env.prod.
       SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED: ${SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED:-false}
+      SEALAI_V2_SEMANTIC_ROUTER_ENABLED: ${SEALAI_V2_SEMANTIC_ROUTER_ENABLED:-false}
       SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED: ${SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED:-false}
       # Phase 3A (PR #202): smalltalk-only live token streaming. Same compose-passthrough gap as
       # the two flags directly above -- settings.py defaults False, but a .env.prod override would
@@ -268,5 +321,41 @@ services:
       default:
         aliases:
         - sealai-backend-v2
+  # Durable queue consumer. It extends the exact backend-v2 image and allow-listed
+  # environment, but has no HTTP port and no API responsibility. Keeping it as a
+  # separate container makes outbox delivery restart-safe without adding a hidden
+  # scheduler to the request process.
+  backend-v2-worker:
+    container_name: backend-v2-worker
+    profiles:
+    - v2
+    extends:
+      service: backend-v2
+    command:
+    - python
+    - -m
+    - sealai_v2.memory.outbox_daemon
+    ports: !reset []
+    expose: !reset []
+    networks: !reset
+      default: {}
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -m
+      - sealai_v2.memory.outbox_daemon
+      - --healthcheck
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      backend-v2:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
 volumes:
   backend-data: null

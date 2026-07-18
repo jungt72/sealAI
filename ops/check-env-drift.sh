@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -36,7 +38,7 @@ fi
 extract_key() {
   local file=$1
   local key=$2
-  python3 - "$file" "$key" <<'PY'
+  /usr/bin/python3 -I - "$file" "$key" <<'PY'
 import sys
 from pathlib import Path
 
@@ -111,11 +113,17 @@ source_secret=""
 required_keys=(
   POSTGRES_PASSWORD
   REDIS_PASSWORD
-  KEYCLOAK_ADMIN_PASSWORD
   KEYCLOAK_CLIENT_SECRET
   NEXTAUTH_SECRET
   OPENAI_API_KEY
 )
+
+if [[ "$MODE" == "dev" ]]; then
+  required_keys+=(
+    KC_BOOTSTRAP_ADMIN_USERNAME
+    KC_BOOTSTRAP_ADMIN_PASSWORD
+  )
+fi
 
 validate_required_keys "$SOURCE_FILE" "${required_keys[@]}"
 

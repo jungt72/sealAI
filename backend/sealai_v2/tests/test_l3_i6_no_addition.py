@@ -56,6 +56,7 @@ def _catalog(
         gates=("confident_wrong", "walked_into_trap"),
         provenance=("eval:TRAP-02",),
         review_state="reviewed",
+        sources=("test-source",),
     )
     return TrapCatalog(entries=(entry,))
 

@@ -26,6 +26,44 @@ describe("Answer — base rendering (unchanged behaviour)", () => {
     render(<Answer res={{ ...base, grounded: false }} />);
     expect(screen.getByTestId("vorlaeufig-label")).toBeInTheDocument();
   });
+
+  it("renders the backend-owned next question and unknown handling", () => {
+    render(
+      <Answer
+        res={{
+          ...base,
+          next_question: {
+            case_id: "case-1",
+            topic_id: "rwdr.default",
+            state_revision: 2,
+            pack_id: "rwdr.v1",
+            pack_version: "1.0.1",
+            policy_version: "adaptive-interview.lexicographic.1.0.0",
+            question_id: "rwdr.q.medium_primary",
+            primary_need_id: "rwdr.medium.primary",
+            related_need_ids: [],
+            question_text: "Welches konkrete Medium liegt an der Dichtkante an?",
+            question_type: "structured_text",
+            answer_schema: { type: "object" },
+            allowed_unknown: true,
+            allowed_unobtainable: true,
+            criticality: "decision_critical",
+            rule_refs: ["AI-T4-REQUIRED-001"],
+            dependency_refs: [],
+            pending_question_id: "ipq-1",
+          },
+        }}
+      />,
+    );
+    const prompt = screen.getByTestId("next-question");
+    expect(prompt).toHaveTextContent("Welches konkrete Medium liegt an der Dichtkante an?");
+    expect(prompt).toHaveTextContent("nicht ermittelbar");
+  });
+
+  it("does not invent a next question when the controller payload is absent", () => {
+    render(<Answer res={base} />);
+    expect(screen.queryByTestId("next-question")).toBeNull();
+  });
 });
 
 describe("Answer — P4 Gegencheck note (disqualify-only, E4-1)", () => {
@@ -83,6 +121,46 @@ describe("Answer — P4 Gegencheck note (disqualify-only, E4-1)", () => {
   it("renders nothing when gegencheck is absent/null (no Gegencheck situation)", () => {
     render(<Answer res={{ ...base, gegencheck: null }} />);
     expect(screen.queryByText(/Gegencheck/)).not.toBeInTheDocument();
+  });
+
+  it("does not render a positive statement from the canonical compatible audit result", () => {
+    render(
+      <Answer
+        res={{
+          ...base,
+          answer: "Die Angaben werden geprüft.",
+          material_constraints: {
+            material_state: "known",
+            medium_state: "known",
+            medium_cardinality: "single",
+            relation_state: "not_applicable",
+            evaluation_state: "evaluated",
+            verdict: "vertraeglich",
+            decisive_ref: "MX-NBR-MINERALOEL",
+            disqualified: false,
+            requires_resolution: false,
+            positive_statement_allowed: false,
+            conditions: [],
+            blockers: [],
+            matches: [
+              {
+                rule_ref: "MX-NBR-MINERALOEL",
+                verdict: "vertraeglich",
+                statement: "Keine dokumentierte Unverträglichkeit.",
+                source_ref: "matrix-cell:MX-NBR-MINERALOEL",
+                evidence_binding_state: "unbound",
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    const note = screen.getByTestId("material-constraint-neutral");
+    expect(note).toHaveTextContent(
+      "Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.",
+    );
+    expect(note).toHaveTextContent("matrix-cell:MX-NBR-MINERALOEL");
+    expect(screen.queryByText(/kompatibel|geeignet|freigegeben/i)).not.toBeInTheDocument();
   });
 });
 

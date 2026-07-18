@@ -173,26 +173,6 @@ def build_divergences(scores: list[CaseScore]) -> list[dict]:
             }
         )
 
-    # Curated factual divergence — spotted on read; deep audit deferred, framed as a candidate.
-    divs.append(
-        {
-            "id": "factual::TRAP-02-epdm-polarity",
-            "case": "TRAP-02",
-            "columns": ["flags_off", "flags_on"],
-            "kind": "factual_judge_passed",
-            "detail": (
-                'Both answers label EPDM a "polarer Kautschuk" — EPDM is non-polar; the '
-                "swelling-mechanism text is internally inconsistent (calls EPDM polar yet has "
-                "non-polar oil dissolve it). The conclusion (EPDM swells in mineral oil) is "
-                "correct, but the stated mechanism is wrong, and the rubric judge passed it "
-                "(must_catch named, must_contain met)."
-            ),
-            "m2_action": (
-                "L3 verifier + Fallen-Katalog must catch confidently-stated mechanism errors; "
-                "candidate axis-1 issue (human-final, deep audit deferred)."
-            ),
-        }
-    )
     return divs
 
 

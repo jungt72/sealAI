@@ -37,8 +37,13 @@ from dataclasses import dataclass
 from enum import Enum
 
 from sealai_v2.core.contracts import Intent
-from sealai_v2.core.medium_extract import extract_medium_facts
+from sealai_v2.core.knowledge_answer import (
+    detected_material_subjects,
+    detected_seal_subjects,
+)
+from sealai_v2.core.medium_extract import extract_media, extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
+from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.pipeline.stages import is_alternativen_request
 
 
@@ -74,6 +79,26 @@ class RouteDecision:
     deterministic_signal_count: int
 
 
+@dataclass(frozen=True)
+class MaterialComparisonFollowup:
+    """Typed resolution of a comparison reference in the current user turn.
+
+    ``resolved`` is the only state allowed to reach retrieval or generation.
+    ``needs_clarification`` is a deterministic abstention: it prevents a fluent
+    but unrelated comparison when words such as "beide" have no provable pair.
+    """
+
+    resolved_question: str
+    subjects: tuple[str, ...]
+    subject_type: str = "material"
+    status: str = "resolved"
+    clarification: str = ""
+
+    @property
+    def needs_clarification(self) -> bool:
+        return self.status != "resolved"
+
+
 # --- Stage-1 signal regexes (deliberately explicit + narrow; each is independently testable) -----
 
 # A bare engineering value with a unit (dimensions/speed/pressure/temperature), OUTSIDE the
@@ -104,10 +129,16 @@ _LEAKAGE_RE = re.compile(
 )
 
 _CASE_LANGUAGE_RE = re.compile(
-    r"\b(ersatz(?:teil)?|ersetzen|auslegen|auslegung|vorqualifizierung|"
+    r"\b(ersatz(?:teil)?|ersetzen|vorqualifizierung|"
     r"welche[rs]?\s+dichtung|dichtungsfall|ich\s+suche\s+(?:einen?|eine))\b",
     re.IGNORECASE,
 )
+
+# "Auslegung" is also a legitimate knowledge subject ("Erklaere die O-Ring-Auslegung"). Keep it
+# separate from unequivocal case language so an explicit overview request can discuss engineering
+# design axes without being mistaken for a concrete application. It still forces the full path for
+# every non-overview shape and whenever a real case signal (value, damage, suitability, etc.) fires.
+_DESIGN_TOPIC_RE = re.compile(r"\b(auslegen|auslegung)\b", re.IGNORECASE)
 
 # Kinematic/calc-relevant terms that name a value WITHOUT stating it numerically yet (e.g. asking
 # to compute or reference Umfangsgeschwindigkeit) — the deterministic calc kernel (core/calc/) is
@@ -126,23 +157,26 @@ _RESISTANCE_CLAIM_RE = re.compile(
 )
 
 _COMPARISON_RE = re.compile(
-    r"\b(vergleich\w*|unterschied\w*|besser|schlechter|\bvs\.?\b|\bversus\b|gegenüber|gegenueber|vor-\s*und\s*nachteile)\b",
+    r"\b(vergleich\w*|unterschied\w*|unterscheid\w*|besser|schlechter|\bvs\.?\b|\bversus\b|gegenüber|gegenueber|vor-\s*und\s*nachteile)\b",
     re.IGNORECASE,
 )
 
 # Suitability/recommendation-request language: "passt das?", "reicht das?", "ich brauche eine
 # Dichtung fuer...", "welche X nehme ich/empfiehlst du" — the profile of a real (if under-
 # specified) application question, not a definitional knowledge question. Broader than
-# _CASE_LANGUAGE_RE on purpose (that regex catches explicit "Ersatz/Auslegung" vocabulary; this
-# one catches the much more common "is this okay / what should I use" phrasing that dominates
+# _CASE_LANGUAGE_RE/_DESIGN_TOPIC_RE on purpose (those regexes catch explicit replacement/design
+# vocabulary; this one catches the much more common "is this okay / what should I use" phrasing
+# that dominates
 # real intake messages, per a stress-test against the eval seed cases).
 _SUITABILITY_QUESTION_RE = re.compile(
     r"\b(passt\s+(?:\w+\s+){0,2}(?:das|dazu|hierzu|hierf[uü]r)|reicht\s+das|"
     r"ist\s+das\s+(?:so\s+)?(?:in\s+)?ordnung|"
     r"k[oö]nnen\s+sie\s+best[aä]tigen|"
-    r"(?:ich\s+brauche|brauche\s+ich|ich\s+ben[oö]tige|ben[oö]tige\s+ich)|"
+    r"(?:ich\s+brauche|ich\s+ben[oö]tige)\s+(?:eine[nr]?\s+)?"
+    r"(?:dichtung|o-?ring|rwdr|wellendichtring)|"
+    r"welche[rns]?\s+(?:dichtung|o-?ring|rwdr|wellendichtring)\s+passt|"
     r"welche[rns]?\s+\w+\s+(?:nehme\s+ich|soll\s+ich|empfiehlst\s+du|empfehlst\s+du)|"
-    r"kannst\s+du\s+mir\s+sagen|worauf\s+sollte\s+ich|"
+    r"worauf\s+sollte\s+ich\s+bei\s+(?:der|einer)\s+(?:auswahl|auslegung)\s+achten|"
     r"empfiehl\s+mir|empfehl\s+mir|was\s+nehme\s+ich|was\s+ist\s+da\s+los)\b",
     re.IGNORECASE,
 )
@@ -167,9 +201,294 @@ _META_INSTRUCTION_RE = re.compile(
 # NEVER as a standalone forcing signal (see module docstring: a bare mention is a knowledge
 # question, not an engineering case).
 _MATERIAL_NAME_RE = re.compile(
-    r"\b(ptfe|fkm|viton|epdm|nbr|hnbr|ffkm|vmq|silikon|silicone|pu|tpu|au|eu|pom|peek)\b",
+    r"\b(ptfe|fkm|viton|epdm|nbr|hnbr|ffkm|vmq|silikon|silicone|pu|tpu|pom|peek)\b",
     re.IGNORECASE,
 )
+
+_SMALLTALK_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|guten\s+(?:morgen|tag|abend)|danke|vielen\s+dank|"
+    r"tsch(?:u|ü)ss|auf\s+wiedersehen|was\s+kannst\s+du|hilfe)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+_SMALLTALK_PREFIX_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|guten\s+(?:morgen|tag|abend)|danke|vielen\s+dank|"
+    r"tsch(?:u|ü)ss|auf\s+wiedersehen)\b",
+    re.IGNORECASE,
+)
+
+# A greeting is only smalltalk when the REST of the message is social as well. Previously every
+# greeting-prefixed message below 160 characters was accepted, so "Guten Morgen, Details zu NBR"
+# silently lost its technical intent. Unknown residual content now fails conservative (full path)
+# instead of being swallowed by a social prefix.
+_SOCIAL_REMAINDER_RE = re.compile(
+    r"^\s*[,!?.-]*\s*(?:"
+    r"(?:und\s+)?guten\s+(?:morgen|tag|abend)|"
+    r"(?:dir|euch)|"
+    r"f(?:ue|ü)r\s+die\s+hilfe|"
+    r"wie\s+geht(?:'s|\s+es)(?:\s+(?:dir|euch))?|"
+    r"sch[oö]n,?\s+dass\s+es\s+(?:dich|euch)\s+gibt|"
+    r"ich\s+hoffe,?\s+es\s+geht\s+(?:dir|euch)\s+gut|"
+    r"freut\s+mich(?:,?\s+(?:dich|euch)\s+kennenzulernen)?|"
+    r"danke(?:\s+dir|\s+euch)?|"
+    r"(?:einen\s+)?sch[oö]nen\s+(?:morgen|tag|abend)"
+    r")\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+_CONVERSATION_META_RE = re.compile(
+    r"^\s*(?:ich\s+habe\s+\d+\s+fragen(?:\s+an\s+dich)?|"
+    r"ich\s+h[aä]tte\s+eine\s+frage|kannst\s+du\s+mir\s+helfen)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_smalltalk_shape(question: str) -> bool:
+    """Recognize a short social turn after engineering/security signals were ruled out.
+
+    The exact-match regex remains the narrow fast path. The prefix path covers natural courtesy
+    such as "Hallo, schön dass es euch gibt" without turning a greeting-prefixed engineering case
+    into a cheap route: callers invoke this only after ``detect_engineering_signals`` returned empty.
+    A length cap keeps open-ended requests on the conservative ambiguous route.
+    """
+    text = (question or "").strip()
+    if _SMALLTALK_RE.fullmatch(text) or _CONVERSATION_META_RE.fullmatch(text):
+        return True
+    prefix = _SMALLTALK_PREFIX_RE.match(text)
+    if not prefix:
+        return False
+    return bool(_SOCIAL_REMAINDER_RE.fullmatch(text[prefix.end() :]))
+
+
+_DOMAIN_KNOWLEDGE_RE = re.compile(
+    r"\b(dichtung(?:en|stechnik)?|dichtungs\w*|dichtungsart|dichtungsmedium|"
+    r"hydraulikmedium|medium|medien|fluid|betriebsstoff|"
+    r"wellendichtring|radialwellendicht(?:ung|ring)|rwdr|"
+    r"o-?ring(?:e|s)?|gleitringdichtung|gleitdichtung|glrd|mechanical\s+seal|hydraulikdichtung|"
+    r"werkstoff\w*|elastomer|thermoplast|nut|dichtlippe|"
+    r"gegenlauffl(?:a|ä)che|schmierung|tribologie)\b",
+    re.IGNORECASE,
+)
+
+_KNOWLEDGE_REQUEST_RE = re.compile(
+    r"\b(was\s+ist|was\s+sind|erkl(?:a|ä|ae)r\w*|definition|grundlagen|"
+    r"details|informationen|[uü]berblick|eigenschaften|wie\s+funktioniert)\b",
+    re.IGNORECASE,
+)
+
+# A possessive/deictic reference makes even an explanation-shaped question case-bound: "Erklaere
+# meine Auslegung" is not the same route as "Erklaere die Auslegung". Numeric operating values,
+# failures, suitability requests and other hard signals are handled independently below.
+_CONCRETE_CASE_REFERENCE_RE = re.compile(
+    r"\b(mein(?:e|er|es|en|em)?|unser(?:e|er|es|en|em)?|bei\s+uns|"
+    r"in\s+(?:meiner|unserer)\s+(?:anlage|maschine|pumpe|anwendung)|"
+    r"f[uü]r\s+(?:meine|meinen|meiner|unsere|unseren|unserer)\s+"
+    r"(?:anlage|maschine|pumpe|anwendung)|"
+    r"(?:dieser|diese|dieses|vorliegende[rs]?)\s+(?:fall|anwendung|anlage|maschine|pumpe))\b",
+    re.IGNORECASE,
+)
+
+_SHORT_MATERIAL_CONTEXT_RE = re.compile(
+    r"\b(werkstoff|material|elastomer|kautschuk|gummi|dichtung|o-?ring(?:e|s)?|"
+    r"details|informationen|[uü]berblick|eigenschaften)\b",
+    re.IGNORECASE,
+)
+
+
+def requests_calculation(question: str) -> bool:
+    """Whether the user explicitly asks for a kernel quantity or calculation context."""
+    return bool(_CALC_TERM_RE.search(question))
+
+
+def _has_material_topic(question: str, material_terms: tuple[str, ...] = ()) -> bool:
+    """Recognise a material subject from the stable core vocabulary plus the live knowledge catalog.
+
+    The catalog terms are injected by ``build_pipeline``. This removes the old architectural ceiling
+    where adding an AEM/ACM/CR card did not make its subject routable until somebody also remembered to
+    extend this module's regex. ``tag_matches`` keeps matching word-boundary safe.
+    """
+    if _MATERIAL_NAME_RE.search(question or ""):
+        return True
+    tokens = query_tokens(question or "")
+    normalized = (question or "").lower()
+    for term in material_terms:
+        if not term:
+            continue
+        if len(term) <= 2:
+            # Short engineering symbols (CR, AU, EU, WC) are valid, but case-insensitive matching
+            # would turn ordinary words/acronyms such as "EU" into material questions. Require the
+            # canonical uppercase spelling for these inherently ambiguous two-letter terms.
+            if re.search(rf"\b{re.escape(term.upper())}\b", question or "") and (
+                (question or "").strip().upper() == term.upper()
+                or _SHORT_MATERIAL_CONTEXT_RE.search(question or "")
+            ):
+                return True
+        elif tag_matches(term, tokens, normalized):
+            return True
+    return False
+
+
+def is_explicit_knowledge_overview(
+    question: str, *, material_terms: tuple[str, ...] = ()
+) -> bool:
+    """Recognise an educational overview even when it names design axes.
+
+    ``Verpressung`` and ``Auslegung`` are both engineering-case signals and normal chapter names in
+    an expert explanation. Only the latter interpretation is selected here: the user must explicitly
+    ask for an explanation/overview, name a sealing-domain subject, and avoid a concrete-case
+    reference. All hard signals remain active and therefore still force the full pipeline.
+    """
+
+    text = question or ""
+    if not (_KNOWLEDGE_REQUEST_RE.search(text) or _COMPARISON_RE.search(text)):
+        return False
+    if not (
+        _DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)
+    ):
+        return False
+    if _CONCRETE_CASE_REFERENCE_RE.search(text):
+        return False
+    return not any(
+        (
+            _ENGINEERING_VALUE_RE.search(text),
+            _RFQ_RE.search(text),
+            _SUITABILITY_QUESTION_RE.search(text),
+            _META_INSTRUCTION_RE.search(text),
+            _RESISTANCE_CLAIM_RE.search(text),
+            is_alternativen_request(text),
+        )
+    )
+
+
+def resolve_comparison_followup(
+    question: str,
+    previous_turns: tuple[object, ...],
+    *,
+    material_terms: tuple[str, ...] = (),
+    comparison_intent: bool = False,
+) -> MaterialComparisonFollowup | None:
+    """Resolve contextual comparisons against recent user-authored subjects.
+
+    Supported subject namespaces are materials, seal types and media.  Raw
+    transcript text never crosses this boundary: only canonical entities from
+    the shared domain vocabularies survive.  Assistant messages are ignored.
+
+    A contextual comparison has exactly two safe outcomes:
+
+    * two provable, same-type subjects -> an explicit canonical request;
+    * anything else -> a deterministic clarification, never generation.
+    """
+    text = (question or "").strip()
+    if not comparison_intent and not _COMPARISON_RE.search(text):
+        return None
+
+    def subject_groups(value: str) -> dict[str, tuple[str, ...]]:
+        groups = {
+            "material": detected_material_subjects(
+                value, material_terms=material_terms
+            ),
+            "seal_type": detected_seal_subjects(value),
+            "medium": extract_media(value),
+        }
+        return {kind: subjects for kind, subjects in groups.items() if subjects}
+
+    current_groups = subject_groups(text)
+    current_count = sum(len(subjects) for subjects in current_groups.values())
+    # A self-contained comparison already names both sides and needs no context
+    # resolution.  Cross-type comparisons remain on the ordinary route, where
+    # the answer planner can decide whether the request is meaningful.
+    if current_count >= 2:
+        return None
+    # A comparison with no explicitly named side is itself a contextual request
+    # ("Was ist der Unterschied?", "Welcher ist besser?", "vergleiche beide").
+    # This also covers natural paraphrases without a pronoun.  With no provable
+    # pair below, the result is a clarification rather than a guessed answer.
+    if current_count == 1 and len(current_groups) != 1:
+        return None
+
+    expected_type = next(iter(current_groups), None)
+    recent_blocks: list[tuple[str, tuple[str, ...]]] = []
+    inspected = 0
+    for turn in reversed(previous_turns):
+        if getattr(turn, "role", None) != "user":
+            continue
+        inspected += 1
+        prior_text = str(getattr(turn, "text", "") or "")
+        groups = subject_groups(prior_text)
+        if not groups:
+            if _DOMAIN_KNOWLEDGE_RE.search(prior_text):
+                break
+            if inspected >= 4:
+                break
+            continue
+        if len(groups) != 1:
+            recent_blocks.append(("mixed", tuple()))
+            break
+        kind, subjects = next(iter(groups.items()))
+        if expected_type is not None and kind != expected_type:
+            break
+        expected_type = expected_type or kind
+        recent_blocks.append((kind, subjects))
+        if inspected >= 4:
+            break
+
+    candidates: list[str] = []
+    # Restore chronological order while preserving the order inside one turn.
+    for kind, subjects in reversed(recent_blocks):
+        if kind == "mixed" or (expected_type is not None and kind != expected_type):
+            continue
+        for subject in subjects:
+            if subject not in candidates:
+                candidates.append(subject)
+    for subjects in current_groups.values():
+        for subject in subjects:
+            if subject not in candidates:
+                candidates.append(subject)
+
+    if len(candidates) == 2 and expected_type is not None:
+        pair = tuple(candidates)
+        return MaterialComparisonFollowup(
+            resolved_question=(
+                f"{text}\nVerbindlich aufgelöste Vergleichsgegenstände "
+                f"({expected_type}): {pair[0]} und {pair[1]}."
+            ),
+            subjects=pair,
+            subject_type=expected_type,
+        )
+
+    type_label = {
+        "material": "Werkstoffe",
+        "seal_type": "Dichtungsarten",
+        "medium": "Medien",
+    }.get(expected_type or "", "Gegenstände")
+    if len(candidates) == 1:
+        clarification = (
+            f"Ich kann im bisherigen Gespräch nur {candidates[0]} eindeutig "
+            f"zuordnen. Welche zweite Position möchtest du damit vergleichen?"
+        )
+    elif len(candidates) > 2:
+        clarification = (
+            f"Im bisherigen Gespräch sind mehr als zwei mögliche {type_label} "
+            f"genannt: {', '.join(candidates)}. Bitte nenne genau die zwei, "
+            "die ich vergleichen soll."
+        )
+    else:
+        clarification = (
+            f"Welche zwei {type_label} möchtest du vergleichen? Bitte nenne "
+            "beide ausdrücklich, damit ich keinen falschen Bezug herstelle."
+        )
+    return MaterialComparisonFollowup(
+        resolved_question="",
+        subjects=tuple(candidates),
+        subject_type=expected_type or "unknown",
+        status="needs_clarification",
+        clarification=clarification,
+    )
+
+
+# Compatibility name for older call sites/tests.  The resolver now handles all
+# governed comparison subject types, not only materials.
+resolve_material_comparison_followup = resolve_comparison_followup
 
 
 def detect_engineering_signals(
@@ -179,6 +498,7 @@ def detect_engineering_signals(
     decode_result: dict | None = None,
     diagnosis: dict | None = None,
     gegencheck_verdict: dict | None = None,
+    material_terms: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     """Every deterministic engineering signal that fires, by name. Pre-computed pipeline values
     (``decode_result``/``diagnosis``/``gegencheck_verdict``/``case_state_nonempty``) are accepted
@@ -187,9 +507,12 @@ def detect_engineering_signals(
     tests. A single positive signal is enough to force the full pipeline; the returned tuple's
     length is Stage 1's ``deterministic_signal_count``."""
     signals: list[str] = []
+    explicit_knowledge_overview = is_explicit_knowledge_overview(
+        question, material_terms=material_terms
+    )
     if decode_result:
         signals.append("designation_or_dimensions")
-    if diagnosis is not None:
+    if diagnosis is not None and not explicit_knowledge_overview:
         signals.append("recognized_failure_symptom")
     if gegencheck_verdict is not None:
         signals.append("material_and_medium_known")
@@ -199,19 +522,21 @@ def detect_engineering_signals(
         signals.append("manufacturer_alternatives_request")
     if _ENGINEERING_VALUE_RE.search(question):
         signals.append("engineering_value_with_unit")
-    if _COMPRESSION_RE.search(question):
+    if _COMPRESSION_RE.search(question) and not explicit_knowledge_overview:
         signals.append("compression_or_interference_language")
     if _RFQ_RE.search(question):
         signals.append("rfq_language")
-    if _LEAKAGE_RE.search(question):
+    if _LEAKAGE_RE.search(question) and not explicit_knowledge_overview:
         signals.append("leakage_or_failure_language")
-    if _CASE_LANGUAGE_RE.search(question):
+    if _CASE_LANGUAGE_RE.search(question) or (
+        _DESIGN_TOPIC_RE.search(question) and not explicit_knowledge_overview
+    ):
         signals.append("replacement_or_case_language")
     if _SUITABILITY_QUESTION_RE.search(question):
         signals.append("suitability_or_recommendation_request")
     if _META_INSTRUCTION_RE.search(question):
         signals.append("meta_or_directive_language")
-    if _CALC_TERM_RE.search(question):
+    if requests_calculation(question):
         signals.append("kinematic_or_calc_term")
     if _RESISTANCE_CLAIM_RE.search(question):
         signals.append("resistance_or_suitability_claim")
@@ -219,16 +544,16 @@ def detect_engineering_signals(
     # Material/medium: a BARE mention of either alone is a knowledge-question profile ("was ist
     # PTFE?") and must NOT force the full pipeline — only the two TOGETHER in one message reflect
     # a described operating situation, not a definition request.
-    has_material = bool(extract_seal_spec(question))
+    has_material = bool(extract_seal_spec(question)) or _has_material_topic(
+        question, material_terms
+    )
     has_medium = bool(extract_medium_facts(question))
     if has_material and has_medium:
         signals.append("material_and_medium_in_message")
 
     # Comparative-suitability language about a material is the L3 trap catalog's sharpest edge
     # (unauthorized comparative-ranking claims) — force the full path even with no medium stated.
-    if _COMPARISON_RE.search(question) and (
-        has_material or _MATERIAL_NAME_RE.search(question)
-    ):
+    if _COMPARISON_RE.search(question) and has_material:
         signals.append("comparison_with_material")
 
     return tuple(signals)
@@ -255,16 +580,20 @@ def classify_route(
     diagnosis: dict | None = None,
     gegencheck_verdict: dict | None = None,
     intent: Intent | None = None,
+    material_terms: tuple[str, ...] = (),
 ) -> RouteDecision:
     """The full two-stage gate. ``intent`` is the soft ``understand()`` classification — pass
     ``None`` when it is unavailable (understand disabled, or not yet resolved); doing so is always
     safe because a missing intent maps to ``unsupported_or_ambiguous`` (forced full pipeline)."""
+    # Current-turn signals always win. Existing case state is evaluated only AFTER a self-contained
+    # knowledge topic has had a chance to route, so an old case cannot hijack "Was ist NBR?".
     signals = detect_engineering_signals(
         question,
-        case_state_nonempty=case_state_nonempty,
+        case_state_nonempty=False,
         decode_result=decode_result,
         diagnosis=diagnosis,
         gegencheck_verdict=gegencheck_verdict,
+        material_terms=material_terms,
     )
     if signals:
         return RouteDecision(
@@ -273,6 +602,40 @@ def classify_route(
             confidence=1.0,
             forced_full_pipeline=True,
             deterministic_signal_count=len(signals),
+        )
+
+    # A technical subject in the current utterance outranks social language and the soft LLM intent.
+    # This is entity-first routing: "Guten Morgen, Details zu NBR" remains material knowledge even if
+    # the annotate-only helper guessed ``gespraech`` from the greeting.
+    if _has_material_topic(question, material_terms):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason=(
+                f"intent={intent.value}"
+                if intent in (Intent.WISSENSFRAGE, Intent.FAKTFRAGE)
+                else "current_turn_material_topic"
+            ),
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question) and (
+        not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
+    ):
+        return RouteDecision(
+            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
+            reason="current_turn_domain_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if case_state_nonempty:
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="existing_case_context",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
         )
 
     # Stage 2 — zero deterministic signals. Any doubt still forces the full pipeline.
@@ -285,7 +648,7 @@ def classify_route(
             deterministic_signal_count=0,
         )
 
-    if intent == Intent.GESPRAECH:
+    if intent == Intent.GESPRAECH and _is_smalltalk_shape(question):
         return RouteDecision(
             route=RouteName.SMALLTALK_NAVIGATION,
             reason="intent=gespraech",
@@ -297,7 +660,7 @@ def classify_route(
     if intent in (Intent.WISSENSFRAGE, Intent.FAKTFRAGE):
         route = (
             RouteName.MATERIAL_KNOWLEDGE
-            if _MATERIAL_NAME_RE.search(question)
+            if _has_material_topic(question, material_terms)
             else RouteName.GENERAL_SEALING_KNOWLEDGE
         )
         return RouteDecision(
@@ -313,6 +676,80 @@ def classify_route(
     return RouteDecision(
         route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
         reason=f"intent={intent.value}_no_signals",
+        confidence=1.0,
+        forced_full_pipeline=True,
+        deterministic_signal_count=0,
+    )
+
+
+def classify_route_deterministic(
+    question: str,
+    *,
+    case_state_nonempty: bool = False,
+    decode_result: dict | None = None,
+    diagnosis: dict | None = None,
+    gegencheck_verdict: dict | None = None,
+    material_terms: tuple[str, ...] = (),
+) -> RouteDecision:
+    """LLM-free production router.
+
+    The same conservative engineering signals as :func:`classify_route` force
+    the full path. Only narrow, explicit smalltalk and domain-knowledge shapes
+    receive a cheaper route; anything else is ambiguous and therefore full.
+    """
+    signals = detect_engineering_signals(
+        question,
+        case_state_nonempty=False,
+        decode_result=decode_result,
+        diagnosis=diagnosis,
+        gegencheck_verdict=gegencheck_verdict,
+        material_terms=material_terms,
+    )
+    if signals:
+        return RouteDecision(
+            route=_forced_route(question, signals),
+            reason=f"deterministic_signals:{','.join(signals)}",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=len(signals),
+        )
+    if _has_material_topic(question, material_terms):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason="deterministic_material_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question) and (
+        not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
+    ):
+        return RouteDecision(
+            route=RouteName.GENERAL_SEALING_KNOWLEDGE,
+            reason="deterministic_domain_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if case_state_nonempty:
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="existing_case_context",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
+        )
+    if _is_smalltalk_shape(question):
+        return RouteDecision(
+            route=RouteName.SMALLTALK_NAVIGATION,
+            reason="deterministic_smalltalk_shape",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    return RouteDecision(
+        route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+        reason="no_deterministic_route",
         confidence=1.0,
         forced_full_pipeline=True,
         deterministic_signal_count=0,

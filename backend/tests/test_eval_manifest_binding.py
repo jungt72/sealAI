@@ -20,7 +20,7 @@ def test_tree_binding_matches_the_canonical_script():
 
     tree_hash, dirty = _tree_binding()
     script = subprocess.check_output(
-        ["bash", str(REPO / "ops" / "tree-hash.sh")],
+        ["/bin/bash", "-p", str(REPO / "ops" / "tree-hash.sh")],
         cwd=str(REPO),
         text=True,
     ).strip()
@@ -54,3 +54,5 @@ def test_manifest_records_tree_hash_and_dirty(tmp_path):
     ]
     assert manifest["tree_hash"] == "PROBE_TREE_HASH"  # param → manifest wiring
     assert manifest["dirty"] is True
+    assert len(manifest["runtime_profile_hash"]) == 64
+    assert manifest["runtime_profile"]["schema_version"] == 1

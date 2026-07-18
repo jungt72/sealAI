@@ -10,7 +10,7 @@
 # Build context is ./backend (same as the production image), so `COPY sealai_v2`
 # resolves to backend/sealai_v2.
 # =============================================================================
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -36,18 +36,30 @@ COPY sealai_v2 ./sealai_v2
 
 # Import keystone: fail the BUILD (not the first request) if a dep is missing — including the
 # lazy I/O-edge imports (openai SDK, httpx JWKS fetch).
-RUN python -c "import httpx, psycopg2, sqlalchemy; from openai import AsyncOpenAI; import sealai_v2.api.main, sealai_v2.db.migrate"
+RUN python -c "import alembic, httpx, psycopg2, sqlalchemy; from openai import AsyncOpenAI; import sealai_v2.api.main, sealai_v2.db.migrate"
 
 RUN chown -R appuser:appuser /app
 
 # V2 deploy teeth — the entrypoint refuses to start an UNGATED build (empty marker).
-# ops/release-backend-v2.sh passes --build-arg GATE_TREE_HASH=<served tree_hash>; a raw
-# `docker compose build backend-v2` leaves it empty → the container exits 1 at startup instead of
-# serving ungated code. Placed LATE so the per-build hash never busts the dependency/COPY layers above.
+# ops/release-backend-v2.sh passes --build-arg GATE_TREE_HASH=<served tree_hash> for
+# both candidate and final stages; a raw
+# `docker compose build backend-v2` leaves it empty → build-identity validation rejects the build.
+# The entrypoint verifies the same identity again at startup. Placed late so the per-build identity
+# never busts the dependency/COPY layers above.
 COPY docker-entrypoint-v2.sh /usr/local/bin/docker-entrypoint-v2.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-v2.sh
 ARG GATE_TREE_HASH=""
-RUN mkdir -p /etc/sealai && printf '%s' "${GATE_TREE_HASH}" > /etc/sealai/gate-tree-hash
+ARG SOURCE_GIT_SHA=""
+RUN mkdir -p /etc/sealai \
+ && printf '%s' "${GATE_TREE_HASH}" > /etc/sealai/gate-tree-hash \
+ && python -m sealai_v2.config.build_identity write \
+      --tree-hash "${GATE_TREE_HASH}" \
+      --git-sha "${SOURCE_GIT_SHA}" \
+      --requirements-file /app/requirements-v2.txt \
+      --output /etc/sealai/release-identity.json
+
+LABEL org.opencontainers.image.revision="${SOURCE_GIT_SHA}" \
+      io.sealai.served-tree-hash="${GATE_TREE_HASH}"
 
 USER appuser
 

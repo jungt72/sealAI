@@ -3,7 +3,7 @@ title: "PTFE vs FKM: Dichtungsverhalten, Medien und Grenzen vergleichen"
 description: "PTFE und FKM für Dichtungen vergleichen: chemische Beständigkeit, Elastizität, Temperatur, Bauraum und Herstellerprüfung."
 category: "Dichtungswerkstoffe"
 datePublished: "2026-05-05"
-author: "sealingAI"
+author: "Thorsten Jung"
 ---
 
 # PTFE vs FKM: Dichtungsverhalten, Medien und Grenzen vergleichen

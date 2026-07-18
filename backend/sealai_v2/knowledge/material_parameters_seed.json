@@ -3,19 +3,144 @@
     "doc": "Structured material-parameter store (V2.2). The KERNEL owns the numbers; L1 only renders them as a table. Each material carries review_state ('reviewed' = owner-grounded | 'draft' = vorläufige Richtwerte, gegen Datenblatt verifizieren). Curate values via the owner's multi-LLM challenge; until reviewed they render with the vorläufig marker. A missing parameter is NOT invented — it renders as '—'."
   },
   "PTFE": {
-    "review_state": "draft",
-    "hinweis": "vorläufige Richtwerte (Allgemeinwissen) — stark compound-/füllstoffabhängig; gegen Datenblatt des konkreten Compounds bzw. Hersteller verifizieren",
+    "review_state": "reviewed",
+    "hinweis": "Quellengebundene Referenzwerte, keine universellen PTFE-Einsatzgrenzen. Jeder Wert gilt nur für die genannte Werkstoff-/Prüfbasis; die Dichtungsauslegung bleibt von Medium, Druck, Temperatur, Geschwindigkeit, Gegenlauffläche und Bauform abhängig.",
+    "sources": [
+      "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1 (https://discover.parker.com/PTFE-Seal-Material-Material-Data-Sheets-Part1)",
+      "Trelleborg, Turcon Variseal Material Selection Guide, Table 3, page 7, Edition June 2026, retrieved 2026-07-12, SHA-256 171d5881149e03a5592b0497b6f4d77356dee96bf8e805fe2d91e570f49e5f93 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/variseal_en.pdf)"
+    ],
     "params": [
-      {"label": "Einsatztemperatur", "value": "ca. −200 °C bis +260 °C (kurzzeitig etwas höher)"},
-      {"label": "Shore-Härte", "value": "ca. Shore D 50–65 (kein Elastomer — kein Shore A)"},
-      {"label": "Dichte", "value": "ca. 2,1–2,2 g/cm³"},
-      {"label": "Chemische Beständigkeit", "value": "nahezu universell (Säuren, Laugen, Lösemittel, Öle, Kraftstoffe); NICHT: geschmolzene Alkalimetalle, elementares Fluor"},
-      {"label": "Wasseraufnahme", "value": "nahezu 0 %"},
-      {"label": "Mechanik", "value": "weich, niedriger E-Modul, ausgeprägter Kaltfluss/Kriechen, keine elastische Rückstellung"},
-      {"label": "Reibung", "value": "sehr niedrig (Antihaft); gute Gleit-/Notlaufeigenschaften"},
-      {"label": "Alterung", "value": "oxidations- und UV-stabil, kaum Versprödung"},
-      {"label": "Elektrik", "value": "sehr guter Isolator"},
-      {"label": "Typische Dichtungsformen", "value": "Statik-Flachdichtung (ummantelt/eingelagert), federvorgespannte Lippe, Gleitelement, PTFE-ummantelter O-Ring (Elastomerkern)"}
+      {
+        "parameter_id": "tensile_strength",
+        "label": "Zugfestigkeit, ungefülltes PTFE",
+        "value": "4.500–5.500 psi (ca. 31–38 MPa)",
+        "value_kind": "typical",
+        "grade": "ungefülltes PTFE; Parker-Laborreferenz",
+        "test_method": "ASTM D638",
+        "conditions": "Labor-Typwert; Prüfkörper und Konditionierung gemäß Quelldatenblatt",
+        "source_ref": "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1",
+        "basis": "Parker-Labor-Typwerte; ASTM-D638-Kontext; Vergleichswert, kein Spezifikationslimit"
+      },
+      {
+        "parameter_id": "elongation_at_break",
+        "label": "Bruchdehnung, ungefülltes PTFE",
+        "value": "ca. 450–500 %",
+        "value_kind": "typical",
+        "grade": "ungefülltes PTFE; Parker-Laborreferenz",
+        "test_method": "ASTM D638",
+        "conditions": "Labor-Typwert; Füllstoffe senken den Wert",
+        "source_ref": "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1",
+        "basis": "Parker-Labor-Typwerte; Füllstoffe senken den Wert; kein Einsatzgrenzwert"
+      },
+      {
+        "parameter_id": "hardness_shore_d",
+        "label": "Härte, ungefülltes PTFE",
+        "value": "typisch Shore D 55–56",
+        "value_kind": "typical",
+        "grade": "ungefülltes PTFE; Parker-Laborreferenz",
+        "test_method": "ASTM D2240, Shore D",
+        "conditions": "Labor-Typwert; Messzeitpunkt und Konditionierung beeinflussen den Wert",
+        "source_ref": "Parker, Understanding Technical Data Sheets for PTFE Seal Materials, Part 1",
+        "basis": "Parker; ASTM-D2240-Prüfprinzip; Messzeitpunkt beeinflusst den Wert"
+      },
+      {
+        "parameter_id": "temperature_reference_t01",
+        "label": "Temperaturbereich Referenzgrad T01",
+        "value": "−253 °C bis +260 °C",
+        "value_kind": "range",
+        "grade": "Trelleborg Turcon T01/MF1, reines PTFE",
+        "test_method": "Hersteller-Auswahlleitfaden, Tabelle 3",
+        "conditions": "statische, langsam dynamische oder leicht belastete Anwendung; kein Familienlimit",
+        "source_ref": "Trelleborg Turcon Variseal Material Selection Guide, Tabelle 3, Seite 7",
+        "basis": "Trelleborg Turcon T01/MF1, reines PTFE für statische, langsam dynamische oder leicht belastete Anwendungen; kein Familienlimit"
+      },
+      {
+        "parameter_id": "temperature_reference_t07",
+        "label": "Temperaturbereich Referenzcompound T07",
+        "value": "−60 °C bis +300 °C",
+        "value_kind": "range",
+        "grade": "Trelleborg Turcon T07, polymerverstärkter PTFE-Compound",
+        "test_method": "Hersteller-Auswahlleitfaden, Tabelle 3",
+        "conditions": "grade- und bauformspezifischer Referenzbereich; kein Familienlimit",
+        "source_ref": "Trelleborg Turcon Variseal Material Selection Guide, Tabelle 3, Seite 7",
+        "basis": "Trelleborg Turcon T07, polymerverstärkter PTFE-Compound; zeigt die Grade-Abhängigkeit, kein Familienlimit"
+      }
+    ]
+  },
+  "NBR": {
+    "review_state": "reviewed",
+    "hinweis": "Quellengebundene Referenzwerte für Trelleborg-Standard-NBR-O-Ring-Compounds. Werte sind compound-, prüf- und anwendungsbezogen; sie sind weder universelle NBR-Familienwerte noch eine Einsatzfreigabe.",
+    "sources": [
+      "Trelleborg Sealing Solutions, O-Rings and Back-up Rings, Table 8: Material specification for standard NBR, Edition June 2024 (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/o_ring_gb_en.pdf)",
+      "Parker O-Ring Handbook PTD5705-EN, compound tables (https://www.parker.com/content/dam/Parker-com/Literature/Praedifa/Catalogs/Catalog_O-Ring-Handbook_PTD5705-EN.pdf)"
+    ],
+    "params": [
+      {
+        "parameter_id": "hardness_shore_a",
+        "label": "Härte, Standard-NBR N70",
+        "value": "70 ± 5 Shore A",
+        "value_kind": "range",
+        "grade": "Trelleborg Standard-NBR N70",
+        "test_method": "DIN ISO 48-4 / ASTM D2240, Shore A",
+        "conditions": "Standard-Materialprüfung; kein universeller NBR-Familienwert",
+        "source_ref": "Trelleborg O-Ring-Katalog, Tabelle 8, Seite 42",
+        "basis": "Standard-NBR N70; Härteklasse und Toleranz aus der Material-Spezifikation"
+      },
+      {
+        "parameter_id": "tensile_strength",
+        "label": "Zugfestigkeit, Standard-NBR N70",
+        "value": "≥ 14 MPa (≥ 2.031 psi)",
+        "value_kind": "minimum",
+        "grade": "Trelleborg Standard-NBR N70",
+        "test_method": "ISO 37 / ASTM D412",
+        "conditions": "Mindestwert der Standard-Materialspezifikation",
+        "source_ref": "Trelleborg O-Ring-Katalog, Tabelle 8, Seite 42",
+        "basis": "Mindestwert für N70; nicht auf andere Compounds übertragbar"
+      },
+      {
+        "parameter_id": "elongation_at_break",
+        "label": "Bruchdehnung, Standard-NBR N70",
+        "value": "≥ 200 %",
+        "value_kind": "minimum",
+        "grade": "Trelleborg Standard-NBR N70",
+        "test_method": "ISO 37 / ASTM D412",
+        "conditions": "Mindestwert der Standard-Materialspezifikation",
+        "source_ref": "Trelleborg O-Ring-Katalog, Tabelle 8, Seite 42",
+        "basis": "Mindestwert für N70; kein Lebensdauer- oder Einsatzgrenzwert"
+      },
+      {
+        "parameter_id": "compression_set",
+        "label": "Druckverformungsrest, Standard-NBR N70",
+        "value": "< 25 %",
+        "value_kind": "maximum",
+        "grade": "Trelleborg Standard-NBR N70",
+        "test_method": "ISO 815-1 Methode A, Prüfkörper B / ASTM D395 B, Prüfkörper 2",
+        "conditions": "24 h bei 100 °C; definierte Verpressung und Erholung gemäß Prüfverfahren",
+        "source_ref": "Trelleborg O-Ring-Katalog, Tabelle 8, Seite 42",
+        "basis": "Prüfwert unter definierten Laborbedingungen; nicht direkt mit Einsatzlebensdauer gleichzusetzen"
+      },
+      {
+        "parameter_id": "volume_change_irm903",
+        "label": "Volumenänderung in Referenzöl IRM 903, Standard-NBR N70",
+        "value": "max. +15 %",
+        "value_kind": "maximum",
+        "grade": "Trelleborg Standard-NBR N70",
+        "test_method": "ISO 1817 / ASTM D471",
+        "conditions": "72 h bei 100 °C in ASTM-Referenzöl IRM 903",
+        "source_ref": "Trelleborg O-Ring-Katalog, Tabelle 8, Seite 42",
+        "basis": "Referenzöl-Prüfung; nicht auf andere Öle, Additivpakete oder Temperaturen übertragbar"
+      },
+      {
+        "parameter_id": "temperature_standard_n70",
+        "label": "Temperaturbereich, Standard-NBR N70",
+        "value": "−30 °C bis +100 °C",
+        "value_kind": "range",
+        "grade": "Trelleborg Standard-NBR N70",
+        "test_method": "Hersteller-Materialleitfaden",
+        "conditions": "maximale und minimale Betriebstemperatur hängen ausdrücklich von Anwendung und Medium ab",
+        "source_ref": "Trelleborg O-Ring-Katalog, Tabelle 8, Seite 42",
+        "basis": "Herstellerbereich für N70; gekoppeltes Betriebsfenster ist anwendungsabhängig"
+      }
     ]
   }
 }

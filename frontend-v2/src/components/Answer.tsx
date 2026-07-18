@@ -51,6 +51,22 @@ function GegencheckNote({ gegencheck }: { gegencheck: ChatResponse["gegencheck"]
   return null; // matrix_compatible / no_matrix_data / no_medium — E4-1: never an affirmative badge
 }
 
+const MATRIX_COMPATIBLE_NEUTRAL_TEXT =
+  "Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.";
+
+function MaterialConstraintNote({ result }: { result: ChatResponse["material_constraints"] }) {
+  if (result?.evaluation_state !== "evaluated" || result.verdict !== "vertraeglich") return null;
+  return (
+    <div className="gegencheck-note" data-testid="material-constraint-neutral">
+      <span className="gegencheck-label">Material-Gegencheck: neutral</span>
+      <p className="gegencheck-text">{MATRIX_COMPATIBLE_NEUTRAL_TEXT}</p>
+      {result.decisive_ref && (
+        <p className="gegencheck-source">matrix-cell:{result.decisive_ref}</p>
+      )}
+    </div>
+  );
+}
+
 /** L3 trust status (audit L3 "Unsicherheit ist ein Zustand, kein Textbaustein"): lets the user tell
  * a confidently-checked answer from one the safety check adjusted, or one that was never confidently
  * checked at all — instead of every answer looking equally trustworthy. `verified` already folds
@@ -81,6 +97,20 @@ function VerificationBadge({ res }: { res: ChatResponse }) {
   return null; // no verification block on this payload at all (older/hand-built response)
 }
 
+function NextQuestion({ res }: { res: ChatResponse }) {
+  const question = res.next_question;
+  if (!question) return null;
+  return (
+    <section className="next-question" data-testid="next-question" aria-label="Nächste fachliche Klärung">
+      <span className="next-question-label">Nächste fachliche Klärung</span>
+      <p>{question.question_text}</p>
+      {(question.allowed_unknown || question.allowed_unobtainable) && (
+        <small>„Unbekannt“ oder „nicht ermittelbar“ kann ausdrücklich angegeben werden.</small>
+      )}
+    </section>
+  );
+}
+
 /** An assistant answer + its honesty framing: a `vorläufig` badge when NOT grounded, a candidate
  * label (orientation, not a final decision), the L3 trust status, primary-source citations, and —
  * outside the collapsed meta — a Gegencheck note when Modus E found an incompatibility or condition. */
@@ -90,6 +120,7 @@ export function Answer({ res }: { res: ChatResponse }) {
     <div className="answer" data-testid="answer">
       <RiskFlagsNote riskFlags={res.risk_flags} />
       <GegencheckNote gegencheck={res.gegencheck} />
+      <MaterialConstraintNote result={res.material_constraints} />
       {/* Phase 2B route-aware display: the "Technische Vorbewertung" meta block is render-only
           scaffolding and makes no sense on smalltalk/off-topic turns. Hide it ONLY when the backend
           explicitly says so (show_technical_preassessment === false); `undefined`/`true` keep the
@@ -114,6 +145,7 @@ export function Answer({ res }: { res: ChatResponse }) {
       {/* Belege: `show_evidence` is threaded as an INDEPENDENT guard, ANDed with Citations' own
           empty-citations check (so it can only hide, never invent citations). */}
       <Citations cites={res.citations} showEvidence={res.show_evidence} />
+      <NextQuestion res={res} />
     </div>
   );
 }

@@ -177,7 +177,7 @@
 /* Scroll-margin so in-page anchors (from footer/header links) land below the
    fixed header instead of underneath it. */
 .section-anchor {
-  scroll-margin-top: 76px;
+  scroll-margin-top: 56px;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -272,33 +272,34 @@
    transparent-on-white. MarketingHeader.tsx swaps `data-state` at runtime via
    an IntersectionObserver against `[data-header-theme]` sections. */
 .marketing-header {
-  background: rgba(250, 250, 249, 0.72);
+  background: rgba(250, 250, 249, 0.82);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border-bottom: 1px solid var(--color-border);
   color: #1f1f1f;
   transition:
     background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
     color 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .marketing-header[data-state="hero"] {
   background: transparent;
-  border-bottom-color: transparent;
   color: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .marketing-header[data-state="solid-light"] {
-  background: rgba(250, 250, 249, 0.72);
-  border-bottom-color: var(--color-border);
+  background: rgba(250, 250, 249, 0.82);
   color: #1f1f1f;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .marketing-header[data-state="solid-dark"] {
   background: rgba(6, 17, 31, 0.58);
-  border-bottom-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -307,33 +308,13 @@
   }
 }
 
-/* Dark technical hero atmosphere. `hero-background.png` (pale light-blue
-   gradient) still doesn't fit a dark hero. `sealing-intelligence-hero.png`
-   (generic person-at-laptop stock photo) was previously rejected wholesale —
-   but it also contains a clean, on-brand technical detail in one corner: an
-   engineering dimension drawing with O-ring seals on a desk, no face/hands/
-   laptop in frame. That detail is cropped tight into
-   public/images/marketing/hero-technical-detail.jpg (520x368, ~25KB) and
-   pushed to a moody near-black/navy duotone entirely via CSS — the source
-   file itself stays a plain, re-gradeable color photo; `.hero-technical-bg`
-   applies grayscale/brightness/contrast, and `.hero-technical-tint` layers a
-   multiply-blended navy gradient on top (reusing the previous placeholder's
-   radial-gradient warmth for continuity).
-   NOTE: the crop is modest native resolution (source asset is only
-   1086x1448), so it reads intentionally soft at ultra-wide viewport widths —
-   fine for an atmospheric backdrop, not a sharp hero shot.
-   TODO(frontend): swap for a purpose-shot or rendered dark macro asset (e.g.
-   a studio macro of a seal/O-ring against a dark backdrop) once available —
-   replace the background-image url below and this comment. */
-.hero-technical-bg {
-  background-color: #04070d;
-  background-image: url("/images/marketing/hero-technical-detail.jpg");
-  background-repeat: no-repeat;
-  background-position: center 42%;
-  background-size: cover;
-  filter: grayscale(0.82) brightness(0.48) contrast(1.22) saturate(0.85);
-}
-
+/* Dark technical hero atmosphere: purpose-built PTFE radial shaft seal
+   background with technical drawing, caliper, and seal macro detail. The asset
+   is already dark-graded, so the CSS keeps it clean and only adds the overlay
+   layers below for text readability. The image itself is rendered by
+   `next/image` (see HeroSection.tsx) rather than as a CSS background — that
+   gets it into the browser's preload scanner and served as AVIF/WebP, which
+   matters because this is the LCP element on a full-viewport hero. */
 .hero-technical-tint {
   background:
     radial-gradient(120% 90% at 50% 8%, rgba(38, 66, 104, 0.5) 0%, rgba(6, 12, 22, 0) 55%),
@@ -347,13 +328,14 @@
   opacity: 0.6;
 }
 
+/* Transform-only (no opacity) so the H1 counts as painted immediately for
+   LCP purposes — animating opacity from 0 on the LCP candidate delays (or
+   disqualifies) its measured paint time, a common Core Web Vitals mistake. */
 @keyframes sealai-hero-fade-up {
   from {
-    opacity: 0;
     transform: translate3d(0, 14px, 0);
   }
   to {
-    opacity: 1;
     transform: translate3d(0, 0, 0);
   }
 }

@@ -66,6 +66,7 @@ export interface ConfirmationResponse {
   not_computed: NotComputed[];
   notes: string[];
   clarifications: Clarification[];
+  next_question?: NextQuestionPayload | null;
 }
 // Medium Intelligence (Phase 2): helper-LLM-researched medium properties + sealing challenges for the
 // MEDIUM panel. ALWAYS vorläufig (LLM knowledge, never reviewed) — the panel renders the badge.
@@ -97,7 +98,7 @@ export interface SpecMaterial {
   next_question: string[];
   validation_required: boolean;
 }
-export interface KandidatenSpec {
+export interface KandidatenSpecCandidate {
   response_level: string;
   envelope_band: string | null;
   kritikalitaet: string;
@@ -114,6 +115,16 @@ export interface KandidatenSpec {
   geltungsrahmen: string;
   quellen: string[];
 }
+// OD-3 (routing audit follow-up): the Kandidaten-Spezifikation rule engine is RWDR/DIN-3760-only.
+// compute_kandidaten_spec() (backend/sealai_v2/pipeline/produktspec_step.py) returns this DISTINCT,
+// discriminated shape for any other seal type instead of a silent None -- discriminate on `status`,
+// which KandidatenSpecCandidate never has.
+export interface KandidatenSpecUnavailable {
+  status: "not_available_for_seal_type";
+  seal_type: string;
+  geltungsrahmen: string;
+}
+export type KandidatenSpec = KandidatenSpecCandidate | KandidatenSpecUnavailable;
 // Modus F (Hersteller-Partner pool, Dim. 6) — owner business model: payment gates pool MEMBERSHIP,
 // the SELECTION ranks BY CAPABILITY (neutral, §3.9; never pay-to-rank). A paid listing → transparently
 // labelled "Partner · Anzeige". lead_email is internal and is NEVER part of this payload.
@@ -231,6 +242,36 @@ export interface Gegencheck {
   condition?: string; // grounded matrix cell text, verbatim — only when basis === "matrix_conditional"
   source?: string;
 }
+// MAT-GOV-01 canonical audit surface. It is intentionally not rendered: even
+// verdict="vertraeglich" permits no positive material statement.
+export type MaterialConstraintVerdict = "vertraeglich" | "unvertraeglich" | "bedingt";
+export type MediumCardinality = "none" | "single" | "multiple" | "unknown";
+export interface MaterialConstraintMatch {
+  rule_ref: string;
+  verdict: MaterialConstraintVerdict;
+  statement: string;
+  source_ref: string;
+  evidence_binding_state: "unbound";
+}
+export interface MaterialConstraintBlocker {
+  kind: "hard_gate" | "scope" | "conflict" | "input" | "medium_relation";
+  ref: string;
+}
+export interface MaterialConstraintResult {
+  material_state: "known" | "missing" | "unknown" | "ambiguous";
+  medium_state: "known" | "missing" | "unknown" | "ambiguous";
+  medium_cardinality: MediumCardinality;
+  relation_state: "undetermined" | "resolved" | "unresolved" | "not_applicable";
+  evaluation_state: "evaluated" | "blocked" | "no_rule_data";
+  verdict?: MaterialConstraintVerdict;
+  decisive_ref?: string;
+  disqualified: boolean;
+  requires_resolution: boolean;
+  positive_statement_allowed: false;
+  conditions: MaterialConstraintMatch[];
+  blockers: MaterialConstraintBlocker[];
+  matches?: MaterialConstraintMatch[];
+}
 // L3 trust status (P1.5) — lets the client distinguish a confidently-verified answer from a hedge or
 // a silently-unverified one. See backend api/serializers.py::_verification() for the exact semantics.
 export interface Verification {
@@ -238,6 +279,30 @@ export interface Verification {
   parse_ok: boolean | null;
   hedged: boolean;
   ran: boolean;
+}
+export interface NextQuestionPayload {
+  case_id: string;
+  topic_id: string;
+  state_revision: number;
+  pack_id: string;
+  pack_version: string;
+  policy_version: string;
+  question_id: string;
+  primary_need_id: string;
+  related_need_ids: string[];
+  question_text: string;
+  question_type: string;
+  answer_schema: Record<string, unknown>;
+  allowed_unknown: boolean;
+  allowed_unobtainable: boolean;
+  criticality: string;
+  rule_refs: string[];
+  dependency_refs: string[];
+  pending_question_id: string;
+}
+export interface InterviewRefreshResponse {
+  case_id: string;
+  next_question: NextQuestionPayload | null;
 }
 export interface ChatResponse {
   answer: string;
@@ -251,9 +316,24 @@ export interface ChatResponse {
   kandidaten_spec?: KandidatenSpec | null; // Produktspec v3.1: the PRODUKT-KANDIDAT panel (vorläufig)
   alternativen?: Alternativen | null; // Modus F: the HERSTELLER-AUSWAHL panel data
   gegencheck?: Gegencheck | null; // Modus E: disqualify-only verdict, or null (no Gegencheck situation)
+  material_constraints?: MaterialConstraintResult; // default-off audit surface; never rendered as suitability
   verified?: boolean; // P1.5: the conservative, honest L3 trust signal
   verification?: Verification; // P1.5: the raw signals behind `verified` (for a precise badge)
   risk_flags?: string[]; // Legal-by-Design Phase D: matched regulated/safety-critical terms, or []
+  run?: {
+    run_id: string;
+    status: string;
+    case_id: string;
+    case_revision_started: number;
+    case_revision_current: number;
+    risk_level: string;
+    route_name?: string | null;
+    execution_class?: string | null;
+    model_tier?: string | null;
+    verification_mode?: string | null;
+    policy_version?: string | null;
+    needs_human_review?: boolean;
+  } | null;
   // Phase 2B routing → render contract: route-aware chat-UI display flags. All OPTIONAL/nullable so
   // older cached responses and the non-streaming /chat fallback never break. The backend defaults
   // every flag to True whenever no route was classified, so `undefined` MUST be treated as `true`
@@ -264,6 +344,9 @@ export interface ChatResponse {
   show_evidence?: boolean; // gate the "Belege" (citations) section
   show_calculations?: boolean; // gate calculation-derived sections (no matching block in Answer yet)
   show_rfq_sections?: boolean; // gate RFQ-specific sections (no matching block in Answer yet)
+  // Backend-owned adaptive-interview question. Absent when the controller is disabled, the case is
+  // outside the active RWDR scope, or no question directive is available.
+  next_question?: NextQuestionPayload;
 }
 export interface RememberedFact {
   feld: string;

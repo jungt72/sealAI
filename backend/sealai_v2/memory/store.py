@@ -13,10 +13,13 @@ never hit another tenant's state — a durable leak is the worst case (build-spe
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.contracts import (
+    ConversationAccessDenied,
     DerivedFact,
+    CaseRevisionConflict,
     MemoryView,
     RememberedFact,
     SessionSummary,
@@ -42,9 +45,11 @@ class _SessionState:
     facts: dict[str, RememberedFact] = field(default_factory=dict)
     derived: dict[str, DerivedFact] = field(default_factory=dict)
     turns: int = 0
+    case_revision: int = 0
     title: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    owner_subject: str | None = None
 
 
 def _require(tenant_id: str, session_id: str) -> None:
@@ -83,15 +88,38 @@ class InProcessConversationMemory:
     def _state(self, tenant_id: str, session_id: str) -> _SessionState:
         return self._store.setdefault((tenant_id, session_id), _SessionState())
 
+    @staticmethod
+    def _assert_owner(st: _SessionState | None, owner_subject: str) -> None:
+        if not owner_subject or st is None:
+            return
+        if st.owner_subject != owner_subject:
+            raise ConversationAccessDenied("conversation not found")
+
+    def assert_session_access(
+        self, *, tenant_id: str, session_id: str, owner_subject: str
+    ) -> None:
+        _require(tenant_id, session_id)
+        self._assert_owner(self._store.get((tenant_id, session_id)), owner_subject)
+
     # --- hot path (pipeline-facing Protocol) ---
 
-    def recall(self, *, tenant_id: str, session_id: str) -> MemoryView:
+    def recall(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> MemoryView:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
+        self._assert_owner(st, owner_subject)
         if st is None:
             return MemoryView()  # fresh session → true no-op
         window = tuple(st.messages[-(self._window_turns * 2) :])
-        return MemoryView(window=window, case_state=tuple(st.facts.values()))
+        facts = tuple(st.facts.values())
+        return MemoryView(
+            window=window,
+            case_state=facts,
+            case_state_v2=CaseStateV2.from_remembered_facts(
+                case_id=session_id, revision=st.case_revision, facts=facts
+            ),
+        )
 
     def record_turn(
         self,
@@ -102,10 +130,22 @@ class InProcessConversationMemory:
         answer: str,
         facts: tuple[RememberedFact, ...] = (),
         now: str | None = None,
+        expected_case_revision: int | None = None,
+        owner_subject: str = "",
     ) -> None:
         _require(tenant_id, session_id)
         is_new = (tenant_id, session_id) not in self._store
         st = self._state(tenant_id, session_id)
+        self._assert_owner(None if is_new else st, owner_subject)
+        if is_new and owner_subject:
+            st.owner_subject = owner_subject
+        if (
+            expected_case_revision is not None
+            and st.case_revision != expected_case_revision
+        ):
+            raise CaseRevisionConflict(
+                f"expected case revision {expected_case_revision}, got {st.case_revision}"
+            )
         if is_new and now is not None:
             st.created_at = now
             st.title = _title_from_question(question)
@@ -114,20 +154,53 @@ class InProcessConversationMemory:
         st.turns += 1
         st.messages.append(Turn(role="user", text=question, index=len(st.messages)))
         st.messages.append(Turn(role="assistant", text=answer, index=len(st.messages)))
+        if facts:
+            st.case_revision += 1
         for f in facts:
             # last value wins; re-stamp staleness to the current exchange (conservative merge).
-            st.facts[f.feld] = RememberedFact(
-                feld=f.feld, wert=f.wert, provenance=f.provenance, as_of_turn=st.turns
+            st.facts[f.feld] = replace(f, as_of_turn=st.turns)
+
+    def merge_facts(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        facts: tuple[RememberedFact, ...],
+        expected_case_revision: int | None = None,
+        owner_subject: str = "",
+    ) -> int:
+        _require(tenant_id, session_id)
+        is_new = (tenant_id, session_id) not in self._store
+        st = self._state(tenant_id, session_id)
+        self._assert_owner(None if is_new else st, owner_subject)
+        if is_new and owner_subject:
+            st.owner_subject = owner_subject
+        if (
+            expected_case_revision is not None
+            and st.case_revision != expected_case_revision
+        ):
+            raise CaseRevisionConflict(
+                f"expected case revision {expected_case_revision}, got {st.case_revision}"
             )
+        if facts:
+            st.case_revision += 1
+            for fact in facts:
+                st.facts[fact.feld] = replace(fact, as_of_turn=st.turns)
+        return st.case_revision
 
     # --- history (layer 3) + session listing ---
 
-    def history(self, *, tenant_id: str, session_id: str) -> tuple[Turn, ...]:
+    def history(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> tuple[Turn, ...]:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
+        self._assert_owner(st, owner_subject)
         return tuple(st.messages) if st else ()
 
-    def sessions(self, *, tenant_id: str) -> tuple[SessionSummary, ...]:
+    def sessions(
+        self, *, tenant_id: str, owner_subject: str = ""
+    ) -> tuple[SessionSummary, ...]:
         require_tenant(TenantContext(tenant_id))
         summaries = [
             SessionSummary(
@@ -138,6 +211,7 @@ class InProcessConversationMemory:
             )
             for (t, s), st in self._store.items()
             if t == tenant_id
+            and (not owner_subject or st.owner_subject == owner_subject)
         ]
         summaries.sort(key=lambda x: x.updated_at or "", reverse=True)
         return tuple(summaries)
@@ -145,10 +219,11 @@ class InProcessConversationMemory:
     # --- user control (build-spec §7: view / edit / delete / clear) ---
 
     def case_state(
-        self, *, tenant_id: str, session_id: str
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> tuple[RememberedFact, ...]:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
+        self._assert_owner(st, owner_subject)
         return tuple(st.facts.values()) if st else ()
 
     def edit_fact(
@@ -159,41 +234,67 @@ class InProcessConversationMemory:
         feld: str,
         wert: str,
         provenance: str = "user-edited",
+        owner_subject: str = "",
     ) -> None:
         _require(tenant_id, session_id)
+        is_new = (tenant_id, session_id) not in self._store
         st = self._state(tenant_id, session_id)
+        self._assert_owner(None if is_new else st, owner_subject)
+        if is_new and owner_subject:
+            st.owner_subject = owner_subject
         # a user-supplied value is a stronger provenance than a distilled claim (honesty: reflect the
         # source). Default = the inline MemoryPanel edit; the parameter form passes "user-form".
         st.facts[feld] = RememberedFact(
-            feld=feld, wert=wert, provenance=provenance, as_of_turn=st.turns
+            feld=feld,
+            wert=wert,
+            provenance=provenance,
+            as_of_turn=st.turns,
+            status="confirmed",
         )
+        st.case_revision += 1
 
-    def delete_fact(self, *, tenant_id: str, session_id: str, feld: str) -> None:
+    def delete_fact(
+        self, *, tenant_id: str, session_id: str, feld: str, owner_subject: str = ""
+    ) -> None:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
-        if st:
-            st.facts.pop(feld, None)
+        self._assert_owner(st, owner_subject)
+        if st and st.facts.pop(feld, None) is not None:
+            st.case_revision += 1
 
     # --- M8 derived slice (kernel_computed values — a SEPARATE, backend-only channel) ---
 
     def set_derived(
-        self, *, tenant_id: str, session_id: str, derived: tuple[DerivedFact, ...]
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        derived: tuple[DerivedFact, ...],
+        owner_subject: str = "",
     ) -> None:
         """Replace the whole derived slice from a fresh recompute (wholesale, never patched) — so a
         stale kernel value can never persist. Backend-only: there is no client path that reaches it."""
         _require(tenant_id, session_id)
+        is_new = (tenant_id, session_id) not in self._store
         st = self._state(tenant_id, session_id)
+        self._assert_owner(None if is_new else st, owner_subject)
+        if is_new and owner_subject:
+            st.owner_subject = owner_subject
         st.derived = {d.calc_id: d for d in derived}
 
     def derived_facts(
-        self, *, tenant_id: str, session_id: str
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> tuple[DerivedFact, ...]:
         _require(tenant_id, session_id)
         st = self._store.get((tenant_id, session_id))
+        self._assert_owner(st, owner_subject)
         return tuple(st.derived.values()) if st else ()
 
-    def clear(self, *, tenant_id: str, session_id: str) -> None:
+    def clear(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> None:
         _require(tenant_id, session_id)
+        self._assert_owner(self._store.get((tenant_id, session_id)), owner_subject)
         self._store.pop((tenant_id, session_id), None)
 
 
@@ -205,17 +306,21 @@ class InProcessCrossSessionMemory:
     Opens the door without taking on that surface before its dedicated review."""
 
     def __init__(self) -> None:
-        self._durable: dict[str, list[RememberedFact]] = {}
+        self._durable: dict[tuple[str, str], list[RememberedFact]] = {}
 
     def relevant_facts(
-        self, *, tenant_id: str, query: str, k: int = 5
+        self, *, tenant_id: str, query: str, k: int = 5, owner_subject: str = ""
     ) -> tuple[RememberedFact, ...]:
         require_tenant(TenantContext(tenant_id))  # P0 even while inert
         return ()  # DEFERRED: relevance retrieval is the cross-session sub-gate
 
     def remember_durable(
-        self, *, tenant_id: str, facts: tuple[RememberedFact, ...]
+        self,
+        *,
+        tenant_id: str,
+        facts: tuple[RememberedFact, ...],
+        owner_subject: str = "",
     ) -> None:
         require_tenant(TenantContext(tenant_id))
         # stored tenant-scoped (P0) but intentionally never injected back yet.
-        self._durable.setdefault(tenant_id, []).extend(facts)
+        self._durable.setdefault((tenant_id, owner_subject), []).extend(facts)
