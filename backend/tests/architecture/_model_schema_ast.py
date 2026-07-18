@@ -41,6 +41,13 @@ _PROTECTED_HELPERS = frozenset(
     }
 )
 _PROTECTED_BINDING_NAMES = _PROTECTED_HELPERS | {"_MATERIAL_RULESET_JSON"}
+_DYNAMIC_NAMESPACE_PRIMITIVES = frozenset(
+    {"__import__", "compile", "eval", "exec", "globals", "locals", "vars"}
+)
+_DYNAMIC_NAMESPACE_ROOTS = frozenset({"__builtins__", "builtins"})
+_DICT_MUTATION_METHODS = frozenset(
+    {"__delitem__", "__setitem__", "clear", "pop", "popitem", "setdefault", "update"}
+)
 _ALLOWED_HELPER_IMPORTS = {
     "sqlalchemy": frozenset(
         {
@@ -367,6 +374,88 @@ def _direct_bound_names(node: ast.AST) -> tuple[str, ...]:
     return ()
 
 
+def _literal_protected_name(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Constant)
+        and type(node.value) is str
+        and node.value in _PROTECTED_BINDING_NAMES
+    )
+
+
+def _contains_literal_protected_name(node: ast.AST) -> bool:
+    return any(_literal_protected_name(candidate) for candidate in ast.walk(node))
+
+
+def _validate_dynamic_namespace_boundary(tree: ast.Module, *, filename: str) -> None:
+    """Reject syntactic dynamic namespace access; this is not alias analysis."""
+
+    violations: list[ast.AST] = []
+    for node in ast.walk(tree):
+        bound = set(_direct_bound_names(node))
+        if bound & (_DYNAMIC_NAMESPACE_PRIMITIVES | _DYNAMIC_NAMESPACE_ROOTS):
+            violations.append(node)
+            continue
+
+        if isinstance(node, ast.Import):
+            if any(
+                alias.name == "builtins"
+                or (alias.asname or alias.name.split(".", 1)[0])
+                in _DYNAMIC_NAMESPACE_PRIMITIVES
+                for alias in node.names
+            ):
+                violations.append(node)
+                continue
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "builtins" or any(
+                alias.name in _DYNAMIC_NAMESPACE_PRIMITIVES
+                or (alias.asname or alias.name) in _DYNAMIC_NAMESPACE_PRIMITIVES
+                for alias in node.names
+            ):
+                violations.append(node)
+                continue
+        elif isinstance(node, ast.Name):
+            if node.id in _DYNAMIC_NAMESPACE_PRIMITIVES | _DYNAMIC_NAMESPACE_ROOTS:
+                violations.append(node)
+                continue
+        elif isinstance(node, ast.Attribute):
+            if (
+                isinstance(node.value, ast.Name)
+                and node.value.id in _DYNAMIC_NAMESPACE_ROOTS
+            ):
+                violations.append(node)
+                continue
+            if node.attr == "__dict__" and isinstance(node.ctx, (ast.Store, ast.Del)):
+                violations.append(node)
+                continue
+        elif isinstance(node, ast.Subscript):
+            if (
+                isinstance(node.ctx, (ast.Store, ast.Del))
+                and _literal_protected_name(node.slice)
+                and isinstance(node.value, ast.Attribute)
+                and node.value.attr == "__dict__"
+            ):
+                violations.append(node)
+                continue
+        elif isinstance(node, ast.Call):
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "dict"
+                and node.func.attr in _DICT_MUTATION_METHODS
+                and any(
+                    _contains_literal_protected_name(argument) for argument in node.args
+                )
+            ):
+                violations.append(node)
+
+    if violations:
+        first = min(violations, key=lambda node: getattr(node, "lineno", 1))
+        raise AssertionError(
+            f"{filename}:{getattr(first, 'lineno', 1)}: dynamic MAT-GOV schema "
+            "namespace access is forbidden"
+        )
+
+
 def _symbol_is_binding(symbol: symtable.Symbol) -> bool:
     return any(
         predicate()
@@ -425,6 +514,7 @@ def _validate_symbol_bindings(
 
 
 def _validate_helper_bindings(tree: ast.Module, *, source: str, filename: str) -> None:
+    _validate_dynamic_namespace_boundary(tree, filename=filename)
     top_level_ids = {id(statement) for statement in tree.body}
     import_counts = {name: 0 for name in _PROTECTED_HELPERS}
     allowed_binding_nodes: set[tuple[int, str]] = set()

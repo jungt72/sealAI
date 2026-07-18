@@ -465,6 +465,54 @@ class V2MaterialBindingProbe(Base):
     }
 
 
+_DYNAMIC_NAMESPACE_MUTATIONS = (
+    'exec("{name} = build_dynamic_type()")',
+    'globals()["{name}"] = build_dynamic_type()',
+    'locals()["{name}"] = build_dynamic_type()',
+    'vars()["{name}"] = build_dynamic_type()',
+    'del globals()["{name}"]',
+    'globals()["{name}"] = {name}',
+    'builtins.__dict__["{name}"] = build_dynamic_type()',
+    'del builtins.__dict__["{name}"]',
+    "builtins.{name} = build_dynamic_type()",
+    "del builtins.{name}",
+    '__builtins__["{name}"] = build_dynamic_type()',
+    'dict.__setitem__(namespace, "{name}", build_dynamic_type())',
+    'dict.__delitem__(namespace, "{name}")',
+    'dict.update(namespace, {"{name}": build_dynamic_type()})',
+)
+
+
+@pytest.mark.parametrize("name", sorted(_PROTECTED_BINDING_NAMES))
+@pytest.mark.parametrize("mutation", _DYNAMIC_NAMESPACE_MUTATIONS)
+def test_material_schema_parser_rejects_dynamic_namespace_mutation(
+    name: str, mutation: str
+) -> None:
+    _assert_schema_rejected(_schema_with_binding(mutation.replace("{name}", name)))
+
+
+@pytest.mark.parametrize(
+    "dynamic_source",
+    (
+        'eval("String")',
+        'compile("String = build_dynamic_type()", "<schema>", "exec")',
+        'builtins.exec("String = build_dynamic_type()")',
+        '__builtins__.eval("String")',
+        "runner = exec",
+        "runner = builtins.exec",
+        "import builtins",
+        "import builtins as runtime_builtins",
+        "from builtins import exec",
+        "from builtins import exec as runner",
+        "from attacker import value as globals",
+    ),
+)
+def test_material_schema_parser_rejects_dynamic_namespace_primitives(
+    dynamic_source: str,
+) -> None:
+    _assert_schema_rejected(_schema_with_binding(dynamic_source))
+
+
 def test_material_schema_parser_closes_table_constraint_ast() -> None:
     valid = """
 class UnexpectedName(Base):
