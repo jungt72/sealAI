@@ -470,6 +470,9 @@ is read-only; name-only matches, partial objects, and semantic drift fail closed
 8. Canonical media assignments require an exact Evidence-bound catalog entry
    or a verified user confirmation of such an entry. Model output remains a
    non-authoritative candidate.
+9. A media-identity claim never receives a material placeholder. It requires a
+   typed Evidence Manifest v2 `media_identity` scope with no `materials` field
+   and exactly one `media_ref`; MAT-EVID-01A.v1 remains immutable.
 
 Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Technical immutable snapshot
 identity is implemented by MAT-GOV-03A, runtime pinning by MAT-GOV-03B, and the
