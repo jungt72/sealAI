@@ -92,3 +92,11 @@ anders gelandet), #205 (Phase-3A-Governance-Log-Eintrag, DIRTY/CONFLICTING, Inha
 #208 (Phase-3B-Governance-Log-Eintrag, BLOCKED durch obigen Fund, Inhalt echt fehlend). Keine
 Werte je angezeigt/kopiert/geloggt -- nur redigierte CI-Ausgabe gelesen, im Einklang mit dem
 Runbook.
+
+2026-07-18 (Nachtrag 2) | Claude Code | Governance-Log-Backfill statt Merge | #205/#208 (Phase-3A/
+3B-Aktivierungs-Logs) als frische Commits wortgetreu direkt auf main nachgezogen (PR #338,
+gemerged) statt die alten Branches zu mergen -- umgeht den Struktur-Fund zum Range-Secret-Scanner
+sauber. 4 fehlende ops/deploy-ledger.jsonl-Zeilen an ihrer historisch korrekten chronologischen
+Position eingefuegt (nicht ans Ende angehaengt). #205 + #208 geschlossen als superseded durch #338.
+#187 (staging deploy script) bleibt bewusst unangetastet -- echte Merge-Konflikte, kein
+Empfehlungs-Fall wie bei 205/208, Owner-Entscheidung noetig.
