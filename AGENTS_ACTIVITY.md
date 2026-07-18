@@ -33,3 +33,11 @@ lebende Luecke gefunden: disk_safeguard.sh (Cron, User thorsten) ist seit einem 
 No-Op-Shim fuer Nicht-Root-Aufrufer; der vorgesehene Ersatz sealai-docker-disk-guard.timer war nie
 enabled. Disk-Guard lief seitdem ueber keinen Pfad. Fix braucht einmalig `sudo systemctl enable --now
 sealai-docker-disk-guard.timer` vom Owner (keine passwortlose sudo in dieser Session) -- noch offen.
+
+2026-07-18 (Nachtrag) | Claude Code + Owner | Disk-Guard-Luecke geschlossen | Owner hat `sudo
+systemctl enable --now sealai-docker-disk-guard.timer` sowie danach `sudo systemctl start
+sealai-docker-disk-guard.service` ausgefuehrt (Timer allein reichte nicht: OnBootSec/OnUnitActiveSec
+sind monotone Trigger, die ohne echten Reboot bzw. ohne einen frischen Service-Lauf nicht nachtraeglich
+feuern). Service lief danach mit status=0/SUCCESS, State-Dir aktualisiert. Redundante
+thorsten-Crontab-Zeile fuer das alte disk_safeguard.sh-Shim entfernt -- genau ein Pfad (systemd-Timer)
+ist jetzt aktiv. check_guard_health.sh bestaetigt: OK.
