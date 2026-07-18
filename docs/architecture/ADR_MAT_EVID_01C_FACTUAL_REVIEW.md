@@ -23,6 +23,12 @@ are unknown or restricted, when a claim lacks its declared required source
 type, or while any conflict/supersession relation remains in the pinned
 evidence snapshot. Correction requires a new immutable 01A and 01C snapshot.
 No full standard text or long copyrighted passage belongs in this aggregate.
+All free source metadata is bounded by both Unicode character and UTF-8 byte
+length: document IDs and publishers to 256/512, titles to 512/1024, revisions
+and editions to 128/256, and locator and rights-basis text to 512/1024. Scope
+values are limited to 256/512. Without changing MAT-EVID-01A.v1, 01C approval
+also rejects any referenced atomic 01A claim text above 512 characters or 1024
+UTF-8 bytes.
 
 ## Review and approval axes
 

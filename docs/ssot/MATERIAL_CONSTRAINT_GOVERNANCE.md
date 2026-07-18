@@ -303,6 +303,10 @@ not factual confirmation: even an approved dossier has only
 `FACTUAL_REVIEW_ONLY` authority, keeps `positive_statement_allowed=false`, and
 does not upgrade the 01B runtime state.
 
+Every free 01C metadata field has an explicit character and UTF-8 byte ceiling.
+01C approval also rejects referenced 01A atomic claim text above 512 characters
+or 1024 bytes. This approval-only guard does not reinterpret MAT-EVID-01A.v1.
+
 Migration `20260718_0016` adds five empty tenant-scoped immutable tables with
 restrictive foreign keys and append-only validation, lifecycle and audit
 events. There is no seed, backfill, public/admin API, pointer, activation,

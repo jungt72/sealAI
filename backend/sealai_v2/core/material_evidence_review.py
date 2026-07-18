@@ -48,6 +48,24 @@ _SOURCE_REF_RE = re.compile(r"^msr_[0-9a-f]{64}$", re.ASCII)
 _CLAIM_REF_RE = re.compile(r"^mec_[0-9a-f]{64}$", re.ASCII)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$", re.ASCII)
 
+MAX_DOCUMENT_ID_CHARS = 256
+MAX_DOCUMENT_TITLE_CHARS = 512
+MAX_PUBLISHER_CHARS = 256
+MAX_REVISION_CHARS = 128
+MAX_RIGHTS_BASIS_CHARS = 512
+MAX_LOCATOR_CHARS = 512
+MAX_SCOPE_VALUE_CHARS = 256
+MAX_APPROVABLE_CLAIM_TEXT_CHARS = 512
+
+MAX_DOCUMENT_ID_BYTES = 512
+MAX_DOCUMENT_TITLE_BYTES = 1024
+MAX_PUBLISHER_BYTES = 512
+MAX_REVISION_BYTES = 256
+MAX_RIGHTS_BASIS_BYTES = 1024
+MAX_LOCATOR_BYTES = 1024
+MAX_SCOPE_VALUE_BYTES = 512
+MAX_APPROVABLE_CLAIM_TEXT_BYTES = 1024
+
 
 class EvidenceReviewErrorCode(str, Enum):
     INVALID_JSON = "MAT_EVID_REVIEW_INVALID_JSON"
@@ -67,6 +85,7 @@ class EvidenceReviewErrorCode(str, Enum):
     RIGHTS_BLOCKED = "MAT_EVID_REVIEW_RIGHTS_BLOCKED"
     SOURCE_TYPE_MISMATCH = "MAT_EVID_REVIEW_SOURCE_TYPE_MISMATCH"
     CONFLICT_BLOCKED = "MAT_EVID_REVIEW_CONFLICT_BLOCKED"
+    CONTENT_LIMIT_EXCEEDED = "MAT_EVID_REVIEW_CONTENT_LIMIT_EXCEEDED"
     HASH_MISMATCH = "MAT_EVID_REVIEW_HASH_MISMATCH"
     SNAPSHOT_ID_MISMATCH = "MAT_EVID_REVIEW_SNAPSHOT_ID_MISMATCH"
     ROLE_REQUIRED = "MAT_EVID_REVIEW_ROLE_REQUIRED"
@@ -129,6 +148,17 @@ def _text(value: Any, *, path: str) -> str:
         )
     _unicode(value, path=path)
     return value
+
+
+def _bounded_text(value: Any, *, path: str, max_chars: int, max_bytes: int) -> str:
+    text = _text(value, path=path)
+    if len(text) > max_chars or len(text.encode("utf-8")) > max_bytes:
+        _fail(
+            EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED,
+            f"text exceeds {max_chars} characters or {max_bytes} UTF-8 bytes",
+            path=path,
+        )
+    return text
 
 
 def _unicode(value: str, *, path: str) -> None:
@@ -292,7 +322,12 @@ class ExactLocatorV1:
     value: str
 
     def __post_init__(self) -> None:
-        _text(self.value, path="$.source.locator.value")
+        _bounded_text(
+            self.value,
+            path="$.source.locator.value",
+            max_chars=MAX_LOCATOR_CHARS,
+            max_bytes=MAX_LOCATOR_BYTES,
+        )
 
     def to_dict(self) -> dict[str, str]:
         return {"state": "exact", "value": self.value}
@@ -303,7 +338,12 @@ class UnavailableLocatorV1:
     reason: str
 
     def __post_init__(self) -> None:
-        _text(self.reason, path="$.source.locator.reason")
+        _bounded_text(
+            self.reason,
+            path="$.source.locator.reason",
+            max_chars=MAX_LOCATOR_CHARS,
+            max_bytes=MAX_LOCATOR_BYTES,
+        )
 
     def to_dict(self) -> dict[str, str]:
         return {"reason": self.reason, "state": "unavailable"}
@@ -324,14 +364,18 @@ class IncludedExcerptV1:
     rights_basis: str
 
     def __post_init__(self) -> None:
-        _text(self.text, path="$.source.excerpt.text")
-        _text(self.rights_basis, path="$.source.excerpt.rights_basis")
-        if len(self.text) > 280 or len(self.text.encode("utf-8")) > 1024:
-            _fail(
-                EvidenceReviewErrorCode.RIGHTS_BLOCKED,
-                "excerpt exceeds the short-excerpt limit",
-                path="$.source.excerpt.text",
-            )
+        _bounded_text(
+            self.text,
+            path="$.source.excerpt.text",
+            max_chars=280,
+            max_bytes=1024,
+        )
+        _bounded_text(
+            self.rights_basis,
+            path="$.source.excerpt.rights_basis",
+            max_chars=MAX_RIGHTS_BASIS_CHARS,
+            max_bytes=MAX_RIGHTS_BASIS_BYTES,
+        )
 
     def to_dict(self) -> dict[str, str]:
         return {
@@ -366,15 +410,50 @@ class ReviewedSourceMetadataV1:
             "invalid source_ref",
             path="$.source.source_ref",
         )
-        for field, value in (
-            ("document_id", self.document_id),
-            ("document_title", self.document_title),
-            ("publisher", self.publisher),
-            ("document_revision", self.document_revision),
-            ("publication_edition", self.publication_edition),
-            ("rights_basis", self.rights_basis),
+        for field, value, max_chars, max_bytes in (
+            (
+                "document_id",
+                self.document_id,
+                MAX_DOCUMENT_ID_CHARS,
+                MAX_DOCUMENT_ID_BYTES,
+            ),
+            (
+                "document_title",
+                self.document_title,
+                MAX_DOCUMENT_TITLE_CHARS,
+                MAX_DOCUMENT_TITLE_BYTES,
+            ),
+            (
+                "publisher",
+                self.publisher,
+                MAX_PUBLISHER_CHARS,
+                MAX_PUBLISHER_BYTES,
+            ),
+            (
+                "document_revision",
+                self.document_revision,
+                MAX_REVISION_CHARS,
+                MAX_REVISION_BYTES,
+            ),
+            (
+                "publication_edition",
+                self.publication_edition,
+                MAX_REVISION_CHARS,
+                MAX_REVISION_BYTES,
+            ),
+            (
+                "rights_basis",
+                self.rights_basis,
+                MAX_RIGHTS_BASIS_CHARS,
+                MAX_RIGHTS_BASIS_BYTES,
+            ),
         ):
-            _text(value, path=f"$.source.{field}")
+            _bounded_text(
+                value,
+                path=f"$.source.{field}",
+                max_chars=max_chars,
+                max_bytes=max_bytes,
+            )
         if type(self.document_type) is not EvidenceDocumentType:
             _fail(
                 EvidenceReviewErrorCode.INVALID_TYPE,
@@ -455,6 +534,18 @@ class ReviewedClaimMetadataV1:
                 "invalid scope",
                 path="$.claim.scope",
             )
+        for field, values in (
+            ("materials", self.scope.materials),
+            ("media", self.scope.media),
+            ("conditions", self.scope.conditions),
+        ):
+            for index, value in enumerate(values):
+                _bounded_text(
+                    value,
+                    path=f"$.claim.scope.{field}[{index}]",
+                    max_chars=MAX_SCOPE_VALUE_CHARS,
+                    max_bytes=MAX_SCOPE_VALUE_BYTES,
+                )
         if (
             type(self.required_source_types) is not tuple
             or not self.required_source_types
@@ -760,6 +851,13 @@ class EvidenceReviewPayloadV1:
 
     def validate_for_approval(self, evidence: EvidenceManifestSnapshotV1) -> None:
         self.validate_against_evidence(evidence)
+        for index, claim in enumerate(evidence.payload.claims):
+            _bounded_text(
+                claim.claim_text,
+                path=f"$.evidence.claims[{index}].claim_text",
+                max_chars=MAX_APPROVABLE_CLAIM_TEXT_CHARS,
+                max_bytes=MAX_APPROVABLE_CLAIM_TEXT_BYTES,
+            )
         blocked = [
             source.source_ref
             for source in self.sources

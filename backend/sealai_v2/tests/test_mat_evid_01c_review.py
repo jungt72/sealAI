@@ -95,7 +95,11 @@ def _ruleset_payload() -> str:
     )
 
 
-def _evidence_payload(ruleset_snapshot_id: str) -> tuple[str, str, str]:
+def _evidence_payload(
+    ruleset_snapshot_id: str,
+    *,
+    claim_text: str = "Synthetic atomic evidence claim.",
+) -> tuple[str, str, str]:
     source_values = {
         "document_id": "DOC-TEST-001",
         "document_revision": "rev-1",
@@ -108,7 +112,6 @@ def _evidence_payload(ruleset_snapshot_id: str) -> tuple[str, str, str]:
         media=("TEST-MEDIUM",),
         conditions=("TEST-CONDITION",),
     )
-    claim_text = "Synthetic atomic evidence claim."
     claim_ref = derive_claim_ref(claim_text=claim_text, scope=scope)
     return (
         json.dumps(
@@ -192,7 +195,12 @@ def _review_payload(
     )
 
 
-def _repository(tmp_path, name: str = "mat-evid-01c.db"):
+def _repository(
+    tmp_path,
+    name: str = "mat-evid-01c.db",
+    *,
+    claim_text: str = "Synthetic atomic evidence claim.",
+):
     engine = make_engine(f"sqlite:///{tmp_path / name}")
     _upgrade_engine(engine, "20260718_0016")
     factory = make_sessionmaker(engine)
@@ -217,7 +225,9 @@ def _repository(tmp_path, name: str = "mat-evid-01c.db"):
         created_by_subject="subject:creator",
         created_at=CREATED_AT,
     )
-    raw_evidence, source_ref, claim_ref = _evidence_payload(ruleset.snapshot_id)
+    raw_evidence, source_ref, claim_ref = _evidence_payload(
+        ruleset.snapshot_id, claim_text=claim_text
+    )
     evidence = evidence_repo.store_snapshot(
         manifest_id=MANIFEST_ID,
         raw_payload=raw_evidence,
@@ -372,6 +382,79 @@ def test_unknown_or_restricted_rights_block_approval(tmp_path, rights) -> None:
             created_at="2026-07-18T14:02:00Z",
         )
     assert exc.value.code is EvidenceReviewErrorCode.RIGHTS_BLOCKED
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("document_id", "x" * 257),
+        ("document_title", "x" * 513),
+        ("publisher", "x" * 257),
+        ("document_revision", "x" * 129),
+        ("publication_edition", "x" * 129),
+        ("rights_basis", "x" * 513),
+    ],
+)
+def test_oversized_free_source_metadata_is_rejected(tmp_path, field, value) -> None:
+    _engine, _reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    payload = json.loads(_review_payload(evidence, source_ref, claim_ref))
+    payload["sources"][0][field] = value
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        parse_review_payload(json.dumps(payload))
+    assert exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        {"state": "exact", "value": "x" * 513},
+        {"state": "unavailable", "reason": "x" * 513},
+    ],
+)
+def test_oversized_locator_metadata_is_rejected(tmp_path, locator) -> None:
+    _engine, _reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    payload = json.loads(_review_payload(evidence, source_ref, claim_ref))
+    payload["sources"][0]["locator"] = locator
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        parse_review_payload(json.dumps(payload))
+    assert exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
+
+
+def test_utf8_byte_limit_is_independent_of_character_limit(tmp_path) -> None:
+    _engine, _reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    payload = json.loads(_review_payload(evidence, source_ref, claim_ref))
+    payload["sources"][0]["publisher"] = "漢" * 256
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        parse_review_payload(json.dumps(payload, ensure_ascii=False))
+    assert exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
+
+
+def test_oversized_scope_value_is_rejected(tmp_path) -> None:
+    _engine, _reviews, evidence, source_ref, claim_ref = _repository(tmp_path)
+    payload = json.loads(_review_payload(evidence, source_ref, claim_ref))
+    payload["claims"][0]["scope"]["conditions"] = ["x" * 257]
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        parse_review_payload(json.dumps(payload))
+    assert exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
+
+
+def test_oversized_01a_claim_text_can_never_be_approved(tmp_path) -> None:
+    _engine, reviews, evidence, source_ref, claim_ref = _repository(
+        tmp_path, claim_text="x" * 513
+    )
+    stored = _store(reviews, evidence, source_ref, claim_ref)
+    reviews.record_review(
+        stored.review_snapshot_id,
+        identity=_actor("subject:reviewer", REVIEW_ROLE),
+        created_at="2026-07-18T14:01:00Z",
+    )
+    with pytest.raises(EvidenceReviewValidationError) as exc:
+        reviews.record_approval(
+            stored.review_snapshot_id,
+            identity=_actor("subject:approver", APPROVE_ROLE),
+            created_at="2026-07-18T14:02:00Z",
+        )
+    assert exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
 
 
 def test_required_source_type_is_checked_against_claim_sources(tmp_path) -> None:
@@ -599,7 +682,20 @@ def test_short_excerpt_limit_and_explicit_unavailable_locator(tmp_path) -> None:
                 "rights_basis": "Synthetic test permission",
             },
         )
-    assert exc.value.code is EvidenceReviewErrorCode.RIGHTS_BLOCKED
+    assert exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
+    with pytest.raises(EvidenceReviewValidationError) as rights_exc:
+        _store(
+            reviews,
+            evidence,
+            source_ref,
+            claim_ref,
+            excerpt={
+                "state": "included",
+                "text": "Short synthetic excerpt.",
+                "rights_basis": "x" * 513,
+            },
+        )
+    assert rights_exc.value.code is EvidenceReviewErrorCode.CONTENT_LIMIT_EXCEEDED
 
 
 def test_revocation_and_quarantine_are_terminal_fail_closed_states(tmp_path) -> None:
