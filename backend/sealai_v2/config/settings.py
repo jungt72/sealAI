@@ -7,7 +7,9 @@ when ``SEALAI_V2_OPENAI_API_KEY`` is unset (see ``llm.factory``).
 
 from __future__ import annotations
 
-from pydantic import model_validator
+from typing import Literal
+
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -116,6 +118,36 @@ class Settings(BaseSettings):
     # Compatibility verdicts are technical claims. The legacy matrix remains
     # inactive until every cell has typed source evidence and applicability.
     compatibility_matrix_enabled: bool = False
+    # MAT-GOV-01 typed material-constraint result. Default-OFF and additive: while
+    # disabled the pipeline emits only the historical Gegencheck field and the
+    # serialized response remains key-for-key unchanged.
+    material_constraints_enabled: bool = False
+    # MAT-GOV-03B: pointerless, invisible and non-authoritative shadow
+    # evaluation.  All switches are independent from the visible material
+    # constraint flag and default off.  No setting ever contains a snapshot ID.
+    material_ruleset_shadow_enabled: bool = False
+    material_ruleset_shadow_persistence_enabled: bool = False
+    material_ruleset_shadow_sampling_enabled: bool = False
+    material_ruleset_shadow_sampling_basis_points: int = 0
+    material_ruleset_shadow_environment: (
+        Literal["development", "staging", "production"] | None
+    ) = None
+    material_ruleset_shadow_redis_url: str | None = None
+    material_ruleset_shadow_hmac_active_key_id: str | None = None
+    material_ruleset_shadow_hmac_keyring_json: SecretStr | None = None
+    material_ruleset_shadow_evaluator_version: str = "MAT-GOV-03B.eval.v1"
+    material_ruleset_shadow_kernel_version: str = "MAT-GOV-02.kernel.v1"
+    material_ruleset_shadow_poll_interval_s: int = 15
+    material_ruleset_shadow_lease_s: int = 60
+    material_ruleset_shadow_db_timeout_s: int = 2
+    material_ruleset_shadow_retry_base_s: int = 5
+    material_ruleset_shadow_retry_max_s: int = 300
+    material_ruleset_shadow_claim_timeout_s: int = 60
+    material_ruleset_shadow_max_attempts: int = 5
+    # MAT-EVID-01B: technical, non-authoritative companion binding inside the
+    # already isolated shadow worker. It never changes the request pipeline or
+    # public result and defaults off independently from every 03B switch.
+    material_evidence_runtime_binding_enabled: bool = False
     # M4 deterministic calc layer: evaluate the reviewed calc registry and inject computed values
     # into L1/L3. Default ON; off → no "Berechnete Werte" block. Incident kill-switch, not a flag.
     compute_enabled: bool = True
@@ -194,19 +226,23 @@ class Settings(BaseSettings):
     # invention); OFF -> byte-identical. Flip via SEALAI_V2_MATERIAL_PARAM_TABLE_ENABLED.
     material_param_table_enabled: bool = False
     # Phase 2B (LangGraph-suitability audit): conservative route classification
-    # (pipeline/routing.py). OFF (default) -> classify_route() is never called; the pipeline is
-    # strictly byte-identical to pre-Phase-2B behavior. ON -> a route is computed per turn from
+    # (pipeline/routing.py). False: classify_route() is never called; the pipeline is
+    # strictly byte-identical to pre-Phase-2B behavior. True: a route is computed per turn from
     # deterministic engineering signals (dimensions, pressure/temperature/rpm, PV, compression,
     # leakage/RFQ/replacement language, comparative-suitability claims, an already-known
     # material+medium pairing, or a non-empty accumulated case-state) + the already-running
-    # understand() intent. The router can only make the system MORE conservative: any engineering
-    # signal, or any doubt (missing/unklar intent), always forces the existing full engineering
-    # pipeline (unchanged L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero
-    # engineering signals were found -- may skip the LLM-based L3 verifier (Phase 2B safety
-    # correction: a stress test found real false-negatives on general_sealing_knowledge/
-    # material_knowledge's keyword signals against real eval questions, incl. injection fixtures
-    # -- both routes stay L3=True). When skipped, the EXISTING deterministic run_parametric_guard
-    # fallback (already used when the verifier is disabled) still runs -- no new guard invented.
+    # understand() intent -- UNLESS execution_policy_enabled is ALSO True, in which case
+    # pipeline.py uses classify_route_deterministic (no understand()/intent input at all) as the
+    # route decision instead, and this flag's own routing computation is telemetry-only (see
+    # pipeline.py's execution_policy_enabled vs. route_optimization_enabled branch). The router
+    # can only make the system MORE conservative: any engineering signal, or any doubt
+    # (missing/unklar intent), always forces the existing full engineering pipeline (unchanged
+    # L1/RAG/kernel/L3). Only smalltalk_navigation -- and ONLY when zero engineering signals were
+    # found -- may skip the LLM-based L3 verifier (Phase 2B safety correction: a stress test found
+    # real false-negatives on general_sealing_knowledge/material_knowledge's keyword signals
+    # against real eval questions, incl. injection fixtures -- both routes stay L3=True). When
+    # skipped, the EXISTING deterministic run_parametric_guard fallback (already used when the
+    # verifier is disabled) still runs -- no new guard invented.
     route_optimization_enabled: bool = False
     # Hybrid routing: deterministic engineering guards and known fast paths remain authoritative;
     # only otherwise-unclassified free language is sent to the bounded semantic classifier.
@@ -248,6 +284,77 @@ class Settings(BaseSettings):
             raise ValueError("router_max_output_tokens must be at least 32")
         if self.router_timeout_s <= 0:
             raise ValueError("router_timeout_s must be positive")
+        if self.material_constraints_enabled and not self.compatibility_matrix_enabled:
+            raise ValueError(
+                "material_constraints_enabled requires compatibility_matrix_enabled"
+            )
+        if self.material_ruleset_shadow_persistence_enabled and not (
+            self.material_ruleset_shadow_enabled
+        ):
+            raise ValueError(
+                "material shadow persistence requires material_ruleset_shadow_enabled"
+            )
+        if self.material_ruleset_shadow_sampling_enabled and not (
+            self.material_ruleset_shadow_enabled
+            and self.material_ruleset_shadow_persistence_enabled
+        ):
+            raise ValueError("material shadow sampling requires shadow and persistence")
+        if self.material_ruleset_shadow_sampling_basis_points != 0:
+            raise ValueError("MAT-GOV-03B sampling is owner-frozen at zero percent")
+        if self.material_evidence_runtime_binding_enabled and not (
+            self.material_ruleset_shadow_enabled
+            and self.material_ruleset_shadow_persistence_enabled
+        ):
+            raise ValueError("runtime evidence binding requires shadow and persistence")
+        shadow_times = {
+            "poll_interval": self.material_ruleset_shadow_poll_interval_s,
+            "lease": self.material_ruleset_shadow_lease_s,
+            "db_timeout": self.material_ruleset_shadow_db_timeout_s,
+            "retry_base": self.material_ruleset_shadow_retry_base_s,
+            "retry_max": self.material_ruleset_shadow_retry_max_s,
+            "claim_timeout": self.material_ruleset_shadow_claim_timeout_s,
+            "max_attempts": self.material_ruleset_shadow_max_attempts,
+        }
+        if any(type(value) is not int or value <= 0 for value in shadow_times.values()):
+            raise ValueError(
+                "material shadow timeouts and attempts must be positive integers"
+            )
+        if self.material_ruleset_shadow_lease_s <= (
+            self.material_ruleset_shadow_poll_interval_s
+        ):
+            raise ValueError("material shadow lease must exceed the polling interval")
+        if self.material_ruleset_shadow_retry_max_s < (
+            self.material_ruleset_shadow_retry_base_s
+        ):
+            raise ValueError("material shadow retry maximum must cover its base")
+        if self.material_ruleset_shadow_enabled:
+            required = {
+                "database_url": self.database_url,
+                "material_ruleset_shadow_environment": (
+                    self.material_ruleset_shadow_environment
+                ),
+                "material_ruleset_shadow_redis_url": (
+                    self.material_ruleset_shadow_redis_url
+                ),
+                "material_ruleset_shadow_hmac_active_key_id": (
+                    self.material_ruleset_shadow_hmac_active_key_id
+                ),
+                "material_ruleset_shadow_hmac_keyring_json": (
+                    self.material_ruleset_shadow_hmac_keyring_json
+                ),
+            }
+            missing = sorted(name for name, value in required.items() if not value)
+            if missing:
+                raise ValueError(
+                    "material shadow requires server-side configuration: "
+                    + ", ".join(missing)
+                )
+            from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+
+            ShadowHmacKeyring.from_json(
+                self.material_ruleset_shadow_hmac_keyring_json.get_secret_value(),
+                active_key_id=self.material_ruleset_shadow_hmac_active_key_id,
+            )
         if (
             self.adaptive_interview_enabled or self.adaptive_interview_shadow_enabled
         ) and not self.adaptive_interview_pack_rwdr_enabled:
@@ -275,10 +382,11 @@ class Settings(BaseSettings):
         return self
 
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
-    # smalltalk_navigation prompt family. OFF (default) -> Pipeline.run() is byte-identical to
-    # pre-Phase-2D behavior even with route_optimization_enabled=True (the smalltalk generator is
-    # never constructed, so there is nothing to branch to). ON -> ONLY takes effect when ALL of
-    # the following hold for a turn: route_optimization_enabled is True, the classified route is
+    # smalltalk_navigation prompt family. False: Pipeline.run() is byte-identical to
+    # pre-Phase-2D behavior even with route_optimization_enabled/execution_policy_enabled True
+    # (the smalltalk generator is never constructed, so there is nothing to branch to). True:
+    # ONLY takes effect when ALL of the following hold for a turn: a route was actually computed
+    # (route_optimization_enabled OR execution_policy_enabled is True), the classified route is
     # smalltalk_navigation, forced_full_pipeline is False, and deterministic_signal_count is 0 --
     # in that case (and only that case) the compact, fully-static smalltalk_navigation.jinja
     # prompt + the existing cheap helper-tier model answer the turn instead of the full L1

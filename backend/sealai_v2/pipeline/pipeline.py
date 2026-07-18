@@ -45,6 +45,7 @@ from sealai_v2.orchestration.answer_cache import (
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
 from sealai_v2.pipeline.semantic_router import SemanticRouter
 from sealai_v2.pipeline.adaptive_interview import (
+    AdaptiveInterviewUnavailable,
     AdaptiveInterviewEvaluation,
     AdaptiveInterviewService,
 )
@@ -71,8 +72,13 @@ from sealai_v2.core.contracts import (
     ConversationMemory,
     CrossSessionMemory,
     DerivedFact,
+    EvaluationState,
     Flags,
     LlmClient,
+    MaterialConstraintResult,
+    MaterialConstraintPreconditions,
+    MaterialConstraintScopeState,
+    MaterialConstraintVerdict,
     ModelConfig,
     PipelineResult,
     RetrievalResult,
@@ -543,6 +549,9 @@ class Pipeline:
     matrix: object | None = (
         None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
+    # MAT-GOV-01 canonical result exposure. Default-OFF; the historical
+    # Gegencheck computation and response are unchanged while disabled.
+    material_constraints_enabled: bool = False
     versagensmodi: object | None = None  # Dim. 5 Versagensmodi store (Modus D Diagnose)
     partner_registry: object | None = (
         None  # Dim. 6 Hersteller-Partner pool (Modus F — PartnerRegistry; payment ≠ ranking)
@@ -620,9 +629,9 @@ class Pipeline:
     # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
     # "" when no catalogs wired. Attached to every PipelineResult; never fed to L1/L3.
     wissensstand: str = ""
-    # Phase 2B (LangGraph-suitability audit): conservative routing. OFF -> classify_route() is
+    # Phase 2B (LangGraph-suitability audit): conservative routing. False: classify_route() is
     # never called at all (not just unused) -- strictly byte-identical to pre-Phase-2B behavior.
-    # ON -> a route is computed (telemetry-only unless the route is a CHEAP route with zero
+    # True: a route is computed (telemetry-only unless the route is a CHEAP route with zero
     # deterministic engineering signals, in which case L3 is skipped in favor of the SAME
     # existing run_parametric_guard fallback already used when the verifier is disabled --
     # no new guard mechanism is invented). Never affects engineering_case/leakage_troubleshooting/
@@ -783,9 +792,43 @@ class Pipeline:
         # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
         # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
         # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
-        gegencheck_verdict = stages.gegencheck(
-            self.matrix, case, tenant_id=scope.tenant_id
-        )
+        material_constraint_result: MaterialConstraintResult | None = None
+        governed_matrix_grounding_allowed = True
+        if self.material_constraints_enabled:
+            conflict_refs = tuple(
+                sorted(
+                    f"case-conflict:{conflict.field_key}"
+                    for conflict in case_state_v2.open_conflicts
+                )
+            )
+            material_constraint_result = stages.material_constraints(
+                self.matrix,
+                case,
+                tenant_id=scope.tenant_id,
+                preconditions=MaterialConstraintPreconditions(
+                    scope=MaterialConstraintScopeState.IN_SCOPE,
+                    conflict_refs=conflict_refs,
+                ),
+            )
+            from sealai_v2.core.material_constraints import (
+                material_constraint_to_gegencheck,
+            )
+
+            gegencheck_verdict = material_constraint_to_gegencheck(
+                material_constraint_result
+            )
+            governed_matrix_grounding_allowed = bool(
+                material_constraint_result.evaluation_state is EvaluationState.EVALUATED
+                and material_constraint_result.verdict
+                in {
+                    MaterialConstraintVerdict.UNVERTRAEGLICH,
+                    MaterialConstraintVerdict.BEDINGT,
+                }
+            )
+        else:
+            gegencheck_verdict = stages.gegencheck(
+                self.matrix, case, tenant_id=scope.tenant_id
+            )
         # Modus D: deterministic Diagnose - None unless the turn reports a recognised symptom.
         # Backend owns the grounded(draft) ursache/fix; draft -> provisional. Pure + sync, no I/O.
         diagnosis = stages.diagnose(
@@ -831,8 +874,10 @@ class Pipeline:
             tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
-        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +
-        # fail-open. A render surface only — never injected into L1/L3 (the prompt stays byte-identical).
+        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3).
+        # Non-RWDR seal type -> the structured not_available_for_seal_type marker (OD-3), not a silent
+        # None; an actual compute error still fails open to plain None (see produktspec_step.py). A
+        # render surface only — never injected into L1/L3 (the prompt stays byte-identical).
         seal_type = next(
             (
                 f.wert
@@ -847,6 +892,10 @@ class Pipeline:
             enabled=self.produktspec_enabled,
             seal_type=seal_type,
         )
+        if material_constraint_result is not None:
+            # Produktspec has not been migrated to this governance contract and
+            # cannot consume a neutral/blocked result as positive candidate input.
+            kandidaten_spec = None
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
         if self.execution_policy_enabled:
@@ -1049,7 +1098,7 @@ class Pipeline:
                 with _staged(timer, progress, "ground_ms", "ground"):
                     retrieval = await stages.ground(
                         self.retriever,
-                        self.matrix,
+                        (self.matrix if governed_matrix_grounding_allowed else None),
                         knowledge_question,
                         tenant_id=scope.tenant_id,
                         case_facts=mem.case_state,
@@ -1065,7 +1114,10 @@ class Pipeline:
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
             trap_facts = retrieve_reviewed_trap_facts(self.catalog, knowledge_question)
-            l1_grounding = grounding_facts + retrieval.matrix_facts + trap_facts
+            governed_matrix_facts = (
+                retrieval.matrix_facts if governed_matrix_grounding_allowed else ()
+            )
+            l1_grounding = grounding_facts + governed_matrix_facts + trap_facts
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
@@ -1115,9 +1167,9 @@ class Pipeline:
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
 
-            # Phase 2B (LangGraph-suitability audit): conservative routing. OFF (default) ->
+            # Phase 2B (LangGraph-suitability audit): conservative routing. False:
             # this whole block is skipped -- classify_route() is never invoked, so behavior is
-            # strictly byte-identical to pre-Phase-2B. ON -> compute a route from the SAME
+            # strictly byte-identical to pre-Phase-2B. True: compute a route from the SAME
             # deterministic signals already computed above (decode_result/diagnosis/
             # gegencheck_verdict/mem.case_state) + the already-running understand() intent.
             # skip_l3_for_route stays False unless the route is a CHEAP route with ZERO
@@ -1256,7 +1308,11 @@ class Pipeline:
             if self.coverage_gate_enabled:
                 from sealai_v2.core.coverage import coverage_for
 
-                coverage = coverage_for(gegencheck_verdict, archetype_context)
+                coverage = coverage_for(
+                    gegencheck_verdict,
+                    archetype_context,
+                    material_constraints=material_constraint_result,
+                )
             # INC-NARRATOR-CONTRACT: assemble the deterministic answer-contract from the SAME grounded
             # evidence, BEFORE generate. Phase 2 — when the flag is ON it is PASSED to generate (renderer
             # mode); OFF → contract is None → not passed → the L1 prompt is byte-identical.
@@ -1268,10 +1324,15 @@ class Pipeline:
                 _rc = build_contract(
                     coverage=coverage
                     if coverage is not None
-                    else coverage_for(gegencheck_verdict, archetype_context),
+                    else coverage_for(
+                        gegencheck_verdict,
+                        archetype_context,
+                        material_constraints=material_constraint_result,
+                    ),
                     grounding_facts=l1_grounding,
                     gegencheck_verdict=gegencheck_verdict,
                     calc=l1_calc if self.execution_policy_enabled else calc,
+                    material_constraints=material_constraint_result,
                 )
                 contract = _rc.to_dict() if _rc is not None else None
             # P0-B: on turns where the Gegencheck-shaped contract above is None (no verdict — general
@@ -1635,7 +1696,7 @@ class Pipeline:
                         grounding_facts=grounding_facts,
                         computed_values=calc.computed,
                         not_computed=calc.not_computed,
-                        matrix_facts=retrieval.matrix_facts,  # Gap #2 Step B: matrix = L3 correction source
+                        matrix_facts=governed_matrix_facts,
                         # OPTIMIZE_BACKLOG #5: full draft context → topic-scoped correction + non-degraded regen
                         calc=calc,
                         case_context=case_context or None,
@@ -1920,6 +1981,8 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
+            material_constraints=material_constraint_result,
+            material_constraints_enabled=self.material_constraints_enabled,
             coverage=coverage,
             contract=contract,
             guard=guard,
@@ -2072,10 +2135,12 @@ class Pipeline:
     ) -> AdaptiveInterviewEvaluation | None:
         """Evaluate the one canonical interview policy from the committed state.
 
-        Shadow instrumentation is fail-open: a telemetry/persistence failure never changes the
-        authoritative answer or form mutation. No LLM client is reachable from this service.
+        Shadow-only instrumentation remains fail-open. Once the controller is active,
+        every internal contract/persistence failure is a typed fail-closed error.
         """
         if self.adaptive_interview_service is None or self.memory is None:
+            if self.adaptive_interview_enabled:
+                raise AdaptiveInterviewUnavailable()
             return None
         try:
             view = self.memory.recall(
@@ -2110,12 +2175,14 @@ class Pipeline:
                     else persist_shadow
                 ),
             )
-        except Exception as exc:  # noqa: BLE001 - default-off shadow must never break the product
+        except Exception as exc:  # noqa: BLE001 - translated at this trust boundary
             _log.warning(
                 "adaptive interview shadow evaluation failed: %s: %s",
                 type(exc).__name__,
                 exc,
             )
+            if self.adaptive_interview_enabled:
+                raise AdaptiveInterviewUnavailable() from exc
             return None
 
     def clear_adaptive_interview(self, *, tenant_id: str, session_id: str) -> None:
@@ -2301,6 +2368,16 @@ def build_pipeline(
         raise RuntimeError(
             "build_pipeline needs either a single ``client`` (all roles share it) or a "
             "``client_for`` provider factory (per-role routing) — never neither."
+        )
+    if settings.understand_enabled and settings.execution_policy_enabled:
+        # Logged once here (build time), not per-turn: run()'s own guard (`if self.understand_enabled
+        # and not self.execution_policy_enabled`, pipeline.py:1006) is False on every turn whenever
+        # both flags are True, so understand() (the soft LLM-intent stage) never actually runs in
+        # this configuration -- purely observational, no behavior change.
+        _log.warning(
+            "understand() ist in dieser Konfiguration deaktiviert: "
+            "execution_policy_enabled=true unterdrückt die soft-intent-Stufe trotz "
+            "understand_enabled=true (siehe pipeline.py:1006)."
         )
     # Single-client mode: ignore provider, return the one client (preserves the fake-client tests
     # and the default object graph). Factory mode: each role resolves its provider's client.
@@ -2597,6 +2674,7 @@ def build_pipeline(
         catalog=catalog,
         retriever=retriever,
         matrix=matrix,
+        material_constraints_enabled=settings.material_constraints_enabled,
         versagensmodi=versagensmodi,
         partner_registry=partner_registry,
         engine=engine,

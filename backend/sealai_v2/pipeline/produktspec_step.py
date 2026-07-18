@@ -9,12 +9,18 @@ Doctrine:
   * FLAG-gated (``settings.produktspec_enabled``, default OFF) — wired but inert until the owner enables
     it (the expert Fachfreigabe + DIN-Lizenz NO-GO is an owner governance gate, not a technical one).
   * RWDR-scoped — the kernel's rules are DIN-3760 / RWDR ``reviewed_internal``; a non-RWDR seal type
-    yields None.
+    yields the structured ``not_available_for_seal_type`` marker below (OD-3), not a silent None —
+    the caller/frontend can distinguish "this seal type is out of scope" from "nothing to specify yet".
   * ``medium_source = FREE_TEXT`` by construction — the conservative G2 gate: a chat/form medium is never
     an exact TDS/SDS reference, so the spec stays candidate-set-only and ≤ L1 (NEVER a single material).
   * A RENDER/serializer surface only — like gegencheck/decode/alternativen, it is NEVER injected into
-    L1/L3, so the prompt + the eval stay byte-identical.
-  * Fail-OPEN — any mapping/kernel error degrades to None; a spec failure never breaks the turn.
+    L1/L3, so the prompt + the eval stay byte-identical. This applies equally to the
+    ``not_available_for_seal_type`` marker: it is visible only in ``PipelineResult.kandidaten_spec``,
+    never in the L1 prompt — the narrator does not (and must not) comment on it.
+  * Fail-OPEN on an actual compute error — any mapping/kernel EXCEPTION still degrades to plain None,
+    unchanged from before OD-3. This is deliberately distinct from the non-RWDR case: an exception is
+    an unexpected failure (fail-open, no marker), whereas a non-RWDR seal type is an expected, named
+    structural scope boundary (fail-closed in the sense that it says so explicitly, never silent).
 """
 
 from __future__ import annotations
@@ -118,16 +124,35 @@ def _serialize(spec: KandidatenSpec) -> dict:
     }
 
 
+def not_available_for_seal_type_marker(seal_type: str) -> dict:
+    """The structured OD-3 marker for a seal type the Kandidaten-Spezifikation rule engine does not
+    cover. Deliberately a DISTINCT shape from ``_serialize``'s render dict (discriminated by the
+    ``status`` key, which the RWDR shape never has) so a caller can tell the two apart without
+    guessing. A render/serializer value only -- never injected into L1/L3 (see module docstring)."""
+    return {
+        "status": "not_available_for_seal_type",
+        "seal_type": seal_type,
+        "geltungsrahmen": (
+            f'Kandidaten-Spezifikation ist für den Dichtungstyp "{seal_type}" nicht '
+            "verfügbar — die Regel-Engine deckt ausschließlich RWDR/DIN-3760 ab."
+        ),
+    }
+
+
 def compute_kandidaten_spec(
     facts, question: str, *, enabled: bool, seal_type: str
 ) -> dict | None:
-    """Flag-gated, RWDR-scoped entry. Returns the render dict, or None when: disabled; a non-RWDR seal
-    type (the rules are RWDR/DIN-3760 only); or there is no substantive input yet (no medium AND no shaft
-    diameter → nothing to specify, don't surface an empty spec). Fail-open: any error → None."""
+    """Flag-gated, RWDR-scoped entry. Returns the render dict; the structured
+    ``not_available_for_seal_type`` marker (OD-3) for a non-RWDR seal type (the rules are
+    RWDR/DIN-3760 only); or None when: disabled; or there is no substantive input yet (no medium
+    AND no shaft diameter → nothing to specify, don't surface an empty spec). Fail-open on an
+    actual compute error: any exception → plain None, unchanged from before OD-3 -- distinct from
+    the deliberate non-RWDR marker, which is a structural scope boundary, not a failure."""
     if not enabled:
         return None
-    if seal_type and seal_type.strip().lower() not in ("rwdr", ""):
-        return None
+    normalized_seal_type = seal_type.strip().lower() if seal_type else ""
+    if normalized_seal_type not in ("rwdr", ""):
+        return not_available_for_seal_type_marker(seal_type)
     g: dict[str, str] = {f.feld: f.wert for f in facts}
     if not (g.get("medium") or g.get("wellendurchmesser")):
         return None

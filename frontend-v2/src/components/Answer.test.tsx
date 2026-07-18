@@ -122,6 +122,46 @@ describe("Answer — P4 Gegencheck note (disqualify-only, E4-1)", () => {
     render(<Answer res={{ ...base, gegencheck: null }} />);
     expect(screen.queryByText(/Gegencheck/)).not.toBeInTheDocument();
   });
+
+  it("does not render a positive statement from the canonical compatible audit result", () => {
+    render(
+      <Answer
+        res={{
+          ...base,
+          answer: "Die Angaben werden geprüft.",
+          material_constraints: {
+            material_state: "known",
+            medium_state: "known",
+            medium_cardinality: "single",
+            relation_state: "not_applicable",
+            evaluation_state: "evaluated",
+            verdict: "vertraeglich",
+            decisive_ref: "MX-NBR-MINERALOEL",
+            disqualified: false,
+            requires_resolution: false,
+            positive_statement_allowed: false,
+            conditions: [],
+            blockers: [],
+            matches: [
+              {
+                rule_ref: "MX-NBR-MINERALOEL",
+                verdict: "vertraeglich",
+                statement: "Keine dokumentierte Unverträglichkeit.",
+                source_ref: "matrix-cell:MX-NBR-MINERALOEL",
+                evidence_binding_state: "unbound",
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    const note = screen.getByTestId("material-constraint-neutral");
+    expect(note).toHaveTextContent(
+      "Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.",
+    );
+    expect(note).toHaveTextContent("matrix-cell:MX-NBR-MINERALOEL");
+    expect(screen.queryByText(/kompatibel|geeignet|freigegeben/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("Answer — P4 Verification badge (L3 trust status)", () => {

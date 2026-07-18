@@ -22,19 +22,28 @@ from sealai_v2.core.contracts import (
     CrossSessionMemory,
     Flags,
     GroundingFact,
+    InputResolutionState,
     Intent,
     LlmClient,
+    MaterialConstraintQuery,
+    MaterialConstraintResult,
+    MaterialConstraintPreconditions,
+    MediumCardinality,
     MemoryView,
     ModelConfig,
     RememberedFact,
     RetrievalResult,
     Retriever,
+    RelationState,
     SessionContext,
     UnderstandPromptAssembler,
     Understanding,
 )
 from sealai_v2.core.gegencheck import evaluate_gegencheck
 from sealai_v2.core.decode_extract import EQUIVALENZ_GRENZE, decode_designation
+from sealai_v2.core.material_constraints import (
+    evaluate_material_constraints,
+)
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
 from sealai_v2.knowledge.hersteller_partner import rank_partners
@@ -333,6 +342,61 @@ async def remember(
         )
 
 
+def material_constraints(
+    matrix,
+    case,
+    *,
+    tenant_id: str,
+    preconditions: MaterialConstraintPreconditions | None = None,
+) -> MaterialConstraintResult:
+    """Return an explicit canonical result whenever the feature is enabled."""
+
+    spec = case.seal_spec or {} if case is not None else {}
+    material = spec.get("material")
+    medium_slot = case.medium or {} if case is not None else {}
+    matched = medium_slot.get("matched") or (
+        [medium_slot["name"]] if medium_slot.get("name") else []
+    )
+    if isinstance(matched, str):
+        matched = [matched]
+    medium_items = tuple(str(item).strip() for item in matched if str(item).strip())
+    material_candidates = tuple(getattr(case, "material_candidates", ()) or ())
+    material_value = str(material or "").strip() or " ".join(material_candidates)
+    medium_value = " ".join(medium_items)
+    material_state = getattr(case, "material_state", None) or (
+        InputResolutionState.KNOWN if material_value else InputResolutionState.MISSING
+    )
+    medium_state = (
+        InputResolutionState.KNOWN if medium_value else InputResolutionState.MISSING
+    )
+    if medium_state is InputResolutionState.MISSING:
+        medium_cardinality = MediumCardinality.NONE
+        relation_state = RelationState.UNDETERMINED
+    elif len(medium_items) == 1:
+        medium_cardinality = MediumCardinality.SINGLE
+        relation_state = RelationState.NOT_APPLICABLE
+    else:
+        medium_cardinality = MediumCardinality.MULTIPLE
+        relation_state = RelationState.UNRESOLVED
+    query = MaterialConstraintQuery(
+        material=material_value,
+        medium=medium_value,
+        material_state=material_state,
+        medium_state=medium_state,
+        medium_cardinality=medium_cardinality,
+        relation_state=relation_state,
+    )
+    catalog = None
+    if query.evaluable and not (preconditions and preconditions.blockers):
+        catalog = getattr(matrix, "catalog", None)
+    return evaluate_material_constraints(
+        query,
+        tenant=tenant_id,
+        catalog=catalog,
+        preconditions=preconditions,
+    )
+
+
 def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:
     """Stage - deterministic Gegencheck verdict (Modus E, build-spec section 5 op "Gegenchecken").
 
@@ -359,9 +423,6 @@ def gegencheck(matrix, case, *, tenant_id: str) -> dict | None:
     catalog = getattr(matrix, "catalog", None)
     if catalog is None:
         return None
-    # Join ALL matched media so the kernel query returns every relevant cell and its
-    # disqualify-lean fold runs over all of them (a co-mentioned disqualifying medium wins,
-    # and one medium named with several tags - "Heißdampf-Sterilisation (SIP)" - still fires).
     return evaluate_gegencheck(
         material, " ".join(matched), tenant=tenant_id, catalog=catalog
     )

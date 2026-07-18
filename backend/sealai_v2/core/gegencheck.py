@@ -22,6 +22,7 @@ verdict reaches ``PipelineResult.gegencheck`` and the ``/api/v2/chat`` response.
 
 from __future__ import annotations
 
+from sealai_v2.core.contracts import MaterialConstraintVerdict
 from sealai_v2.knowledge.matrix import (
     CompatibilityMatrixCatalog,
     InProcessCompatibilityMatrix,
@@ -58,8 +59,6 @@ def evaluate_gegencheck(
     if medium is None or not str(medium).strip():
         return {"disqualified": False, "basis": "no_medium"}
 
-    # query() reuses the deterministic scope-tag matcher AND enforces the P0 tenant
-    # gate; building over the injected catalog does no I/O.
     facts = InProcessCompatibilityMatrix(catalog).query(
         tenant_id=tenant,
         query_text=f"{material} {medium}",
@@ -67,18 +66,20 @@ def evaluate_gegencheck(
     if not facts:
         return {"disqualified": False, "basis": "no_matrix_data"}
 
-    # Recover the verdict enum that query() drops, via the existing by_id() accessor.
-    # Facts stay in query's strongest-first order, so the first match of a category
-    # is the strongest one.
     incompatible = None
     conditional = None
     for fact in facts:
         cell = catalog.by_id(fact.card_id)
         if cell is None:
             continue
-        if cell.bewertung == "unvertraeglich" and incompatible is None:
+        if (
+            cell.bewertung is MaterialConstraintVerdict.UNVERTRAEGLICH
+            and incompatible is None
+        ):
             incompatible = fact
-        elif cell.bewertung == "bedingt" and conditional is None:
+        elif (
+            cell.bewertung is MaterialConstraintVerdict.BEDINGT and conditional is None
+        ):
             conditional = fact
 
     if incompatible is not None:

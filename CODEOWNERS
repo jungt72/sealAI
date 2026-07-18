@@ -1,0 +1,5 @@
+# Default owner for the whole repository. Extend with path-specific rules
+# (e.g. `/backend/sealai_v2/security/ @jungt72`) as soon as more than one
+# person/reviewer is involved — a single line is intentionally sufficient
+# for a solo-owner repository today.
+* @jungt72

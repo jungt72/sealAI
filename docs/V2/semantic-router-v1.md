@@ -24,6 +24,10 @@ synchronous pipeline and deterministic execution policy.
 - Smalltalk is accepted only when the speech act is social, the turn is not case-bound and the
   classifier states that no technical request is present.
 - Engineering, leakage, material-comparison, RFQ and unsupported routes remain full-pipeline routes.
+- `SEALAI_V2_EXECUTION_POLICY_ENABLED=true` deaktiviert derzeit die understand()-Stufe (Guard:
+  pipeline.py:1006) — die dort produzierte Intent-Klassifikation (wissensfrage/fallarbeit/
+  faktfrage/gespraech/unklar) fließt in diesem Fall nicht in die Routing-Entscheidung ein; der
+  Semantic Router (dieses Dokument) ist der einzige LLM-Beteiligte an der Turn-Routing-Entscheidung.
 
 The model role and all behavior-affecting controls are included in the canonical runtime-profile
 hash used by the release gate.

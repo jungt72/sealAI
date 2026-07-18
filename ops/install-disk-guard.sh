@@ -38,6 +38,8 @@ readonly -a ARTIFACTS=(
   ops/disk-guard.example.json
   ops/docker-disk-guard.sh
   ops/docker_disk_guard.py
+  ops/gate08_legacy_unit_retirement.py
+  ops/hash_verified_python_loader.py
   ops/install-disk-guard.sh
   ops/production-deploy-remote-entrypoint.sh
   ops/production-release-gate-check.sh
@@ -45,6 +47,7 @@ readonly -a ARTIFACTS=(
   ops/production-storage-lease.sh
   ops/production_release_gate.py
   ops/sudoers/sealai-storage-preflight
+  ops/schemas/gate08-legacy-units.schema.json
   ops/systemd/sealai-disk-guard.service
   ops/systemd/sealai-disk-guard.timer
   ops/tmpfiles/sealai-storage-mutation.conf
@@ -62,6 +65,7 @@ if [[ "${APPLY}" -eq 0 ]]; then
     'disk-guard installer dry-run: no files changed' \
     'requires the verified bootstrap root-clone and exact GATE-08 receipt' \
     'would stage and re-hash every approved artifact before installation' \
+    'would fingerprint and retire exactly the two approved legacy systemd units' \
     'would retire exactly the destructive legacy cron line and preserve all others' \
     'would install the storage lease, lock policy, guard, and systemd timer' \
     'would enable the timer and verify one root-owned observation' \
@@ -186,6 +190,16 @@ for relative, claimed in expected.items():
         raise SystemExit("staged control artifact hash mismatch")
 PY
 
+# The staged and hash-bound helper neutralizes only the two fixed legacy units.
+# It intentionally has no rollback path that could reactivate destructive automation.
+/usr/bin/python3 -I "${STAGE_DIR}/ops/gate08_legacy_unit_retirement.py" \
+  apply \
+  --manifest /etc/sealai/approvals/gate-08-legacy-units.json \
+  --evidence-root /var/lib/sealai-disk-guard/legacy-unit-evidence
+systemd-analyze verify \
+  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.service" \
+  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.timer"
+
 # Capture and validate the exact destructive cron entry before any installed
 # control changes. Absence/duplication is fingerprint drift and stops the gate.
 CRON_BEFORE="${STAGE_DIR}/crontab.before"
@@ -231,6 +245,9 @@ install -m 0755 -o root -g root \
 install -m 0755 -o root -g root \
   "${STAGE_DIR}/ops/production-deploy-remote-entrypoint.sh" \
   /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh
+install -m 0755 -o root -g root \
+  "${STAGE_DIR}/ops/hash_verified_python_loader.py" \
+  /usr/local/libexec/sealai/hash-verified-python-loader.py
 
 for trusted_path in /usr/local /usr/local/libexec /usr/local/libexec/sealai; do
   [[ "$(stat -Lc '%F:%a:%U:%G' "${trusted_path}")" == 'directory:755:root:root' ]] || {
@@ -248,6 +265,14 @@ done
   'regular file:755:root:root' ]] || exit 78
 [[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh)" == \
   'regular file:755:root:root' ]] || exit 78
+[[ ! -L /usr/local/libexec/sealai/hash-verified-python-loader.py ]] || exit 78
+[[ "$(stat -Lc '%F:%a:%U:%G' /usr/local/libexec/sealai/hash-verified-python-loader.py)" == \
+  'regular file:755:root:root' ]] || exit 78
+[[ "$(sha256sum "${STAGE_DIR}/ops/hash_verified_python_loader.py" | awk '{print $1}')" == \
+  "$(sha256sum /usr/local/libexec/sealai/hash-verified-python-loader.py | awk '{print $1}')" ]] || {
+  printf 'disk-guard installer: trusted loader hash verification failed\n' >&2
+  exit 78
+}
 
 install -d -m 0700 -o root -g root /etc/sealai
 if [[ -L /etc/sealai/disk-guard.json ]]; then
@@ -277,6 +302,7 @@ test -x /usr/local/libexec/sealai/docker-disk-guard.sh
 test -r /usr/local/libexec/sealai/production-storage-lease.sh
 test -x /usr/local/libexec/sealai/production-release-gate-check.sh
 test -x /usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh
+test -x /usr/local/libexec/sealai/hash-verified-python-loader.py
 /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py --help >/dev/null
 systemd-tmpfiles --create /etc/tmpfiles.d/sealai-storage-mutation.conf
 test "$(stat -Lc '%F:%a:%U:%G' /run/lock/sealai-storage-mutation.lock)" = \
@@ -308,6 +334,8 @@ systemctl enable --now sealai-disk-guard.timer
 systemctl start sealai-disk-guard.service
 systemctl is-enabled --quiet sealai-disk-guard.timer
 systemctl is-active --quiet sealai-disk-guard.timer
+! systemctl is-active --quiet sealai-docker-disk-guard.timer
+! systemctl is-enabled --quiet sealai-docker-disk-guard.timer
 test -s /var/lib/sealai-disk-guard/state.json
 test "$(stat -c '%a:%U:%G' /var/lib/sealai-disk-guard/state.json)" = \
   '600:root:root'
@@ -324,7 +352,7 @@ set -e
 
 printf '%s\n' \
   'disk-guard GATE-08 install completed' \
-  'legacy destructive cron line retired; all other cron entries preserved' \
+  'legacy destructive cron line and exact legacy systemd timer retired' \
   'storage mutation lease installed and initial guard observation verified' \
   'normal application release freeze remains active' \
   'external alert delivery remains BLOCKED_EXTERNAL'

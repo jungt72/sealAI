@@ -51,4 +51,17 @@ describe("KandidatenSpecPanel", () => {
     expect(screen.getByText(/keine technische Freigabe/)).toBeInTheDocument();
     expect(screen.getByText(/Wellenhärte 45–55 HRC bestätigen/)).toBeInTheDocument();
   });
+
+  it("OD-3: renders the not_available_for_seal_type marker honestly instead of throwing", () => {
+    const unavailable: KandidatenSpec = {
+      status: "not_available_for_seal_type",
+      seal_type: "Gleitringdichtung",
+      geltungsrahmen:
+        'Kandidaten-Spezifikation ist für den Dichtungstyp "Gleitringdichtung" nicht verfügbar — die Regel-Engine deckt ausschließlich RWDR/DIN-3760 ab.',
+    };
+    render(<KandidatenSpecPanel data={unavailable} />);
+    expect(screen.getByTestId("kandidaten-spec-panel-unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/nicht verfügbar/)).toBeInTheDocument();
+    expect(screen.queryByText("vorläufig")).not.toBeInTheDocument();
+  });
 });

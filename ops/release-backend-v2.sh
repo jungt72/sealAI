@@ -32,19 +32,28 @@ export PATH
 
 usage() {
   cat <<'EOF'
-usage: ops/release-backend-v2.sh [--candidate|--final]
+usage: ops/release-backend-v2.sh [--candidate|--final|--low-risk-emergency]
 
-  --candidate  Deploy an explicitly unvalidated candidate only when APP_ENV is
-               development, test, or staging. Never accepted for production.
-  --final      Deploy a final release. Requires a fully adjudicated eval replay.
-               This is the default when no option is supplied.
+  --candidate         Deploy an explicitly unvalidated candidate only when
+                       APP_ENV is development, test, or staging. Never
+                       accepted for production.
+  --final             Deploy a final release. Requires a fully adjudicated
+                       eval replay. This is the default when no option is
+                       supplied.
+  --low-risk-emergency
+                       Deploy to production under a GATE-11 scoped low-risk
+                       emergency approval instead of a full eval-REPLAY.
+                       Requires a valid GATE-11 approval receipt (see
+                       docs/ops/gate-11-low-risk-emergency-corridor.md);
+                       image provenance is still verified in full.
 EOF
 }
 
 RELEASE_STAGE="final"
 case "${1:-}" in
-  --candidate) RELEASE_STAGE="candidate"; shift ;;
-  --final)     shift ;;
+  --candidate)           RELEASE_STAGE="candidate"; shift ;;
+  --final)               shift ;;
+  --low-risk-emergency)  RELEASE_STAGE="low-risk-emergency"; shift ;;
   "")         ;;
   --help|-h)   usage; exit 0 ;;
   *)           usage >&2; echo "release-backend-v2: unknown option: $1" >&2; exit 2 ;;
@@ -54,7 +63,11 @@ esac
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=production-release-gate-check.sh
 source "${SCRIPT_DIR}/production-release-gate-check.sh"
-production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+if [[ "${RELEASE_STAGE}" == "low-risk-emergency" ]]; then
+  production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" low-risk-emergency-deploy
+else
+  production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+fi
 RELEASE_GATE_DECISION="${PRODUCTION_RELEASE_GATE_DECISION}"
 APPROVED_SOURCE_SHA="${PRODUCTION_RELEASE_APPROVED_SOURCE_SHA}"
 [[ "${APPROVED_SOURCE_SHA}" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]] || {
@@ -92,6 +105,9 @@ if [[ "${RELEASE_STAGE}" == "candidate" ]]; then
 fi
 if [[ "${RELEASE_STAGE}" == "final" && -z "${BACKEND_IMAGE_REF}" ]]; then
   die "final releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
+fi
+if [[ "${RELEASE_STAGE}" == "low-risk-emergency" && -z "${BACKEND_IMAGE_REF}" ]]; then
+  die "low-risk-emergency releases require BACKEND_V2_IMAGE=tag@sha256:digest; local unsigned builds are forbidden"
 fi
 
 # Production is an artifact promotion. Never deploy bytes from an uncommitted
@@ -184,7 +200,9 @@ RUNTIME_PROFILE_HASH="$("${COMPOSE[@]}" run --rm --no-deps --entrypoint python "
 [[ "${RUNTIME_PROFILE_HASH}" =~ ^[0-9a-f]{64}$ ]] || die "invalid runtime profile hash: ${RUNTIME_PROFILE_HASH:-<empty>}"
 echo ">> runtime profile = ${RUNTIME_PROFILE_HASH}"
 
-# ── 3. RELEASE STAGE: candidate defers; final proves ────────────────────────────
+# ── 3. RELEASE STAGE: candidate defers; final proves; low-risk-emergency is
+#      authorized by the GATE-11 approval receipt itself (already validated
+#      above by production_release_gate_check), not by an eval-REPLAY ────────
 if [[ "${RELEASE_STAGE}" == "final" ]]; then
   if ! MATCH="$(/usr/bin/python3 -I ops/v2_deploy_gate.py "${RUNS_DIR}" "${TREE_HASH}" "${SERVED_L1}" "${RUNTIME_PROFILE_HASH}")"; then
     echo "!! refusing FINAL deploy — no adjudicated eval-REPLAY for tree ${TREE_HASH}, L1 ${SERVED_L1}, runtime profile ${RUNTIME_PROFILE_HASH}" >&2
@@ -198,6 +216,14 @@ if [[ "${RELEASE_STAGE}" == "final" ]]; then
   EVAL_BASELINE_LABEL="$(printf '%s' "${MATCH}" | /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("baseline_run_label") or "")')"
   EVAL_STATUS="passed"
   echo ">> final gate PASS — ${EVAL_EVIDENCE_TYPE} run '${RUN_LABEL}' (eval git ${EVAL_GIT_SHA}, dirty=${EVAL_DIRTY}, L1=${SERVED_L1}, profile=${RUNTIME_PROFILE_HASH})"
+elif [[ "${RELEASE_STAGE}" == "low-risk-emergency" ]]; then
+  RUN_LABEL="gate11-low-risk-emergency-${SOURCE_GIT_SHA:0:8}"
+  EVAL_GIT_SHA=""
+  EVAL_DIRTY=""
+  EVAL_EVIDENCE_TYPE="gate11_low_risk_emergency_corridor"
+  EVAL_BASELINE_LABEL=""
+  EVAL_STATUS="bypassed_via_gate11"
+  echo ">> low-risk-emergency gate PASS — eval-REPLAY intentionally bypassed under the GATE-11 scoped corridor (approval already validated against the excluded-path diff, ancestor check, and expiry by production_release_gate_check above)"
 else
   RUN_LABEL="candidate-no-eval-${SOURCE_GIT_SHA:0:8}"
   EVAL_GIT_SHA=""
@@ -316,6 +342,8 @@ if [[ "${RELEASE_STAGE}" == "final" ]]; then
   else
     RELEASE_EVIDENCE="Validated by adjudicated eval-REPLAY \`${RUN_LABEL}\` (eval git \`${EVAL_GIT_SHA}\`, source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`, dirty=false); all gated axes Schranken-quota(final)=1.000."
   fi
+elif [[ "${RELEASE_STAGE}" == "low-risk-emergency" ]]; then
+  RELEASE_EVIDENCE="NOT validated by eval-REPLAY. Deployed under the GATE-11 scoped low-risk emergency corridor \`${RUN_LABEL}\` (source \`${SOURCE_GIT_SHA}\`, gate-control \`${GATE_CONTROL_GIT_SHA}\`): the approval receipt bound an owner-reviewed diff excluding all GATE-11-restricted paths, an owner diff-read confirmation, a hashed test-evidence reference, and a ≤4h expiry, independently re-checked against the actual commit range by production_release_gate.py. This is explicitly not represented as final-release eval evidence."
 else
   RELEASE_EVIDENCE="Live candidate only. Paid eval-REPLAY intentionally deferred (eval_status=pending); this deployment is not final-release evidence."
 fi

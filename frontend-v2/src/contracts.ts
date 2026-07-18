@@ -98,7 +98,7 @@ export interface SpecMaterial {
   next_question: string[];
   validation_required: boolean;
 }
-export interface KandidatenSpec {
+export interface KandidatenSpecCandidate {
   response_level: string;
   envelope_band: string | null;
   kritikalitaet: string;
@@ -115,6 +115,16 @@ export interface KandidatenSpec {
   geltungsrahmen: string;
   quellen: string[];
 }
+// OD-3 (routing audit follow-up): the Kandidaten-Spezifikation rule engine is RWDR/DIN-3760-only.
+// compute_kandidaten_spec() (backend/sealai_v2/pipeline/produktspec_step.py) returns this DISTINCT,
+// discriminated shape for any other seal type instead of a silent None -- discriminate on `status`,
+// which KandidatenSpecCandidate never has.
+export interface KandidatenSpecUnavailable {
+  status: "not_available_for_seal_type";
+  seal_type: string;
+  geltungsrahmen: string;
+}
+export type KandidatenSpec = KandidatenSpecCandidate | KandidatenSpecUnavailable;
 // Modus F (Hersteller-Partner pool, Dim. 6) — owner business model: payment gates pool MEMBERSHIP,
 // the SELECTION ranks BY CAPABILITY (neutral, §3.9; never pay-to-rank). A paid listing → transparently
 // labelled "Partner · Anzeige". lead_email is internal and is NEVER part of this payload.
@@ -232,6 +242,36 @@ export interface Gegencheck {
   condition?: string; // grounded matrix cell text, verbatim — only when basis === "matrix_conditional"
   source?: string;
 }
+// MAT-GOV-01 canonical audit surface. It is intentionally not rendered: even
+// verdict="vertraeglich" permits no positive material statement.
+export type MaterialConstraintVerdict = "vertraeglich" | "unvertraeglich" | "bedingt";
+export type MediumCardinality = "none" | "single" | "multiple" | "unknown";
+export interface MaterialConstraintMatch {
+  rule_ref: string;
+  verdict: MaterialConstraintVerdict;
+  statement: string;
+  source_ref: string;
+  evidence_binding_state: "unbound";
+}
+export interface MaterialConstraintBlocker {
+  kind: "hard_gate" | "scope" | "conflict" | "input" | "medium_relation";
+  ref: string;
+}
+export interface MaterialConstraintResult {
+  material_state: "known" | "missing" | "unknown" | "ambiguous";
+  medium_state: "known" | "missing" | "unknown" | "ambiguous";
+  medium_cardinality: MediumCardinality;
+  relation_state: "undetermined" | "resolved" | "unresolved" | "not_applicable";
+  evaluation_state: "evaluated" | "blocked" | "no_rule_data";
+  verdict?: MaterialConstraintVerdict;
+  decisive_ref?: string;
+  disqualified: boolean;
+  requires_resolution: boolean;
+  positive_statement_allowed: false;
+  conditions: MaterialConstraintMatch[];
+  blockers: MaterialConstraintBlocker[];
+  matches?: MaterialConstraintMatch[];
+}
 // L3 trust status (P1.5) — lets the client distinguish a confidently-verified answer from a hedge or
 // a silently-unverified one. See backend api/serializers.py::_verification() for the exact semantics.
 export interface Verification {
@@ -276,6 +316,7 @@ export interface ChatResponse {
   kandidaten_spec?: KandidatenSpec | null; // Produktspec v3.1: the PRODUKT-KANDIDAT panel (vorläufig)
   alternativen?: Alternativen | null; // Modus F: the HERSTELLER-AUSWAHL panel data
   gegencheck?: Gegencheck | null; // Modus E: disqualify-only verdict, or null (no Gegencheck situation)
+  material_constraints?: MaterialConstraintResult; // default-off audit surface; never rendered as suitability
   verified?: boolean; // P1.5: the conservative, honest L3 trust signal
   verification?: Verification; // P1.5: the raw signals behind `verified` (for a precise badge)
   risk_flags?: string[]; // Legal-by-Design Phase D: matched regulated/safety-critical terms, or []

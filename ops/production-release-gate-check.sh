@@ -24,7 +24,7 @@ production_release_gate_check() {
   PRODUCTION_RELEASE_APPROVED_SOURCE_SHA=""
 
   case "${operation}" in
-    build|pull|deploy|migration|dashboard-publish|recovery-start-existing|remediation-control-install) ;;
+    build|pull|deploy|migration|dashboard-publish|recovery-start-existing|remediation-control-install|operational-control-install|low-risk-emergency-deploy) ;;
     *)
       printf '%s\n' \
         '{"component":"sealai-production-release-gate-invocation","allowed":false,"reason":"invalid_operation"}' >&2
@@ -98,9 +98,23 @@ elif operation == "recovery-start-existing":
     expected_keys = base
     expected_reason = "freeze_recovery_start_existing_only"
     expected_gate = "GATE-10"
-else:
+elif operation == "remediation-control-install":
     expected_keys = base | {"source_git_sha", "approval_id", "artifact_sha256"}
     expected_reason = "gate08_hash_bound_remediation_control_install"
+    expected_gate = "GATE-08"
+elif operation == "low-risk-emergency-deploy":
+    expected_keys = base | {"source_git_sha", "approval_id", "base_git_sha"}
+    expected_reason = "gate11_scoped_low_risk_emergency_corridor"
+    expected_gate = "GATE-11"
+else:
+    expected_keys = base | {
+        "source_git_sha",
+        "approval_id",
+        "artifact_sha256",
+        "install_targets",
+        "target_preconditions",
+    }
+    expected_reason = "gate08_hash_bound_operational_control_install"
     expected_gate = "GATE-08"
 
 if (
@@ -115,12 +129,26 @@ if (
     raise SystemExit(78)
 
 source = value.get("source_git_sha", "")
-if operation in mutating or operation == "remediation-control-install":
+if operation in mutating or operation in {
+    "remediation-control-install",
+    "operational-control-install",
+    "low-risk-emergency-deploy",
+}:
     if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", source):
         raise SystemExit(78)
     if expected_source and not hmac.compare_digest(source, expected_source):
         raise SystemExit(78)
-if operation == "remediation-control-install":
+if operation == "low-risk-emergency-deploy":
+    approval_id = value.get("approval_id")
+    base_sha = value.get("base_git_sha")
+    if (
+        not isinstance(approval_id, str)
+        or not approval_id.strip()
+        or not isinstance(base_sha, str)
+        or not re.fullmatch(r"[0-9a-f]{40}", base_sha)
+    ):
+        raise SystemExit(78)
+if operation in {"remediation-control-install", "operational-control-install"}:
     approval_id = value.get("approval_id")
     artifacts = value.get("artifact_sha256")
     if (
@@ -137,6 +165,22 @@ if operation == "remediation-control-install":
         )
     ):
         raise SystemExit(78)
+if operation == "operational-control-install":
+    targets = value.get("install_targets")
+    preconditions = value.get("target_preconditions")
+    expected_targets = {
+        "ops/credential_cutover.py": "/usr/local/libexec/sealai/credential-cutover.py",
+        "ops/permission_manifest.py": "/usr/local/libexec/sealai/permission-manifest.py",
+        "ops/schemas/credential-cutover-approval.schema.json": "/usr/local/share/sealai/schemas/credential-cutover-approval.schema.json",
+        "ops/schemas/permission-manifest.schema.json": "/usr/local/share/sealai/schemas/permission-manifest.schema.json",
+    }
+    if targets != expected_targets or not isinstance(preconditions, dict):
+        raise SystemExit(78)
+    if set(preconditions) != set(expected_targets.values()):
+        raise SystemExit(78)
+    for target, item in preconditions.items():
+        if not isinstance(item, dict) or item.get("state") not in {"ABSENT", "PRESENT"}:
+            raise SystemExit(78)
 print(source, end="")
 ' "${operation}" "${expected_source_sha}"
   )"; then

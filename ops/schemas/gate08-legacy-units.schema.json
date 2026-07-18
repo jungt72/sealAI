@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealai.local/schemas/gate08-legacy-units.schema.json",
+  "title": "GATE-08 legacy disk guard unit retirement",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gate_id", "decision", "scope", "approval_id", "approved_at", "expires_at", "units"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "gate_id": {"const": "GATE-08"},
+    "decision": {"const": "APPROVED"},
+    "scope": {"const": "legacy-disk-guard-unit-retirement"},
+    "approval_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "approved_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "units": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["unit_name", "load_state", "active_state", "unit_file_state", "fragment_path", "fragment_sha256"],
+        "properties": {
+          "unit_name": {"enum": ["sealai-docker-disk-guard.timer", "sealai-docker-disk-guard.service"]},
+          "load_state": {"type": "string", "minLength": 1},
+          "active_state": {"type": "string", "minLength": 1},
+          "unit_file_state": {"type": "string", "minLength": 1},
+          "fragment_path": {"enum": ["/etc/systemd/system/sealai-docker-disk-guard.timer", "/etc/systemd/system/sealai-docker-disk-guard.service"]},
+          "fragment_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

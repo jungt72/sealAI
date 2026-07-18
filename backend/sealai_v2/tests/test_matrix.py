@@ -14,6 +14,7 @@ from sealai_v2.core.contracts import (
     CompatibilityMatrix,
     GroundingFact,
     MatrixCell,
+    MaterialConstraintVerdict,
 )
 from sealai_v2.knowledge.matrix import (
     CompatibilityMatrixCatalog,
@@ -34,7 +35,7 @@ def _cell(cid, *, provenance=("owner:x",), material="FKM", medium="Testmedium"):
         werkstoff=material,
         medium=medium,
         bedingung="",
-        bewertung="vertraeglich",
+        bewertung=MaterialConstraintVerdict.VERTRAEGLICH,
         begruendung=f"{material} ist vertraeglich mit {medium}.",
         scope={"material": [material], "medium": [medium], "bedingung": []},
         provenance=provenance,
@@ -277,7 +278,7 @@ def test_relevance_still_beats_provenance_authority():
         werkstoff="FKM",
         medium="Testmedium",
         bedingung="Hochdruck",
-        bewertung="bedingt",
+        bewertung=MaterialConstraintVerdict.BEDINGT,
         begruendung="FKM ist bedingt vertraeglich mit Testmedium bei Hochdruck.",
         scope={
             "material": ["FKM"],
