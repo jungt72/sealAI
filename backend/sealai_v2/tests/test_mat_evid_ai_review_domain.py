@@ -76,6 +76,7 @@ from sealai_v2.material_evidence_ai_review.audit import (
     ClaudeChallengeV1,
     FindingAdjudicationV1,
     FindingDisposition,
+    SourceIndependenceState,
     build_claude_audit_input,
     create_adjudication,
     create_corrected_media_identity_snapshot,
@@ -401,16 +402,16 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
         "cfa653f2c7e9a1d7389f18804c0530f998687d4c94bfe339d49e5a2feed28506"
     )
     assert audit_input.audit_input_sha256 == (
-        "8abc80aadb248df4f8e79a735411d6ee1fb37f9ca793ce78d7094f856c4486ef"
+        "bae7e7a142711a2c526682f6db77073aa89e26d1b4714b66c2737b0775b7148e"
     )
     assert report_hash == (
         "2b4331dcec56ed65895941ff895b5824293eeef79bbd5ba4c4d8aaf7ca63662d"
     )
     assert challenge.challenge_id == (
-        "mac_8970583aa424d2c70c23aaffd37570845a38161a789e6388480966e8c70fee0d"
+        "mac_a15cb126b2dc16ef81d2bad2fd2b178f6e8951f89050ea97ab8d2e4ff7428604"
     )
     assert adjudication.adjudication_id == (
-        "maa_98a06ec2249e1da1f28a298477818ee1ea8892dd1264ce7c5d7838bc21190a6d"
+        "maa_0f447410a54b3dd0386e4f14261ae37807eeb126aa3774e0046f36681168f421"
     )
     assert compute_ai_review_audit_sha256({"event": "golden", "sequence": 1}) == (
         "630e79eb4ead1dee89a3f6d88ac4f04c8cebcacc45ab44fadc8ee6b091b85948"
@@ -419,6 +420,19 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
         compute_ai_review_lifecycle_sha256({"event": "golden", "sequence": 1})
         == "9071e4c1f44af3a1507dabf3a221889dd2afe752e1fc4e450fcb623bcdd77dd0"
     )
+
+
+def test_audit_prompt_publishes_closed_finding_and_independence_vocabularies() -> None:
+    payload, _, _ = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    corpus = json.loads(build_claude_audit_input(snapshot).canonical_bytes)
+    required = corpus["required_output"]
+    assert required["finding_categories"] == [item.value for item in AIFindingCategory]
+    assert "hash_or_reference" in required["finding_categories"]
+    assert required["source_independence_values"] == [
+        item.value for item in SourceIndependenceState
+    ]
+    assert "hash_or_reference" not in required["source_independence_values"]
 
 
 @pytest.mark.parametrize(
@@ -789,8 +803,14 @@ def test_audit_input_exposes_and_binds_every_structured_identity_preimage() -> N
         "Phone: +49 30 12345678",
         "Street 42, 10115 Berlin",
         "Author: Synthetic Person",
+        "John Smith",
+        "Musterstraße 1",
         "DOB: 2000-01-02",
         "Endpoint 192.0.2.42",
+        "Credential " + "sk-" + "a" * 32,
+        "Credential " + "sk-ant-" + "a" * 24,
+        "Credential " + "xoxb-" + "1" * 24,
+        "Credential " + "AIza" + "a" * 35,
     ),
 )
 def test_audit_corpus_safety_preflight_blocks_sensitive_content(
@@ -848,6 +868,7 @@ def test_multi_source_pass_requires_closed_distinct_publisher_assessment() -> No
             source_ref="msr_" + "f" * 64,
             document_id="DOC-AI-TEST-002",
             content_sha256="9" * 64,
+            publisher="SYNTHETIC SECOND PUBLISHER",
         )
     )
     sources = tuple(sorted((first, second), key=lambda item: item.source_ref))
@@ -872,6 +893,46 @@ def test_multi_source_pass_requires_closed_distinct_publisher_assessment() -> No
     target["source_independence_assessment"] = "distinct_publishers_confirmed"
     parsed = parse_claude_audit_report(json.dumps(raw), snapshot)
     assert parsed.overall_verdict.value == "PASS"
+
+
+@pytest.mark.parametrize(
+    "publisher",
+    (
+        "Synthetic Independent Publisher",
+        "synthetic independent publisher",
+        "  SYNTHETIC   INDEPENDENT   PUBLISHER  ",
+    ),
+)
+def test_same_publisher_cannot_be_asserted_as_independent(publisher: str) -> None:
+    payload, _, _ = _payload()
+    first = payload.sources[0]
+    second = AISourceContextV1(
+        metadata=replace(
+            first.metadata,
+            source_ref="msr_" + "f" * 64,
+            document_id="DOC-AI-TEST-002",
+            content_sha256="9" * 64,
+            publisher=publisher,
+        )
+    )
+    sources = tuple(sorted((first, second), key=lambda item: item.source_ref))
+    refs = tuple(item.source_ref for item in sources)
+    claim = replace(
+        payload.claims[0],
+        source_refs=refs,
+        primary_source_refs=refs,
+    )
+    snapshot = AIReviewSnapshotV1.create(
+        BATCH_ID, replace(payload, sources=sources, claims=(claim,))
+    )
+    raw = json.loads(_pass_report(snapshot))
+    target = next(
+        item for item in raw["claim_results"] if item["claim_ref"] == claim.claim_ref
+    )
+    target["source_independence_assessment"] = "distinct_publishers_confirmed"
+    with pytest.raises(AIReviewValidationError) as exc:
+        parse_claude_audit_report(json.dumps(raw), snapshot)
+    assert exc.value.code is AIReviewErrorCode.INVALID_TYPE
 
 
 def test_publisher_display_label_does_not_change_bound_source_identity() -> None:

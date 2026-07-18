@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -14,7 +15,9 @@ from sealai_v2.core.material_evidence_ai_review import (
 )
 from sealai_v2.material_evidence_ai_review.runner import (
     ClaudeChallengeRunReceiptV1,
+    compute_claude_run_receipt_sha256,
     run_claude_challenge,
+    validate_persisted_claude_run_artifacts,
 )
 from sealai_v2.material_evidence_ai_review.audit import CLAUDE_TASK_V1
 from sealai_v2.tests.test_mat_evid_ai_review_domain import (
@@ -33,7 +36,7 @@ def _fake_claude(
     web_fetch_requests: int = 0,
     report_override: str | None = None,
 ) -> Path:
-    script = path / "fake-claude"
+    script = path / "claude"
     body = """#!/usr/bin/env python3
 import json
 import os
@@ -105,24 +108,41 @@ print(json.dumps(envelope))
     return script
 
 
+@contextmanager
+def _fake_claude_on_path(path: Path, **options):
+    executable = _fake_claude(path, **options)
+    previous = os.environ.get("PATH")
+    os.environ["PATH"] = str(path) + (os.pathsep + previous if previous else "")
+    try:
+        yield executable
+    finally:
+        if previous is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = previous
+
+
 def test_runner_uses_one_shot_safe_mode_and_hashes_sensitive_run_id(tmp_path) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
-    executable = _fake_claude(tmp_path)
     output = tmp_path / "audit-output"
     os.environ["SYNTHETIC_API_KEY"] = "must-not-reach-child"
     try:
-        receipt = run_claude_challenge(
-            snapshot,
-            ruleset=ruleset,
-            evidence=evidence,
-            media_identity_evidence=(_identity_evidence(),),
-            output_directory=output,
-            claude_executable=executable,
-        )
+        with _fake_claude_on_path(tmp_path) as executable:
+            receipt = run_claude_challenge(
+                snapshot,
+                ruleset=ruleset,
+                evidence=evidence,
+                media_identity_evidence=(_identity_evidence(),),
+                output_directory=output,
+            )
     finally:
         os.environ.pop("SYNTHETIC_API_KEY", None)
     assert receipt.process_returncode == 0
+    assert (
+        receipt.claude_executable_sha256
+        == hashlib.sha256(executable.read_bytes()).hexdigest()
+    )
     assert receipt.challenge.challenger.agent_model == "claude-sonnet-5"
     assert receipt.challenge.challenger.agent_version == "fake-claude-cli 1.0.0"
     assert (
@@ -154,24 +174,26 @@ def test_runner_uses_one_shot_safe_mode_and_hashes_sensitive_run_id(tmp_path) ->
             audit_input_file_sha256=receipt.audit_input_file_sha256,
             cli_result_path=receipt.cli_result_path,
             cli_result_file_sha256=receipt.cli_result_file_sha256,
+            claude_executable_sha256=receipt.claude_executable_sha256,
             process_returncode=0,
             session_id_sha256=receipt.session_id_sha256,
             runner_receipt_sha256=receipt.runner_receipt_sha256,
             _token=object(),
         )
+    assert not hasattr(ClaudeChallengeRunReceiptV1, "_from_successful_run")
 
 
 def test_runner_receipt_revalidation_rejects_artifact_drift(tmp_path) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
-    receipt = run_claude_challenge(
-        snapshot,
-        ruleset=ruleset,
-        evidence=evidence,
-        media_identity_evidence=(_identity_evidence(),),
-        output_directory=tmp_path / "artifact-drift-output",
-        claude_executable=_fake_claude(tmp_path),
-    )
+    with _fake_claude_on_path(tmp_path):
+        receipt = run_claude_challenge(
+            snapshot,
+            ruleset=ruleset,
+            evidence=evidence,
+            media_identity_evidence=(_identity_evidence(),),
+            output_directory=tmp_path / "artifact-drift-output",
+        )
     Path(receipt.cli_result_path).write_text("{}", encoding="utf-8")
     with pytest.raises(AIReviewValidationError) as exc:
         receipt.validate_against(snapshot)
@@ -181,15 +203,15 @@ def test_runner_receipt_revalidation_rejects_artifact_drift(tmp_path) -> None:
 def test_runner_rejects_permission_denial_as_transport_failure(tmp_path) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
-    with pytest.raises(AIReviewValidationError) as exc:
-        run_claude_challenge(
-            snapshot,
-            ruleset=ruleset,
-            evidence=evidence,
-            media_identity_evidence=(_identity_evidence(),),
-            output_directory=tmp_path / "invalid-output",
-            claude_executable=_fake_claude(tmp_path, invalid_transport=True),
-        )
+    with _fake_claude_on_path(tmp_path, invalid_transport=True):
+        with pytest.raises(AIReviewValidationError) as exc:
+            run_claude_challenge(
+                snapshot,
+                ruleset=ruleset,
+                evidence=evidence,
+                media_identity_evidence=(_identity_evidence(),),
+                output_directory=tmp_path / "invalid-output",
+            )
     assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
 
 
@@ -197,30 +219,30 @@ def test_runner_rejects_output_directory_inside_repository(tmp_path) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
     repository_output = Path(__file__).resolve().parents[3] / ".forbidden-ai-output"
-    with pytest.raises(ValueError, match="outside the repository"):
-        run_claude_challenge(
-            snapshot,
-            ruleset=ruleset,
-            evidence=evidence,
-            media_identity_evidence=(_identity_evidence(),),
-            output_directory=repository_output,
-            claude_executable=_fake_claude(tmp_path),
-        )
+    with _fake_claude_on_path(tmp_path):
+        with pytest.raises(ValueError, match="outside the repository"):
+            run_claude_challenge(
+                snapshot,
+                ruleset=ruleset,
+                evidence=evidence,
+                media_identity_evidence=(_identity_evidence(),),
+                output_directory=repository_output,
+            )
     assert not repository_output.exists()
 
 
 def test_runner_rejects_non_exact_model_usage(tmp_path) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
-    with pytest.raises(AIReviewValidationError) as exc:
-        run_claude_challenge(
-            snapshot,
-            ruleset=ruleset,
-            evidence=evidence,
-            media_identity_evidence=(_identity_evidence(),),
-            output_directory=tmp_path / "wrong-model-output",
-            claude_executable=_fake_claude(tmp_path, wrong_model=True),
-        )
+    with _fake_claude_on_path(tmp_path, wrong_model=True):
+        with pytest.raises(AIReviewValidationError) as exc:
+            run_claude_challenge(
+                snapshot,
+                ruleset=ruleset,
+                evidence=evidence,
+                media_identity_evidence=(_identity_evidence(),),
+                output_directory=tmp_path / "wrong-model-output",
+            )
     assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
 
 
@@ -233,17 +255,86 @@ def test_runner_rejects_nonzero_web_transport_receipt(
 ) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
-    with pytest.raises(AIReviewValidationError) as exc:
-        run_claude_challenge(
+    with _fake_claude_on_path(
+        tmp_path,
+        web_search_requests=web_search_requests,
+        web_fetch_requests=web_fetch_requests,
+    ):
+        with pytest.raises(AIReviewValidationError) as exc:
+            run_claude_challenge(
+                snapshot,
+                ruleset=ruleset,
+                evidence=evidence,
+                media_identity_evidence=(_identity_evidence(),),
+                output_directory=tmp_path / "web-enabled-output",
+            )
+    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
+
+
+@pytest.mark.parametrize(
+    "field,mutation",
+    (
+        ("audit", lambda value: {**value, "review_snapshot_id": "mar_" + "0" * 64}),
+        ("cli", lambda value: {**value, "web_search_requests": 1}),
+        ("cli", lambda value: {**value, "permission_denials": ["unexpected"]}),
+        ("cli", lambda value: {**value, "modelUsage": {"claude-other": {}}}),
+    ),
+)
+def test_durable_runner_artifacts_fail_closed_on_receipt_drift(
+    tmp_path, field: str, mutation
+) -> None:
+    payload, ruleset, evidence = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    with _fake_claude_on_path(tmp_path):
+        receipt = run_claude_challenge(
             snapshot,
             ruleset=ruleset,
             evidence=evidence,
             media_identity_evidence=(_identity_evidence(),),
-            output_directory=tmp_path / "web-enabled-output",
-            claude_executable=_fake_claude(
-                tmp_path,
-                web_search_requests=web_search_requests,
-                web_fetch_requests=web_fetch_requests,
-            ),
+            output_directory=tmp_path / "durable-receipt-output",
         )
-    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
+    audit_value = json.loads(Path(receipt.audit_input_path).read_text(encoding="utf-8"))
+    cli_value = json.loads(Path(receipt.cli_result_path).read_text(encoding="utf-8"))
+    if field == "audit":
+        audit_value = mutation(audit_value)
+    else:
+        cli_value = mutation(cli_value)
+    audit_hash = hashlib.sha256(
+        json.dumps(
+            audit_value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    cli_hash = hashlib.sha256(
+        json.dumps(
+            cli_value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    runner_hash = compute_claude_run_receipt_sha256(
+        challenge=receipt.challenge,
+        audit_input_file_sha256=audit_hash,
+        cli_result_file_sha256=cli_hash,
+        claude_executable_sha256=receipt.claude_executable_sha256,
+        process_returncode=receipt.process_returncode,
+        session_id_sha256=receipt.session_id_sha256,
+    )
+    with pytest.raises(AIReviewValidationError):
+        validate_persisted_claude_run_artifacts(
+            snapshot=snapshot,
+            challenge=receipt.challenge,
+            canonical_audit_input_json=audit_value,
+            canonical_cli_receipt_json=cli_value,
+            audit_input_file_sha256=audit_hash,
+            cli_result_file_sha256=cli_hash,
+            claude_executable_sha256=receipt.claude_executable_sha256,
+            process_returncode=receipt.process_returncode,
+            session_id_sha256=receipt.session_id_sha256,
+            runner_receipt_sha256=runner_hash,
+        )

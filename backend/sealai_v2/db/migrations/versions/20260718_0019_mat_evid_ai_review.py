@@ -33,10 +33,10 @@ _TABLES = (
 )
 _ADOPTION_FINGERPRINTS: dict[str, frozenset[str]] = {
     "postgresql": frozenset(
-        {"67d2f184b49526ac0f22e9d9db706c116d0fa21d7b2275de44c763e3219c56e0"}
+        {"274d437bfd48c3c211821b981c362f05961d2a1a43f50b61081ca7fb8ace55ba"}
     ),
     "sqlite": frozenset(
-        {"079a36cb6f29330c62794dafa396af481a357339b16725661d4a97031190b040"}
+        {"49f1c061c9d2895d99c881b49891d8879c3bd93e759d2d5c85e55b5134ebcca9"}
     ),
 }
 _JSON = sa.JSON().with_variant(JSONB(), "postgresql")
@@ -181,8 +181,11 @@ def _create_run_tables() -> None:
         sa.Column("challenger_prompt_sha256", sa.String(64), nullable=False),
         sa.Column("audit_input_sha256", sa.String(64), nullable=False),
         sa.Column("audit_input_file_sha256", sa.String(64), nullable=False),
+        sa.Column("canonical_audit_input_json", _JSON, nullable=False),
         sa.Column("audit_output_sha256", sa.String(64), nullable=False),
         sa.Column("cli_result_file_sha256", sa.String(64), nullable=False),
+        sa.Column("canonical_cli_receipt_json", _JSON, nullable=False),
+        sa.Column("claude_executable_sha256", sa.String(64), nullable=False),
         sa.Column("report_sha256", sa.String(64), nullable=False),
         sa.Column("process_returncode", sa.Integer(), nullable=False),
         sa.Column("session_id_sha256", sa.String(64), nullable=False),
@@ -217,6 +220,7 @@ def _create_run_tables() -> None:
             "length(audit_input_file_sha256) = 64 AND "
             "length(audit_output_sha256) = 64 AND "
             "length(cli_result_file_sha256) = 64 AND "
+            "length(claude_executable_sha256) = 64 AND "
             "length(report_sha256) = 64 AND "
             "length(session_id_sha256) = 64 AND "
             "length(runner_receipt_sha256) = 64 AND process_returncode = 0",

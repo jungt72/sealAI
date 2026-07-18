@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import hashlib
 import json
+from pathlib import Path
 
 from alembic import command
 import pytest
@@ -70,7 +71,7 @@ from sealai_v2.tests.test_mat_evid_ai_review_domain import (
     _source_identity,
     SHA,
 )
-from sealai_v2.tests.test_mat_evid_ai_review_runner import _fake_claude
+from sealai_v2.tests.test_mat_evid_ai_review_runner import _fake_claude_on_path
 
 
 CREATED_AT = "2026-07-18T20:00:00Z"
@@ -164,14 +165,14 @@ def _challenge(
 ) -> ClaudeChallengeRunReceiptV1:
     _, ruleset, evidence = _payload()
     output_index = len(tuple(tmp_path.glob("challenge-output-*")))
-    return run_claude_challenge(
-        snapshot,
-        ruleset=ruleset,
-        evidence=evidence,
-        media_identity_evidence=(_identity_evidence(),),
-        output_directory=tmp_path / f"challenge-output-{output_index}",
-        claude_executable=_fake_claude(tmp_path, report_override=report_override),
-    )
+    with _fake_claude_on_path(tmp_path, report_override=report_override):
+        return run_claude_challenge(
+            snapshot,
+            ruleset=ruleset,
+            evidence=evidence,
+            media_identity_evidence=(_identity_evidence(),),
+            output_directory=tmp_path / f"challenge-output-{output_index}",
+        )
 
 
 @pytest.mark.parametrize("bypass", ("creator_run", "audit_input"))
@@ -391,7 +392,16 @@ def test_repository_round_trip_challenge_and_cross_review(tmp_path) -> None:
             challenges[0].challenger_prompt_sha256 == challenge.challenger.prompt_sha256
         )
         assert challenges[0].audit_input_file_sha256 == receipt.audit_input_file_sha256
+        assert challenges[0].canonical_audit_input_json == json.loads(
+            Path(receipt.audit_input_path).read_text(encoding="utf-8")
+        )
         assert challenges[0].cli_result_file_sha256 == receipt.cli_result_file_sha256
+        assert challenges[0].canonical_cli_receipt_json == json.loads(
+            Path(receipt.cli_result_path).read_text(encoding="utf-8")
+        )
+        assert (
+            challenges[0].claude_executable_sha256 == receipt.claude_executable_sha256
+        )
         assert challenges[0].process_returncode == 0
         assert challenges[0].session_id_sha256 == receipt.session_id_sha256
         assert challenges[0].runner_receipt_sha256 == receipt.runner_receipt_sha256
@@ -403,6 +413,15 @@ def test_repository_round_trip_challenge_and_cross_review(tmp_path) -> None:
             len(session.scalars(select(V2MaterialEvidenceAILifecycleEvent)).all()) == 2
         )
         assert len(session.scalars(select(V2MaterialEvidenceAIAuditEvent)).all()) == 3
+
+
+def test_repository_consumes_runner_receipt_exactly_once(tmp_path) -> None:
+    _, _, repo, context, snapshot = _setup(tmp_path)
+    receipt = _challenge(snapshot, tmp_path)
+    repo.record_challenge(receipt=receipt, context=context, created_at=CREATED_AT)
+    with pytest.raises(AIReviewValidationError) as exc:
+        receipt.consume_for_persistence(snapshot)
+    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
 
 
 def test_repository_persists_identity_only_correction_without_material_laundering(

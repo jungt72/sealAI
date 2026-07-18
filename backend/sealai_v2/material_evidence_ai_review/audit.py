@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 import hashlib
 import re
+import unicodedata
 from typing import Any
 
 from sealai_v2.core.material_evidence_ai_review import (
@@ -71,6 +72,15 @@ _CORPUS_SECRET_PATTERNS = (
         re.compile(r"\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b"),
     ),
     (
+        "openai_or_anthropic_key",
+        re.compile(r"\b(?:sk-ant-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{32,})\b"),
+    ),
+    (
+        "slack_token",
+        re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+    ),
+    ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    (
         "api_credential_assignment",
         re.compile(
             r"(?i)\b(?:api[_ -]?key|access[_ -]?token|password|secret)\s*[:=]\s*[^\s,;]{8,}"
@@ -102,7 +112,9 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
     (
         "postal_address",
         re.compile(
-            r"(?i)(?:\b(?:street|road|avenue|boulevard|lane|drive|straße|"
+            r"(?i)(?:\b[A-ZÀ-ÖØ-öø-ÿ][A-ZÀ-ÖØ-öø-ÿ'-]{1,40}"
+            r"(?:straße|strasse|weg|platz)\s+[0-9]{1,5}[A-Z]?\b|"
+            r"\b(?:street|road|avenue|boulevard|lane|drive|straße|"
             r"strasse|weg|platz)\s+[0-9]{1,5}[A-Z]?\b|"
             r"\b[0-9]{1,5}\s+[A-ZÀ-ÖØ-öø-ÿ][A-ZÀ-ÖØ-öø-ÿ .'-]{1,50}\s"
             r"(?:street|road|avenue|boulevard|lane|drive)\b)"
@@ -127,6 +139,10 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
         ),
     ),
     (
+        "bare_person_name",
+        re.compile(r"^\s*[A-ZÄÖÜ][a-zäöüß]{2,}\s+[A-ZÄÖÜ][a-zäöüß]{2,}\s*$"),
+    ),
+    (
         "customer_identifier",
         re.compile(r"(?i)\b(?:customer|tenant|case)[_-]?id\s*[:=]\s*[^\s,;]{3,}"),
     ),
@@ -136,28 +152,32 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
 def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
     """Scan the exact outbound corpus and fail closed without exposing matches."""
 
-    strings: list[str] = []
+    strings: list[tuple[str, str]] = []
 
-    def collect(item: Any) -> None:
+    def collect(item: Any, *, path: str) -> None:
         if type(item) is str:
-            strings.append(item)
+            strings.append((path, item))
         elif type(item) is list:
-            for child in item:
-                collect(child)
+            for index, child in enumerate(item):
+                collect(child, path=f"{path}[{index}]")
         elif type(item) is dict:
-            for child in item.values():
-                collect(child)
+            for key, child in item.items():
+                collect(child, path=f"{path}.{key}")
 
-    collect(value)
+    collect(value, path="$")
     secret_classes = sorted(
         name
         for name, pattern in _CORPUS_SECRET_PATTERNS
-        if any(pattern.search(item) for item in strings)
+        if any(pattern.search(item) for _, item in strings)
     )
     identifier_classes = sorted(
         name
         for name, pattern in _CORPUS_DIRECT_IDENTIFIER_PATTERNS
-        if any(pattern.search(item) for item in strings)
+        if any(
+            pattern.search(item)
+            for path, item in strings
+            if not (name == "bare_person_name" and path.endswith(".publisher"))
+        )
     )
     if secret_classes or identifier_classes:
         _fail(
@@ -186,6 +206,12 @@ def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _publisher_identity(value: str) -> str:
+    """Normalize only presentation-level publisher variations for comparison."""
+
+    return " ".join(unicodedata.normalize("NFC", value).split()).casefold()
+
+
 class ClaudeClaimVerdict(str, Enum):
     PASS = "PASS"
     CHANGES_REQUIRED = "CHANGES_REQUIRED"
@@ -211,6 +237,7 @@ class AIFindingCategory(str, Enum):
     MATERIAL_GRANULARITY = "material_granularity"
     POSITIVE_STATEMENT = "positive_statement"
     RIGHTS = "rights"
+    HASH_OR_REFERENCE = "hash_or_reference"
 
 
 class SourceIndependenceState(str, Enum):
@@ -218,7 +245,6 @@ class SourceIndependenceState(str, Enum):
     SINGLE_SOURCE = "single_source"
     SAME_PUBLISHER = "same_publisher"
     UNRESOLVED = "unresolved"
-    HASH_OR_REFERENCE = "hash_or_reference"
 
 
 class FindingDisposition(str, Enum):
@@ -518,6 +544,9 @@ def build_claude_audit_input(snapshot: AIReviewSnapshotV1) -> ClaudeAuditInputV1
                 "MEDIUM",
                 "LOW",
             ],
+            "source_independence_values": [
+                item.value for item in SourceIndependenceState
+            ],
             "format": "exact JSON matching MAT-EVID-AI-CHALLENGE.v1",
             "required_assessments": [
                 "source_coverage",
@@ -678,6 +707,10 @@ def parse_claude_audit_report(
         for identity in snapshot.payload.media_identities
         for claim in identity.claims
     }
+    publisher_by_source_ref = {
+        item.source_ref: _publisher_identity(item.metadata.publisher)
+        for item in snapshot.payload.sources
+    }
     for result in report.claim_results:
         claim = rule_claims.get(result.claim_ref) or identity_claims[result.claim_ref]
         source_refs = (
@@ -686,6 +719,7 @@ def parse_claude_audit_report(
             else claim.source_refs
         )
         state = result.source_independence_assessment
+        publishers = {publisher_by_source_ref[item] for item in source_refs}
         if len(source_refs) == 1 and state is not SourceIndependenceState.SINGLE_SOURCE:
             _fail(
                 AIReviewErrorCode.INVALID_TYPE,
@@ -695,6 +729,15 @@ def parse_claude_audit_report(
             _fail(
                 AIReviewErrorCode.INVALID_TYPE,
                 "multi-source claim cannot use the single_source assessment",
+            )
+        if (
+            len(source_refs) > 1
+            and len(publishers) == 1
+            and state is not SourceIndependenceState.SAME_PUBLISHER
+        ):
+            _fail(
+                AIReviewErrorCode.INVALID_TYPE,
+                "identical frozen publisher identities require same_publisher",
             )
         requires_independence = type(claim) is AIClaimContextV1 and (
             claim.evidence_risk is not AIEvidenceRisk.ORDINARY
