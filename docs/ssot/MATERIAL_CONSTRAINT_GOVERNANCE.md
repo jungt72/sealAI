@@ -1,11 +1,11 @@
 # Material-Constraint Governance
 
-Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, and the
-non-authoritative MAT-GOV-03B shadow/pinning foundation are implemented
-default-off locally; no material-rule activation or production migration is
-authorized. Independent review/owner acceptance of 03B, MAT-GOV-03C,
-MAT-EVID-01, and every activation gate remain required.
-Owner decisions ratified through 2026-07-17.
+Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, the
+owner-accepted non-authoritative MAT-GOV-03B shadow/pinning foundation, and the
+inert MAT-EVID-01A evidence-manifest foundation are implemented default-off
+locally; no material-rule activation, runtime evidence binding, or production
+migration is authorized. MAT-EVID-01B, MAT-GOV-03C, and every activation gate
+remain required. Owner decisions ratified through 2026-07-18.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
 P12 to material constraints. It does not add material facts, media classes,
@@ -129,13 +129,15 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | MAT-GOV-01 | Canonical typed result, unchanged verdict values, stable conditional references, legacy Gegencheck adapter, default-off additive serialization |
 | MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
 | MAT-GOV-03A | Versioned ruleset/snapshot identity, sealingAI JCS profile v1, domain-separated content hash, deep immutability, empty technical persistence and append-only technical audit; no runtime selection |
-| MAT-GOV-03B | Pointerless exact-snapshot shadow bindings, canonical-input eligibility, pseudonymous request/session/evaluation pinning, isolated cache/worker and bounded reconciliation; locally implemented, default-off, sampling frozen at zero, owner acceptance pending independent audit |
+| MAT-GOV-03B | Pointerless exact-snapshot shadow bindings, canonical-input eligibility, pseudonymous request/session/evaluation pinning, isolated cache/worker and bounded reconciliation; owner accepted, default-off, sampling frozen at zero |
 | MAT-GOV-03C | Evidence review/approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01 and separate owner approval |
+| MAT-EVID-01A | Versioned atomic claim/source identities, exact claim scope, structured rule-to-claim binding, content-addressed immutable manifests, empty persistence and technical audit; no runtime binding or authority |
+| MAT-EVID-01B | Fail-closed evidence binding in evaluation; separate package and still NO-GO |
 
 MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
-adds only inert technical snapshot persistence and is not imported by the
-request runtime. None of these packages adds a material rule, medium catalog,
-evidence migration, thermal model, or frontend recommendation.
+and MAT-EVID-01A add only inert technical snapshot persistence and are not
+imported by the request runtime. No package imports existing evidence or adds a
+material rule, medium catalog, thermal model, or frontend recommendation.
 `material_constraints_enabled` defaults to false. While false, the historical
 Gegencheck code path and API payload remain unchanged and contain no
 `material_constraints` key. Enabling the contract requires the separately
@@ -159,8 +161,9 @@ Evidence schema v1 is exactly:
 ```
 
 No additional field, null value, claim/source/review/authority reference, or
-bound/reviewed/approved/grounded state is accepted. MAT-EVID-01 must introduce a
-new snapshot schema version. Existing snapshots are never mutated.
+bound/reviewed/approved/grounded state is accepted. MAT-EVID-01A introduces a
+separate evidence-manifest schema version. Existing ruleset snapshots are never
+mutated or reinterpreted.
 
 Canonicalization v1 is the sealingAI I-JSON/JCS profile:
 
@@ -204,6 +207,47 @@ controlled quarantine-candidate error but no 03C lifecycle mutation.
 or cache integration, API/serializer/frontend change, pointer selection,
 pinning, review, approval, activation, rollback, readiness, or reconciliation.
 Its migration is not approved for production execution.
+
+## MAT-EVID-01A immutable manifest contract
+
+MAT-GOV-03A schema v1 remains unchanged and continues to mean exactly
+`{"state":"unbound"}`. MAT-EVID-01A uses the separate closed manifest schema
+`MAT-EVID-01A.v1`; no 03A payload is reinterpreted.
+
+Each source identity requires `document_id`, `document_revision`,
+`publication_edition`, and the source-content SHA-256 digest. `source_ref` is a
+domain-separated hash of all four fields. A URL field is not part of the schema
+and a URL can never be the sole source identity.
+
+Each atomic claim has an NFC claim text, exact `materials`, `media`, and
+`conditions` scope, and at least one source reference. `claim_ref` is a
+domain-separated hash of claim text plus exact scope; source revision changes
+therefore preserve logical claim identity, while text or scope changes create a
+new claim identity. Every claim is explicitly bound through one or more
+`rule_ref -> claim_ref` pairs to a rule in one exact immutable 03A snapshot.
+Dangling, duplicate, and orphan references fail closed.
+
+The manifest snapshot has its own schema and canonicalization version,
+domain-separated content hash, and `mes_<hash>` identity bound to a stable
+`mef_<id>` family. Strict JSON rejects duplicate/unknown properties, floats,
+invalid or non-NFC Unicode, implicit conversions, and unsupported versions.
+Sources, claims, source refs, typed scope sets, and bindings are canonically
+ordered. Golden hashes freeze every identity and event-hash contract.
+
+Four additive empty tables persist manifest families, snapshots, technical
+validation events, and technical audit events. Restrictive foreign keys bind
+the manifest to its exact 03A snapshot and preserve the new aggregate.
+PostgreSQL and SQLite triggers reject update/delete. Every repository load
+revalidates the complete evidence and 03A binding. The repository exposes no
+review, approval, deployment, pointer, activation, public API, or runtime
+selection method.
+
+Technical validity proves only structural and cryptographic consistency. It is
+not factual review, approval, compatibility, recommendation, or release.
+MAT-EVID-01A imports no matrix text, legacy source label, existing evidence
+card, RAG document, URL, seed, backfill, or LLM-generated content. MAT-EVID-01B
+must separately implement fail-closed evaluation binding; MAT-GOV-03C owns the
+still-separate review, approval, and deployment axes.
 
 ## MAT-GOV-03B non-authoritative shadow contract
 

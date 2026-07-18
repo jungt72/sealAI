@@ -118,8 +118,8 @@ Decision: on 2026-07-17 the owner authorized implementation of MAT-GOV-03A
 only: versioned ruleset/snapshot identity, the sealingAI JCS profile v1,
 domain-separated content addressing, deeply immutable domain values, additive
 empty persistence, technical validation, and append-only technical audit. The
-evidence object is exactly `{ "state": "unbound" }`; MAT-EVID-01 requires a new
-snapshot schema version rather than mutation of v1.
+evidence object is exactly `{ "state": "unbound" }`; MAT-EVID-01A requires a
+separate explicitly versioned manifest rather than mutation of v1.
 
 Consequence: MAT-GOV-03A remains inert and default-off. It creates no request
 pin, shadow selection, cache/readiness integration, active pointer, review,
@@ -257,3 +257,36 @@ material statement, ruleset activation, production migration, or production
 deployment is authorized. The final external audit remains a prerequisite for
 any later activation decision. MAT-GOV-03C, MAT-EVID-01, and MED-NORM-01 remain
 `NO-GO`.
+
+## ODR-MAT-EVID-01A-20260718-01
+
+### Decision
+
+`MAT_GOV_03B_OWNER_ACCEPTED` and `MAT_EVID_01A_PLAN_AND_IMPLEMENTATION_GO`.
+The owner accepted MAT-GOV-03B at implementation head
+`276cc84160d7411954629bf6adfd4852f29d5cba` and main merge
+`5e24a235a4716c80b002628ad0d04e1c210e1a60`, with no open CRITICAL, HIGH, or
+MEDIUM finding. The nonblocking `SHADOW_INVALID_PIN` error classification is a
+registered follow-up.
+
+The next authorized package is exclusively the additive MAT-EVID-01A
+foundation: a new versioned evidence manifest, atomic stable claim identities,
+complete source identities, exact claim scope, explicit rule-to-claim binding,
+deep immutability, content-addressed snapshots, empty persistence, and
+technical validation/audit events.
+
+### Consequence
+
+MAT-GOV-03A schema v1 is never changed or reinterpreted. No matrix text,
+existing evidence, seed, backfill, URL-only source, or LLM-generated evidence
+is imported. Technical evidence validity grants no factual review, approval,
+recommendation, or deployment authority. Review, approval, and deployment stay
+separate and remain MAT-GOV-03C scope.
+
+MAT-EVID-01A adds no runtime activation, public/admin API, frontend projection,
+or production migration. All material flags remain `False` and sampling stays
+`0`. MAT-EVID-01B, MAT-GOV-03C, production migration, sampling, activation, and
+deployment remain `NO-GO`. Intermediate Claude gates remain waived; Codex leads
+implementation and cumulative review, while one external Claude-Sonnet-5 audit
+remains required after a separately authorized dark-staging deployment and
+before activation.

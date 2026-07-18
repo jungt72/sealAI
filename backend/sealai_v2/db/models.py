@@ -30,9 +30,11 @@ reasoning makes it safe now, would not be after real data exists).
 No ``ForeignKey`` constraints in the legacy V2 aggregates (matches this schema's existing convention
 above — a green-field, still-evolving schema avoids FK migration friction; referential integrity for
 ``memory_item_id`` is an application-layer concern, same as every other legacy table here).
-MAT-GOV-03A is the deliberately narrow exception documented in
-``docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md``: its new, self-contained aggregate uses real
-``ON DELETE RESTRICT`` foreign keys and does not retrofit existing tables.
+MAT-GOV-03A and the inert MAT-EVID-01A extension are deliberately narrow
+exceptions documented in ``docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md``
+and ``docs/architecture/ADR_MAT_EVID_01A_PERSISTENCE.md``. Their new bounded
+aggregates use real ``ON DELETE RESTRICT`` foreign keys and do not retrofit
+existing tables.
 """
 
 from __future__ import annotations
@@ -890,6 +892,158 @@ class V2MaterialSnapshotAuditEvent(Base):
     snapshot_id: Mapped[str] = mapped_column(
         String(68),
         ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceManifest(Base):
+    """Stable MAT-EVID-01A manifest family bound to one 03A snapshot."""
+
+    __tablename__ = "v2_material_evidence_manifests"
+    __table_args__ = (
+        UniqueConstraint(
+            "ruleset_snapshot_id",
+            name="uq_v2_material_evidence_manifest_ruleset_snapshot",
+        ),
+        CheckConstraint(
+            "length(manifest_id) = 36 AND manifest_id LIKE 'mef_%'",
+            name="ck_v2_material_evidence_manifest_id",
+        ),
+    )
+
+    manifest_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ruleset_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceSnapshot(Base):
+    """Immutable, content-addressed MAT-EVID-01A manifest snapshot."""
+
+    __tablename__ = "v2_material_evidence_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "manifest_id",
+            "content_sha256",
+            name="uq_v2_material_evidence_snapshot_content",
+        ),
+        CheckConstraint(
+            "length(snapshot_id) = 68 AND snapshot_id LIKE 'mes_%'",
+            name="ck_v2_material_evidence_snapshot_id",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND content_sha256 = lower(content_sha256)",
+            name="ck_v2_material_evidence_snapshot_hash",
+        ),
+        CheckConstraint(
+            "evidence_manifest_schema_version = 1",
+            name="ck_v2_material_evidence_schema_v1",
+        ),
+        CheckConstraint(
+            "canonicalization_version = 1",
+            name="ck_v2_material_evidence_canonicalization_v1",
+        ),
+        CheckConstraint(
+            "mat_evid_contract_version = 'MAT-EVID-01A.v1'",
+            name="ck_v2_material_evidence_contract_v1",
+        ),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    manifest_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("v2_material_evidence_manifests.manifest_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    evidence_manifest_schema_version: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    canonicalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    mat_evid_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceValidationEvent(Base):
+    """Append-only technical validation event without review semantics."""
+
+    __tablename__ = "v2_material_evidence_validation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mev_%'",
+            name="ck_v2_material_evidence_validation_event_id",
+        ),
+        CheckConstraint(
+            "validation_state = 'valid'",
+            name="ck_v2_material_evidence_validation_state",
+        ),
+        CheckConstraint(
+            "error_code = 'none'",
+            name="ck_v2_material_evidence_validation_error_code",
+        ),
+        CheckConstraint(
+            "length(validation_sha256) = 64",
+            name="ck_v2_material_evidence_validation_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_evidence_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    validator_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAuditEvent(Base):
+    """Append-only technical creation event; never review or approval."""
+
+    __tablename__ = "v2_material_evidence_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mea_%'",
+            name="ck_v2_material_evidence_audit_event_id",
+        ),
+        CheckConstraint(
+            "event_type = 'snapshot_created'",
+            name="ck_v2_material_evidence_audit_event_type",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_material_evidence_audit_event_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_evidence_snapshots.snapshot_id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

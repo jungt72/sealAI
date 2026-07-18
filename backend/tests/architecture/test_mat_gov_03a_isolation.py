@@ -128,11 +128,7 @@ def test_no_request_runtime_imports_mat_gov_03a() -> None:
 
 def test_03a_models_contain_no_lifecycle_or_runtime_tables() -> None:
     schema = load_material_schema(MODELS)
-    material_tables = {
-        name: columns
-        for name, columns in schema.items()
-        if not name.startswith("v2_material_shadow_")
-    }
+    material_tables = {name: schema[name] for name in EXPECTED_03A_SCHEMA}
     assert material_tables == EXPECTED_03A_SCHEMA
     forbidden = (
         "pointer",

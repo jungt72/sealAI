@@ -16,6 +16,8 @@ _ALLOWED_FOREIGN_KEYS = frozenset(
     {
         "v2_material_rulesets.ruleset_id",
         "v2_material_ruleset_snapshots.snapshot_id",
+        "v2_material_evidence_manifests.manifest_id",
+        "v2_material_evidence_snapshots.snapshot_id",
         "v2_material_shadow_bindings.binding_id",
         "v2_material_shadow_pins.pin_id",
         "v2_material_shadow_session_versions.session_version_id",

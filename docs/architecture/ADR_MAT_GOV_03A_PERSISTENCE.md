@@ -59,8 +59,9 @@ these roles requires a separate infrastructure review and owner authorization.
   aggregate.
 - A technically valid snapshot is neither reviewed nor approved and cannot be
   selected by the request runtime.
-- Evidence schema v1 remains exactly `{ "state": "unbound" }`. MAT-EVID-01
-  requires a new snapshot schema version rather than mutation of v1 snapshots.
+- Evidence schema v1 remains exactly `{ "state": "unbound" }`. MAT-EVID-01A
+  uses a separate explicitly versioned evidence-manifest schema rather than
+  mutating or reinterpreting v1 ruleset snapshots.
 - Hash or schema drift returned by a database read is a quarantine candidate
   represented as a controlled technical error. MAT-GOV-03A performs no
   lifecycle mutation.
