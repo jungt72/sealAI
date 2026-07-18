@@ -480,6 +480,11 @@ _DYNAMIC_NAMESPACE_MUTATIONS = (
     'dict.__setitem__(namespace, "{name}", build_dynamic_type())',
     'dict.__delitem__(namespace, "{name}")',
     'dict.update(namespace, {"{name}": build_dynamic_type()})',
+    "dict.update(namespace, {name}=build_dynamic_type())",
+    'dict.update(namespace, **{"{name}": build_dynamic_type()})',
+    "namespace.update({name}=build_dynamic_type())",
+    'namespace.update(**{"{name}": build_dynamic_type()})',
+    'payload = {"{name}": build_dynamic_type()}\n' "dict.update(namespace, **payload)",
 )
 
 
@@ -511,6 +516,27 @@ def test_material_schema_parser_rejects_dynamic_namespace_primitives(
     dynamic_source: str,
 ) -> None:
     _assert_schema_rejected(_schema_with_binding(dynamic_source))
+
+
+@pytest.mark.parametrize(
+    "safe_update",
+    (
+        "dict.update(namespace, harmless=build_value())",
+        'dict.update(namespace, **{"harmless": build_value()})',
+        "namespace.update(harmless=build_value())",
+        'namespace.update(**{"harmless": build_value()})',
+        (
+            'namespace.update(**{"harmless": build_value(), '
+            '**{"also_harmless": build_value()}})'
+        ),
+    ),
+)
+def test_material_schema_parser_allows_static_unprotected_namespace_updates(
+    safe_update: str,
+) -> None:
+    assert parse_material_schema_source(_schema_with_binding(safe_update)) == {
+        "v2_material_shadow_binding_probe": frozenset({"value"})
+    }
 
 
 def test_material_schema_parser_closes_table_constraint_ast() -> None:

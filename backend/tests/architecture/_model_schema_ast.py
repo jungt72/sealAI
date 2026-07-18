@@ -382,8 +382,66 @@ def _literal_protected_name(node: ast.AST) -> bool:
     )
 
 
-def _contains_literal_protected_name(node: ast.AST) -> bool:
-    return any(_literal_protected_name(candidate) for candidate in ast.walk(node))
+def _static_mapping_has_no_protected_keys(node: ast.AST) -> bool:
+    if isinstance(node, ast.Dict):
+        for key, value in zip(node.keys, node.values, strict=True):
+            if key is None:
+                if not _static_mapping_has_no_protected_keys(value):
+                    return False
+            elif not isinstance(key, ast.Constant):
+                return False
+            elif type(key.value) is str and key.value in _PROTECTED_BINDING_NAMES:
+                return False
+        return True
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "dict"
+        and not node.args
+    ):
+        return _mutation_keywords_are_statically_safe(node.keywords)
+    return False
+
+
+def _mutation_keywords_are_statically_safe(
+    keywords: list[ast.keyword],
+) -> bool:
+    for keyword in keywords:
+        if keyword.arg is None:
+            if not _static_mapping_has_no_protected_keys(keyword.value):
+                return False
+        elif keyword.arg in _PROTECTED_BINDING_NAMES:
+            return False
+    return True
+
+
+def _literal_mutation_key_is_statically_safe(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and not _literal_protected_name(node)
+
+
+def _namespace_mutation_is_statically_safe(call: ast.Call) -> bool:
+    if not isinstance(call.func, ast.Attribute):
+        return True
+    method = call.func.attr
+    if method not in _DICT_MUTATION_METHODS:
+        return True
+
+    direct_dict_call = (
+        isinstance(call.func.value, ast.Name) and call.func.value.id == "dict"
+    )
+    arguments = call.args[1:] if direct_dict_call else call.args
+    if direct_dict_call and not call.args:
+        return False
+
+    if method == "update":
+        return all(
+            _static_mapping_has_no_protected_keys(argument) for argument in arguments
+        ) and _mutation_keywords_are_statically_safe(call.keywords)
+    if method in {"clear", "popitem"}:
+        return False
+    if call.keywords or not arguments:
+        return False
+    return _literal_mutation_key_is_statically_safe(arguments[0])
 
 
 def _validate_dynamic_namespace_boundary(tree: ast.Module, *, filename: str) -> None:
@@ -437,15 +495,7 @@ def _validate_dynamic_namespace_boundary(tree: ast.Module, *, filename: str) -> 
                 violations.append(node)
                 continue
         elif isinstance(node, ast.Call):
-            if (
-                isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "dict"
-                and node.func.attr in _DICT_MUTATION_METHODS
-                and any(
-                    _contains_literal_protected_name(argument) for argument in node.args
-                )
-            ):
+            if not _namespace_mutation_is_statically_safe(node):
                 violations.append(node)
 
     if violations:
