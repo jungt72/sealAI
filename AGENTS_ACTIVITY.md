@@ -53,3 +53,10 @@ cockpit-overview-pre-sync: 472 Dateien/2 Monate alt, laengst divergiert; ptfe-rw
 bewahrte eine als "unrelated" geflaggte, bereits vermiedene Loeschung; frontend-workspace-cleanup:
 Ziel war V1-Backend-Code, komplett entfernt seit Retirement). Keine Ueberschneidung mit Codex'
 aktiver Arbeit (feature/mat-evid-02) verifiziert vor Ausfuehrung.
+
+2026-07-18 | Claude Code | GATE-11-Wiring in release-backend-v2.sh | --low-risk-emergency als
+dritte Release-Stage ergaenzt (PR #332), rein additiv (--candidate/--final/kein-Argument
+byte-identisch unveraendert, testverifiziert). Voraussetzung war die Owner-Bestaetigung, dass der
+alte remediation/p0-p2-Stack (#293-#305, dieselben Gate-Dateien beruehrend) tot/aufgegeben ist --
+damit keine Kollision. GATE-10-Freeze selbst weiterhin unangetastet; nur der additive
+Notfall-Korridor ist jetzt tatsaechlich aufrufbar, nicht nur dokumentiert.
