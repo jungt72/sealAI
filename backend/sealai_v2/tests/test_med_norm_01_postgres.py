@@ -23,8 +23,11 @@ from sealai_v2.core.material_evidence_review import (
 from sealai_v2.core.medium_catalog import (
     MediumCatalogEntryV1,
     MediumCatalogIntegrityError,
+    MediumCatalogValidationError,
     MediumIdentityKind,
     derive_media_id,
+    evaluate_normalized_media,
+    resolve_exact_catalog_values,
 )
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.db.material_evidence import MaterialEvidenceRepository
@@ -301,6 +304,11 @@ def test_real_postgres_catalog_fingerprint_fk_and_immutability() -> None:
         repository.load_snapshot(reviewed_catalog.snapshot_id, identity=identity)
         == reviewed_catalog
     )
+    normalized = resolve_exact_catalog_values(
+        ("Synthetic PostgreSQL Medium",),
+        snapshot=reviewed_catalog,
+        identity=identity,
+    )
     reviews.record_revocation(
         review.review_snapshot_id,
         identity=_actor("subject:approver", APPROVE_ROLE),
@@ -308,6 +316,21 @@ def test_real_postgres_catalog_fingerprint_fk_and_immutability() -> None:
     )
     with pytest.raises(MediumCatalogIntegrityError, match="strict revalidation"):
         repository.load_snapshot(reviewed_catalog.snapshot_id, identity=identity)
+    with pytest.raises(MediumCatalogValidationError, match="approved factual evidence"):
+        resolve_exact_catalog_values(
+            ("Synthetic PostgreSQL Medium",),
+            snapshot=reviewed_catalog,
+            identity=identity,
+        )
+
+    def forbidden_evaluator(_component):
+        raise AssertionError("revoked normalized input reached evaluator")
+
+    with pytest.raises(MediumCatalogValidationError, match="approved factual evidence"):
+        evaluate_normalized_media(
+            normalized,
+            evaluate_component=forbidden_evaluator,
+        )
 
     with pytest.raises(IntegrityError):
         with factory() as session, session.begin():

@@ -189,7 +189,9 @@ class MediumCatalogRepository:
                 )
             )
         return _bind_evidence_verified_medium_catalog(
-            snapshot, tenant_id=identity.tenant_id
+            snapshot,
+            tenant_id=identity.tenant_id,
+            revalidate=lambda: self._validate_evidence(snapshot, identity=identity),
         )
 
     def load_snapshot(
@@ -283,7 +285,9 @@ class MediumCatalogRepository:
                 )
             self._validate_evidence(rebuilt, identity=identity)
             return _bind_evidence_verified_medium_catalog(
-                rebuilt, tenant_id=identity.tenant_id
+                rebuilt,
+                tenant_id=identity.tenant_id,
+                revalidate=lambda: self._validate_evidence(rebuilt, identity=identity),
             )
         except MediumCatalogIntegrityError:
             raise

@@ -336,6 +336,10 @@ Resolution accepts only a tenant-bound capability issued after repository
 revalidation of the exact approved Evidence. User confirmation is
 domain-separated HMAC-bound to the verified tenant and subject, confirmation,
 snapshot, and media; caller-supplied provenance strings carry no authority.
+Every resolution invokes the non-serializable repository guard; evaluation
+invokes it before and after component evaluation. Revocation or quarantine
+therefore invalidates held capabilities and discards previously normalized
+unpublished results without a last-known-good fallback.
 
 Canonical medium components form a stable ordered tuple. Multiple known media
 without relationships remain `multiple + unresolved`. A resolved set requires

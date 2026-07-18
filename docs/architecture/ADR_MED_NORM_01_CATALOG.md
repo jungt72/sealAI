@@ -67,6 +67,11 @@ rejected. Catalog provenance contains that capability and the exact entry,
 rather than caller-supplied hash strings. User-confirmation provenance is
 created only by the server factory and domain-separated HMAC-binds the verified
 tenant and subject, confirmation reference, catalog snapshot, and media ID.
+The capability also carries a non-serializable repository guard. Resolution
+and user confirmation revalidate the current 01C approval. Evaluation performs
+both preflight and postflight revalidation, so revocation or quarantine before
+or during evaluation discards the unpublished result. A held capability or
+already-normalized input cannot use a cached or last-known-good approval.
 
 The persisted authority is fixed to `NORMALIZATION_ONLY`; it cannot create a
 material verdict, factual approval, recommendation, active pointer, or public

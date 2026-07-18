@@ -97,7 +97,9 @@ def _snapshot(
     entries: list[dict] | None = None,
 ) -> EvidenceVerifiedMediumCatalogSnapshotV1:
     return _bind_evidence_verified_medium_catalog(
-        _raw_snapshot(entries), tenant_id=IDENTITY.tenant_id
+        _raw_snapshot(entries),
+        tenant_id=IDENTITY.tenant_id,
+        revalidate=lambda: None,
     )
 
 
@@ -201,6 +203,73 @@ def test_verified_catalog_rejects_foreign_tenant_and_duck_type() -> None:
     ).payload.entries[0]
     with pytest.raises(MediumCatalogValidationError, match="absent"):
         CatalogEvidenceProvenanceV1(snapshot, foreign_entry)
+
+
+def test_held_capability_revalidates_on_resolution_and_evaluation() -> None:
+    state = {"approved": True, "calls": 0}
+
+    def revalidate() -> None:
+        state["calls"] += 1
+        if not state["approved"]:
+            raise MediumCatalogValidationError(
+                MediumCatalogErrorCode.DANGLING_REF,
+                "synthetic factual approval revoked",
+            )
+
+    snapshot = _bind_evidence_verified_medium_catalog(
+        _raw_snapshot([_entry(MEDIA_A, "Synthetic A")]),
+        tenant_id=IDENTITY.tenant_id,
+        revalidate=revalidate,
+    )
+    normalized = resolve_exact_catalog_values(
+        ("Synthetic A",), snapshot=snapshot, identity=IDENTITY
+    )
+    assert state["calls"] == 1
+    state["approved"] = False
+    with pytest.raises(MediumCatalogValidationError, match="revoked"):
+        evaluate_normalized_media(
+            normalized,
+            evaluate_component=lambda _component: pytest.fail(
+                "revoked capability reached evaluator"
+            ),
+        )
+    assert state["calls"] == 2
+
+
+def test_evaluation_postflight_discards_midflight_revocation() -> None:
+    state = {"approved": True, "calls": 0}
+
+    def revalidate() -> None:
+        state["calls"] += 1
+        if not state["approved"]:
+            raise MediumCatalogValidationError(
+                MediumCatalogErrorCode.DANGLING_REF,
+                "synthetic midflight revocation",
+            )
+
+    snapshot = _bind_evidence_verified_medium_catalog(
+        _raw_snapshot([_entry(MEDIA_A, "Synthetic A")]),
+        tenant_id=IDENTITY.tenant_id,
+        revalidate=revalidate,
+    )
+    normalized = resolve_exact_catalog_values(
+        ("Synthetic A",), snapshot=snapshot, identity=IDENTITY
+    )
+
+    def revoke_during_evaluation(component):
+        state["approved"] = False
+        return _result(
+            component.media_id,
+            MaterialConstraintVerdict.BEDINGT,
+            "MR-MIDFLIGHT",
+        )
+
+    with pytest.raises(MediumCatalogValidationError, match="midflight"):
+        evaluate_normalized_media(
+            normalized,
+            evaluate_component=revoke_during_evaluation,
+        )
+    assert state["calls"] == 3
 
 
 @pytest.mark.parametrize(

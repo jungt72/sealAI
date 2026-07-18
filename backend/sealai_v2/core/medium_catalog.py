@@ -621,13 +621,14 @@ _VERIFIED_MEDIUM_CATALOG_TOKEN = object()
 class EvidenceVerifiedMediumCatalogSnapshotV1:
     """Server capability created only after tenant and 01C verification."""
 
-    __slots__ = ("__snapshot", "__tenant_id")
+    __slots__ = ("__revalidate", "__snapshot", "__tenant_id")
 
     def __init__(
         self,
         snapshot: MediumCatalogSnapshotV1,
         tenant_id: str,
         *,
+        _revalidate: Callable[[], None] | None = None,
         _token: object | None = None,
     ) -> None:
         if _token is not _VERIFIED_MEDIUM_CATALOG_TOKEN:
@@ -637,8 +638,11 @@ class EvidenceVerifiedMediumCatalogSnapshotV1:
             )
         if type(snapshot) is not MediumCatalogSnapshotV1:
             raise TypeError("snapshot must be MediumCatalogSnapshotV1")
+        if not callable(_revalidate):
+            raise TypeError("verified catalog requires a live revalidation guard")
         self.__snapshot = snapshot
         self.__tenant_id = _text(tenant_id, path="$.tenant_id")
+        self.__revalidate = _revalidate
 
     @property
     def snapshot(self) -> MediumCatalogSnapshotV1:
@@ -668,6 +672,11 @@ class EvidenceVerifiedMediumCatalogSnapshotV1:
     def snapshot_id(self) -> str:
         return self.__snapshot.snapshot_id
 
+    def assert_current(self) -> None:
+        """Revalidate current factual approval; no cached/LKG success is allowed."""
+
+        self.__revalidate()
+
     def __eq__(self, other: object) -> bool:
         return (
             type(other) is EvidenceVerifiedMediumCatalogSnapshotV1
@@ -677,12 +686,18 @@ class EvidenceVerifiedMediumCatalogSnapshotV1:
 
 
 def _bind_evidence_verified_medium_catalog(
-    snapshot: MediumCatalogSnapshotV1, *, tenant_id: str
+    snapshot: MediumCatalogSnapshotV1,
+    *,
+    tenant_id: str,
+    revalidate: Callable[[], None],
 ) -> EvidenceVerifiedMediumCatalogSnapshotV1:
     """Repository-only capability boundary; runtime imports are forbidden."""
 
     return EvidenceVerifiedMediumCatalogSnapshotV1(
-        snapshot, tenant_id, _token=_VERIFIED_MEDIUM_CATALOG_TOKEN
+        snapshot,
+        tenant_id,
+        _revalidate=revalidate,
+        _token=_VERIFIED_MEDIUM_CATALOG_TOKEN,
     )
 
 
@@ -738,6 +753,9 @@ class CatalogEvidenceProvenanceV1:
     @property
     def claim_refs(self) -> tuple[str, ...]:
         return self.entry.claim_refs
+
+    def assert_current(self) -> None:
+        self.catalog.assert_current()
 
 
 class UserConfirmationProvenanceV1:
@@ -1105,6 +1123,7 @@ def create_user_confirmed_component(
             "verified catalog belongs to another tenant",
             path="$.tenant_id",
         )
+    snapshot.assert_current()
     if type(hmac_key) is not bytes or len(hmac_key) < 32:
         raise ValueError("hmac_key must contain at least 32 bytes")
     _identifier(
@@ -1205,6 +1224,7 @@ def resolve_exact_catalog_values(
             "verified catalog belongs to another tenant",
             path="$.tenant_id",
         )
+    snapshot.assert_current()
     if type(observed_values) is not tuple:
         raise TypeError("observed_values must be a tuple")
     if not observed_values:
@@ -1480,6 +1500,24 @@ def evaluate_normalized_media(
             EvaluationState.BLOCKED,
             blockers=(blocker,),
         )
+    verified_catalogs: dict[tuple[str, str], CatalogEvidenceProvenanceV1] = {}
+    for component in medium_input.components:
+        provenance = component.provenance
+        catalog = (
+            provenance.catalog
+            if type(provenance) is UserConfirmationProvenanceV1
+            else provenance
+        )
+        if type(catalog) is not CatalogEvidenceProvenanceV1:
+            raise TypeError("component lacks verified catalog provenance")
+        key = (catalog.catalog_snapshot_id, catalog.catalog.tenant_id)
+        verified_catalogs.setdefault(key, catalog)
+
+    def assert_catalogs_current() -> None:
+        for key in sorted(verified_catalogs):
+            verified_catalogs[key].assert_current()
+
+    assert_catalogs_current()
     results: list[tuple[str, str, MaterialConstraintResult]] = []
     attributed: list[AttributedMaterialMatchV1] = []
     for component in medium_input.components:
@@ -1499,6 +1537,9 @@ def evaluate_normalized_media(
             )
             for match in result.matches
         )
+    # Postflight prevents a revocation or quarantine that races component
+    # evaluation from releasing an unpublished aggregate result.
+    assert_catalogs_current()
     ordered_results = tuple(sorted(results, key=lambda item: (item[0], item[1])))
     if any(item[2].evaluation_state is EvaluationState.BLOCKED for item in results):
         return NormalizedMaterialEvaluationV1(
