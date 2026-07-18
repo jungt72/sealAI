@@ -8,7 +8,9 @@ inert MED-NORM-01 closed media-catalog foundation, and the MAT-RULES-01
 reviewed-pack seam plus gap-only coverage inventory are implemented default-off
 locally; no real material rule, reviewed catalog content,
 material-rule activation, production migration, or production runtime binding
-is authorized. MAT-GOV-03C and every activation gate remain
+is authorized. The additive `MAT-EVID-AI-REVIEW.v1` contract is a separate,
+non-human and non-authoritative cross-review track; it does not change the
+verified-human MAT-EVID-01C path. MAT-GOV-03C and every activation gate remain
 required. Owner decisions ratified through 2026-07-18.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
@@ -427,6 +429,73 @@ This package adds no persistence or migration because it composes the existing
 immutable aggregates. It has no pointer, evaluator, pipeline, cache, API,
 serializer, frontend, prompt, productspec, config, deployment, or activation
 integration. MAT-GOV-03C remains blocked until a real reviewed rule pack exists.
+
+## MAT-EVID-AI-REVIEW.v1 non-human cross-review track
+
+The AI track is a new aggregate, not a shortcut through MAT-EVID-01C. Its only
+authority marker is `AI_CROSS_REVIEW_NON_AUTHORITATIVE`; it never serializes as
+`reviewed`, `human_reviewed`, `approved`, `application_validated` or
+`fachlich_freigegeben`. It contains no verified-human subject field and cannot
+write a MAT-EVID-01C lifecycle event. The existing creator/reviewer/approver
+three-human path remains unchanged.
+
+One immutable review snapshot pins exact MAT-GOV-03A ruleset and MAT-EVID-01A
+v2 material-relation snapshot IDs plus exact v2 `media_identity` Evidence
+snapshot/hash/assertion bindings for every referenced medium. These are inert
+AI candidates and never become verified MED-NORM catalog entries. The snapshot
+also pins hashes, versions, domain pack, atomic rule and claim references, exact
+material/media/condition scope, bounded source
+metadata, rights, locators, permitted excerpts, conflict references and the
+complete creator-agent provenance. It accepts only atomic `unvertraeglich` or
+opaque `bedingt` rules and permanently fixes
+`positive_statement_allowed=false`. No matrix prose, URL-only identity, model
+knowledge, inferred medium identity, missing locator, unknown/restricted
+rights, dangling conflict, family-wide single-source rule or production
+environment can enter an eligible challenge.
+
+The closed lifecycle is:
+
+```text
+ai_draft
+  -> ai_challenged
+  -> ai_cross_reviewed_non_authoritative | changes_required | quarantined
+  -> quarantined | revoked
+```
+
+`revoked` is terminal. A snapshot can be challenged exactly once. Creator,
+challenger and adjudicator are separate AI runs with provider, model, version,
+prompt, run and input/output hashes. The challenger is exactly
+`anthropic/claude-sonnet-5` and its receipt proves tools, MCP, hooks, web and
+session persistence were disabled. A transport failure or incomplete report
+creates no challenge verdict. Raw Claude session identifiers are never stored;
+only a one-way run hash is retained.
+
+The audit corpus excludes tenant/customer identity and creator reasoning. It
+contains only the frozen claims, rule scopes, source metadata, permitted short
+excerpts, digests, rights, conflicts, expected disqualifying effect and the
+ratified invariants. Claude returns a closed per-claim
+`PASS | CHANGES_REQUIRED | QUARANTINE` report. Codex adjudication must cover
+every finding. CRITICAL, HIGH and MEDIUM findings require quarantine, a new
+immutable ruleset/evidence pair, and/or a new exact media-identity Evidence
+snapshot; LOW findings may be accepted only when they
+have no factual, scope or governance effect. Any factual correction invalidates
+the old corpus and requires a new review snapshot and new Claude run.
+
+`ai_cross_reviewed_non_authoritative` requires a complete Claude `PASS`, no
+open CRITICAL/HIGH/MEDIUM finding, valid source/scope/hash/rights binding and no
+factual change. It still grants no factual approval, runtime authority,
+positive statement, active pointer, sampling, API/frontend projection or
+deployment authority. Seven additive empty tables persist batches, immutable
+review snapshots, challenges, adjudications, validation, hash-chained lifecycle
+and technical audit events. Restrictive foreign keys and mutation triggers
+keep the aggregate immutable. Migration `20260718_0019` is not authorized for
+production execution.
+
+The local runner is one-shot, writes only to a new private directory outside
+the repository, strips secret-bearing environment variables, disables Claude
+tools/MCP/hooks/web/session persistence, redacts the returned session ID and
+never retries automatically. The operational procedure is
+`docs/ops/material-evidence-ai-review.md`.
 
 ## MAT-GOV-03B non-authoritative shadow contract
 

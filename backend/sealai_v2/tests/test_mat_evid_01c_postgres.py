@@ -54,7 +54,7 @@ def test_real_postgres_01c_fingerprint_fk_lifecycle_and_immutability(tmp_path) -
 
     engine = make_engine(POSTGRES_URL)
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0019", "20260718_0019")
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
     rulesets.create_ruleset(
@@ -114,4 +114,4 @@ def test_real_postgres_01c_fingerprint_fk_lifecycle_and_immutability(tmp_path) -
     with pytest.raises(RuntimeError, match="contain data"):
         with engine.begin() as connection:
             command.downgrade(_config(connection=connection), "20260718_0015")
-    assert migration_status(engine)[0] == "20260718_0018"
+    assert migration_status(engine)[0] == "20260718_0019"

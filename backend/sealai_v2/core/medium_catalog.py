@@ -320,6 +320,58 @@ def derive_media_id(canonical_name: str, identity_kind: MediumIdentityKind) -> s
     )
 
 
+def derive_medium_identity_assertion_ref(
+    *,
+    media_id: str,
+    canonical_name: str,
+    identity_kind: MediumIdentityKind,
+    aliases: tuple[str, ...],
+) -> str:
+    """Derive the assertion identity shared by human and inert AI tracks.
+
+    This helper only hashes an already structured candidate.  It grants no
+    catalog authority and performs no normalization or lookup.
+    """
+
+    _identifier(
+        media_id,
+        _MEDIA_ID_RE,
+        path="$.media_id",
+        message="media_id must match med_<64 lowercase hex>",
+    )
+    _text(canonical_name, path="$.canonical_name")
+    if type(identity_kind) is not MediumIdentityKind:
+        _fail(
+            MediumCatalogErrorCode.INVALID_TYPE,
+            "invalid identity_kind",
+            path="$.identity_kind",
+        )
+    if type(aliases) is not tuple:
+        _fail(
+            MediumCatalogErrorCode.INVALID_TYPE,
+            "aliases must be a tuple",
+            path="$.aliases",
+        )
+    for index, alias in enumerate(aliases):
+        _text(alias, path=f"$.aliases[{index}]")
+    if aliases != tuple(sorted(set(aliases), key=lambda value: value.encode("utf-8"))):
+        _fail(
+            MediumCatalogErrorCode.NON_CANONICAL_ORDER,
+            "aliases must be unique and ordered",
+            path="$.aliases",
+        )
+    identity = {
+        "aliases": list(aliases),
+        "canonical_name": canonical_name,
+        "identity_kind": identity_kind.value,
+        "media_id": media_id,
+    }
+    digest = hashlib.sha256(
+        IDENTITY_ASSERTION_HASH_DOMAIN + _canonical_json(identity)
+    ).hexdigest()
+    return f"med-norm-identity-sha256:{digest}"
+
+
 @dataclass(frozen=True, slots=True)
 class MediumCatalogEntryV1:
     media_id: str
@@ -420,16 +472,12 @@ class MediumCatalogEntryV1:
     def identity_assertion_ref(self) -> str:
         """Bind reviewed Evidence to the exact identity and alias assertion."""
 
-        identity = {
-            "aliases": list(self.aliases),
-            "canonical_name": self.canonical_name,
-            "identity_kind": self.identity_kind.value,
-            "media_id": self.media_id,
-        }
-        digest = hashlib.sha256(
-            IDENTITY_ASSERTION_HASH_DOMAIN + _canonical_json(identity)
-        ).hexdigest()
-        return f"med-norm-identity-sha256:{digest}"
+        return derive_medium_identity_assertion_ref(
+            media_id=self.media_id,
+            canonical_name=self.canonical_name,
+            identity_kind=self.identity_kind,
+            aliases=self.aliases,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1620,6 +1668,7 @@ __all__ = [
     "create_user_confirmed_component",
     "derive_component_ref",
     "derive_media_id",
+    "derive_medium_identity_assertion_ref",
     "evaluate_normalized_media",
     "parse_catalog_payload",
     "parse_json_without_duplicates",

@@ -41,7 +41,8 @@ the repository, but it may not override the SSoT.
 - `QUALITY_ASSURANCE_PLAN.md`: review, validation, incident, and CAPA policy.
 - `MATERIAL_CONSTRAINT_GOVERNANCE.md`: default-off MAT-GOV package boundaries,
   canonical verdict contract, inert MAT-GOV-03A snapshot foundation, and owner
-  activation constraints.
+  activation constraints, including the separate non-human
+  `MAT-EVID-AI-REVIEW.v1` cross-review track.
 
 ## Change rule
 
