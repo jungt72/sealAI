@@ -64,8 +64,10 @@ _CHALLENGE_ID_RE = re.compile(r"^mac_[0-9a-f]{64}$", re.ASCII)
 _ADJUDICATION_ID_RE = re.compile(r"^maa_[0-9a-f]{64}$", re.ASCII)
 _FINDING_REF_RE = re.compile(r"^AIF-[A-Z0-9][A-Z0-9._:-]{0,124}$", re.ASCII)
 _PERSON_NAME_TOKEN = (
-    r"(?:[A-ZÀ-ÖØ-Þ](?:[a-zà-öø-ÿ]+"
-    r"(?:[-'’][A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿ]+)?|\.)?|"
+    r"(?:[A-ZÀ-ÖØ-Þ](?:"
+    r"[a-zà-öø-ÿ]+"
+    r"(?:[-'’][A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿ]+)?|"
+    r"[-'’][A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿ]+|\.)?|"
     r"[A-ZÀ-ÖØ-Þ]{2,40})"
 )
 _PERSON_NAME_SEQUENCE = rf"{_PERSON_NAME_TOKEN}(?:\s+{_PERSON_NAME_TOKEN}){{1,3}}"

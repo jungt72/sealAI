@@ -403,16 +403,16 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
         "cfa653f2c7e9a1d7389f18804c0530f998687d4c94bfe339d49e5a2feed28506"
     )
     assert audit_input.audit_input_sha256 == (
-        "ca50e7049e9ca5245a86ae7c4ac93b505da9a956ab9d5d8bd6c9ee3ff740111e"
+        "4319e960131e7246e7a6176dbf4b1ad8945038f6e6c38616f090a83fe055da25"
     )
     assert report_hash == (
         "2b4331dcec56ed65895941ff895b5824293eeef79bbd5ba4c4d8aaf7ca63662d"
     )
     assert challenge.challenge_id == (
-        "mac_1f3b54e42e3d63c67bf724fb5864c6e780a6eed7b2fa4a18c69f703378994987"
+        "mac_7f75df8053c0435286d79344ca2932579d63f7c191482c4067817ff689da965f"
     )
     assert adjudication.adjudication_id == (
-        "maa_dd803f6ab401d5be8e90aab85c6d9090576f127e0da8b80cacd6ed64940a5eff"
+        "maa_c3db8d0626994e68870bd60083ad23fd09d142d24c469d3864825aec4aebfcbf"
     )
     assert compute_ai_review_audit_sha256({"event": "golden", "sequence": 1}) == (
         "630e79eb4ead1dee89a3f6d88ac4f04c8cebcacc45ab44fadc8ee6b091b85948"
@@ -826,6 +826,11 @@ def test_audit_input_exposes_and_binds_every_structured_identity_preimage() -> N
         "J.",
         "Prepared by Anne-Marie O'Neill",
         "Reviewed by Dr. Smith",
+        "O'Neill",
+        "D'Angelo",
+        "O’Connor",
+        "Anne O'Neill",
+        "Dr. O'Neill",
         "The appendix cites John Smith for this claim.",
         "Report by John Smith",
         "Musterstraße 1",
