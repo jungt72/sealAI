@@ -148,7 +148,7 @@ def test_migration_is_additive_empty_and_uses_restrict_foreign_keys(tmp_path) ->
     _upgrade_engine(engine, "20260718_0014")
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) - before == EVIDENCE_TABLES
-    assert migration_status(engine) == ("20260718_0014", "20260718_0015")
+    assert migration_status(engine) == ("20260718_0014", "20260718_0016")
     manifest_uniques = {
         tuple(item["column_names"])
         for item in inspector.get_unique_constraints("v2_material_evidence_manifests")

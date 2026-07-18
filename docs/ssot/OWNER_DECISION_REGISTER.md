@@ -317,3 +317,31 @@ API, frontend output, positive material assertion, production migration,
 activation, sampling, or deployment is authorized. MAT-EVID-01C,
 MED-NORM-01, MAT-GOV-03C, evidence-bound initial rules, dark staging, and the
 single final external audit remain separate gates.
+
+## ODR-MAT-EVID-01C-20260718-03
+
+### Decision
+
+`MAT_EVID_01C_FACTUAL_REVIEW_IMPLEMENTATION_GO` is ratified as a separate,
+versioned and runtime-inert factual Evidence-review contract. One immutable
+review dossier pins one exact MAT-EVID-01A snapshot, covers every source and
+claim, binds complete document identity/metadata, exact claim scope, required
+source types, rights/locator state, and typed conflict/supersession relations.
+
+Creation, review, and approval require verified-human identities with separate
+roles. Creator, reviewer, and approver are three different verified subjects.
+Self-review, self-approval and model/service auto-approval fail closed.
+Lifecycle events are append-only and hash-chained; revocation and quarantine
+are terminal. Structured short excerpts are bounded; protected full texts and
+long copyrighted passages are excluded.
+
+### Consequence
+
+Factual approval is not technical runtime authority. MAT-EVID-01A.v1 and
+01B.v1 remain unchanged, 01B remains `bound_unreviewed`, and even an approved
+01C dossier has `FACTUAL_REVIEW_ONLY` authority and cannot permit a positive
+statement. The migration is additive and initially empty. No seed, backfill,
+matrix import, public/admin API, frontend output, pointer, activation,
+production migration, sampling, or deployment is authorized. MED-NORM-01,
+evidence-bound rules, MAT-GOV-03C, public integration, dark staging, and the
+single final external audit remain separate gates.

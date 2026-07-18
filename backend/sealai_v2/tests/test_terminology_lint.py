@@ -45,11 +45,15 @@ _ALLOWLIST_FILES = {
     "core/interview/contracts.py",  # internal expert verification state; never suitability approval
     "core/interview/policy.py",  # reads that internal verification state; no user-facing wording
     "core/legal_doctrine.py",  # defines the terms themselves (this module's own source list)
+    "core/material_evidence_review.py",  # internal factual-review/approval states; never suitability language
     "core/output_guard.py",  # IS the existing forbidden-phrase enforcement list this lint mirrors
     "core/response_contract_policy.py",  # same doctrine — banned-phrase list + negated comments
     "knowledge/produktspec/contracts.py",  # `freigegeben: bool = False` G1 structural invariant
     "knowledge/produktspec/kernel.py",  # constructs with `freigegeben=False` (always)
     "knowledge/ledger.py",  # `approved` is an internal review-state enum; never user-facing advice
+    "db/material_evidence_review.py",  # persists the same internal factual-review lifecycle only
+    "db/models.py",  # schema constraints for internal review states; never public suitability wording
+    "db/migrations/versions/20260718_0016_mat_evid_01c_review.py",  # immutable internal review schema
     "pipeline/produktspec_step.py",  # surfaces the same always-False `freigegeben` field
     "pipeline/routing.py",  # regex DETECTING "geeignet für" in USER input, not an output claim
     "pipeline/stages.py",  # "Herstellerempfehlung" = WHICH manufacturer partner to route an RFQ

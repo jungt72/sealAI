@@ -83,7 +83,7 @@ class PoisonedEvidenceCache:
 
 def _database(tmp_path, name="evid-01b.db"):
     engine = make_engine(f"sqlite:///{tmp_path / name}")
-    _upgrade_engine(engine)
+    _upgrade_engine(engine, "20260718_0015")
     factory = make_sessionmaker(engine)
     ruleset_repository = MaterialRulesetRepository(factory)
     ruleset_repository.create_ruleset(
@@ -120,9 +120,9 @@ def test_0015_migration_is_empty_additive_restrictive_and_immutable(tmp_path) ->
     engine = make_engine(f"sqlite:///{tmp_path / 'migration.db'}")
     _upgrade_engine(engine, "20260718_0014")
     before = set(inspect(engine).get_table_names())
-    _upgrade_engine(engine)
+    _upgrade_engine(engine, "20260718_0015")
     assert set(inspect(engine).get_table_names()) - before == TABLES
-    assert migration_status(engine) == ("20260718_0015", "20260718_0015")
+    assert migration_status(engine) == ("20260718_0015", "20260718_0016")
     with engine.connect() as connection:
         assert all(
             connection.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar_one()
