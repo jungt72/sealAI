@@ -7,7 +7,8 @@ state, a versioned domain pack, and the interview policy.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -127,6 +128,14 @@ class NeedState:
             NeedStatus.BLOCKED,
         }
 
+    @property
+    def is_completion_satisfying(self) -> bool:
+        return self.status in {
+            NeedStatus.SATISFIED,
+            NeedStatus.UNOBTAINABLE,
+            NeedStatus.NOT_APPLICABLE,
+        }
+
 
 @dataclass(frozen=True)
 class QuestionDefinition:
@@ -168,6 +177,46 @@ class DomainPack:
             (item for item in self.questions if item.question_id == question_id),
             None,
         )
+
+    def allows_unobtainable(self, need_id: str) -> bool:
+        """Only an explicitly enabled primary need can be overridden."""
+
+        return any(
+            question.primary_need_id == need_id and question.allowed_unobtainable
+            for question in self.questions
+        )
+
+
+@dataclass(frozen=True)
+class UnobtainableOverrideAudit:
+    need_id: str
+    reason: str
+    actor_ref: str
+    created_at: str
+    pack_version: str
+    policy_version: str
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("need_id", self.need_id),
+            ("reason", self.reason),
+            ("actor_ref", self.actor_ref),
+            ("created_at", self.created_at),
+            ("pack_version", self.pack_version),
+            ("policy_version", self.policy_version),
+        ):
+            if not value or value != value.strip():
+                raise ValueError(f"unobtainable override requires canonical {label}")
+        try:
+            created = datetime.fromisoformat(self.created_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(
+                "unobtainable override requires an ISO-8601 timestamp"
+            ) from exc
+        if created.tzinfo is None or created.utcoffset() != timezone.utc.utcoffset(
+            created
+        ):
+            raise ValueError("unobtainable override timestamp must be UTC")
 
 
 @dataclass(frozen=True)
@@ -219,10 +268,20 @@ class InterviewRuntimeState:
     case_schema_version: int = 2
     state_revision: int = 0
     pending_questions: tuple[PendingQuestion, ...] = ()
-    need_status_overrides: dict[str, NeedStatus] = field(default_factory=dict)
+    unobtainable_overrides: tuple[UnobtainableOverrideAudit, ...] = ()
     conflicts: tuple[InterviewConflict, ...] = ()
     fact_snapshots: tuple[FactSnapshot, ...] = ()
     calculator_version_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if any(
+            not isinstance(item, UnobtainableOverrideAudit)
+            for item in self.unobtainable_overrides
+        ):
+            raise TypeError("unobtainable_overrides must contain typed audit records")
+        ids = [item.need_id for item in self.unobtainable_overrides]
+        if len(ids) != len(set(ids)):
+            raise ValueError("unobtainable overrides require unique need_id values")
 
 
 @dataclass(frozen=True)

@@ -33,6 +33,16 @@ _MATERIAL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def extract_material_candidates(message: str) -> tuple[str, ...]:
+    """Return deterministic vocabulary matches without resolving ambiguity."""
+
+    found: list[str] = []
+    for pattern, canonical in _MATERIAL_PATTERNS:
+        if pattern.search(message) and canonical not in found:
+            found.append(canonical)
+    return tuple(found)
+
+
 def extract_seal_spec(message: str) -> dict | None:
     """Extract material (and optionally seal type) from a free-text message.
 
@@ -47,10 +57,7 @@ def extract_seal_spec(message: str) -> dict | None:
     - type is optional → an ambiguous type (≥2 distinct) drops the field
       (graceful degrade), keeping the recognised material.
     """
-    found: list[str] = []
-    for pattern, canonical in _MATERIAL_PATTERNS:
-        if pattern.search(message) and canonical not in found:
-            found.append(canonical)
+    found = extract_material_candidates(message)
 
     if len(found) != 1:
         return None

@@ -1,0 +1,292 @@
+# Material-Constraint Governance
+
+Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, and the
+non-authoritative MAT-GOV-03B shadow/pinning foundation are implemented
+default-off locally; no material-rule activation or production migration is
+authorized. Independent review/owner acceptance of 03B, MAT-GOV-03C,
+MAT-EVID-01, and every activation gate remain required.
+Owner decisions ratified through 2026-07-17.
+
+This companion specification applies the ratified SSoT principles P1-P5 and
+P12 to material constraints. It does not add material facts, media classes,
+evidence, formulas, coefficients, or a release authority.
+
+## Canonical contract
+
+The only material-compatibility verdict values are the existing matrix values:
+
+```text
+vertraeglich
+unvertraeglich
+bedingt
+```
+
+`MaterialConstraintResult` is the canonical typed result. Material and medium
+each carry an independent `known | missing | unknown | ambiguous` resolution
+state. `MediumCardinality` separately records only the structurally established
+count `none | single | multiple | unknown`; it performs no lexical or technical
+medium normalization. Their relation is separately `undetermined | resolved |
+unresolved | not_applicable`, and evaluation is `evaluated | blocked |
+no_rule_data`. A verdict exists only for `evaluated`; its absence is never an
+executable wildcard. `unobtainable` remains exclusively an adaptive-interview
+`NeedStatus`.
+
+The cross-field contract is closed: missing media are `none + undetermined`,
+unknown or ambiguous media are `unknown + undetermined`, one known medium is
+`single + not_applicable`, and multiple known media are either `multiple +
+unresolved` or `multiple + resolved`. MAT-GOV-01 evaluates only the
+single/not-applicable form. Every multiple cardinality is blocked, including a
+relation marked resolved: that relation state alone does not prove that a
+structured, separately evaluable list of contact media exists. No punctuation
+or conjunction in free text is used to infer cardinality. MED-NORM-01 must
+establish the structured media representation before any multiple-media
+evaluation can become eligible.
+
+`bedingt` is opaque and cannot collapse into `vertraeglich`. Every applicable
+conditional rule remains attached through its stable matrix-cell reference,
+including when an incompatible rule wins the legacy precedence. The existing
+Gegencheck response remains a backward-compatible projection and continues to
+show only the strongest member of the winning category.
+
+All matches are canonically ordered by verdict precedence, stable rule
+reference, statement, and neutral source reference. Duplicate rule references
+are invalid. Therefore `matches`, `conditions`, `decisive_ref`, and serialized
+JSON do not depend on seed, input, or database order. The canonical evaluator
+is complete and unbounded: every applicable match and condition is retained.
+The historical six-hit bound exists only inside the Legacy-Gegencheck
+projection, after the canonical verdict and decisive reference have been
+computed from the complete result; projection cannot mutate that result.
+
+The canonical `source_ref` is exactly `matrix-cell:<rule_ref>` and construction
+rejects every other value.
+`evidence_binding_state` is fixed to `unbound` until MAT-EVID-01 establishes a
+claim/evidence/review binding. Legacy `Quelle` labels do not confer evidence or
+review status on this contract.
+
+`vertraeglich` and the legacy `matrix_compatible` projection mean only:
+
+```text
+keine dokumentierte Unverträglichkeit
+```
+
+They never authorize a positive compatibility statement, material selection,
+component release, or `COVERED_RECOMMENDATION` on their own. The canonical
+contract enforces `positive_statement_allowed=false` for every result.
+
+## Preconditions and precedence
+
+The evaluator accepts typed preconditions and emits canonically ordered stable
+blocker references. It resolves them before any matrix access in this order:
+
+1. authentication, tenant, legal, product, and approval hard gates;
+2. explicit material-governance scope;
+3. active case conflicts;
+4. material and medium input resolution;
+5. medium cardinality and relation;
+6. material rules;
+7. coverage;
+8. response projection.
+
+A blocked result carries no verdict, match, or decisive reference. Every
+multiple cardinality is blocked before matrix access whether its relation is
+`unresolved` or `resolved`. Recognized material candidates may establish
+`ambiguous`; punctuation, conjunctions, slashes, or token concatenation never
+establish media cardinality or a multi-medium evaluation.
+
+`matrix_compatible` is an internal neutral state on the governed path. Its
+maximum external projection is `PARTIAL_ENVELOPE + COVERED_CAUTION`, with
+reason code `matrix_no_documented_incompatibility` and the exact notice:
+
+```text
+Keine dokumentierte Unverträglichkeit gefunden; daraus folgt keine Eignungs- oder Freigabeaussage.
+```
+
+Missing, unknown, ambiguous, or otherwise blocked chemical input maps to a
+missing chemical axis, never to `not_applicable`. The legacy coverage and
+prompt projection remain unchanged while `material_constraints_enabled=false`.
+
+## Interview override and failure contract
+
+`NeedState.is_documented` and `NeedState.is_completion_satisfying` are separate.
+`BLOCKED` is documented but cannot produce `COMPLETE`. `UNOBTAINABLE` accepts
+only a typed audit record with `need_id`, reason, actor reference, UTC time,
+domain-pack version, and policy version. It is allowed only where the domain
+pack explicitly enables the need as `primary_need_id`; related needs require
+their own primary contract and are never updated as a side effect. Active
+conflicts precede the override. Legacy untyped status dictionaries are rejected
+and are not migrated implicitly. There is no public override writer.
+
+Active adaptive-interview contract failures never collapse to `None`. Before a
+normal response they project as HTTP 503 with the stable code
+`adaptive_interview_unavailable`; after streaming starts they terminate the
+stream with one error event and no normal result. Shadow-only operation remains
+fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
+
+## Work-package boundaries
+
+| Package | Binding scope |
+| --- | --- |
+| MAT-GOV-01 | Canonical typed result, unchanged verdict values, stable conditional references, legacy Gegencheck adapter, default-off additive serialization |
+| MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
+| MAT-GOV-03A | Versioned ruleset/snapshot identity, sealingAI JCS profile v1, domain-separated content hash, deep immutability, empty technical persistence and append-only technical audit; no runtime selection |
+| MAT-GOV-03B | Pointerless exact-snapshot shadow bindings, canonical-input eligibility, pseudonymous request/session/evaluation pinning, isolated cache/worker and bounded reconciliation; locally implemented, default-off, sampling frozen at zero, owner acceptance pending independent audit |
+| MAT-GOV-03C | Evidence review/approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01 and separate owner approval |
+
+MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
+adds only inert technical snapshot persistence and is not imported by the
+request runtime. None of these packages adds a material rule, medium catalog,
+evidence migration, thermal model, or frontend recommendation.
+`material_constraints_enabled` defaults to false. While false, the historical
+Gegencheck code path and API payload remain unchanged and contain no
+`material_constraints` key. Enabling the contract requires the separately
+default-off compatibility matrix setting; an invalid flag combination is
+rejected during settings validation.
+
+## MAT-GOV-03A technical snapshot contract
+
+Snapshot schema v1 contains the closed fields
+`snapshot_schema_version`, `canonicalization_version`,
+`mat_gov_contract_version`, `domain_pack_id`, fixed
+`positive_statement_allowed=false`, and an ordered rule array. Every rule uses
+the existing `MaterialConstraintVerdict`; 03A introduces no second verdict
+taxonomy. Rule scopes contain the only explicitly set-valued fields:
+`materials`, `media`, and `conditions`.
+
+Evidence schema v1 is exactly:
+
+```json
+{"state":"unbound"}
+```
+
+No additional field, null value, claim/source/review/authority reference, or
+bound/reviewed/approved/grounded state is accepted. MAT-EVID-01 must introduce a
+new snapshot schema version. Existing snapshots are never mutated.
+
+Canonicalization v1 is the sealingAI I-JSON/JCS profile:
+
+- duplicate properties, unknown fields, floats, non-finite numbers, implicit
+  conversions, invalid Unicode, non-NFC strings, and BOMs are rejected;
+- validated strings, prose, whitespace, line endings, case, media labels, and
+  units are not normalized;
+- JSON properties are recursively sorted and serialized as compact UTF-8
+  without BOM;
+- ordinary array order is retained;
+- only the three typed scope sets are deduplicated and sorted by UTF-8 bytes.
+
+The exact content identity is:
+
+```text
+canonical_bytes = UTF8(JCS_V1(validated_snapshot_payload))
+content_sha256 = SHA-256(
+  b"sealai.material-ruleset.content.v1\x00" + canonical_bytes
+)
+snapshot_id = "mss_" + SHA-256(
+  b"sealai.material-ruleset.snapshot.v1\x00"
+  + ASCII(ruleset_id) + b"\x00" + ASCII(content_sha256)
+).hexdigest()
+```
+
+`ruleset_id` is server-generated as `mrs_<32 lowercase hex>`. Creator,
+timestamp, future monotone version, lifecycle, review, audit, deployment, and
+activation metadata do not enter the content hash. Schema, canonicalization
+version, MAT-GOV contract version, domain pack, ordered rules, scopes, and the
+unbound evidence object do enter it.
+
+Four initially empty Postgres tables persist family identities, immutable
+snapshots, technical validation events, and append-only technical audit events.
+Internal foreign keys use `ON DELETE RESTRICT`; database triggers reject update
+and delete. This is the bounded ADR exception to the legacy No-FK convention.
+The repository exposes no update/delete/lifecycle API and revalidates schema,
+bytes, hash, identity, and domain-pack binding on every read. Drift produces a
+controlled quarantine-candidate error but no 03C lifecycle mutation.
+
+03A performs no seed import, backfill, runtime dependency injection, pipeline
+or cache integration, API/serializer/frontend change, pointer selection,
+pinning, review, approval, activation, rollback, readiness, or reconciliation.
+Its migration is not approved for production execution.
+
+## MAT-GOV-03B non-authoritative shadow contract
+
+03B selects no snapshot implicitly. An immutable, time-bounded binding names
+one exact 03A `snapshot_id` and `content_sha256` together with environment,
+fixed shadow purpose, global or verified-tenant-canary scope, domain-pack,
+evaluator/kernel/runtime/build identity, creator, reason, and a zero-percent
+sampling policy. Tenant canary precedes global without fallback. Transactional
+partition locks and exact overlap checks prevent concurrent bindings for the
+same interval; revocation does not release the reserved interval early.
+
+A persistable input requires server-verified canonical structured material and
+single-medium IDs plus the closed `known + single + not_applicable` state. Free
+text, unknown, ambiguous, missing, multiple, separator-derived, or LLM-derived
+input is `ineligible_unresolved_input` and creates no pin, job, evaluation, or
+cache entry. MED-NORM-01 is not implemented.
+
+The shadow pin is always `SHADOW_NON_AUTHORITATIVE` and can never allow a
+positive statement. Pin and outbox job are atomic; tenant/session/request/case/
+decision correlation is domain-separated, uint32-length-prefixed HMAC-SHA-256
+with a versioned key ID, never raw identity. Every subordinate reference binds
+the verified tenant; session lookup and uniqueness additionally use the
+persisted tenant HMAC.
+Session versions are immutable and explicitly upgraded; a per-session advisory
+lock and monotone sequence prevent concurrent creation or worker reordering.
+
+The isolated `mat-shadow:v2:` cache namespace binds tenant HMAC/key version,
+exact snapshot and hash, evaluator/kernel/domain/policy versions, and a
+canonical input fingerprint through a versioned, uint32-length-prefixed UTF-8
+encoding. Legacy, malformed and unknown key versions are cache misses.
+The isolated worker persists only verdict/reference projections and stable
+technical codes. Postgres remains authoritative; Redis and notification are
+optimizations with no in-process, last-known-good, or cross-snapshot fallback.
+Every database-locked worker claim consumes exactly one attempt and carries a
+database-time lease owner/expiry. Expiry at the attempt boundary terminates the
+job with `SHADOW_LEASE_ATTEMPTS_EXHAUSTED` and cannot requeue it.
+Bounded reconciliation defaults to 15-second polling, a 60-second lease, a
+two-second DB timeout, and deterministic jitter. Its thread-safe lease map is
+partitioned by tenant/key, scope/binding, domain pack, runtime, build, evaluator,
+and kernel; no partition can inherit another partition's lease.
+
+All flags default false and sampling is fixed at zero. `/chat` capture occurs
+only after the public answer and contains every exception. In the absence of a
+server canonical-ID provider it stops before DB/Redis construction. Therefore
+the public response, prompt, serializers, visible answer cache, productspec and
+frontend remain unchanged. The worker has no Compose or deployment integration.
+
+Migration `20260717_0012` is additive and empty. It creates only the isolated
+binding/event/pin/session/outbox/evaluation aggregate with restrictive internal
+foreign keys and mutation guards. Additive empty migration `20260717_0013`
+adds only bounded worker-lease columns and transition guards and refuses a
+populated retrofit. Neither migration adds a pointer, approval, deployment
+state, cohort, stage acknowledgment, seed, backfill, public/admin API, or
+case/decision mutation. Production execution is not authorized. Sampling above
+zero remains blocked until a tested 90-day evaluation purge and maintenance role
+exist; aggregate metrics may be retained for 13 months.
+
+Pre-existing unpublished MAT-GOV objects are adopted only on an exact
+dialect-specific catalog fingerprint covering columns, constraints, restrictive
+FKs, indexes, predicates, triggers, and trigger-function definitions. Adoption
+is read-only; name-only matches, partial objects, and semantic drift fail closed.
+
+## Ratified owner decisions
+
+1. Every multiple-media input fails closed in MAT-GOV-01. An unresolved
+   relationship remains `unresolved`; `resolved` is a reserved fachlicher state
+   but does not itself prove an evaluable structured media list. Activation of
+   multiple-media evaluation belongs to MED-NORM-01 and MAT-GOV-02.
+2. Internally attested matrix cells may block, caution, or remain conditional,
+   but cannot create a positive compatibility statement.
+3. `matrix_compatible` cannot alone create `COVERED_RECOMMENDATION`.
+4. Existing Produktspec rules remain default-off and are not migrated
+   automatically.
+5. Unreviewed LLM material tendencies cannot create a canonical or positive
+   material statement.
+6. Conflicts and hard gates always precede `unobtainable`.
+7. Executable RWDR thermal calculation remains NO-GO until separately sourced,
+   reviewed, tested, and owner-activated.
+
+Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Technical immutable snapshot
+identity is implemented by MAT-GOV-03A, but runtime pinning requires 03B and
+evidence-bound lifecycle/activation requires 03C. Structured multi-medium
+evaluation requires MED-NORM-01. Until those packages, MAT-EVID-01, both open
+MAT-GOV-02 activation follow-ups, independent review, and owner activation are
+complete, the contract remains default-off and no snapshot is approvable or
+active.

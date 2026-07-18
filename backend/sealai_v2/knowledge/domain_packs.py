@@ -28,13 +28,20 @@ def _unique(values: list[str], *, label: str) -> None:
         raise DomainPackValidationError(f"duplicate {label}")
 
 
+def _strict_bool(raw: dict, key: str, *, default: bool = False) -> bool:
+    value = raw.get(key, default)
+    if type(value) is not bool:
+        raise DomainPackValidationError(f"{key} must be a JSON boolean")
+    return value
+
+
 def _parse(raw: dict) -> DomainPack:
     needs = tuple(
         NeedDefinition(
             need_id=item["need_id"],
             field_keys=tuple(item.get("field_keys", ())),
-            active=bool(item.get("active", False)),
-            required=bool(item.get("required", False)),
+            active=_strict_bool(item, "active"),
+            required=_strict_bool(item, "required"),
             criticality=item.get("criticality", "quality"),
             question_id=item.get("question_id"),
             dependency_refs=tuple(item.get("dependency_refs", ())),
@@ -44,7 +51,7 @@ def _parse(raw: dict) -> DomainPack:
             downstream_unlock_count=int(item.get("downstream_unlock_count", 0)),
             min_present=int(item.get("min_present", 1)),
             derived_calc_id=item.get("derived_calc_id"),
-            conflict_sensitive=bool(item.get("conflict_sensitive", False)),
+            conflict_sensitive=_strict_bool(item, "conflict_sensitive"),
         )
         for item in raw["needs"]
     )
@@ -56,8 +63,8 @@ def _parse(raw: dict) -> DomainPack:
             canonical_text_de=item["canonical_text_de"].strip(),
             question_type=item["question_type"],
             answer_schema=dict(item.get("answer_schema", {})),
-            allowed_unknown=bool(item.get("allowed_unknown", False)),
-            allowed_unobtainable=bool(item.get("allowed_unobtainable", False)),
+            allowed_unknown=_strict_bool(item, "allowed_unknown"),
+            allowed_unobtainable=_strict_bool(item, "allowed_unobtainable"),
             criticality=item["criticality"],
             dependency_refs=tuple(item.get("dependency_refs", ())),
             rule_refs=tuple(item.get("rule_refs", ())),

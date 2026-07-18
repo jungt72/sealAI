@@ -76,7 +76,8 @@
       "status": "partial",
       "evidence": [
         "docs/ssot/product-maturity.json",
-        "backend/sealai_v2/config/settings.py"
+        "backend/sealai_v2/config/settings.py",
+        "docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md"
       ]
     }
   },
@@ -99,6 +100,47 @@
     "M16": "instrumentation_required"
   },
   "capabilities": {
+    "material_constraints": {
+      "status": "in_build_default_off",
+      "implementation_status": "mat_gov_03b_local_shadow_default_off_sampling_zero",
+      "contract_version": "MAT-GOV-03B",
+      "activation_gate": "G8",
+      "activation_blockers": [
+        "MAT-GOV-03B-independent-audit-and-owner-acceptance",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
+        "MED-NORM-01",
+        "material_rule_evidence",
+        "tested_shadow_purge_and_maintenance_role",
+        "mat_gov_02_payload_and_hard_gate_followups",
+        "owner_activation"
+      ],
+      "evidence": [
+        "docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md",
+        "docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md",
+        "docs/architecture/ADR_MAT_GOV_03B_SHADOW_PINNING.md",
+        "backend/sealai_v2/core/material_rulesets.py",
+        "backend/sealai_v2/core/material_shadow.py",
+        "backend/sealai_v2/db/material_rulesets.py",
+        "backend/sealai_v2/db/material_shadow.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0011_mat_gov_03a_snapshots.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0012_mat_gov_03b_shadow.py",
+        "backend/sealai_v2/db/migrations/versions/20260717_0013_mat_gov_03b_leases.py",
+        "backend/sealai_v2/core/material_constraints.py",
+        "backend/sealai_v2/tests/test_material_constraints.py",
+        "backend/sealai_v2/tests/test_mat_gov_02.py",
+        "backend/sealai_v2/tests/test_interview_governance.py",
+        "backend/sealai_v2/tests/test_mat_gov_03a_domain.py",
+        "backend/sealai_v2/tests/test_mat_gov_03a_persistence.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_contract.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_persistence.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_resolver.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_worker.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_api.py",
+        "backend/sealai_v2/tests/test_mat_gov_03b_postgres.py",
+        "backend/tests/architecture/test_mat_gov_03a_isolation.py"
+      ]
+    },
     "adaptive_interview_rwdr": {
       "status": "production_active_limited_rwdr",
       "pack_id": "rwdr.v1",

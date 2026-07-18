@@ -100,6 +100,25 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
         in maturity["modes"]["knowledge"]["activation_blockers"]
     )
 
+    material = maturity["capabilities"]["material_constraints"]
+    assert material["implementation_status"] == (
+        "mat_gov_03b_local_shadow_default_off_sampling_zero"
+    )
+    assert material["contract_version"] == "MAT-GOV-03B"
+    assert {
+        "MAT-GOV-03B-independent-audit-and-owner-acceptance",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
+        "MED-NORM-01",
+        "tested_shadow_purge_and_maintenance_role",
+        "mat_gov_02_payload_and_hard_gate_followups",
+        "owner_activation",
+    } <= set(material["activation_blockers"])
+    assert material["scope_limit"] == (
+        "local_non_authoritative_pointerless_shadow_foundation_"
+        "no_production_migration_or_sampling"
+    )
+
 
 def test_seed_review_state_never_launders_model_review_into_authority() -> None:
     import sys
@@ -170,6 +189,7 @@ def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> Non
         "SEALAI_V2_KNOWLEDGE_MODE_ENABLED",
         "SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED",
         "SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED",
+        "SEALAI_V2_MATERIAL_CONSTRAINTS_ENABLED",
         "SEALAI_V2_CASE_DECISION_RECORDS_ENABLED",
         "SEALAI_V2_CAPABILITY_PROFILES_ENABLED",
         "SEALAI_V2_MANUFACTURER_FIT_ENABLED",
@@ -225,6 +245,11 @@ def test_owner_decisions_and_companion_contracts_are_present() -> None:
     decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
     for number in range(1, 9):
         assert f"ODR-{number:02d}" in decisions
+    assert "ODR-12: MAT-GOV-03A technical snapshot foundation" in decisions
+    assert "ODR-13: MAT-GOV-03B local shadow/pinning implementation" in decisions
+    assert "INTERMEDIATE_CLAUDE_GATES_WAIVED_BY_OWNER" in decisions
+    assert "sampling remains `0`" in decisions
+    assert "creates no activation authority" in decisions
 
     for name in (
         "INVARIANT_MAPPING.md",

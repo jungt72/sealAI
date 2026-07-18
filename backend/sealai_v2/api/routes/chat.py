@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -40,6 +40,7 @@ from sealai_v2.pipeline.pipeline import (
     ProgressSink,
     TokenSink,
 )
+from sealai_v2.pipeline.adaptive_interview import AdaptiveInterviewUnavailable
 from sealai_v2.security.tenant import TenantContext
 
 router = APIRouter(prefix="/api/v2", tags=["chat"])
@@ -55,6 +56,16 @@ _MODE_UNAVAILABLE_MESSAGE = (
     "Dieser Produktmodus befindet sich noch in der fachlichen Freigabe und ist "
     "derzeit nicht aktiviert."
 )
+_ADAPTIVE_INTERVIEW_UNAVAILABLE_MESSAGE = (
+    "Die fachliche Klärung ist vorübergehend nicht verfügbar."
+)
+
+
+def _adaptive_interview_unavailable_detail() -> dict:
+    return {
+        "code": AdaptiveInterviewUnavailable.code,
+        "message": _ADAPTIVE_INTERVIEW_UNAVAILABLE_MESSAGE,
+    }
 
 
 def _mode_unavailable_detail(exc: ProductModeUnavailable) -> dict:
@@ -71,6 +82,34 @@ class ChatRequest(BaseModel):
     # max_length matches V2Session.session_id's own column width (db/models.py) — an over-long
     # value now fails closed with a clean 422 instead of a generic 500 from the DB constraint.
     case_id: str | None = Field(default=None, max_length=255)
+
+
+def _capture_material_shadow_after_response(
+    *,
+    settings: Settings,
+    identity: VerifiedIdentity,
+    session_id: str,
+    result,
+) -> None:
+    """Lazy, exception-contained post-response shadow seam.
+
+    The import and all work are unreachable while the master flag is false.
+    No exception may escape back into Starlette's background machinery.
+    """
+
+    try:
+        from sealai_v2.material_shadow.capture import (
+            capture_chat_shadow_after_response,
+        )
+
+        capture_chat_shadow_after_response(
+            settings=settings,
+            identity=identity,
+            session_id=session_id,
+            result=result,
+        )
+    except Exception:  # noqa: BLE001 - public response has already completed
+        _log.warning("material shadow post-response capture stopped")
 
 
 async def _run_pipeline(
@@ -99,6 +138,7 @@ async def _run_pipeline(
 @router.post("/chat")
 async def chat(
     req: ChatRequest,
+    background_tasks: BackgroundTasks,
     identity: VerifiedIdentity = Depends(require_legal_acceptance),
     pipeline: Pipeline = Depends(get_pipeline),
     settings: Settings = Depends(get_settings),
@@ -109,9 +149,22 @@ async def chat(
         raise HTTPException(
             status_code=503, detail=_mode_unavailable_detail(exc)
         ) from exc
+    except AdaptiveInterviewUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail=_adaptive_interview_unavailable_detail()
+        ) from exc
     except ConversationAccessDenied as exc:
         raise HTTPException(status_code=404, detail="conversation not found") from exc
-    return chat_response(result)
+    response = chat_response(result)
+    if settings.material_ruleset_shadow_enabled:
+        background_tasks.add_task(
+            _capture_material_shadow_after_response,
+            settings=settings,
+            identity=identity,
+            session_id=req.case_id or identity.session_id,
+            result=result,
+        )
+    return response
 
 
 @router.post("/chat/stream")
@@ -145,6 +198,8 @@ async def chat_stream(
             queue.put_nowait(("result", chat_response(result)))
         except ProductModeUnavailable as exc:
             queue.put_nowait(("error", _mode_unavailable_detail(exc)))
+        except AdaptiveInterviewUnavailable:
+            queue.put_nowait(("error", _adaptive_interview_unavailable_detail()))
         except ConversationAccessDenied:
             queue.put_nowait(
                 (

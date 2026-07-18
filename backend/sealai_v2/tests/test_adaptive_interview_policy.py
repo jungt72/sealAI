@@ -16,7 +16,9 @@ from sealai_v2.core.interview.contracts import (
     InterviewRuntimeState,
     NeedStatus,
     PendingQuestionStatus,
+    UnobtainableOverrideAudit,
 )
+from sealai_v2.core.interview.policy import InterviewContractError
 from sealai_v2.core.interview.policy import (
     apply_state_patches,
     decide_next_interview_step,
@@ -26,6 +28,17 @@ from sealai_v2.core.interview.policy import (
 from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 
 PACK = load_rwdr_v1_pack()
+
+
+def _unobtainable(need_id: str) -> UnobtainableOverrideAudit:
+    return UnobtainableOverrideAudit(
+        need_id=need_id,
+        reason="owner documented that the value cannot be obtained",
+        actor_ref="user:owner-1",
+        created_at="2026-07-16T10:00:00+00:00",
+        pack_version=PACK.version,
+        policy_version=PACK.policy_version,
+    )
 
 
 def _field(key: str, value: str, *, confirmed: bool = True) -> CaseField:
@@ -104,14 +117,14 @@ def test_need_status_separates_user_form_semantics_and_unobtainable() -> None:
     state = _state({"wellendurchmesser": "50 mm"})
     runtime = replace(
         _runtime(state),
-        need_status_overrides={"rwdr.shaft.hardness": NeedStatus.UNOBTAINABLE},
+        unobtainable_overrides=(_unobtainable("rwdr.shaft.material"),),
     )
     needs = resolve_need_states(state, PACK, runtime)
     diameter = needs["rwdr.shaft.diameter"]
     assert diameter.status is NeedStatus.SATISFIED
     assert diameter.facts[0].origin.value == "user_form"
     assert diameter.facts[0].verification_status.value == "user_confirmed"
-    assert needs["rwdr.shaft.hardness"].status is NeedStatus.UNOBTAINABLE
+    assert needs["rwdr.shaft.material"].status is NeedStatus.UNOBTAINABLE
 
 
 def test_real_case_state_conversion_preserves_user_form_origin() -> None:
@@ -139,25 +152,25 @@ def test_real_case_state_conversion_preserves_user_form_origin() -> None:
     assert state.to_remembered_facts()[1].provenance == "user-form"
 
 
-@pytest.mark.parametrize(
-    "status",
-    [
-        NeedStatus.SATISFIED,
-        NeedStatus.NOT_APPLICABLE,
-        NeedStatus.UNOBTAINABLE,
-    ],
-)
-def test_documented_required_statuses_are_not_asked_again(
-    status: NeedStatus,
-) -> None:
+def test_unobtainable_primary_need_is_not_asked_again() -> None:
     state = _state({})
     runtime = replace(
         _runtime(state),
-        need_status_overrides={"rwdr.application.goal": status},
+        unobtainable_overrides=(_unobtainable("rwdr.medium.primary"),),
     )
     directive = _directive(state, runtime)
-    assert directive.question_id == "rwdr.q.medium_primary"
-    assert directive.primary_need_id == "rwdr.medium.primary"
+    assert directive.question_id == "rwdr.q.application_goal"
+    assert directive.primary_need_id == "rwdr.application.goal"
+
+
+def test_non_enabled_primary_need_cannot_be_marked_unobtainable() -> None:
+    state = _state({})
+    runtime = replace(
+        _runtime(state),
+        unobtainable_overrides=(_unobtainable("rwdr.application.goal"),),
+    )
+    with pytest.raises(InterviewContractError, match="not allowed"):
+        resolve_need_states(state, PACK, runtime)
 
 
 def test_scope_gate_dominates_normal_required_questions() -> None:
@@ -375,17 +388,17 @@ def test_pack_version_is_pinned_and_never_silently_migrated() -> None:
 
 
 @pytest.mark.parametrize("field", ["haerte", "rauheit"])
-def test_unobtainable_optional_need_is_never_selected(field: str) -> None:
+def test_related_need_cannot_receive_primary_unobtainable_override(field: str) -> None:
     state = _state(_required_values())
     need_id = _need_id_for_field(field)
     runtime = replace(
         _runtime(state),
-        need_status_overrides={need_id: NeedStatus.UNOBTAINABLE},
+        unobtainable_overrides=(_unobtainable(need_id),),
     )
-    decision = decide_next_interview_step(
-        state, PACK, runtime_state=runtime, derived_facts=_velocity()
-    )
-    assert decision.directives[0].type is InterviewDirectiveType.COMPLETE
+    with pytest.raises(InterviewContractError, match="not allowed"):
+        decide_next_interview_step(
+            state, PACK, runtime_state=runtime, derived_facts=_velocity()
+        )
 
 
 def test_pressure_boundary_fact_stays_documented_without_invented_material_limit() -> (

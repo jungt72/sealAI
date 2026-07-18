@@ -25,6 +25,8 @@ describe("MediumPanel", () => {
     expect(screen.getByText("vorläufig")).toBeInTheDocument();
     expect(screen.getByText("stark sauer/oxidierend")).toBeInTheDocument();
     expect(screen.getByText("Versprödung vieler Elastomere")).toBeInTheDocument();
+    expect(screen.queryByText("eher FFKM/PTFE")).not.toBeInTheDocument();
+    expect(screen.queryByText("Werkstoff-Tendenz")).not.toBeInTheDocument();
   });
 
   it("omits empty sections", () => {

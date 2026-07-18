@@ -15,9 +15,9 @@ from sealai_v2.core.interview.contracts import (
     InterviewDirectiveType,
     InterviewRuntimeState,
     InterviewShadowRecord,
-    NeedStatus,
     PendingQuestion,
     PendingQuestionStatus,
+    UnobtainableOverrideAudit,
 )
 from sealai_v2.core.interview.shadow_reporting import InterviewShadowRecordPage
 from sealai_v2.db.models import V2InterviewShadowDecision, V2InterviewState
@@ -71,6 +71,14 @@ def _snapshot(raw: dict) -> FactSnapshot:
 
 
 def _runtime(row: V2InterviewState) -> InterviewRuntimeState:
+    raw_overrides = row.need_status_overrides_json
+    if raw_overrides and (
+        not isinstance(raw_overrides, dict)
+        or raw_overrides.get("schema_version") != 1
+        or not isinstance(raw_overrides.get("records"), list)
+    ):
+        raise ValueError("legacy untyped need-status overrides are not supported")
+    records = raw_overrides.get("records", []) if raw_overrides else []
     return InterviewRuntimeState(
         topic_id=row.topic_id,
         pack_id=row.pack_id,
@@ -80,10 +88,17 @@ def _runtime(row: V2InterviewState) -> InterviewRuntimeState:
         case_schema_version=row.case_schema_version,
         state_revision=row.state_revision,
         pending_questions=tuple(_pending(item) for item in row.pending_questions_json),
-        need_status_overrides={
-            key: NeedStatus(value)
-            for key, value in row.need_status_overrides_json.items()
-        },
+        unobtainable_overrides=tuple(
+            UnobtainableOverrideAudit(
+                need_id=item["need_id"],
+                reason=item["reason"],
+                actor_ref=item["actor_ref"],
+                created_at=item["created_at"],
+                pack_version=item["pack_version"],
+                policy_version=item["policy_version"],
+            )
+            for item in records
+        ),
         conflicts=tuple(_conflict(item) for item in row.conflicts_json),
         fact_snapshots=tuple(_snapshot(item) for item in row.fact_snapshots_json),
         calculator_version_refs=tuple(row.calculator_version_refs_json),
@@ -109,9 +124,16 @@ def _state_values(state: InterviewRuntimeState, *, updated_at: str) -> dict:
         "pending_questions_json": _jsonable(
             [asdict(item) for item in state.pending_questions]
         ),
-        "need_status_overrides_json": {
-            key: value.value for key, value in state.need_status_overrides.items()
-        },
+        "need_status_overrides_json": (
+            {
+                "schema_version": 1,
+                "records": _jsonable(
+                    [asdict(item) for item in state.unobtainable_overrides]
+                ),
+            }
+            if state.unobtainable_overrides
+            else {}
+        ),
         "conflicts_json": _jsonable([asdict(item) for item in state.conflicts]),
         "fact_snapshots_json": _jsonable(
             [asdict(item) for item in state.fact_snapshots]

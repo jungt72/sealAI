@@ -27,23 +27,30 @@ never been on in production, so these tables have zero real rows. See each class
 per-table detail; ``V2MemoryOutbox.operation`` -> ``event_type`` is the one rename (same zero-rows
 reasoning makes it safe now, would not be after real data exists).
 
-No ``ForeignKey`` constraints (matches this schema's existing convention above — a green-field,
-still-evolving schema avoids FK migration friction; referential integrity for ``memory_item_id`` is
-an application-layer concern, same as every other table here).
+No ``ForeignKey`` constraints in the legacy V2 aggregates (matches this schema's existing convention
+above — a green-field, still-evolving schema avoids FK migration friction; referential integrity for
+``memory_item_id`` is an application-layer concern, same as every other legacy table here).
+MAT-GOV-03A is the deliberately narrow exception documented in
+``docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md``: its new, self-contained aggregate uses real
+``ON DELETE RESTRICT`` foreign keys and does not retrofit existing tables.
 """
 
 from __future__ import annotations
 
 from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
     JSON,
     Boolean,
     Float,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from sealai_v2.db.engine import Base
@@ -750,3 +757,585 @@ class V2LegalAcceptance(Base):
         String(64), nullable=False, default=""
     )
     accepted_user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+_MATERIAL_RULESET_JSON = JSON().with_variant(JSONB(), "postgresql")
+
+
+class V2MaterialRuleset(Base):
+    """Stable MAT-GOV-03A family identity; no lifecycle or active-version state."""
+
+    __tablename__ = "v2_material_rulesets"
+    __table_args__ = (
+        CheckConstraint(
+            "length(ruleset_id) = 36 AND ruleset_id LIKE 'mrs_%'",
+            name="ck_v2_material_ruleset_id",
+        ),
+    )
+
+    ruleset_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialRulesetSnapshot(Base):
+    """Immutable, content-addressed MAT-GOV-03A snapshot payload."""
+
+    __tablename__ = "v2_material_ruleset_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "ruleset_id",
+            "content_sha256",
+            name="uq_v2_material_ruleset_snapshot_content",
+        ),
+        CheckConstraint(
+            "length(snapshot_id) = 68 AND snapshot_id LIKE 'mss_%'",
+            name="ck_v2_material_snapshot_id",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND content_sha256 = lower(content_sha256)",
+            name="ck_v2_material_snapshot_hash",
+        ),
+        CheckConstraint(
+            "snapshot_schema_version = 1",
+            name="ck_v2_material_snapshot_schema_v1",
+        ),
+        CheckConstraint(
+            "canonicalization_version = 1",
+            name="ck_v2_material_snapshot_canonicalization_v1",
+        ),
+        CheckConstraint(
+            "mat_gov_contract_version = 'MAT-GOV-03A.v1'",
+            name="ck_v2_material_snapshot_contract_v1",
+        ),
+    )
+
+    snapshot_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    ruleset_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("v2_material_rulesets.ruleset_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonicalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    mat_gov_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialSnapshotValidationEvent(Base):
+    """Append-only technical validation evidence without approval semantics."""
+
+    __tablename__ = "v2_material_snapshot_validation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mtv_%'",
+            name="ck_v2_material_validation_event_id",
+        ),
+        CheckConstraint(
+            "validation_state = 'valid'",
+            name="ck_v2_material_validation_state",
+        ),
+        CheckConstraint(
+            "error_code = 'none'",
+            name="ck_v2_material_validation_error_code",
+        ),
+        CheckConstraint(
+            "length(validation_sha256) = 64",
+            name="ck_v2_material_validation_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    validator_contract_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialSnapshotAuditEvent(Base):
+    """Append-only technical audit event; never a review or approval record."""
+
+    __tablename__ = "v2_material_snapshot_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mta_%'",
+            name="ck_v2_material_audit_event_id",
+        ),
+        CheckConstraint(
+            "event_type = 'snapshot_created'",
+            name="ck_v2_material_audit_event_type",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_material_audit_event_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialShadowBinding(Base):
+    """Immutable pointerless binding to one exact MAT-GOV-03A snapshot."""
+
+    __tablename__ = "v2_material_shadow_bindings"
+    __table_args__ = (
+        CheckConstraint(
+            "length(binding_id) = 37 AND binding_id LIKE 'mshb_%'",
+            name="ck_v2_material_shadow_binding_id",
+        ),
+        CheckConstraint(
+            "binding_schema_version = 1",
+            name="ck_v2_material_shadow_binding_schema_v1",
+        ),
+        CheckConstraint(
+            "purpose = 'MATERIAL_RULESET_SHADOW'",
+            name="ck_v2_material_shadow_purpose",
+        ),
+        CheckConstraint(
+            "environment IN ('development','staging','production')",
+            name="ck_v2_material_shadow_environment",
+        ),
+        CheckConstraint(
+            "scope_kind IN ('GLOBAL','TENANT_CANARY')",
+            name="ck_v2_material_shadow_scope_kind",
+        ),
+        CheckConstraint(
+            "(scope_kind = 'GLOBAL' AND tenant_ref_hmac IS NULL AND "
+            "hmac_key_id IS NULL) OR "
+            "(scope_kind = 'TENANT_CANARY' AND "
+            "length(tenant_ref_hmac) = 64 AND hmac_key_id IS NOT NULL "
+            "AND length(hmac_key_id) > 0)",
+            name="ck_v2_material_shadow_scope_tenant",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND content_sha256 = lower(content_sha256)",
+            name="ck_v2_material_shadow_content_hash",
+        ),
+        CheckConstraint(
+            "length(runtime_profile_sha256) = 64",
+            name="ck_v2_material_shadow_runtime_hash",
+        ),
+        CheckConstraint(
+            "valid_until > valid_from",
+            name="ck_v2_material_shadow_valid_interval",
+        ),
+        CheckConstraint(
+            "sampling_basis_points = 0",
+            name="ck_v2_material_shadow_sampling_zero",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    binding_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    tenant_ref_hmac: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hmac_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_pack_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    evaluator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    kernel_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    runtime_profile_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    build_git_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    build_tree_hash: Mapped[str] = mapped_column(String(40), nullable=False)
+    valid_from: Mapped[str] = mapped_column(String(32), nullable=False)
+    valid_until: Mapped[str] = mapped_column(String(32), nullable=False)
+    creator_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    sampling_policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    sampling_basis_points: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialShadowBindingEvent(Base):
+    __tablename__ = "v2_material_shadow_binding_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('CREATED','REVOKED','TERMINATED')",
+            name="ck_v2_material_shadow_binding_event_type",
+        ),
+        CheckConstraint(
+            "event_schema_version = 1",
+            name="ck_v2_material_shadow_binding_event_schema_v1",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_material_shadow_binding_event_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    event_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    binding_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_bindings.binding_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    effective_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class V2MaterialShadowPin(Base):
+    __tablename__ = "v2_material_shadow_pins"
+    __table_args__ = (
+        CheckConstraint(
+            "authority = 'SHADOW_NON_AUTHORITATIVE'",
+            name="ck_v2_material_shadow_pin_authority",
+        ),
+        CheckConstraint(
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_material_shadow_pin_no_positive",
+        ),
+        CheckConstraint(
+            "sampled IS FALSE",
+            name="ck_v2_material_shadow_pin_unsampled",
+        ),
+        CheckConstraint(
+            "pin_schema_version = 1",
+            name="ck_v2_material_shadow_pin_schema_v1",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND "
+            "length(runtime_profile_sha256) = 64 AND "
+            "length(tenant_ref_hmac) = 64",
+            name="ck_v2_material_shadow_pin_hashes",
+        ),
+    )
+
+    pin_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    pin_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    binding_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_bindings.binding_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    environment: Mapped[str] = mapped_column(String(16), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    tenant_ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_pack_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    evaluator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    kernel_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    runtime_profile_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    build_git_sha: Mapped[str] = mapped_column(String(40), nullable=False)
+    build_tree_hash: Mapped[str] = mapped_column(String(40), nullable=False)
+    sampling_policy_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    sampled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    acquired_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    binding_valid_until: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialShadowSessionVersion(Base):
+    __tablename__ = "v2_material_shadow_session_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "hmac_key_id",
+            "tenant_ref_hmac",
+            "session_ref_hmac",
+            "version_no",
+            name="uq_v2_material_shadow_session_version",
+        ),
+        CheckConstraint("version_no > 0", name="ck_v2_material_shadow_session_version"),
+        CheckConstraint(
+            "length(tenant_ref_hmac) = 64 AND length(session_ref_hmac) = 64",
+            name="ck_v2_material_shadow_session_hmac",
+        ),
+        Index(
+            "ix_v2_material_shadow_session_identity",
+            "hmac_key_id",
+            "tenant_ref_hmac",
+            "session_ref_hmac",
+        ),
+    )
+
+    session_version_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    tenant_ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    session_ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    pin_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_pins.pin_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialShadowSessionUpgradeEvent(Base):
+    __tablename__ = "v2_material_shadow_session_upgrade_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_session_version_id",
+            name="uq_v2_material_shadow_session_upgrade_from",
+        ),
+        UniqueConstraint(
+            "to_session_version_id",
+            name="uq_v2_material_shadow_session_upgrade_to",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    from_session_version_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_shadow_session_versions.session_version_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    to_session_version_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_shadow_session_versions.session_version_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    actor_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialShadowOutbox(Base):
+    __tablename__ = "v2_material_shadow_outbox"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_v2_material_shadow_outbox_idem"),
+        UniqueConstraint(
+            "session_version_id",
+            "sequence_no",
+            name="uq_v2_material_shadow_session_sequence",
+        ),
+        CheckConstraint("sequence_no > 0", name="ck_v2_material_shadow_sequence"),
+        CheckConstraint(
+            "status IN ('pending','processing','done','failed')",
+            name="ck_v2_material_shadow_job_status",
+        ),
+        CheckConstraint(
+            "material_state = 'known' AND medium_state = 'known' AND "
+            "medium_cardinality = 'single' AND relation_state = 'not_applicable'",
+            name="ck_v2_material_shadow_job_eligible_input",
+        ),
+        CheckConstraint(
+            "attempts >= 0 AND length(correlation_hmac) = 64 AND "
+            "length(input_fingerprint) = 64 AND length(idempotency_key) = 64 AND "
+            "(case_ref_hmac IS NULL OR length(case_ref_hmac) = 64) AND "
+            "(decision_ref_hmac IS NULL OR length(decision_ref_hmac) = 64)",
+            name="ck_v2_material_shadow_job_integrity",
+        ),
+        CheckConstraint(
+            "(status = 'processing' AND attempts > 0 AND claimed_at IS NOT NULL "
+            "AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL) OR "
+            "(status <> 'processing' AND lease_owner IS NULL "
+            "AND lease_expires_at IS NULL)",
+            name="ck_v2_material_shadow_job_lease_state",
+        ),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    pin_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_pins.pin_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    session_version_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey(
+            "v2_material_shadow_session_versions.session_version_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    correlation_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    case_ref_hmac: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_ref_hmac: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    material_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    medium_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    material_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    medium_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    medium_cardinality: Mapped[str] = mapped_column(String(16), nullable=False)
+    relation_state: Mapped[str] = mapped_column(String(24), nullable=False)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    domain_pack_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    stable_error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    claimed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lease_expires_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    next_attempt_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    completed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class V2MaterialShadowEvaluation(Base):
+    __tablename__ = "v2_material_shadow_evaluations"
+    __table_args__ = (
+        UniqueConstraint("job_id", name="uq_v2_material_shadow_evaluation_job"),
+        CheckConstraint(
+            "authority = 'SHADOW_NON_AUTHORITATIVE'",
+            name="ck_v2_material_shadow_eval_authority",
+        ),
+        CheckConstraint(
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_material_shadow_eval_no_positive",
+        ),
+        CheckConstraint(
+            "evaluation_state IN ('evaluated','blocked','no_rule_data',"
+            "'ineligible_unresolved_input','revoked','integrity_blocked',"
+            "'cache_unavailable','retry_exhausted')",
+            name="ck_v2_material_shadow_eval_state",
+        ),
+        CheckConstraint(
+            "(evaluation_state = 'evaluated' AND "
+            "verdict IN ('vertraeglich','unvertraeglich','bedingt') AND "
+            "decisive_ref IS NOT NULL) OR "
+            "(evaluation_state <> 'evaluated' AND verdict IS NULL AND "
+            "decisive_ref IS NULL)",
+            name="ck_v2_material_shadow_eval_verdict",
+        ),
+        CheckConstraint(
+            "length(result_sha256) = 64",
+            name="ck_v2_material_shadow_eval_hash",
+        ),
+    )
+
+    evaluation_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    job_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_outbox.job_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    pin_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_pins.pin_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    evaluation_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    decisive_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    result_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    stable_error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    cache_hit: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class V2MaterialShadowEvaluationMatch(Base):
+    __tablename__ = "v2_material_shadow_evaluation_matches"
+    __table_args__ = (
+        UniqueConstraint(
+            "evaluation_id", "rule_ref", name="uq_v2_material_shadow_eval_match"
+        ),
+        CheckConstraint(
+            "verdict IN ('vertraeglich','unvertraeglich','bedingt')",
+            name="ck_v2_material_shadow_match_verdict",
+        ),
+        CheckConstraint(
+            "source_ref = 'matrix-cell:' || rule_ref",
+            name="ck_v2_material_shadow_match_source",
+        ),
+    )
+
+    match_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    evaluation_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_evaluations.evaluation_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    rule_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    verdict: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(256), nullable=False)
+
+
+class V2MaterialShadowEvaluationRef(Base):
+    __tablename__ = "v2_material_shadow_evaluation_refs"
+    __table_args__ = (
+        CheckConstraint(
+            "ref_kind IN ('REQUEST','SESSION','CASE','DECISION')",
+            name="ck_v2_material_shadow_ref_kind",
+        ),
+        CheckConstraint(
+            "authority = 'SHADOW_NON_AUTHORITATIVE'",
+            name="ck_v2_material_shadow_ref_authority",
+        ),
+        CheckConstraint(
+            "length(ref_hmac) = 64",
+            name="ck_v2_material_shadow_ref_hmac",
+        ),
+        UniqueConstraint(
+            "evaluation_id", "ref_kind", "ref_hmac", name="uq_v2_material_shadow_ref"
+        ),
+    )
+
+    ref_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    evaluation_id: Mapped[str] = mapped_column(
+        String(37),
+        ForeignKey("v2_material_shadow_evaluations.evaluation_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    ref_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    ref_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
+    hmac_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    authority: Mapped[str] = mapped_column(String(32), nullable=False)

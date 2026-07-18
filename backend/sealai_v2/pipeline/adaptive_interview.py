@@ -34,6 +34,13 @@ _LEGACY_HEADINGS = {
 }
 
 
+class AdaptiveInterviewUnavailable(RuntimeError):
+    code = "adaptive_interview_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
 @dataclass(frozen=True)
 class AdaptiveInterviewEvaluation:
     decision: InterviewDecision
