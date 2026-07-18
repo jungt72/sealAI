@@ -105,7 +105,7 @@ class ReviewedMaterialRuleReferenceV1:
             raise ValueError("invalid rule_ref")
         if type(self.media_id) is not str or not _MEDIA_ID_RE.fullmatch(self.media_id):
             raise ValueError("invalid media_id")
-        if self.verdict not in {
+        if type(self.verdict) is not MaterialConstraintVerdict or self.verdict not in {
             MaterialConstraintVerdict.UNVERTRAEGLICH,
             MaterialConstraintVerdict.BEDINGT,
         }:
