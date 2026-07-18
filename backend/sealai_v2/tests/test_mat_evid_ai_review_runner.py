@@ -12,7 +12,10 @@ from sealai_v2.core.material_evidence_ai_review import (
     AIReviewSnapshotV1,
     AIReviewValidationError,
 )
-from sealai_v2.material_evidence_ai_review.runner import run_claude_challenge
+from sealai_v2.material_evidence_ai_review.runner import (
+    ClaudeChallengeRunReceiptV1,
+    run_claude_challenge,
+)
 from sealai_v2.material_evidence_ai_review.audit import CLAUDE_TASK_V1
 from sealai_v2.tests.test_mat_evid_ai_review_domain import (
     BATCH_ID,
@@ -28,6 +31,7 @@ def _fake_claude(
     wrong_model: bool = False,
     web_search_requests: int = 0,
     web_fetch_requests: int = 0,
+    report_override: str | None = None,
 ) -> Path:
     script = path / "fake-claude"
     body = """#!/usr/bin/env python3
@@ -55,7 +59,7 @@ for claim in audit['claims']:
         'scope_assessment': 'Scope matches frozen corpus.',
         'severity': 'NONE',
         'source_coverage': 'Exact supplied source and locator.',
-        'source_independence_assessment': 'Publisher-derived origin checked.',
+        'source_independence_assessment': 'single_source',
         'source_overreach_assessment': 'No overreach found.',
         'verdict': 'PASS',
     })
@@ -68,6 +72,9 @@ report = {
     'review_snapshot_id': audit['review_snapshot_id'],
     'transport_complete': True,
 }
+report_override = __REPORT_OVERRIDE__
+if report_override is not None:
+    report = json.loads(report_override)
 envelope = {
     'type': 'result',
     'is_error': bool(sensitive),
@@ -80,6 +87,7 @@ envelope = {
 }
 print(json.dumps(envelope))
 """
+    body = body.replace("__REPORT_OVERRIDE__", repr(report_override))
     body = body.replace(
         "'web_search_requests': 0", f"'web_search_requests': {web_search_requests}"
     )
@@ -138,6 +146,36 @@ def test_runner_uses_one_shot_safe_mode_and_hashes_sensitive_run_id(tmp_path) ->
     ):
         assert value in args
     assert args[args.index("--allowedTools") + 1] == ""
+
+    with pytest.raises(TypeError, match="one-shot runner"):
+        ClaudeChallengeRunReceiptV1(
+            challenge=receipt.challenge,
+            audit_input_path=receipt.audit_input_path,
+            audit_input_file_sha256=receipt.audit_input_file_sha256,
+            cli_result_path=receipt.cli_result_path,
+            cli_result_file_sha256=receipt.cli_result_file_sha256,
+            process_returncode=0,
+            session_id_sha256=receipt.session_id_sha256,
+            runner_receipt_sha256=receipt.runner_receipt_sha256,
+            _token=object(),
+        )
+
+
+def test_runner_receipt_revalidation_rejects_artifact_drift(tmp_path) -> None:
+    payload, ruleset, evidence = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    receipt = run_claude_challenge(
+        snapshot,
+        ruleset=ruleset,
+        evidence=evidence,
+        media_identity_evidence=(_identity_evidence(),),
+        output_directory=tmp_path / "artifact-drift-output",
+        claude_executable=_fake_claude(tmp_path),
+    )
+    Path(receipt.cli_result_path).write_text("{}", encoding="utf-8")
+    with pytest.raises(AIReviewValidationError) as exc:
+        receipt.validate_against(snapshot)
+    assert exc.value.code is AIReviewErrorCode.HASH_MISMATCH
 
 
 def test_runner_rejects_permission_denial_as_transport_failure(tmp_path) -> None:

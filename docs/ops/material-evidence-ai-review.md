@@ -27,10 +27,13 @@ active pointer, sampling, public output or deployment authority.
    independent primary sources. A family-wide single-source claim is always
    blocked. Other high-risk single-source claims must be narrowly scoped,
    opaque `bedingt`, or quarantined.
-9. Treat independence as the publisher-derived `origin_ref`, never as a free
-   creator label. A normal primary source must use one of the closed eligible
-   source classes; internal attestations and standard metadata do not satisfy
-   that gate.
+9. Treat `origin_ref` only as the hash of the exact Evidence-v2 document,
+   revision, edition and digest. It is not publisher-independence. For any
+   multi-source PASS, Claude must return the closed
+   `distinct_publishers_confirmed` assessment; same-publisher or unresolved
+   organization identity fails closed. A normal primary source must use one of
+   the closed eligible source classes; internal attestations and standard
+   metadata do not satisfy that gate.
 10. Verify the Evidence `rule_ref -> claim_ref` set is exactly equal to the AI
     review's canonical set; extra cross-bindings are forbidden.
 
@@ -44,6 +47,10 @@ active pointer, sampling, public output or deployment authority.
   and persist the immutable `ai_draft` snapshot.
 - Never populate a verified-human subject field and never use a human lifecycle
   state.
+
+Only the content- and transport-validated `ClaudeChallengeRunReceiptV1` from
+the one-shot runner may cross the persistence boundary. A locally constructed
+`ClaudeChallengeV1` is never a durable challenge.
 
 ## Frozen challenge corpus
 

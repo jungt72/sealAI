@@ -1835,7 +1835,12 @@ class V2MaterialEvidenceAIChallenge(Base):
         CheckConstraint(
             "length(challenger_prompt_sha256) = 64 AND "
             "length(audit_input_sha256) = 64 AND "
-            "length(audit_output_sha256) = 64 AND length(report_sha256) = 64",
+            "length(audit_input_file_sha256) = 64 AND "
+            "length(audit_output_sha256) = 64 AND "
+            "length(cli_result_file_sha256) = 64 AND "
+            "length(report_sha256) = 64 AND "
+            "length(session_id_sha256) = 64 AND "
+            "length(runner_receipt_sha256) = 64 AND process_returncode = 0",
             name="ck_v2_mat_evid_ai_challenge_hashes",
         ),
         UniqueConstraint(
@@ -1863,8 +1868,13 @@ class V2MaterialEvidenceAIChallenge(Base):
     challenger_prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
     challenger_prompt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     audit_input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    audit_input_file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     audit_output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    cli_result_file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_returncode: Mapped[int] = mapped_column(Integer, nullable=False)
+    session_id_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    runner_receipt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     tools_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     mcp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     hooks_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)

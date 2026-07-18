@@ -451,10 +451,12 @@ snapshot and assertion hash without entering the verified-human MED-NORM
 catalog. A factual correction creates new immutable ruleset and/or identity
 Evidence plus review snapshots and requires a new Claude input and run.
 The frozen Claude corpus includes every media-identity preimage and a bound
-secret/direct-identifier scan receipt. Source independence is derived from
-publisher identity rather than a creator label, source quality uses a closed
-primary-source set, rule/claim bindings are exact, CLI web counters must be
-zero, and persistence re-derives every challenge and adjudication.
+secret/direct-identifier scan receipt. `origin_ref` binds only the exact
+Evidence source identity and never claims organizational independence; the
+challenger must return a closed independence assessment. Source quality uses a
+closed primary-source set, rule/claim bindings are exact, CLI web counters must
+be zero, and persistence accepts only a revalidated one-shot runner receipt
+before re-deriving every challenge and adjudication.
 
 ### Consequence
 

@@ -46,9 +46,10 @@ def test_real_postgres_ai_review_fingerprint_lifecycle_and_immutability(
     assert migration_status(engine) == ("20260718_0019", "20260718_0019")
     assert AI_TABLES <= set(inspect(engine).get_table_names())
 
-    challenge = _challenge(snapshot)
+    receipt = _challenge(snapshot, tmp_path)
+    challenge = receipt.challenge
     repo.record_challenge(
-        challenge=challenge,
+        receipt=receipt,
         context=context,
         created_at=CREATED_AT,
     )

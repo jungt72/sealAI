@@ -55,6 +55,10 @@ from sealai_v2.material_evidence_ai_review.audit import (
     _derive_adjudication_id,
     _derive_challenge_id,
 )
+from sealai_v2.material_evidence_ai_review.runner import (
+    ClaudeChallengeRunReceiptV1,
+    run_claude_challenge,
+)
 from sealai_v2.tests.test_mat_evid_ai_review_domain import (
     BATCH_ID,
     MANIFEST_ID,
@@ -66,6 +70,7 @@ from sealai_v2.tests.test_mat_evid_ai_review_domain import (
     _source_identity,
     SHA,
 )
+from sealai_v2.tests.test_mat_evid_ai_review_runner import _fake_claude
 
 
 CREATED_AT = "2026-07-18T20:00:00Z"
@@ -151,27 +156,22 @@ def _setup(tmp_path, *, payload_override=None, database_url: str | None = None):
     return engine, factory, repo, context, snapshot
 
 
-def _challenge(snapshot: AIReviewSnapshotV1) -> ClaudeChallengeV1:
-    report = parse_claude_audit_report(_pass_report(snapshot), snapshot)
-    report_hash = hashlib.sha256(
-        AUDIT_OUTPUT_DOMAIN
-        + json.dumps(
-            report.to_dict(),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
-    challenger = ChallengerAgentRunV1(
-        agent_version="claude-cli-test-version",
-        prompt_version="challenge.v1",
-        prompt_sha256="e" * 64,
-        run_id="claude-persistence-run",
-        audit_input_sha256=build_claude_audit_input(snapshot).audit_input_sha256,
-        audit_output_sha256=report_hash,
-        isolation=AgentExecutionIsolationV1(False, False, False, 0, 0, False),
+def _challenge(
+    snapshot: AIReviewSnapshotV1,
+    tmp_path,
+    *,
+    report_override: str | None = None,
+) -> ClaudeChallengeRunReceiptV1:
+    _, ruleset, evidence = _payload()
+    output_index = len(tuple(tmp_path.glob("challenge-output-*")))
+    return run_claude_challenge(
+        snapshot,
+        ruleset=ruleset,
+        evidence=evidence,
+        media_identity_evidence=(_identity_evidence(),),
+        output_directory=tmp_path / f"challenge-output-{output_index}",
+        claude_executable=_fake_claude(tmp_path, report_override=report_override),
     )
-    return ClaudeChallengeV1.create(snapshot, challenger, report)
 
 
 @pytest.mark.parametrize("bypass", ("creator_run", "audit_input"))
@@ -216,11 +216,8 @@ def test_repository_rederives_challenge_and_rejects_direct_constructor_bypass(
         report=report,
         report_sha256=report_hash,
     )
-    with pytest.raises(AIReviewValidationError) as exc:
-        repo.record_challenge(
-            challenge=challenge, context=context, created_at=CREATED_AT
-        )
-    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
+    with pytest.raises(TypeError, match="receipt must be"):
+        repo.record_challenge(receipt=challenge, context=context, created_at=CREATED_AT)
     assert (
         repo.load_projection(snapshot.review_snapshot_id, context=context).state
         is AIReviewState.AI_DRAFT
@@ -251,30 +248,13 @@ def test_repository_rederives_adjudication_from_stored_report(tmp_path) -> None:
             "verdict": "CHANGES_REQUIRED",
         }
     )
-    report = parse_claude_audit_report(json.dumps(raw), snapshot)
-    report_hash = hashlib.sha256(
-        AUDIT_OUTPUT_DOMAIN
-        + json.dumps(
-            report.to_dict(),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
-    challenge = ClaudeChallengeV1.create(
+    receipt = _challenge(
         snapshot,
-        ChallengerAgentRunV1(
-            agent_version="claude-cli-test-version",
-            prompt_version="challenge.v1",
-            prompt_sha256="e" * 64,
-            run_id="claude-forged-adjudication-run",
-            audit_input_sha256=build_claude_audit_input(snapshot).audit_input_sha256,
-            audit_output_sha256=report_hash,
-            isolation=AgentExecutionIsolationV1(False, False, False, 0, 0, False),
-        ),
-        report,
+        tmp_path,
+        report_override=json.dumps(raw),
     )
-    repo.record_challenge(challenge=challenge, context=context, created_at=CREATED_AT)
+    challenge = receipt.challenge
+    repo.record_challenge(receipt=receipt, context=context, created_at=CREATED_AT)
     adjudicator = _adjudicator("codex-forged-adjudicator")
     value = {
         "adjudication_contract_version": "MAT-EVID-AI-ADJUDICATION.v1",
@@ -319,8 +299,9 @@ def test_repository_rederives_adjudication_from_stored_report(tmp_path) -> None:
 @pytest.mark.parametrize("same_as", ("creator", "challenger"))
 def test_repository_rejects_adjudicator_run_role_reuse(tmp_path, same_as: str) -> None:
     _, _, repo, context, snapshot = _setup(tmp_path)
-    challenge = _challenge(snapshot)
-    repo.record_challenge(challenge=challenge, context=context, created_at=CREATED_AT)
+    receipt = _challenge(snapshot, tmp_path)
+    challenge = receipt.challenge
+    repo.record_challenge(receipt=receipt, context=context, created_at=CREATED_AT)
     run_id = (
         snapshot.payload.creator.run_id
         if same_as == "creator"
@@ -370,9 +351,10 @@ def test_repository_round_trip_challenge_and_cross_review(tmp_path) -> None:
         is AIReviewState.AI_DRAFT
     )
 
-    challenge = _challenge(snapshot)
+    receipt = _challenge(snapshot, tmp_path)
+    challenge = receipt.challenge
     projection = repo.record_challenge(
-        challenge=challenge,
+        receipt=receipt,
         context=context,
         created_at=CREATED_AT,
     )
@@ -400,9 +382,19 @@ def test_repository_round_trip_challenge_and_cross_review(tmp_path) -> None:
         )
         challenges = session.scalars(select(V2MaterialEvidenceAIChallenge)).all()
         assert len(challenges) == 1
-        assert challenges[0].challenger_version == "claude-cli-test-version"
-        assert challenges[0].challenger_prompt_version == "challenge.v1"
-        assert challenges[0].challenger_prompt_sha256 == "e" * 64
+        assert challenges[0].challenger_version == challenge.challenger.agent_version
+        assert (
+            challenges[0].challenger_prompt_version
+            == challenge.challenger.prompt_version
+        )
+        assert (
+            challenges[0].challenger_prompt_sha256 == challenge.challenger.prompt_sha256
+        )
+        assert challenges[0].audit_input_file_sha256 == receipt.audit_input_file_sha256
+        assert challenges[0].cli_result_file_sha256 == receipt.cli_result_file_sha256
+        assert challenges[0].process_returncode == 0
+        assert challenges[0].session_id_sha256 == receipt.session_id_sha256
+        assert challenges[0].runner_receipt_sha256 == receipt.runner_receipt_sha256
         assert len(session.scalars(select(V2MaterialEvidenceAIAdjudication)).all()) == 1
         assert (
             len(session.scalars(select(V2MaterialEvidenceAIValidationEvent)).all()) == 1
@@ -438,30 +430,13 @@ def test_repository_persists_identity_only_correction_without_material_launderin
             "verdict": "CHANGES_REQUIRED",
         }
     )
-    report = parse_claude_audit_report(json.dumps(raw), snapshot)
-    report_hash = hashlib.sha256(
-        AUDIT_OUTPUT_DOMAIN
-        + json.dumps(
-            report.to_dict(),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
-    challenge = ClaudeChallengeV1.create(
+    receipt = _challenge(
         snapshot,
-        ChallengerAgentRunV1(
-            agent_version="claude-cli-test-version",
-            prompt_version="challenge.v1",
-            prompt_sha256="e" * 64,
-            run_id="claude-identity-correction-run",
-            audit_input_sha256=build_claude_audit_input(snapshot).audit_input_sha256,
-            audit_output_sha256=report_hash,
-            isolation=AgentExecutionIsolationV1(False, False, False, 0, 0, False),
-        ),
-        report,
+        tmp_path,
+        report_override=json.dumps(raw),
     )
-    repo.record_challenge(challenge=challenge, context=context, created_at=CREATED_AT)
+    challenge = receipt.challenge
+    repo.record_challenge(receipt=receipt, context=context, created_at=CREATED_AT)
 
     previous = _identity_evidence()
     revised_source = _source_identity(SHA("7"))
@@ -522,9 +497,14 @@ def test_repository_persists_identity_only_correction_without_material_launderin
         )
         challenges = session.scalars(select(V2MaterialEvidenceAIChallenge)).all()
         assert len(challenges) == 1
-        assert challenges[0].challenger_version == "claude-cli-test-version"
-        assert challenges[0].challenger_prompt_version == "challenge.v1"
-        assert challenges[0].challenger_prompt_sha256 == "e" * 64
+        assert challenges[0].challenger_version == challenge.challenger.agent_version
+        assert (
+            challenges[0].challenger_prompt_version
+            == challenge.challenger.prompt_version
+        )
+        assert (
+            challenges[0].challenger_prompt_sha256 == challenge.challenger.prompt_sha256
+        )
         assert len(session.scalars(select(V2MaterialEvidenceAIAdjudication)).all()) == 1
         assert (
             len(session.scalars(select(V2MaterialEvidenceAIValidationEvent)).all()) == 1
@@ -568,7 +548,7 @@ def test_source_preflight_blocks_challenge_before_any_challenge_row(tmp_path) ->
     )
     with pytest.raises(AIReviewValidationError) as exc:
         repo.record_challenge(
-            challenge=_challenge(snapshot),
+            receipt=_challenge(snapshot, tmp_path),
             context=context,
             created_at=CREATED_AT,
         )
@@ -648,8 +628,9 @@ def test_database_constraints_reject_human_identity_production_and_positive_auth
 
 def test_every_ai_table_rejects_update_and_delete(tmp_path) -> None:
     engine, _, repo, context, snapshot = _setup(tmp_path)
-    challenge = _challenge(snapshot)
-    repo.record_challenge(challenge=challenge, context=context, created_at=CREATED_AT)
+    receipt = _challenge(snapshot, tmp_path)
+    challenge = receipt.challenge
+    repo.record_challenge(receipt=receipt, context=context, created_at=CREATED_AT)
     adjudication = create_adjudication(
         snapshot=snapshot,
         challenge=challenge,

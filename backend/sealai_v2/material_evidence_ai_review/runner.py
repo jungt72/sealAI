@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 from typing import Any
 
@@ -29,6 +30,22 @@ from sealai_v2.material_evidence_ai_review.audit import (
 )
 
 
+RUN_RECEIPT_DOMAIN = b"sealai:mat-evid-ai-review:claude-run-receipt:v1\x00"
+_RUN_RECEIPT_TOKEN = object()
+_SHA256_HEX = frozenset("0123456789abcdef")
+_ENVELOPE_FIELDS = frozenset(
+    {
+        "is_error",
+        "modelUsage",
+        "permission_denials",
+        "result",
+        "session_id",
+        "type",
+        "web_fetch_requests",
+        "web_search_requests",
+    }
+)
+
 _SETTINGS = {
     "disableAgentView": True,
     "disableAllHooks": True,
@@ -47,7 +64,7 @@ _SENSITIVE_ENV_MARKERS = (
 )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class ClaudeChallengeRunReceiptV1:
     challenge: ClaudeChallengeV1
     audit_input_path: str
@@ -55,12 +72,216 @@ class ClaudeChallengeRunReceiptV1:
     cli_result_path: str
     cli_result_file_sha256: str
     process_returncode: int
+    session_id_sha256: str
+    runner_receipt_sha256: str
 
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        challenge: ClaudeChallengeV1,
+        audit_input_path: str,
+        audit_input_file_sha256: str,
+        cli_result_path: str,
+        cli_result_file_sha256: str,
+        process_returncode: int,
+        session_id_sha256: str,
+        runner_receipt_sha256: str,
+        _token: object,
+    ) -> None:
+        if _token is not _RUN_RECEIPT_TOKEN:
+            raise TypeError(
+                "ClaudeChallengeRunReceiptV1 may only be created by the one-shot runner"
+            )
+        for name, value in (
+            ("challenge", challenge),
+            ("audit_input_path", audit_input_path),
+            ("audit_input_file_sha256", audit_input_file_sha256),
+            ("cli_result_path", cli_result_path),
+            ("cli_result_file_sha256", cli_result_file_sha256),
+            ("process_returncode", process_returncode),
+            ("session_id_sha256", session_id_sha256),
+            ("runner_receipt_sha256", runner_receipt_sha256),
+        ):
+            object.__setattr__(self, name, value)
+        self._validate_fields()
+
+    def _validate_fields(self) -> None:
         if type(self.challenge) is not ClaudeChallengeV1:
             raise TypeError("challenge must be ClaudeChallengeV1")
-        if self.process_returncode != 0:
+        if type(self.process_returncode) is not int or self.process_returncode != 0:
             raise ValueError("successful receipt requires zero process return code")
+        for name, value in (
+            ("audit_input_file_sha256", self.audit_input_file_sha256),
+            ("cli_result_file_sha256", self.cli_result_file_sha256),
+            ("session_id_sha256", self.session_id_sha256),
+            ("runner_receipt_sha256", self.runner_receipt_sha256),
+        ):
+            if (
+                type(value) is not str
+                or len(value) != 64
+                or not set(value) <= _SHA256_HEX
+            ):
+                raise ValueError(f"{name} must be 64 lowercase hex")
+        for name, value in (
+            ("audit_input_path", self.audit_input_path),
+            ("cli_result_path", self.cli_result_path),
+        ):
+            if type(value) is not str or not Path(value).is_absolute():
+                raise ValueError(f"{name} must be an absolute path")
+
+    @classmethod
+    def _from_successful_run(
+        cls,
+        *,
+        challenge: ClaudeChallengeV1,
+        audit_input_path: Path,
+        cli_result_path: Path,
+        session_id_sha256: str,
+        process_returncode: int,
+    ) -> "ClaudeChallengeRunReceiptV1":
+        audit_input_file_sha256 = hashlib.sha256(
+            audit_input_path.read_bytes()
+        ).hexdigest()
+        cli_result_file_sha256 = hashlib.sha256(
+            cli_result_path.read_bytes()
+        ).hexdigest()
+        runner_receipt_sha256 = compute_claude_run_receipt_sha256(
+            challenge=challenge,
+            audit_input_file_sha256=audit_input_file_sha256,
+            cli_result_file_sha256=cli_result_file_sha256,
+            process_returncode=process_returncode,
+            session_id_sha256=session_id_sha256,
+        )
+        return cls(
+            challenge=challenge,
+            audit_input_path=str(audit_input_path),
+            audit_input_file_sha256=audit_input_file_sha256,
+            cli_result_path=str(cli_result_path),
+            cli_result_file_sha256=cli_result_file_sha256,
+            process_returncode=process_returncode,
+            session_id_sha256=session_id_sha256,
+            runner_receipt_sha256=runner_receipt_sha256,
+            _token=_RUN_RECEIPT_TOKEN,
+        )
+
+    def validate_against(self, snapshot: AIReviewSnapshotV1) -> None:
+        """Re-read and bind both immutable runner artifacts before persistence."""
+
+        if type(snapshot) is not AIReviewSnapshotV1:
+            raise TypeError("snapshot must be AIReviewSnapshotV1")
+        self._validate_fields()
+        self.challenge.validate_against(snapshot)
+        audit_input = _read_private_receipt_file(
+            self.audit_input_path,
+            expected_sha256=self.audit_input_file_sha256,
+        )
+        expected_input = build_claude_audit_input(snapshot)
+        if audit_input != expected_input.canonical_bytes:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.HASH_MISMATCH,
+                "runner audit-input artifact differs from the frozen corpus",
+            )
+        cli_result = _read_private_receipt_file(
+            self.cli_result_path,
+            expected_sha256=self.cli_result_file_sha256,
+        )
+        envelope = _load_cli_envelope(cli_result)
+        if set(envelope) != _ENVELOPE_FIELDS or envelope["session_id"] != "<redacted>":
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "persisted Claude transport receipt is not the closed redacted envelope",
+            )
+        report = parse_claude_audit_report(envelope["result"], snapshot)
+        if (
+            report != self.challenge.report
+            or report.to_dict() != self.challenge.report.to_dict()
+        ):
+            raise AIReviewValidationError(
+                AIReviewErrorCode.HASH_MISMATCH,
+                "runner output artifact differs from the persisted challenge",
+            )
+        challenger = self.challenge.challenger
+        expected_run_id = f"claude-run-sha256:{self.session_id_sha256}"
+        if (
+            challenger.run_id != expected_run_id
+            or challenger.prompt_version != _PROMPT_VERSION
+            or challenger.prompt_sha256 != hashlib.sha256(_PROMPT_BYTES).hexdigest()
+            or challenger.audit_input_sha256 != expected_input.audit_input_sha256
+            or challenger.audit_output_sha256 != self.challenge.report_sha256
+            or challenger.isolation
+            != AgentExecutionIsolationV1(False, False, False, 0, 0, False)
+        ):
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "runner challenge provenance differs from the closed one-shot contract",
+            )
+        expected_receipt_hash = compute_claude_run_receipt_sha256(
+            challenge=self.challenge,
+            audit_input_file_sha256=self.audit_input_file_sha256,
+            cli_result_file_sha256=self.cli_result_file_sha256,
+            process_returncode=self.process_returncode,
+            session_id_sha256=self.session_id_sha256,
+        )
+        if self.runner_receipt_sha256 != expected_receipt_hash:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.HASH_MISMATCH, "runner receipt hash mismatch"
+            )
+
+
+def compute_claude_run_receipt_sha256(
+    *,
+    challenge: ClaudeChallengeV1,
+    audit_input_file_sha256: str,
+    cli_result_file_sha256: str,
+    process_returncode: int,
+    session_id_sha256: str,
+) -> str:
+    value = {
+        "audit_input_file_sha256": audit_input_file_sha256,
+        "challenge_id": challenge.challenge_id,
+        "cli_result_file_sha256": cli_result_file_sha256,
+        "process_returncode": process_returncode,
+        "session_id_sha256": session_id_sha256,
+    }
+    return hashlib.sha256(
+        RUN_RECEIPT_DOMAIN
+        + json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _read_private_receipt_file(path_value: str, *, expected_sha256: str) -> bytes:
+    path = Path(path_value)
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT, "runner receipt artifact is unavailable"
+        ) from exc
+    repository = Path(__file__).resolve().parents[4]
+    resolved = path.resolve(strict=True)
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or resolved == repository
+        or repository in resolved.parents
+    ):
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "runner receipt artifact is not a private regular file outside the repository",
+        )
+    raw = resolved.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise AIReviewValidationError(
+            AIReviewErrorCode.HASH_MISMATCH, "runner receipt artifact hash mismatch"
+        )
+    return raw
 
 
 def _safe_environment() -> dict[str, str]:
@@ -115,16 +336,7 @@ def _load_cli_envelope(raw: bytes) -> dict[str, Any]:
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_JSON, "Claude CLI result must be an object"
         )
-    required = {
-        "is_error",
-        "modelUsage",
-        "permission_denials",
-        "result",
-        "session_id",
-        "type",
-        "web_fetch_requests",
-        "web_search_requests",
-    }
+    required = _ENVELOPE_FIELDS
     if not required <= set(value):
         raise AIReviewValidationError(
             AIReviewErrorCode.UNKNOWN_FIELD,
@@ -321,16 +533,20 @@ def run_claude_challenge(
         ),
     )
     challenge = ClaudeChallengeV1.create(snapshot, challenger, report)
-    return ClaudeChallengeRunReceiptV1(
+    session_id_sha256 = hashlib.sha256(
+        envelope["session_id"].encode("utf-8")
+    ).hexdigest()
+    return ClaudeChallengeRunReceiptV1._from_successful_run(
         challenge=challenge,
-        audit_input_path=str(audit_input_path),
-        audit_input_file_sha256=hashlib.sha256(
-            audit_input_path.read_bytes()
-        ).hexdigest(),
-        cli_result_path=str(cli_result_path),
-        cli_result_file_sha256=hashlib.sha256(cli_result_path.read_bytes()).hexdigest(),
+        audit_input_path=audit_input_path,
+        cli_result_path=cli_result_path,
         process_returncode=completed.returncode,
+        session_id_sha256=session_id_sha256,
     )
 
 
-__all__ = ["ClaudeChallengeRunReceiptV1", "run_claude_challenge"]
+__all__ = [
+    "ClaudeChallengeRunReceiptV1",
+    "compute_claude_run_receipt_sha256",
+    "run_claude_challenge",
+]

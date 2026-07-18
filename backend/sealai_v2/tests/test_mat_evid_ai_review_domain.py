@@ -308,9 +308,7 @@ def _pass_report(snapshot: AIReviewSnapshotV1) -> str:
                 "scope_assessment": "Scope matches the supplied test source.",
                 "severity": "NONE",
                 "source_coverage": "One exact source and locator supplied.",
-                "source_independence_assessment": (
-                    "Publisher-derived source origin matches the supplied evidence."
-                ),
+                "source_independence_assessment": "single_source",
                 "source_overreach_assessment": "No overreach found.",
                 "verdict": "PASS",
             }
@@ -394,25 +392,25 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
     )
 
     assert snapshot.content_sha256 == (
-        "af1bb657677ae9289953d981f11266e337d266205c5b5ad1a8a916801210209e"
+        "5319741765c271b38fd23a7e3d56c3ca5a6cc5b29ff8b8c5fe0a5dcb609e7ce9"
     )
     assert snapshot.review_snapshot_id == (
-        "mas_faeb1c5ec671760d762ec32b05abe57d9c27de8fa3f3243bf9c3db1dedda5e27"
+        "mas_6bb5fb7c48a8d60f7d210946e1e9031b2ac934244b80e57892f4d816094b9d1f"
     )
     assert compute_ai_review_validation_sha256(snapshot) == (
-        "7b569f85964b0c70bc445fa6b3f6734fe4aefb4532eabe0e047ef811927bb0d6"
+        "cfa653f2c7e9a1d7389f18804c0530f998687d4c94bfe339d49e5a2feed28506"
     )
     assert audit_input.audit_input_sha256 == (
-        "7ae2a2e44bc89cf017d67f3a633662ccc5da44c27106d7f6d6146e754b977877"
+        "8abc80aadb248df4f8e79a735411d6ee1fb37f9ca793ce78d7094f856c4486ef"
     )
     assert report_hash == (
-        "9c7798ef0d28f96a58b63ab28ff8bc02b41aa27140834650875b6232fb2b5ec5"
+        "2b4331dcec56ed65895941ff895b5824293eeef79bbd5ba4c4d8aaf7ca63662d"
     )
     assert challenge.challenge_id == (
-        "mac_f39e9270ee88137cdee96d857fc24a4cdd25f7da1b3083c53dd0d8aeafa2a7ab"
+        "mac_8970583aa424d2c70c23aaffd37570845a38161a789e6388480966e8c70fee0d"
     )
     assert adjudication.adjudication_id == (
-        "maa_8564ab19f34500439918487e0f918a1f0db34de71535885fb115802dc8d42490"
+        "maa_98a06ec2249e1da1f28a298477818ee1ea8892dd1264ce7c5d7838bc21190a6d"
     )
     assert compute_ai_review_audit_sha256({"event": "golden", "sequence": 1}) == (
         "630e79eb4ead1dee89a3f6d88ac4f04c8cebcacc45ab44fadc8ee6b091b85948"
@@ -788,6 +786,11 @@ def test_audit_input_exposes_and_binds_every_structured_identity_preimage() -> N
         "Authorization: Bearer " + "synthetic-token-value-1234567890",
         "-----BEGIN " + "PRIVATE KEY----- synthetic",
         "customer_id=synthetic-customer-42",
+        "Phone: +49 30 12345678",
+        "Street 42, 10115 Berlin",
+        "Author: Synthetic Person",
+        "DOB: 2000-01-02",
+        "Endpoint 192.0.2.42",
     ),
 )
 def test_audit_corpus_safety_preflight_blocks_sensitive_content(
@@ -804,10 +807,17 @@ def test_audit_corpus_safety_preflight_blocks_sensitive_content(
     assert exc.value.code is AIReviewErrorCode.SENSITIVE_DATA_FORBIDDEN
 
 
-def test_source_origin_is_publisher_derived_and_primary_quality_is_closed() -> None:
+def test_source_origin_is_bound_to_evidence_identity_and_primary_quality_is_closed() -> (
+    None
+):
     payload, _, _ = _payload()
     source = payload.sources[0]
-    assert source.origin_ref == derive_source_origin_ref(source.metadata.publisher)
+    assert source.origin_ref == derive_source_origin_ref(
+        document_id=source.metadata.document_id,
+        document_revision=source.metadata.document_revision,
+        publication_edition=source.metadata.publication_edition,
+        content_sha256=source.metadata.content_sha256,
+    )
     assert source.to_dict()["origin_ref"] == source.origin_ref
 
     internal = AISourceContextV1(
@@ -829,7 +839,7 @@ def test_source_origin_is_publisher_derived_and_primary_quality_is_closed() -> N
     assert drift.value.code is AIReviewErrorCode.HASH_MISMATCH
 
 
-def test_same_publisher_cannot_be_relabeled_as_two_independent_sources() -> None:
+def test_multi_source_pass_requires_closed_distinct_publisher_assessment() -> None:
     payload, _, _ = _payload()
     first = payload.sources[0]
     second = AISourceContextV1(
@@ -840,7 +850,54 @@ def test_same_publisher_cannot_be_relabeled_as_two_independent_sources() -> None
             content_sha256="9" * 64,
         )
     )
+    sources = tuple(sorted((first, second), key=lambda item: item.source_ref))
+    refs = tuple(item.source_ref for item in sources)
+    claim = replace(
+        payload.claims[0],
+        source_refs=refs,
+        primary_source_refs=refs,
+    )
+    snapshot = AIReviewSnapshotV1.create(
+        BATCH_ID, replace(payload, sources=sources, claims=(claim,))
+    )
+    raw = json.loads(_pass_report(snapshot))
+    target = next(
+        item for item in raw["claim_results"] if item["claim_ref"] == claim.claim_ref
+    )
+    target["source_independence_assessment"] = "unresolved"
+    with pytest.raises(AIReviewValidationError) as exc:
+        parse_claude_audit_report(json.dumps(raw), snapshot)
+    assert exc.value.code is AIReviewErrorCode.INVALID_TYPE
+
+    target["source_independence_assessment"] = "distinct_publishers_confirmed"
+    parsed = parse_claude_audit_report(json.dumps(raw), snapshot)
+    assert parsed.overall_verdict.value == "PASS"
+
+
+def test_publisher_display_label_does_not_change_bound_source_identity() -> None:
+    payload, _, _ = _payload()
+    first = payload.sources[0]
+    second = AISourceContextV1(
+        metadata=replace(
+            first.metadata,
+            publisher="Synthetic Publisher Alias",
+        )
+    )
     assert first.origin_ref == second.origin_ref
+
+
+def test_two_bound_documents_do_not_technically_claim_publisher_independence() -> None:
+    payload, _, _ = _payload()
+    first = payload.sources[0]
+    second = AISourceContextV1(
+        metadata=replace(
+            first.metadata,
+            source_ref="msr_" + "f" * 64,
+            document_id="DOC-AI-TEST-002",
+            content_sha256="9" * 64,
+        )
+    )
+    assert first.origin_ref != second.origin_ref
     sources = tuple(sorted((first, second), key=lambda item: item.source_ref))
     source_refs = tuple(item.source_ref for item in sources)
     claim = replace(
@@ -851,7 +908,9 @@ def test_same_publisher_cannot_be_relabeled_as_two_independent_sources() -> None
         material_granularity=AIMaterialGranularity.MATERIAL_FAMILY,
     )
     widened = replace(payload, sources=sources, claims=(claim,))
-    assert f"family_single_source:{claim.claim_ref}" in widened.eligibility_failures()
+    assert (
+        f"family_single_source:{claim.claim_ref}" not in widened.eligibility_failures()
+    )
 
 
 def test_rule_claim_bindings_must_equal_the_exact_ai_review_pairs() -> None:

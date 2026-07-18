@@ -53,6 +53,10 @@ from sealai_v2.material_evidence_ai_review.audit import (
     create_adjudication,
     parse_claude_audit_report,
 )
+from sealai_v2.material_evidence_ai_review.runner import (
+    ClaudeChallengeRunReceiptV1,
+    compute_claude_run_receipt_sha256,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,15 +259,16 @@ class MaterialEvidenceAIReviewRepositoryV1:
     def record_challenge(
         self,
         *,
-        challenge: ClaudeChallengeV1,
+        receipt: ClaudeChallengeRunReceiptV1,
         context: NonProductionAIReviewContextV1,
         created_at: str,
     ) -> AIReviewProjectionV1:
-        if type(challenge) is not ClaudeChallengeV1:
-            raise TypeError("challenge must be ClaudeChallengeV1")
+        if type(receipt) is not ClaudeChallengeRunReceiptV1:
+            raise TypeError("receipt must be ClaudeChallengeRunReceiptV1")
+        challenge = receipt.challenge
         timestamp = _metadata(created_at, field="created_at")
         snapshot = self.load_snapshot(challenge.review_snapshot_id, context=context)
-        challenge.validate_against(snapshot)
+        receipt.validate_against(snapshot)
         failures = snapshot.payload.eligibility_failures()
         if failures:
             raise AIReviewValidationError(
@@ -300,8 +305,13 @@ class MaterialEvidenceAIReviewRepositoryV1:
                     challenger_prompt_version=challenge.challenger.prompt_version,
                     challenger_prompt_sha256=challenge.challenger.prompt_sha256,
                     audit_input_sha256=challenge.challenger.audit_input_sha256,
+                    audit_input_file_sha256=receipt.audit_input_file_sha256,
                     audit_output_sha256=challenge.challenger.audit_output_sha256,
+                    cli_result_file_sha256=receipt.cli_result_file_sha256,
                     report_sha256=challenge.report_sha256,
+                    process_returncode=receipt.process_returncode,
+                    session_id_sha256=receipt.session_id_sha256,
+                    runner_receipt_sha256=receipt.runner_receipt_sha256,
                     tools_enabled=isolation.tools_enabled,
                     mcp_enabled=isolation.mcp_enabled,
                     hooks_enabled=isolation.hooks_enabled,
@@ -331,6 +341,7 @@ class MaterialEvidenceAIReviewRepositoryV1:
                 payload={
                     "challenge_id": challenge.challenge_id,
                     "report_sha256": challenge.report_sha256,
+                    "runner_receipt_sha256": receipt.runner_receipt_sha256,
                     "review_snapshot_id": snapshot.review_snapshot_id,
                 },
                 created_at=timestamp,
@@ -408,6 +419,23 @@ class MaterialEvidenceAIReviewRepositoryV1:
                     report_sha256=challenge.report_sha256,
                 )
                 stored_challenge.validate_against(snapshot)
+                expected_runner_receipt_sha256 = compute_claude_run_receipt_sha256(
+                    challenge=stored_challenge,
+                    audit_input_file_sha256=challenge.audit_input_file_sha256,
+                    cli_result_file_sha256=challenge.cli_result_file_sha256,
+                    process_returncode=challenge.process_returncode,
+                    session_id_sha256=challenge.session_id_sha256,
+                )
+                if (
+                    challenge.process_returncode != 0
+                    or challenge.challenger_run_id
+                    != f"claude-run-sha256:{challenge.session_id_sha256}"
+                    or challenge.runner_receipt_sha256 != expected_runner_receipt_sha256
+                ):
+                    raise AIReviewValidationError(
+                        AIReviewErrorCode.HASH_MISMATCH,
+                        "stored runner execution receipt drift",
+                    )
             except (AIReviewValidationError, TypeError, ValueError) as exc:
                 raise AIReviewIntegrityError(
                     AIReviewErrorCode.DB_INTEGRITY,

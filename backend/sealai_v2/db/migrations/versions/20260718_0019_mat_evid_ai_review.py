@@ -33,10 +33,10 @@ _TABLES = (
 )
 _ADOPTION_FINGERPRINTS: dict[str, frozenset[str]] = {
     "postgresql": frozenset(
-        {"17a78a34578c1c63ed98e3307ab0c78a169f404a791adaa64baa52e9e99c4ddc"}
+        {"67d2f184b49526ac0f22e9d9db706c116d0fa21d7b2275de44c763e3219c56e0"}
     ),
     "sqlite": frozenset(
-        {"dfdee79082a2e77112ac138a2c2422d01f9ff6d202baeff3d588761e551110e8"}
+        {"079a36cb6f29330c62794dafa396af481a357339b16725661d4a97031190b040"}
     ),
 }
 _JSON = sa.JSON().with_variant(JSONB(), "postgresql")
@@ -180,8 +180,13 @@ def _create_run_tables() -> None:
         sa.Column("challenger_prompt_version", sa.String(128), nullable=False),
         sa.Column("challenger_prompt_sha256", sa.String(64), nullable=False),
         sa.Column("audit_input_sha256", sa.String(64), nullable=False),
+        sa.Column("audit_input_file_sha256", sa.String(64), nullable=False),
         sa.Column("audit_output_sha256", sa.String(64), nullable=False),
+        sa.Column("cli_result_file_sha256", sa.String(64), nullable=False),
         sa.Column("report_sha256", sa.String(64), nullable=False),
+        sa.Column("process_returncode", sa.Integer(), nullable=False),
+        sa.Column("session_id_sha256", sa.String(64), nullable=False),
+        sa.Column("runner_receipt_sha256", sa.String(64), nullable=False),
         sa.Column("tools_enabled", sa.Boolean(), nullable=False),
         sa.Column("mcp_enabled", sa.Boolean(), nullable=False),
         sa.Column("hooks_enabled", sa.Boolean(), nullable=False),
@@ -209,7 +214,12 @@ def _create_run_tables() -> None:
         sa.CheckConstraint(
             "length(challenger_prompt_sha256) = 64 AND "
             "length(audit_input_sha256) = 64 AND "
-            "length(audit_output_sha256) = 64 AND length(report_sha256) = 64",
+            "length(audit_input_file_sha256) = 64 AND "
+            "length(audit_output_sha256) = 64 AND "
+            "length(cli_result_file_sha256) = 64 AND "
+            "length(report_sha256) = 64 AND "
+            "length(session_id_sha256) = 64 AND "
+            "length(runner_receipt_sha256) = 64 AND process_returncode = 0",
             name="ck_v2_mat_evid_ai_challenge_hashes",
         ),
         sa.ForeignKeyConstraint(

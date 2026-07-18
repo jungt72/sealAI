@@ -477,9 +477,14 @@ class AISourceContextV1:
 
     @property
     def origin_ref(self) -> str:
-        """Content-address the exact publisher identity; never trust a creator label."""
+        """Bind the exact Evidence-v2 source identity, not a creator publisher label."""
 
-        return derive_source_origin_ref(self.metadata.publisher)
+        return derive_source_origin_ref(
+            document_id=self.metadata.document_id,
+            document_revision=self.metadata.document_revision,
+            publication_edition=self.metadata.publication_edition,
+            content_sha256=self.metadata.content_sha256,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -488,13 +493,45 @@ class AISourceContextV1:
         }
 
 
-def derive_source_origin_ref(publisher: str) -> str:
-    """Derive the closed source-origin group from bound publisher metadata."""
+def derive_source_origin_ref(
+    *,
+    document_id: str,
+    document_revision: str,
+    publication_edition: str,
+    content_sha256: str,
+) -> str:
+    """Derive a neutral reference from the complete bound Evidence source identity.
 
-    _text(publisher, path="$.source.publisher", max_chars=256)
+    This deliberately does not claim publisher independence. Organizational
+    independence is a separate Claude challenge judgment and may not be inferred
+    from creator-controlled display metadata.
+    """
+
+    for name, value in (
+        ("document_id", document_id),
+        ("document_revision", document_revision),
+        ("publication_edition", publication_edition),
+    ):
+        _text(value, path=f"$.source.{name}", max_chars=256)
+    _sha(content_sha256, path="$.source.content_sha256")
+    value = {
+        "content_sha256": content_sha256,
+        "document_id": document_id,
+        "document_revision": document_revision,
+        "publication_edition": publication_edition,
+    }
     return (
         "mso_"
-        + hashlib.sha256(SOURCE_ORIGIN_DOMAIN + publisher.encode("utf-8")).hexdigest()
+        + hashlib.sha256(
+            SOURCE_ORIGIN_DOMAIN
+            + json.dumps(
+                value,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
     )
 
 
@@ -903,7 +940,7 @@ class AIReviewPayloadV1:
             if type(source.metadata.excerpt) is OmittedExcerptV1:
                 failures.append(f"excerpt:{source.source_ref}")
         for claim in self.claims:
-            groups = {
+            bound_primary_sources = {
                 source_by_ref[source_ref].origin_ref
                 for source_ref in claim.primary_source_refs
             }
@@ -917,7 +954,7 @@ class AIReviewPayloadV1:
                 claim.expected_verdict is not MaterialConstraintVerdict.BEDINGT
             ):
                 failures.append(f"conflict:{claim.claim_ref}")
-            if len(groups) < 2:
+            if len(bound_primary_sources) < 2:
                 if claim.material_granularity is AIMaterialGranularity.MATERIAL_FAMILY:
                     failures.append(f"family_single_source:{claim.claim_ref}")
                 elif (

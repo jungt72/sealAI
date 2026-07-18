@@ -37,8 +37,10 @@ Each review snapshot is content addressed and includes:
   source-derived identity claims for every rule medium;
 - atomic rule, claim, material, canonical medium and condition scope;
 - exact source identity, digest, locator, rights state and permitted excerpt;
-- publisher-derived source-origin hashes, explicit conflicts and source-risk
-  treatment; creator-supplied independence labels are not accepted;
+- bound Evidence source-identity hashes, explicit conflicts and source-risk
+  treatment. These hashes deliberately make no organizational-independence
+  claim; Claude must return the closed source-independence state and a
+  multi-source PASS requires `distinct_publishers_confirmed`;
 - separate creator-agent model/version/prompt/run/input/output provenance.
 
 Source eligibility fails closed. Missing locators or permitted excerpts,
@@ -50,6 +52,11 @@ Ordinary primary evidence is restricted to the closed manufacturer-datasheet,
 peer-reviewed-publication, regulatory-document or technical-report classes.
 Every `rule_ref -> claim_ref` binding must equal, not merely contain, the
 review snapshot's canonical pair set.
+
+Persistence accepts only the one-shot runner's revalidated execution receipt,
+including the exact frozen-input file, redacted CLI envelope, model-usage,
+permission/web counters, return code, session-ID hash and content-addressed
+receipt hash. The freely constructible domain challenge is insufficient.
 
 The challenger is exactly `anthropic/claude-sonnet-5`. Its execution contract
 requires tools, MCP, hooks, web search, web fetch and session persistence to be

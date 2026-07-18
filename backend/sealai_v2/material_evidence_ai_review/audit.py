@@ -14,6 +14,9 @@ import re
 from typing import Any
 
 from sealai_v2.core.material_evidence_ai_review import (
+    AIEvidenceRisk,
+    AIClaimContextV1,
+    AIMaterialGranularity,
     AIReviewErrorCode,
     AIReviewEventType,
     AIReviewSnapshotV1,
@@ -88,6 +91,41 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
     ),
     ("iban", re.compile(r"\b[A-Z]{2}[0-9]{2}(?:[ ]?[A-Z0-9]){11,30}\b")),
     ("us_ssn", re.compile(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b")),
+    (
+        "telephone_number",
+        re.compile(
+            r"(?i)(?:\b(?:tel(?:ephone)?|phone|mobile|fax)\s*[:.]?\s*"
+            r"\+?[0-9][0-9 ()/.-]{6,20}[0-9]\b|"
+            r"(?<![A-Z0-9])\+[1-9][0-9 ()/.-]{7,20}[0-9](?![A-Z0-9]))"
+        ),
+    ),
+    (
+        "postal_address",
+        re.compile(
+            r"(?i)(?:\b(?:street|road|avenue|boulevard|lane|drive|straße|"
+            r"strasse|weg|platz)\s+[0-9]{1,5}[A-Z]?\b|"
+            r"\b[0-9]{1,5}\s+[A-ZÀ-ÖØ-öø-ÿ][A-ZÀ-ÖØ-öø-ÿ .'-]{1,50}\s"
+            r"(?:street|road|avenue|boulevard|lane|drive)\b)"
+        ),
+    ),
+    (
+        "ip_address",
+        re.compile(
+            r"(?<![0-9])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})"
+            r"(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![0-9])"
+        ),
+    ),
+    (
+        "date_of_birth",
+        re.compile(r"(?i)\b(?:date of birth|dob|geburtsdatum)\s*[:=]\s*[^,;\n]{4,32}"),
+    ),
+    (
+        "named_person",
+        re.compile(
+            r"(?i)\b(?:contact person|prepared by|author|ansprechpartner|bearbeiter)"
+            r"\s*[:=]\s*[A-ZÀ-ÖØ-Þ][^,;\n]{2,80}"
+        ),
+    ),
     (
         "customer_identifier",
         re.compile(r"(?i)\b(?:customer|tenant|case)[_-]?id\s*[:=]\s*[^\s,;]{3,}"),
@@ -173,6 +211,13 @@ class AIFindingCategory(str, Enum):
     MATERIAL_GRANULARITY = "material_granularity"
     POSITIVE_STATEMENT = "positive_statement"
     RIGHTS = "rights"
+
+
+class SourceIndependenceState(str, Enum):
+    DISTINCT_PUBLISHERS_CONFIRMED = "distinct_publishers_confirmed"
+    SINGLE_SOURCE = "single_source"
+    SAME_PUBLISHER = "same_publisher"
+    UNRESOLVED = "unresolved"
     HASH_OR_REFERENCE = "hash_or_reference"
 
 
@@ -243,7 +288,7 @@ class ClaudeClaimAuditResultV1:
     verdict: ClaudeClaimVerdict
     severity: AIFindingSeverity
     source_coverage: str
-    source_independence_assessment: str
+    source_independence_assessment: SourceIndependenceState
     scope_assessment: str
     source_overreach_assessment: str
     contradiction_assessment: str
@@ -261,11 +306,11 @@ class ClaudeClaimAuditResultV1:
         if (
             type(self.verdict) is not ClaudeClaimVerdict
             or type(self.severity) is not AIFindingSeverity
+            or type(self.source_independence_assessment) is not SourceIndependenceState
         ):
             _fail(AIReviewErrorCode.INVALID_TYPE, "invalid Claude claim result enums")
         for name, value in (
             ("source_coverage", self.source_coverage),
-            ("source_independence_assessment", self.source_independence_assessment),
             ("scope_assessment", self.scope_assessment),
             ("source_overreach_assessment", self.source_overreach_assessment),
             ("contradiction_assessment", self.contradiction_assessment),
@@ -324,7 +369,7 @@ class ClaudeClaimAuditResultV1:
             "scope_assessment": self.scope_assessment,
             "severity": self.severity.value,
             "source_coverage": self.source_coverage,
-            "source_independence_assessment": self.source_independence_assessment,
+            "source_independence_assessment": self.source_independence_assessment.value,
             "source_overreach_assessment": self.source_overreach_assessment,
             "verdict": self.verdict.value,
         }
@@ -558,7 +603,11 @@ def _parse_claim_result(value: Any, *, path: str) -> ClaudeClaimAuditResultV1:
         verdict=_enum(ClaudeClaimVerdict, value["verdict"], path=f"{path}.verdict"),
         severity=_enum(AIFindingSeverity, value["severity"], path=f"{path}.severity"),
         source_coverage=value["source_coverage"],
-        source_independence_assessment=value["source_independence_assessment"],
+        source_independence_assessment=_enum(
+            SourceIndependenceState,
+            value["source_independence_assessment"],
+            path=f"{path}.source_independence_assessment",
+        ),
         scope_assessment=value["scope_assessment"],
         source_overreach_assessment=value["source_overreach_assessment"],
         contradiction_assessment=value["contradiction_assessment"],
@@ -623,6 +672,48 @@ def parse_claude_audit_report(
         != snapshot.payload.audit_claim_refs
     ):
         _fail(AIReviewErrorCode.HASH_MISMATCH, "Claude report binding drift")
+    rule_claims = {item.claim_ref: item for item in snapshot.payload.claims}
+    identity_claims = {
+        claim.claim_ref: claim
+        for identity in snapshot.payload.media_identities
+        for claim in identity.claims
+    }
+    for result in report.claim_results:
+        claim = rule_claims.get(result.claim_ref) or identity_claims[result.claim_ref]
+        source_refs = (
+            claim.primary_source_refs
+            if type(claim) is AIClaimContextV1
+            else claim.source_refs
+        )
+        state = result.source_independence_assessment
+        if len(source_refs) == 1 and state is not SourceIndependenceState.SINGLE_SOURCE:
+            _fail(
+                AIReviewErrorCode.INVALID_TYPE,
+                "single-source claim requires the closed single_source assessment",
+            )
+        if len(source_refs) > 1 and state is SourceIndependenceState.SINGLE_SOURCE:
+            _fail(
+                AIReviewErrorCode.INVALID_TYPE,
+                "multi-source claim cannot use the single_source assessment",
+            )
+        requires_independence = type(claim) is AIClaimContextV1 and (
+            claim.evidence_risk is not AIEvidenceRisk.ORDINARY
+            or claim.material_granularity is AIMaterialGranularity.MATERIAL_FAMILY
+        )
+        if result.verdict is ClaudeClaimVerdict.PASS and (
+            (
+                len(source_refs) > 1
+                and state is not SourceIndependenceState.DISTINCT_PUBLISHERS_CONFIRMED
+            )
+            or (
+                requires_independence
+                and state is not SourceIndependenceState.DISTINCT_PUBLISHERS_CONFIRMED
+            )
+        ):
+            _fail(
+                AIReviewErrorCode.INVALID_TYPE,
+                "PASS does not satisfy the closed source-independence contract",
+            )
     return report
 
 
@@ -1212,6 +1303,7 @@ __all__ = [
     "ClaudeFindingV1",
     "FindingAdjudicationV1",
     "FindingDisposition",
+    "SourceIndependenceState",
     "build_claude_audit_input",
     "create_adjudication",
     "create_corrected_snapshot_pair",

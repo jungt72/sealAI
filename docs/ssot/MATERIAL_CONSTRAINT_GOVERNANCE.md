@@ -473,11 +473,14 @@ only a one-way run hash is retained.
 The audit corpus excludes tenant/customer identity and creator reasoning. It
 contains only the frozen claims, rule scopes, complete structured media-
 identity preimages, source metadata, permitted short excerpts, digests, rights,
-publisher-derived source-origin hashes, conflicts, expected disqualifying
+bound Evidence source-identity hashes, conflicts, expected disqualifying
 effect and the ratified invariants. A content-addressed deterministic corpus
 safety receipt must prove zero recognized secret/direct-identifier matches
 before transport. Claude returns a closed per-claim
-`PASS | CHANGES_REQUIRED | QUARANTINE` report. Codex adjudication must cover
+`PASS | CHANGES_REQUIRED | QUARANTINE` report. Organizational source
+independence is a separate closed Claude
+assessment; a multi-source PASS requires `distinct_publishers_confirmed` and
+cannot be inferred from creator-controlled publisher text. Codex adjudication must cover
 every finding. CRITICAL, HIGH and MEDIUM findings require quarantine, a new
 immutable ruleset/evidence pair, and/or a new exact media-identity Evidence
 snapshot; LOW findings may be accepted only when they
@@ -497,8 +500,9 @@ production execution.
 The local runner is one-shot, writes only to a new private directory outside
 the repository, strips secret-bearing environment variables, disables Claude
 tools/MCP/hooks/web/session persistence, requires exact zero CLI web counters,
-redacts the returned session ID and never retries automatically. Challenges
-and adjudications are canonically re-derived at persistence. Primary source
+redacts the returned session ID and never retries automatically. Persistence
+accepts only the content-validated one-shot runner receipt; challenges and
+adjudications are then canonically re-derived. Primary source
 quality is a closed enum gate; independence cannot be supplied as a free label;
 and the Evidence rule/claim binding set must be exactly equal to the reviewed
 set. The operational procedure is
