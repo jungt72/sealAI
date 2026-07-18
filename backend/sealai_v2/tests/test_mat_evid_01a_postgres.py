@@ -40,7 +40,7 @@ def test_real_postgres_hash_fk_immutability_and_downgrade_contract() -> None:
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0019", "20260718_0019")
 
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
@@ -101,4 +101,4 @@ def test_real_postgres_hash_fk_immutability_and_downgrade_contract() -> None:
     with pytest.raises(RuntimeError, match="contain data"):
         with engine.begin() as connection:
             command.downgrade(_config(connection=connection), "20260717_0013")
-    assert migration_status(engine)[0] == "20260718_0018"
+    assert migration_status(engine)[0] == "20260718_0019"

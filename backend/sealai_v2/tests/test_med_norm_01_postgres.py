@@ -199,7 +199,7 @@ def test_real_postgres_catalog_fingerprint_fk_and_immutability() -> None:
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0019", "20260718_0019")
     factory = make_sessionmaker(engine)
     repository = MediumCatalogRepository(factory, _NoEvidenceEntries())
     identity = VerifiedIdentity("tenant-a", "session-a", "subject-a")
@@ -360,4 +360,4 @@ def test_real_postgres_catalog_fingerprint_fk_and_immutability() -> None:
     with pytest.raises(RuntimeError, match="contain data"):
         with engine.begin() as connection:
             command.downgrade(_config(connection=connection), "20260718_0016")
-    assert migration_status(engine)[0] == "20260718_0018"
+    assert migration_status(engine)[0] == "20260718_0019"

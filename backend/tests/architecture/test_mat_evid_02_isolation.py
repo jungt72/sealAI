@@ -96,10 +96,11 @@ def test_v2_contract_has_closed_scope_and_no_material_placeholder_path() -> None
     assert "PLACEHOLDER" not in source
 
 
-def test_med_norm_is_the_only_non_test_consumer_of_media_identity_review() -> None:
+def test_only_med_norm_and_ai_review_consume_media_identity_contract() -> None:
     allowed = {
         REPO / "backend/sealai_v2/core/material_evidence_v2.py",
         REPO / "backend/sealai_v2/core/material_evidence_review_v2.py",
+        REPO / "backend/sealai_v2/core/material_evidence_ai_review.py",
         REPO / "backend/sealai_v2/db/material_evidence_review_v2.py",
         REPO / "backend/sealai_v2/db/medium_catalog.py",
     }

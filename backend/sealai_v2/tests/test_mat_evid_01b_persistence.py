@@ -122,7 +122,7 @@ def test_0015_migration_is_empty_additive_restrictive_and_immutable(tmp_path) ->
     before = set(inspect(engine).get_table_names())
     _upgrade_engine(engine, "20260718_0015")
     assert set(inspect(engine).get_table_names()) - before == TABLES
-    assert migration_status(engine) == ("20260718_0015", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0015", "20260718_0019")
     with engine.connect() as connection:
         assert all(
             connection.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar_one()
