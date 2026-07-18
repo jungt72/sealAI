@@ -154,9 +154,13 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
     (
         "embedded_person_name",
         re.compile(
-            r"(?<![A-ZÀ-ÖØ-öø-ÿ])"
+            r"(?<![A-ZÀ-ÖØ-öø-ÿ])(?:"
+            r"(?:[A-ZÄÖÜÀ-ÖØ-Þ]\.\s*){1,3}"
+            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}|"
+            r"[A-ZÄÖÜÀ-ÖØ-Þ]{2,40}\s+"
+            r"[A-ZÄÖÜÀ-ÖØ-Þ]{2,40}|"
             r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}\s+"
-            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}"
+            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40})"
             r"(?![A-ZÀ-ÖØ-öø-ÿ])"
         ),
     ),
@@ -228,20 +232,29 @@ def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
             f"classes={secret_classes + identifier_classes}",
         )
     canonical = _canonical_json(value)
-    pattern_manifest = [
-        {"class": name, "pattern": pattern.pattern}
-        for name, pattern in (
-            *_CORPUS_SECRET_PATTERNS,
-            *_CORPUS_DIRECT_IDENTIFIER_PATTERNS,
-        )
-    ]
+    scanner_manifest = {
+        "exceptions": [
+            {
+                "organization_suffixes": list(_ORGANIZATION_PUBLISHER_SUFFIXES),
+                "path_suffix": ".publisher",
+                "pattern_class": "embedded_person_name",
+            }
+        ],
+        "patterns": [
+            {"class": name, "pattern": pattern.pattern}
+            for name, pattern in (
+                *_CORPUS_SECRET_PATTERNS,
+                *_CORPUS_DIRECT_IDENTIFIER_PATTERNS,
+            )
+        ],
+    }
     return {
         "corpus_sha256": hashlib.sha256(CORPUS_SAFETY_DOMAIN + canonical).hexdigest(),
         "creator_reasoning_fields_included": False,
         "customer_or_tenant_fields_included": False,
         "direct_identifier_match_count": 0,
         "pattern_set_sha256": hashlib.sha256(
-            CORPUS_SAFETY_DOMAIN + _canonical_json({"patterns": pattern_manifest})
+            CORPUS_SAFETY_DOMAIN + _canonical_json(scanner_manifest)
         ).hexdigest(),
         "scanner_contract_version": CORPUS_SAFETY_CONTRACT_VERSION,
         "secret_match_count": 0,

@@ -313,9 +313,14 @@ def _private_staged_executable(trusted: _TrustedClaudeExecutableV1, output: Path
 
     stage_path = output / ".claude-executable-stage"
     create_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    write_fd = os.open(stage_path, create_flags, 0o500)
+    write_fd: int | None = None
+    stage_created = False
     created_identity: tuple[int, int] | None = None
     try:
+        write_fd = os.open(stage_path, create_flags, 0o500)
+        stage_created = True
+        initial_metadata = os.fstat(write_fd)
+        created_identity = (initial_metadata.st_dev, initial_metadata.st_ino)
         remaining = memoryview(trusted.executable_bytes)
         while remaining:
             written = os.write(write_fd, remaining)
@@ -325,16 +330,13 @@ def _private_staged_executable(trusted: _TrustedClaudeExecutableV1, output: Path
         os.fchmod(write_fd, 0o500)
         os.fsync(write_fd)
         metadata = os.fstat(write_fd)
-        created_identity = (metadata.st_dev, metadata.st_ino)
-    finally:
-        os.close(write_fd)
-
-    try:
-        if created_identity is None:
+        if (metadata.st_dev, metadata.st_ino) != created_identity:
             raise AIReviewValidationError(
                 AIReviewErrorCode.INVALID_AGENT,
-                "private Claude executable stage identity is unavailable",
+                "private Claude executable stage identity changed while writing",
             )
+        os.close(write_fd)
+        write_fd = None
         _verify_private_stage(
             stage_path,
             expected_sha256=trusted.executable_sha256,
@@ -353,19 +355,25 @@ def _private_staged_executable(trusted: _TrustedClaudeExecutableV1, output: Path
         )
     finally:
         try:
-            metadata = stage_path.lstat()
-        except FileNotFoundError:
-            metadata = None
-        if metadata is not None and created_identity != (
-            metadata.st_dev,
-            metadata.st_ino,
-        ):
-            raise AIReviewValidationError(
-                AIReviewErrorCode.INVALID_AGENT,
-                "private Claude executable stage identity changed before cleanup",
-            )
-        if metadata is not None:
-            stage_path.unlink()
+            if write_fd is not None:
+                os.close(write_fd)
+        finally:
+            if stage_created:
+                try:
+                    metadata = stage_path.lstat()
+                except FileNotFoundError:
+                    metadata = None
+                if (
+                    metadata is not None
+                    and created_identity is not None
+                    and created_identity != (metadata.st_dev, metadata.st_ino)
+                ):
+                    raise AIReviewValidationError(
+                        AIReviewErrorCode.INVALID_AGENT,
+                        "private Claude executable stage identity changed before cleanup",
+                    )
+                if metadata is not None:
+                    stage_path.unlink()
 
 
 @dataclass(frozen=True, slots=True, init=False)

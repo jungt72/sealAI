@@ -305,6 +305,27 @@ def test_private_stage_executes_only_captured_verified_bytes(tmp_path) -> None:
     assert not (output / ".claude-executable-stage").exists()
 
 
+@pytest.mark.parametrize(
+    "failing_operation", ("write", "fchmod", "fsync", "fstat", "close")
+)
+def test_private_stage_removes_its_partial_file_after_initial_failure(
+    tmp_path, monkeypatch, failing_operation: str
+) -> None:
+    with _fake_trusted_claude_install(tmp_path):
+        trusted = runner_module._trusted_claude_executable()
+    output = tmp_path / f"stage-{failing_operation}-failure"
+    output.mkdir(mode=0o700)
+
+    def fail(*_args, **_kwargs):
+        raise OSError(f"synthetic {failing_operation} failure")
+
+    monkeypatch.setattr(runner_module.os, failing_operation, fail)
+    with pytest.raises(OSError, match=f"synthetic {failing_operation} failure"):
+        with runner_module._private_staged_executable(trusted, output):
+            pytest.fail("stage must not be yielded after an initial write-path failure")
+    assert not (output / ".claude-executable-stage").exists()
+
+
 def test_runner_receipt_revalidation_rejects_artifact_drift(tmp_path) -> None:
     payload, ruleset, evidence = _payload()
     snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
