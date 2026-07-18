@@ -433,6 +433,7 @@ def test_shadow_settings_are_independent_default_off_and_fail_closed() -> None:
     assert settings.material_ruleset_shadow_persistence_enabled is False
     assert settings.material_ruleset_shadow_sampling_enabled is False
     assert settings.material_ruleset_shadow_sampling_basis_points == 0
+    assert settings.material_evidence_runtime_binding_enabled is False
     assert settings.material_constraints_enabled is False
     with pytest.raises(ValidationError, match="persistence requires"):
         Settings(material_ruleset_shadow_persistence_enabled=True)
@@ -440,6 +441,8 @@ def test_shadow_settings_are_independent_default_off_and_fail_closed() -> None:
         Settings(material_ruleset_shadow_enabled=True)
     with pytest.raises(ValidationError, match="owner-frozen"):
         _enabled_settings(material_ruleset_shadow_sampling_basis_points=1)
+    with pytest.raises(ValidationError, match="runtime evidence binding requires"):
+        Settings(material_evidence_runtime_binding_enabled=True)
 
 
 def test_shadow_secrets_and_urls_are_absent_from_runtime_profile() -> None:
@@ -449,3 +452,6 @@ def test_shadow_secrets_and_urls_are_absent_from_runtime_profile() -> None:
     assert "redis://cache.invalid" not in encoded
     assert "a" * 32 not in encoded
     assert "key-v1" in encoded
+    assert runtime_profile(
+        _enabled_settings(material_evidence_runtime_binding_enabled=True)
+    ) == runtime_profile(settings)

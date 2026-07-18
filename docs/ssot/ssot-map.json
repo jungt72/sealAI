@@ -102,12 +102,12 @@
   "capabilities": {
     "material_constraints": {
       "status": "in_build_default_off",
-      "implementation_status": "mat_evid_01a_local_inert_manifest_foundation_default_off_sampling_zero",
-      "contract_version": "MAT-EVID-01A.v1",
+      "implementation_status": "mat_evid_01b_fail_closed_binding_default_off_sampling_zero",
+      "contract_version": "MAT-EVID-01B.v1",
       "activation_gate": "G8",
       "activation_blockers": [
         "MAT-GOV-03C",
-        "MAT-EVID-01B",
+        "MAT-EVID-01C",
         "MED-NORM-01",
         "material_rule_evidence",
         "tested_shadow_purge_and_maintenance_role",
@@ -119,16 +119,20 @@
         "docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md",
         "docs/architecture/ADR_MAT_GOV_03B_SHADOW_PINNING.md",
         "docs/architecture/ADR_MAT_EVID_01A_PERSISTENCE.md",
+        "docs/architecture/ADR_MAT_EVID_01B_RUNTIME_BINDING.md",
         "backend/sealai_v2/core/material_rulesets.py",
         "backend/sealai_v2/core/material_shadow.py",
         "backend/sealai_v2/core/material_evidence.py",
+        "backend/sealai_v2/core/material_evidence_binding.py",
         "backend/sealai_v2/db/material_rulesets.py",
         "backend/sealai_v2/db/material_shadow.py",
         "backend/sealai_v2/db/material_evidence.py",
+        "backend/sealai_v2/db/material_evidence_binding.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0011_mat_gov_03a_snapshots.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0012_mat_gov_03b_shadow.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0013_mat_gov_03b_leases.py",
         "backend/sealai_v2/db/migrations/versions/20260718_0014_mat_evid_01a.py",
+        "backend/sealai_v2/db/migrations/versions/20260718_0015_mat_evid_01b_runtime.py",
         "backend/sealai_v2/core/material_constraints.py",
         "backend/sealai_v2/tests/test_material_constraints.py",
         "backend/sealai_v2/tests/test_mat_gov_02.py",
@@ -144,8 +148,12 @@
         "backend/sealai_v2/tests/test_mat_evid_01a_domain.py",
         "backend/sealai_v2/tests/test_mat_evid_01a_persistence.py",
         "backend/sealai_v2/tests/test_mat_evid_01a_postgres.py",
+        "backend/sealai_v2/tests/test_mat_evid_01b_domain.py",
+        "backend/sealai_v2/tests/test_mat_evid_01b_persistence.py",
+        "backend/sealai_v2/tests/test_mat_evid_01b_postgres.py",
         "backend/tests/architecture/test_mat_gov_03a_isolation.py",
-        "backend/tests/architecture/test_mat_evid_01a_isolation.py"
+        "backend/tests/architecture/test_mat_evid_01a_isolation.py",
+        "backend/tests/architecture/test_mat_evid_01b_isolation.py"
       ]
     },
     "adaptive_interview_rwdr": {

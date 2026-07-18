@@ -2,10 +2,11 @@
 
 Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, the
 owner-accepted non-authoritative MAT-GOV-03B shadow/pinning foundation, and the
-inert MAT-EVID-01A evidence-manifest foundation are implemented default-off
-locally; no material-rule activation, runtime evidence binding, or production
-migration is authorized. MAT-EVID-01B, MAT-GOV-03C, and every activation gate
-remain required. Owner decisions ratified through 2026-07-18.
+inert MAT-EVID-01A evidence-manifest foundation and MAT-EVID-01B fail-closed
+runtime-binding companion are implemented default-off locally; no
+material-rule activation, production migration, or production runtime binding
+is authorized. MAT-EVID-01C, MAT-GOV-03C, and every activation gate remain
+required. Owner decisions ratified through 2026-07-18.
 
 This companion specification applies the ratified SSoT principles P1-P5 and
 P12 to material constraints. It does not add material facts, media classes,
@@ -130,9 +131,10 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
 | MAT-GOV-03A | Versioned ruleset/snapshot identity, sealingAI JCS profile v1, domain-separated content hash, deep immutability, empty technical persistence and append-only technical audit; no runtime selection |
 | MAT-GOV-03B | Pointerless exact-snapshot shadow bindings, canonical-input eligibility, pseudonymous request/session/evaluation pinning, isolated cache/worker and bounded reconciliation; owner accepted, default-off, sampling frozen at zero |
-| MAT-GOV-03C | Evidence review/approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01 and separate owner approval |
+| MAT-GOV-03C | Evidence-bound approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01C and separate owner approval |
 | MAT-EVID-01A | Versioned atomic claim/source identities, exact claim scope, structured rule-to-claim binding, content-addressed immutable manifests, empty persistence and technical audit; no runtime binding or authority |
-| MAT-EVID-01B | Fail-closed evidence binding in evaluation; separate package and still NO-GO |
+| MAT-EVID-01B | Implemented inert/default-off fail-closed evidence binding in evaluation; technical binding grants no factual authority |
+| MAT-EVID-01C | Factual Evidence review with separated creator, reviewer, and approver roles; not yet implemented and NO-GO |
 
 MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
 and MAT-EVID-01A add only inert technical snapshot persistence and are not
@@ -246,8 +248,37 @@ Technical validity proves only structural and cryptographic consistency. It is
 not factual review, approval, compatibility, recommendation, or release.
 MAT-EVID-01A imports no matrix text, legacy source label, existing evidence
 card, RAG document, URL, seed, backfill, or LLM-generated content. MAT-EVID-01B
-must separately implement fail-closed evaluation binding; MAT-GOV-03C owns the
-still-separate review, approval, and deployment axes.
+separately implements fail-closed evaluation binding. MAT-EVID-01C remains
+required for factual evidence review; MAT-GOV-03C owns the still-separate
+approval and deployment axes.
+
+## MAT-EVID-01B fail-closed runtime binding
+
+MAT-EVID-01B is a new companion contract and does not reinterpret either
+MAT-GOV-03A v1 or MAT-EVID-01A v1. It pins an exact ruleset snapshot ID/hash and
+an exact evidence-manifest snapshot ID/hash. The only binding states are
+`unbound` and `bound_unreviewed`; the only authority gained by a technically
+complete binding is `TECHNICAL_UNREVIEWED`. Positive material statements remain
+constructively forbidden.
+
+For `bound_unreviewed`, every rule in the exact ruleset requires one or more
+claims. Each `rule_ref -> claim_ref` is resolved object-exactly; foreign or
+missing rules, claim reuse across rules, hash/version/domain drift, and any
+difference between rule scope and claim scope block before evaluation. Claim
+text is never interpreted. The existing evaluator then runs unchanged, and
+verdict, precedence, matches, decisive reference, and technical result hash are
+preserved exactly. The evidence companion adds only immutable technical
+references and its own envelope hash. Any integrity failure yields
+`integrity_blocked` without verdict, matches, or decisive reference.
+
+Five additive empty tables store immutable companions and append-only technical
+audit events with restrictive foreign keys and update/delete triggers. The
+separate collision-safe cache domain pins both snapshot identities and hashes,
+all relevant versions, tenant HMAC identity, runtime/build identity, and input
+hash; blocked results are not cached. No active pointer, review, approval,
+deployment, public/admin API, seed, backfill, matrix import, or LLM evidence is
+introduced. The feature defaults off, sampling remains zero, and production
+migration and deployment remain prohibited.
 
 ## MAT-GOV-03B non-authoritative shadow contract
 
@@ -328,9 +359,10 @@ is read-only; name-only matches, partial objects, and semantic drift fail closed
    reviewed, tested, and owner-activated.
 
 Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Technical immutable snapshot
-identity is implemented by MAT-GOV-03A, but runtime pinning requires 03B and
-evidence-bound lifecycle/activation requires 03C. Structured multi-medium
-evaluation requires MED-NORM-01. Until those packages, MAT-EVID-01, both open
-MAT-GOV-02 activation follow-ups, independent review, and owner activation are
-complete, the contract remains default-off and no snapshot is approvable or
-active.
+identity is implemented by MAT-GOV-03A, runtime pinning by MAT-GOV-03B, and the
+inert fail-closed Evidence companion by MAT-EVID-01B. Factual Evidence review
+still requires MAT-EVID-01C; evidence-bound approval and activation require
+MAT-GOV-03C. Structured multi-medium evaluation requires MED-NORM-01. Until
+those open packages, both MAT-GOV-02 activation follow-ups, independent review,
+and owner activation are complete, the contract remains default-off and no
+snapshot is approvable or active.

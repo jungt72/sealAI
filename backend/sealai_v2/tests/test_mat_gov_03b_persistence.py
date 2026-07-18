@@ -163,7 +163,7 @@ def test_fresh_03b_migration_is_empty_additive_and_pointerless(tmp_path) -> None
         "v2_material_shadow_evaluation_matches",
         "v2_material_shadow_evaluation_refs",
     }
-    assert migration_status(engine) == ("20260717_0013", "20260718_0014")
+    assert migration_status(engine) == ("20260717_0013", "20260718_0015")
     outbox_columns = {
         column["name"]
         for column in inspect(engine).get_columns("v2_material_shadow_outbox")
@@ -201,7 +201,7 @@ def test_complete_modeled_03b_schema_is_adopted_only_after_shape_validation(
 
     _up_03b(engine)
 
-    assert migration_status(engine) == ("20260717_0013", "20260718_0014")
+    assert migration_status(engine) == ("20260717_0013", "20260718_0015")
     with engine.connect() as connection:
         after = list(
             connection.execute(
