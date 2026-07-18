@@ -131,9 +131,10 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | MAT-GOV-02 | Typed preconditions; scope/null/unknown/multiple-media precedence; audited `unobtainable`; fail-closed interview errors; neutral coverage/response projection |
 | MAT-GOV-03A | Versioned ruleset/snapshot identity, sealingAI JCS profile v1, domain-separated content hash, deep immutability, empty technical persistence and append-only technical audit; no runtime selection |
 | MAT-GOV-03B | Pointerless exact-snapshot shadow bindings, canonical-input eligibility, pseudonymous request/session/evaluation pinning, isolated cache/worker and bounded reconciliation; owner accepted, default-off, sampling frozen at zero |
-| MAT-GOV-03C | Evidence review/approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01 and separate owner approval |
+| MAT-GOV-03C | Evidence-bound approval, active pointers, cohorts, leases, CAS activation and rollback; NO-GO until MAT-EVID-01C and separate owner approval |
 | MAT-EVID-01A | Versioned atomic claim/source identities, exact claim scope, structured rule-to-claim binding, content-addressed immutable manifests, empty persistence and technical audit; no runtime binding or authority |
-| MAT-EVID-01B | Fail-closed evidence binding in evaluation; separate package and still NO-GO |
+| MAT-EVID-01B | Implemented inert/default-off fail-closed evidence binding in evaluation; technical binding grants no factual authority |
+| MAT-EVID-01C | Factual Evidence review with separated creator, reviewer, and approver roles; not yet implemented and NO-GO |
 
 MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
 and MAT-EVID-01A add only inert technical snapshot persistence and are not
@@ -358,9 +359,10 @@ is read-only; name-only matches, partial objects, and semantic drift fail closed
    reviewed, tested, and owner-activated.
 
 Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Technical immutable snapshot
-identity is implemented by MAT-GOV-03A, but runtime pinning requires 03B and
-evidence-bound lifecycle/activation requires 03C. Structured multi-medium
-evaluation requires MED-NORM-01. Until those packages, MAT-EVID-01, both open
-MAT-GOV-02 activation follow-ups, independent review, and owner activation are
-complete, the contract remains default-off and no snapshot is approvable or
-active.
+identity is implemented by MAT-GOV-03A, runtime pinning by MAT-GOV-03B, and the
+inert fail-closed Evidence companion by MAT-EVID-01B. Factual Evidence review
+still requires MAT-EVID-01C; evidence-bound approval and activation require
+MAT-GOV-03C. Structured multi-medium evaluation requires MED-NORM-01. Until
+those open packages, both MAT-GOV-02 activation follow-ups, independent review,
+and owner activation are complete, the contract remains default-off and no
+snapshot is approvable or active.
