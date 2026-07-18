@@ -41,3 +41,15 @@ sind monotone Trigger, die ohne echten Reboot bzw. ohne einen frischen Service-L
 feuern). Service lief danach mit status=0/SUCCESS, State-Dir aktualisiert. Redundante
 thorsten-Crontab-Zeile fuer das alte disk_safeguard.sh-Shim entfernt -- genau ein Pfad (systemd-Timer)
 ist jetzt aktiv. check_guard_health.sh bestaetigt: OK.
+
+2026-07-18 | Claude Code | Gruppe-2-Branch-/Stash-Bereinigung | 8 zuvor zurueckgestellte Branches
+geloescht, alle einzeln content-verifiziert als superseded/stale (Funktionalitaet bereits unter
+anderem Commit in main vorhanden, oder Zielcode entfernt): codex/architecture-hardening,
+codex/architecture-status, codex/durable-worker, docs/ist-audit-0623, feat/hero-top-image,
+feat/v1.7-blueprint, feat/v2-phase2d-smalltalk-prompt-wiring, inc-4a-remediation. Alle 5
+verbleibenden Stashes ebenso einzeln verifiziert und gedroppt (claude-seo-preserved: identisch
+bereits in main; Keycloak-CSS-Stash: Ziel-Datei nur noch leerer Stub, echtes Theme ist Disk-Mount;
+cockpit-overview-pre-sync: 472 Dateien/2 Monate alt, laengst divergiert; ptfe-rwdr-ssot-pre-patch:
+bewahrte eine als "unrelated" geflaggte, bereits vermiedene Loeschung; frontend-workspace-cleanup:
+Ziel war V1-Backend-Code, komplett entfernt seit Retirement). Keine Ueberschneidung mit Codex'
+aktiver Arbeit (feature/mat-evid-02) verifiziert vor Ausfuehrung.
