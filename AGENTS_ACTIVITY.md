@@ -60,3 +60,15 @@ byte-identisch unveraendert, testverifiziert). Voraussetzung war die Owner-Besta
 alte remediation/p0-p2-Stack (#293-#305, dieselben Gate-Dateien beruehrend) tot/aufgegeben ist --
 damit keine Kollision. GATE-10-Freeze selbst weiterhin unangetastet; nur der additive
 Notfall-Korridor ist jetzt tatsaechlich aufrufbar, nicht nur dokumentiert.
+
+2026-07-18 | Claude Code | .env.prod-Verschluesselung (sops+age) | ops/env-prod.sops jetzt
+git-getrackt (PR #334): jeder Wert verschluesselt, Keys lesbar fuer git diff. Live-Workflow
+unveraendert -- .env.prod selbst bleibt die Klartext-Datei. sops-Binary manuell installiert
+(~/bin/sops, per cosign gegen offizielle getsops/sops-Sigstore-Signatur verifiziert), age =
+offizielles Ubuntu-Paket. Age-Private-Key liegt nur in ~/.config/sops/age/keys.txt (0600, nie
+committed). Zwei Stolpersteine unterwegs gefunden+behoben: (1) urspruenglicher Dateiname
+.env.prod.sops wurde von ops/check-secret-hygiene.py's filename.env-Regel abgelehnt (Namens-Regel,
+unabhaengig vom Inhalt) -> nach ops/env-prod.sops verschoben; (2) secrets/ ist bereits ein
+reserviertes, komplett gitignortes "nie committen"-Verzeichnis in diesem Repo -> nicht verwendet.
+Damit sind jetzt alle 3 vom Owner freigegebenen Restpunkte (Branch/Stash-Cleanup, GATE-11-Wiring,
+.env.prod-Overhaul) abgeschlossen.
