@@ -1,0 +1,58 @@
+{
+  "package_id": "RP-001_ELASTOMER_MEDIA_EXCLUSIONS_V1",
+  "package_schema_version": 1,
+  "package_state": "human_curation_only",
+  "authority": "NONE_WORKSHEET_ONLY",
+  "import_eligible": false,
+  "positive_statement_allowed": false,
+  "base_commit": "b66897e1661c97625fa22c5f79a8a00c98ee3def",
+  "base_tree": "c3d2b5d84992c080879c0c6b6b049543700ca526",
+  "source_coverage": {
+    "path": "docs/ssot/material-rule-coverage-v1.json",
+    "contract_version": "MAT-RULES-COVERAGE.v1",
+    "content_sha256": "39306790bfcab244f4ba77c2a189bd4cc44c45f4d91328a635b5ea824258ba5c",
+    "gap_count": 53
+  },
+  "bound_contracts": {
+    "material_ruleset": "MAT-GOV-03A.v1",
+    "evidence_manifest": "MAT-EVID-01A.v1",
+    "runtime_binding": "MAT-EVID-01B.v1",
+    "factual_review": "MAT-EVID-01C.v1",
+    "medium_catalog": "MED-NORM-01.v1",
+    "reviewed_rule_capability": "MAT-RULES-01.v1"
+  },
+  "forbidden_outputs": [
+    "claim",
+    "material_fact",
+    "canonical_media_classification",
+    "material_rule",
+    "factual_approval",
+    "active_pointer",
+    "public_statement",
+    "deployment"
+  ],
+  "required_human_roles": [
+    "material_evidence:create",
+    "material_evidence:review",
+    "material_evidence:approve"
+  ],
+  "required_identity_kind": "verified_human",
+  "open_owner_decisions": [
+    {
+      "decision_id": "RP001-OD-01",
+      "state": "required_before_media_identity_import",
+      "question": "Which contract-consistent non-empty MAT-EVID-01A materials scope applies to a MED-NORM other_technical identity claim?"
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "acceptance-criteria.md",
+    "candidate-register.json",
+    "claim-capture-form.md",
+    "creator-worklist.md",
+    "import-validation-runbook.md",
+    "owner-approver-worklist.md",
+    "reviewer-worklist.md",
+    "source-rights-checklist.md"
+  ]
+}
