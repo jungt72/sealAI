@@ -100,6 +100,25 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
         in maturity["modes"]["knowledge"]["activation_blockers"]
     )
 
+    material = maturity["capabilities"]["material_constraints"]
+    assert material["implementation_status"] == (
+        "mat_gov_03b_local_shadow_default_off_sampling_zero"
+    )
+    assert material["contract_version"] == "MAT-GOV-03B"
+    assert {
+        "MAT-GOV-03B-independent-audit-and-owner-acceptance",
+        "MAT-GOV-03C",
+        "MAT-EVID-01",
+        "MED-NORM-01",
+        "tested_shadow_purge_and_maintenance_role",
+        "mat_gov_02_payload_and_hard_gate_followups",
+        "owner_activation",
+    } <= set(material["activation_blockers"])
+    assert material["scope_limit"] == (
+        "local_non_authoritative_pointerless_shadow_foundation_"
+        "no_production_migration_or_sampling"
+    )
+
 
 def test_seed_review_state_never_launders_model_review_into_authority() -> None:
     import sys
@@ -129,6 +148,40 @@ def test_runtime_maturity_projection_matches_governance_manifest() -> None:
     assert runtime_manifest == _json("product-maturity.json")
 
 
+def test_rwdr_limited_cutover_is_bound_to_owner_review_evidence() -> None:
+    evidence_dir = SSOT_DIR / "reviews" / "2026-07-14-rwdr-adaptive-interview-cutover"
+    expected_hashes = {
+        "worksheet.csv": "55d2b802738f41d81a671fdafe92e897298ad05ed08b1ba55309b8464a90d883",
+        "review_attestation.json": "d55f0303aad47dde87dd4a1f7f3bb831f77c495f2e2a1bd5a772dc870da81e05",
+        "adjudication.json": "bcdc176800614c8bfd8e56909b128fb400b95af9a971c4cdff4f5f5c411a5c56",
+        "manifest.json": "24856baa82dd710576c4276fac1722cc47d8a6858d3c634393d8881f0810bc1b",
+    }
+    for name, expected in expected_hashes.items():
+        assert (
+            hashlib.sha256((evidence_dir / name).read_bytes()).hexdigest() == expected
+        )
+
+    adjudication = json.loads(
+        (evidence_dir / "adjudication.json").read_text(encoding="utf-8")
+    )
+    assert adjudication["review_set_id"] == "rwdr-shadow-controlled-v2"
+    assert adjudication["review_units"] == 30
+    assert adjudication["preferences"] == {"controller": 30, "legacy": 0, "tie": 0}
+    assert adjudication["zero_controller_critical_gate_skips"] is True
+    assert adjudication["additional_llm_calls"] == 0
+    assert adjudication["network_calls"] == 0
+    assert adjudication["automatic_activation_authorized"] is False
+
+    maturity = _json("product-maturity.json")["capabilities"]["adaptive_interview_rwdr"]
+    assert maturity["status"] == "pilot"
+    assert maturity["scope_limit"] == "explicit_rwdr_cases_only"
+    assert maturity["activation_decision"] == "ODR-10"
+
+    decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
+    assert "## ODR-10: Limited RWDR adaptive-interview cutover" in decisions
+    assert "paid Eval-REPLAY" in decisions
+
+
 def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> None:
     compose = (REPO / "docker-compose.deploy.yml").read_text(encoding="utf-8")
 
@@ -136,6 +189,7 @@ def test_governed_runtime_flags_are_allowlisted_into_production_compose() -> Non
         "SEALAI_V2_KNOWLEDGE_MODE_ENABLED",
         "SEALAI_V2_KNOWLEDGE_REVIEW_ENABLED",
         "SEALAI_V2_COMPATIBILITY_MATRIX_ENABLED",
+        "SEALAI_V2_MATERIAL_CONSTRAINTS_ENABLED",
         "SEALAI_V2_CASE_DECISION_RECORDS_ENABLED",
         "SEALAI_V2_CAPABILITY_PROFILES_ENABLED",
         "SEALAI_V2_MANUFACTURER_FIT_ENABLED",
@@ -160,10 +214,42 @@ def test_keycloak_provisioning_covers_governed_reviewer_roles() -> None:
         assert f'"{role}"' in provisioning
 
 
+def test_keycloak_mfa_runs_only_after_user_identification() -> None:
+    provisioning = (REPO / "ops" / "keycloak_ensure_roles.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "provider=auth-conditional-otp-form" not in provisioning
+    assert '.providerId == "auth-username-password-form"' in provisioning
+    assert '.providerId == "conditional-user-configured"' in provisioning
+    assert "otp_requirement=DISABLED" in provisioning
+    assert "otp_requirement=CONDITIONAL" in provisioning
+    assert "'$value | @uri'" in provisioning
+    assert "OTP still executes before user identification" in provisioning
+
+
+def test_keycloak_theme_does_not_hide_password_group_with_remember_me() -> None:
+    theme_properties = (
+        REPO / "keycloak/themes/sealai-b2b/login/theme.properties"
+    ).read_text(encoding="utf-8")
+    theme_css = (
+        REPO / "keycloak/themes/sealai-b2b/login/resources/css/sealai-b2b-v31.css"
+    ).read_text(encoding="utf-8")
+
+    assert "css/sealai-b2b-v31.css" in theme_properties
+    assert ".pf-v5-c-form__group:has(.pf-v5-c-check)" not in theme_css
+    assert ".pf-v5-c-check {" in theme_css
+
+
 def test_owner_decisions_and_companion_contracts_are_present() -> None:
     decisions = (SSOT_DIR / "OWNER_DECISION_REGISTER.md").read_text(encoding="utf-8")
     for number in range(1, 9):
         assert f"ODR-{number:02d}" in decisions
+    assert "ODR-12: MAT-GOV-03A technical snapshot foundation" in decisions
+    assert "ODR-13: MAT-GOV-03B local shadow/pinning implementation" in decisions
+    assert "INTERMEDIATE_CLAUDE_GATES_WAIVED_BY_OWNER" in decisions
+    assert "sampling remains `0`" in decisions
+    assert "creates no activation authority" in decisions
 
     for name in (
         "INVARIANT_MAPPING.md",

@@ -214,6 +214,7 @@ def drain_outbox(
                                 vector={_DENSE: vec},
                                 payload={
                                     "tenant_id": payload.get("tenant_id"),
+                                    "owner_subject": payload.get("owner_subject"),
                                     "scope": payload.get("scope"),
                                     "scope_id": payload.get("scope_id"),
                                     "status": payload.get("status"),

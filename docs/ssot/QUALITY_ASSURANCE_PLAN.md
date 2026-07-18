@@ -29,6 +29,16 @@ auditable.
   exact served tree, model, and runtime behavior profile.
 - New vertical slices require expert-reviewed reference cases and hard-gate
   tests before their maturity can be raised.
+- The default-off `rwdr.v1` interview shadow uses deterministic unit,
+  invariant, contract, migration, and golden-case tests only. It adds no LLM
+  call. Paid evals remain skipped for Phase 0/1; later changed prompt/model
+  behavior uses targeted failed-topic replay, and only final activation uses
+  the full adjudicated reference replay.
+- Shadow promotion follows `RWDR_SHADOW_REVIEW_PROTOCOL.md`: tenant-admin
+  aggregate reporting, at least 30 reviewable divergence cases, and a blinded
+  human A/B worksheet. The versioned controlled-case exporter and adjudicator
+  run without LLM or network calls, preserve A/B source blinding, and reject
+  modified review units. Their report cannot authorize activation itself.
 
 ## Incident and CAPA
 
@@ -46,6 +56,10 @@ gate that originally governed activation.
 - hard-gate escape rate
 - first-pass manufacturer-ready completeness
 - clarification loops and time to manufacturer-ready
+- required-need completeness with satisfied, conflicted, unobtainable,
+  not-applicable, and blocked states reported separately
+- legacy-versus-controller question divergence and scope/hard-gate escapes
+- additional LLM calls from the interview controller (target: zero)
 - incident recurrence and rollback success
 
 Activity metrics alone do not prove technical quality.

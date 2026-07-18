@@ -24,8 +24,8 @@ Everything else is dropped. Additionally, IPv4 explicitly drops UDP to `103.227.
 Install by applying the scripts once and enabling systemd persistence:
 
 ```bash
-sudo bash ops/abuse_10D287D_2C/firewall/docker_egress_harden_v4.sh
-sudo bash ops/abuse_10D287D_2C/firewall/docker_egress_harden_v6.sh
+sudo /bin/bash -p ops/abuse_10D287D_2C/firewall/docker_egress_harden_v4.sh
+sudo /bin/bash -p ops/abuse_10D287D_2C/firewall/docker_egress_harden_v6.sh
 sudo cp ops/abuse_10D287D_2C/firewall/docker-egress-harden.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now docker-egress-harden.service
@@ -36,4 +36,3 @@ Rollback:
 - Disable unit: `systemctl disable --now docker-egress-harden.service`
 - Flush chain: `iptables -F DOCKER-USER; ip6tables -F DOCKER-USER`
 - Remove unit file if desired.
-

@@ -1,0 +1,593 @@
+[
+  {
+    "name": "baseline",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\":1,\"canonicalization_version\":1,\"mat_gov_contract_version\":\"MAT-GOV-03A.v1\",\"domain_pack_id\":\"material.test.v1\",\"positive_statement_allowed\":false,\"rules\":[{\"rule_ref\":\"MR-TEST-001\",\"material\":\"TEST-MATERIAL\",\"medium\":\"TEST-MEDIUM\",\"condition\":\"TEST-CONDITION\",\"verdict\":\"bedingt\",\"statement\":\"Synthetischer Vertragstest – keine Werkstoffaussage.\",\"scope\":{\"materials\":[\"TEST-A\",\"TEST-B\"],\"media\":[\"MEDIUM-A\",\"MEDIUM-B\"],\"conditions\":[\"CONDITION-A\"]},\"evidence_binding\":{\"state\":\"unbound\"}}]}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "b0c07a5cf3c4c3c596275d3e0796816dd971724a64e4f0652c38e7cea33e7bd8",
+    "expected_snapshot_id": "mss_9791d393975a5648a4282d61cccbe5a589bbb99fa023d1a48a78da331ab86aff",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "key_order_and_whitespace",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\n    \"rules\": [\n        {\n            \"rule_ref\": \"MR-TEST-001\",\n            \"material\": \"TEST-MATERIAL\",\n            \"medium\": \"TEST-MEDIUM\",\n            \"condition\": \"TEST-CONDITION\",\n            \"verdict\": \"bedingt\",\n            \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\",\n            \"scope\": {\n                \"materials\": [\n                    \"TEST-A\",\n                    \"TEST-B\"\n                ],\n                \"media\": [\n                    \"MEDIUM-A\",\n                    \"MEDIUM-B\"\n                ],\n                \"conditions\": [\n                    \"CONDITION-A\"\n                ]\n            },\n            \"evidence_binding\": {\n                \"state\": \"unbound\"\n            }\n        }\n    ],\n    \"positive_statement_allowed\": false,\n    \"domain_pack_id\": \"material.test.v1\",\n    \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\",\n    \"canonicalization_version\": 1,\n    \"snapshot_schema_version\": 1\n}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "b0c07a5cf3c4c3c596275d3e0796816dd971724a64e4f0652c38e7cea33e7bd8",
+    "expected_snapshot_id": "mss_9791d393975a5648a4282d61cccbe5a589bbb99fa023d1a48a78da331ab86aff",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "typed_set_permutation_and_duplicates",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-B\", \"TEST-A\", \"TEST-A\"], \"media\": [\"MEDIUM-B\", \"MEDIUM-A\", \"MEDIUM-A\"], \"conditions\": [\"CONDITION-A\", \"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "b0c07a5cf3c4c3c596275d3e0796816dd971724a64e4f0652c38e7cea33e7bd8",
+    "expected_snapshot_id": "mss_9791d393975a5648a4282d61cccbe5a589bbb99fa023d1a48a78da331ab86aff",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "ordered_rules_ab",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\":1,\"canonicalization_version\":1,\"mat_gov_contract_version\":\"MAT-GOV-03A.v1\",\"domain_pack_id\":\"material.test.v1\",\"positive_statement_allowed\":false,\"rules\":[{\"rule_ref\":\"MR-TEST-001\",\"material\":\"TEST-MATERIAL\",\"medium\":\"TEST-MEDIUM\",\"condition\":\"TEST-CONDITION\",\"verdict\":\"bedingt\",\"statement\":\"Synthetischer Vertragstest – keine Werkstoffaussage.\",\"scope\":{\"materials\":[\"TEST-A\",\"TEST-B\"],\"media\":[\"MEDIUM-A\",\"MEDIUM-B\"],\"conditions\":[\"CONDITION-A\"]},\"evidence_binding\":{\"state\":\"unbound\"}},{\"rule_ref\":\"MR-TEST-002\",\"material\":\"TEST-MATERIAL\",\"medium\":\"TEST-MEDIUM\",\"condition\":\"TEST-CONDITION\",\"verdict\":\"bedingt\",\"statement\":\"Zweiter synthetischer Vertragstest.\",\"scope\":{\"materials\":[\"TEST-A\",\"TEST-B\"],\"media\":[\"MEDIUM-A\",\"MEDIUM-B\"],\"conditions\":[\"CONDITION-A\"]},\"evidence_binding\":{\"state\":\"unbound\"}}]}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        },
+        {
+          "rule_ref": "MR-TEST-002",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Zweiter synthetischer Vertragstest.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d2c7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303032222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a225a7765697465722073796e74686574697363686572205665727472616773746573742e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "e60261afa42b465d56091f9f5ae953addc721786c69174d9fe580e0a47a72a1f",
+    "expected_snapshot_id": "mss_f22ca36fee5f95a03444cdeaf945dd2601d0accc923e173f043679ee4f5d2d7d",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "ordered_rules_ba",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\":1,\"canonicalization_version\":1,\"mat_gov_contract_version\":\"MAT-GOV-03A.v1\",\"domain_pack_id\":\"material.test.v1\",\"positive_statement_allowed\":false,\"rules\":[{\"rule_ref\":\"MR-TEST-002\",\"material\":\"TEST-MATERIAL\",\"medium\":\"TEST-MEDIUM\",\"condition\":\"TEST-CONDITION\",\"verdict\":\"bedingt\",\"statement\":\"Zweiter synthetischer Vertragstest.\",\"scope\":{\"materials\":[\"TEST-A\",\"TEST-B\"],\"media\":[\"MEDIUM-A\",\"MEDIUM-B\"],\"conditions\":[\"CONDITION-A\"]},\"evidence_binding\":{\"state\":\"unbound\"}},{\"rule_ref\":\"MR-TEST-001\",\"material\":\"TEST-MATERIAL\",\"medium\":\"TEST-MEDIUM\",\"condition\":\"TEST-CONDITION\",\"verdict\":\"bedingt\",\"statement\":\"Synthetischer Vertragstest – keine Werkstoffaussage.\",\"scope\":{\"materials\":[\"TEST-A\",\"TEST-B\"],\"media\":[\"MEDIUM-A\",\"MEDIUM-B\"],\"conditions\":[\"CONDITION-A\"]},\"evidence_binding\":{\"state\":\"unbound\"}}]}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-002",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Zweiter synthetischer Vertragstest.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        },
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "TEST-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303032222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a225a7765697465722073796e74686574697363686572205665727472616773746573742e222c2276657264696374223a22626564696e6774227d2c7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22544553542d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "a3ad7ba10e4095d27267326448be18114a752e1fc5089ab5aa3cf88c094bf4e8",
+    "expected_snapshot_id": "mss_2f67c9c1ba71d89522d8f7930d749c00017122669e1fb632338b9af0001b13f4",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "homoglyph_latin",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"A-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "A-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22412d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "a4905e5861037a14be880b8aa69bb9dc2d1ffe8d5b0318f631327838cba63f51",
+    "expected_snapshot_id": "mss_f4f58cc15132e7ea668cb4afb38aa88e5165bfb03d8c24410d00141d1ce69819",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "homoglyph_cyrillic",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"А-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {
+      "snapshot_schema_version": 1,
+      "canonicalization_version": 1,
+      "mat_gov_contract_version": "MAT-GOV-03A.v1",
+      "domain_pack_id": "material.test.v1",
+      "positive_statement_allowed": false,
+      "rules": [
+        {
+          "rule_ref": "MR-TEST-001",
+          "material": "А-MATERIAL",
+          "medium": "TEST-MEDIUM",
+          "condition": "TEST-CONDITION",
+          "verdict": "bedingt",
+          "statement": "Synthetischer Vertragstest – keine Werkstoffaussage.",
+          "scope": {
+            "materials": [
+              "TEST-A",
+              "TEST-B"
+            ],
+            "media": [
+              "MEDIUM-A",
+              "MEDIUM-B"
+            ],
+            "conditions": [
+              "CONDITION-A"
+            ]
+          },
+          "evidence_binding": {
+            "state": "unbound"
+          }
+        }
+      ]
+    },
+    "expected_canonical_bytes_hex": "7b2263616e6f6e6963616c697a6174696f6e5f76657273696f6e223a312c22646f6d61696e5f7061636b5f6964223a226d6174657269616c2e746573742e7631222c226d61745f676f765f636f6e74726163745f76657273696f6e223a224d41542d474f562d3033412e7631222c22706f7369746976655f73746174656d656e745f616c6c6f776564223a66616c73652c2272756c6573223a5b7b22636f6e646974696f6e223a22544553542d434f4e444954494f4e222c2265766964656e63655f62696e64696e67223a7b227374617465223a22756e626f756e64227d2c226d6174657269616c223a22d0902d4d4154455249414c222c226d656469756d223a22544553542d4d454449554d222c2272756c655f726566223a224d522d544553542d303031222c2273636f7065223a7b22636f6e646974696f6e73223a5b22434f4e444954494f4e2d41225d2c226d6174657269616c73223a5b22544553542d41222c22544553542d42225d2c226d65646961223a5b224d454449554d2d41222c224d454449554d2d42225d7d2c2273746174656d656e74223a2253796e746865746973636865722056657274726167737465737420e28093206b65696e65205765726b73746f6666617573736167652e222c2276657264696374223a22626564696e6774227d5d2c22736e617073686f745f736368656d615f76657273696f6e223a317d",
+    "expected_content_sha256": "fb0658de02825bbb95db8ce608a6d81877ee98c59a0847d41e73bd7e40c4ce03",
+    "expected_snapshot_id": "mss_6b042a48ad283f1f30206c1caa393663fe3490e6443b2ba6c4cc5cfba197ff49",
+    "valid": true,
+    "error_code": "none"
+  },
+  {
+    "name": "duplicate_property",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\":1,\"canonicalization_version\":1,\"mat_gov_contract_version\":\"MAT-GOV-03A.v1\",\"domain_pack_id\":\"material.test.v1\",\"domain_pack_id\":\"material.other.v1\",\"positive_statement_allowed\":false,\"rules\":[{\"rule_ref\":\"MR-TEST-001\",\"material\":\"TEST-MATERIAL\",\"medium\":\"TEST-MEDIUM\",\"condition\":\"TEST-CONDITION\",\"verdict\":\"bedingt\",\"statement\":\"Synthetischer Vertragstest – keine Werkstoffaussage.\",\"scope\":{\"materials\":[\"TEST-A\",\"TEST-B\"],\"media\":[\"MEDIUM-A\",\"MEDIUM-B\"],\"conditions\":[\"CONDITION-A\"]},\"evidence_binding\":{\"state\":\"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_DUPLICATE_PROPERTY"
+  },
+  {
+    "name": "unknown_field",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}], \"reviewed\": false}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_UNKNOWN_FIELD"
+  },
+  {
+    "name": "non_nfc",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"é\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_NON_NFC"
+  },
+  {
+    "name": "lone_surrogate",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"\\ud800\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_UNICODE"
+  },
+  {
+    "name": "float",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1.0, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_FLOAT_FORBIDDEN"
+  },
+  {
+    "name": "nan",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": NaN, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_FLOAT_FORBIDDEN"
+  },
+  {
+    "name": "infinity",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": Infinity, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_FLOAT_FORBIDDEN"
+  },
+  {
+    "name": "string_instead_of_boolean",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": \"false\", \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_TYPE"
+  },
+  {
+    "name": "boolean_instead_of_string",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": false, \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_TYPE"
+  },
+  {
+    "name": "empty_domain_pack_id",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_TYPE"
+  },
+  {
+    "name": "foreign_ruleset_id",
+    "ruleset_id": "ruleset_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_ID"
+  },
+  {
+    "name": "empty_rule_ref",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_TYPE"
+  },
+  {
+    "name": "foreign_rule_ref_prefix",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MX-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_ID"
+  },
+  {
+    "name": "additional_evidence_field",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\", \"claim_id\": \"claim-1\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_EVIDENCE"
+  },
+  {
+    "name": "pretended_evidence_bound",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"bound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_EVIDENCE"
+  },
+  {
+    "name": "pretended_evidence_reviewed",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"reviewed\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_EVIDENCE"
+  },
+  {
+    "name": "pretended_evidence_approved",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"approved\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_EVIDENCE"
+  },
+  {
+    "name": "pretended_evidence_grounded",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"grounded\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_INVALID_EVIDENCE"
+  },
+  {
+    "name": "duplicate_rule_ref",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}, {\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_DUPLICATE_RULE_REF"
+  },
+  {
+    "name": "empty_rules",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": []}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_EMPTY_RULES"
+  },
+  {
+    "name": "unknown_snapshot_schema",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 2, \"canonicalization_version\": 1, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_UNKNOWN_SCHEMA"
+  },
+  {
+    "name": "unknown_canonicalization_version",
+    "ruleset_id": "mrs_11111111111111111111111111111111",
+    "input_json": "{\"snapshot_schema_version\": 1, \"canonicalization_version\": 2, \"mat_gov_contract_version\": \"MAT-GOV-03A.v1\", \"domain_pack_id\": \"material.test.v1\", \"positive_statement_allowed\": false, \"rules\": [{\"rule_ref\": \"MR-TEST-001\", \"material\": \"TEST-MATERIAL\", \"medium\": \"TEST-MEDIUM\", \"condition\": \"TEST-CONDITION\", \"verdict\": \"bedingt\", \"statement\": \"Synthetischer Vertragstest – keine Werkstoffaussage.\", \"scope\": {\"materials\": [\"TEST-A\", \"TEST-B\"], \"media\": [\"MEDIUM-A\", \"MEDIUM-B\"], \"conditions\": [\"CONDITION-A\"]}, \"evidence_binding\": {\"state\": \"unbound\"}}]}",
+    "expected_payload": {},
+    "expected_canonical_bytes_hex": "",
+    "expected_content_sha256": "",
+    "expected_snapshot_id": "",
+    "valid": false,
+    "error_code": "MAT_RULESET_UNKNOWN_SCHEMA"
+  }
+]

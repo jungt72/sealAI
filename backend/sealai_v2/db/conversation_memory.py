@@ -27,6 +27,7 @@ from sqlalchemy.orm import sessionmaker
 
 from sealai_v2.core.contracts import (
     CaseRevisionConflict,
+    ConversationAccessDenied,
     DerivedFact,
     MemoryView,
     RememberedFact,
@@ -101,12 +102,29 @@ class PostgresConversationMemory:
         self._window_turns = max(1, window_turns)
         self._sf = session_factory
 
+    @staticmethod
+    def _assert_owner(session_row: V2Session | None, owner_subject: str) -> None:
+        if not owner_subject or session_row is None:
+            return
+        if session_row.owner_subject != owner_subject:
+            raise ConversationAccessDenied("conversation not found")
+
+    def assert_session_access(
+        self, *, tenant_id: str, session_id: str, owner_subject: str
+    ) -> None:
+        _require(tenant_id, session_id)
+        with self._sf() as s:
+            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
+
     # --- hot path (pipeline-facing Protocol) ---
 
-    def recall(self, *, tenant_id: str, session_id: str) -> MemoryView:
+    def recall(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> MemoryView:
         _require(tenant_id, session_id)
         with self._sf() as s:
             session_row = s.get(V2Session, (tenant_id, session_id))
+            self._assert_owner(session_row, owner_subject)
             msgs = (
                 s.execute(
                     select(V2Message)
@@ -154,6 +172,7 @@ class PostgresConversationMemory:
         facts: tuple[RememberedFact, ...] = (),
         now: str | None = None,
         expected_case_revision: int | None = None,
+        owner_subject: str = "",
     ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
@@ -175,11 +194,14 @@ class PostgresConversationMemory:
                     session_id=session_id,
                     turns=0,
                     case_revision=0,
+                    owner_subject=owner_subject or None,
                     created_at=now,
                     title=_title_from_question(question) if now else None,
                 )
                 s.add(sess)
-            elif (
+            else:
+                self._assert_owner(sess, owner_subject)
+            if (
                 expected_case_revision is not None
                 and sess.case_revision != expected_case_revision
             ):
@@ -235,6 +257,7 @@ class PostgresConversationMemory:
         session_id: str,
         facts: tuple[RememberedFact, ...],
         expected_case_revision: int | None = None,
+        owner_subject: str = "",
     ) -> int:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
@@ -247,6 +270,7 @@ class PostgresConversationMemory:
                 .with_for_update()
             )
             actual = sess.case_revision if sess is not None else 0
+            self._assert_owner(sess, owner_subject)
             if expected_case_revision is not None and actual != expected_case_revision:
                 raise CaseRevisionConflict(
                     f"expected case revision {expected_case_revision}, got {actual}"
@@ -257,6 +281,7 @@ class PostgresConversationMemory:
                     session_id=session_id,
                     turns=0,
                     case_revision=0,
+                    owner_subject=owner_subject or None,
                 )
                 s.add(sess)
             if facts:
@@ -272,9 +297,12 @@ class PostgresConversationMemory:
 
     # --- history (layer 3) + session listing ---
 
-    def history(self, *, tenant_id: str, session_id: str) -> tuple[Turn, ...]:
+    def history(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> tuple[Turn, ...]:
         _require(tenant_id, session_id)
         with self._sf() as s:
+            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
             msgs = (
                 s.execute(
                     select(V2Message)
@@ -289,13 +317,18 @@ class PostgresConversationMemory:
             )
         return tuple(Turn(role=m.role, text=m.text, index=m.idx) for m in msgs)
 
-    def sessions(self, *, tenant_id: str) -> tuple[SessionSummary, ...]:
+    def sessions(
+        self, *, tenant_id: str, owner_subject: str = ""
+    ) -> tuple[SessionSummary, ...]:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
+            query = select(V2Session).where(V2Session.tenant_id == tenant_id)
+            if owner_subject:
+                query = query.where(V2Session.owner_subject == owner_subject)
             rows = s.scalars(
-                select(V2Session)
-                .where(V2Session.tenant_id == tenant_id)
-                .order_by(V2Session.updated_at.desc().nullslast(), V2Session.session_id)
+                query.order_by(
+                    V2Session.updated_at.desc().nullslast(), V2Session.session_id
+                )
             ).all()
         return tuple(
             SessionSummary(
@@ -310,10 +343,11 @@ class PostgresConversationMemory:
     # --- user control (build-spec §7: view / edit / delete / clear) ---
 
     def case_state(
-        self, *, tenant_id: str, session_id: str
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> tuple[RememberedFact, ...]:
         _require(tenant_id, session_id)
         with self._sf() as s:
+            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
             facts = (
                 s.execute(
                     select(V2Fact).where(
@@ -333,6 +367,7 @@ class PostgresConversationMemory:
         feld: str,
         wert: str,
         provenance: str = "user-edited",
+        owner_subject: str = "",
     ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
@@ -350,8 +385,11 @@ class PostgresConversationMemory:
                     session_id=session_id,
                     turns=0,
                     case_revision=0,
+                    owner_subject=owner_subject or None,
                 )
                 s.add(sess)
+            else:
+                self._assert_owner(sess, owner_subject)
             self._upsert_fact(
                 s,
                 tenant_id,
@@ -366,7 +404,9 @@ class PostgresConversationMemory:
             )
             sess.case_revision += 1
 
-    def delete_fact(self, *, tenant_id: str, session_id: str, feld: str) -> None:
+    def delete_fact(
+        self, *, tenant_id: str, session_id: str, feld: str, owner_subject: str = ""
+    ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
             sess = s.scalar(
@@ -377,6 +417,7 @@ class PostgresConversationMemory:
                 )
                 .with_for_update()
             )
+            self._assert_owner(sess, owner_subject)
             result = s.execute(
                 delete(V2Fact).where(
                     V2Fact.tenant_id == tenant_id,
@@ -390,13 +431,19 @@ class PostgresConversationMemory:
     # --- M8 derived slice (kernel_computed values — a SEPARATE, backend-only channel) ---
 
     def set_derived(
-        self, *, tenant_id: str, session_id: str, derived: tuple[DerivedFact, ...]
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        derived: tuple[DerivedFact, ...],
+        owner_subject: str = "",
     ) -> None:
         """Wholesale replace the derived slice from a fresh recompute — a stale kernel value can
         never persist. Backend-only: no client path reaches it."""
         _require(tenant_id, session_id)
         payload = [_ser_derived(d) for d in derived]
         with self._sf.begin() as s:
+            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
             row = s.get(V2Derived, (tenant_id, session_id))
             if row is None:
                 s.add(
@@ -408,17 +455,21 @@ class PostgresConversationMemory:
                 row.slice_json = payload
 
     def derived_facts(
-        self, *, tenant_id: str, session_id: str
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> tuple[DerivedFact, ...]:
         _require(tenant_id, session_id)
         with self._sf() as s:
+            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
             row = s.get(V2Derived, (tenant_id, session_id))
             payload = list(row.slice_json) if row is not None else []
         return tuple(_deser_derived(r) for r in payload)
 
-    def clear(self, *, tenant_id: str, session_id: str) -> None:
+    def clear(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> None:
         _require(tenant_id, session_id)
         with self._sf.begin() as s:
+            self._assert_owner(s.get(V2Session, (tenant_id, session_id)), owner_subject)
             for model in (V2Message, V2Fact, V2Derived, V2Session):
                 s.execute(
                     delete(model).where(

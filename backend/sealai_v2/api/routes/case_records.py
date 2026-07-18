@@ -71,6 +71,26 @@ def _require_case_records(settings: Settings) -> None:
         )
 
 
+def _require_case_access(
+    bundle: dict, identity: VerifiedIdentity, settings: Settings
+) -> None:
+    owner_subject = bundle["case"].owner_subject
+    reviewer_roles = {settings.auth_admin_role, settings.auth_decision_reviewer_role}
+    if identity.subject != owner_subject and reviewer_roles.isdisjoint(identity.roles):
+        raise HTTPException(status_code=404, detail="case not found")
+
+
+def _case_bundle_for_identity(
+    *, store, case_id: str, identity: VerifiedIdentity, settings: Settings
+):
+    try:
+        bundle = store.case_bundle(tenant_id=identity.tenant_id, case_id=case_id)
+    except CaseDecisionError as exc:
+        raise HTTPException(status_code=404, detail="case not found") from exc
+    _require_case_access(bundle, identity, settings)
+    return bundle
+
+
 @router.post("")
 def create_case(
     body: CaseCreate,
@@ -100,10 +120,9 @@ def get_case(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     _require_case_records(settings)
-    try:
-        bundle = store.case_bundle(tenant_id=identity.tenant_id, case_id=case_id)
-    except CaseDecisionError as exc:
-        raise HTTPException(status_code=404, detail="case not found") from exc
+    bundle = _case_bundle_for_identity(
+        store=store, case_id=case_id, identity=identity, settings=settings
+    )
     return {
         "case": asdict(bundle["case"]),
         "snapshots": [asdict(item) for item in bundle["snapshots"]],
@@ -124,6 +143,9 @@ def create_snapshot(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     _require_case_records(settings)
+    _case_bundle_for_identity(
+        store=store, case_id=case_id, identity=identity, settings=settings
+    )
     try:
         snapshot = store.create_snapshot(
             tenant_id=identity.tenant_id,
@@ -148,6 +170,9 @@ def create_decision(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     _require_case_records(settings)
+    _case_bundle_for_identity(
+        store=store, case_id=case_id, identity=identity, settings=settings
+    )
     try:
         decision = store.create_decision(
             tenant_id=identity.tenant_id,

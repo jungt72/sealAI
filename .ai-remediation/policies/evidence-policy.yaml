@@ -1,0 +1,31 @@
+schema_version: 1
+document_class: DURABLE_POLICY
+classification:
+  committed:
+    - durable policies and schemas
+    - non-authorizing templates without runtime values
+    - explicitly superseded historical snapshots under .ai-remediation/history
+  local_untracked:
+    - generated current-state snapshots
+    - current repository and production fingerprints
+    - current test and verification results
+    - raw command output
+    - host-specific object inventories
+    - security scan reports requiring manual redaction
+  forbidden:
+    - secret values
+    - private key material or fingerprints
+    - bearer tokens, JWTs, cookies, or authorization headers
+    - personal data or Redis values
+    - production environment contents
+rules:
+  - collect the minimum evidence required
+  - record commands only in sanitized form
+  - prefer counts, types, modes, paths, and hashes over contents
+  - run redaction checks before commit, push, or report publication
+  - never mark a finding VERIFIED from local code changes alone
+  - never accept .ai-remediation/history or .ai-remediation/templates as current gate evidence
+  - keep generated runtime state under the ignored .ai-remediation/runtime directory
+retention:
+  superseded_historical_snapshots: versioned
+  raw_local_evidence: delete only under an approved retention procedure

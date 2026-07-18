@@ -1,5 +1,15 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=production-release-gate-check.sh
+source "${SCRIPT_DIR}/production-release-gate-check.sh"
+production_release_gate_check "${SCRIPT_DIR}/production_release_gate.py" deploy
+# shellcheck source=production-storage-lease.sh
+source /usr/local/libexec/sealai/production-storage-lease.sh
+acquire_production_storage_lease
 
 cd /home/thorsten/sealai
 
@@ -53,7 +63,7 @@ set_env_key BACKEND_IMAGE "$BACKEND_IMAGE_PINNED"
 set_env_key BACKEND_PULL_POLICY "always"
 
 echo ">> Validating production refs"
-./ops/check-env-drift.sh prod
+/bin/bash -p ./ops/check-env-drift.sh prod
 
 echo ">> Recreating backend from pinned registry image"
 env \
@@ -104,7 +114,8 @@ for i in {1..30}; do
   sleep 2
 done
 
-BASE_URL="${BASE_URL:-https://sealingai.com}" ./ops/smoke-live-pilot-readiness.sh
+BASE_URL="${BASE_URL:-https://sealingai.com}" \
+  /bin/bash -p ./ops/smoke-live-pilot-readiness.sh
 
 echo ">> Promoted backend image:"
 grep -E '^(BACKEND_IMAGE|BACKEND_PULL_POLICY)=' .env.prod

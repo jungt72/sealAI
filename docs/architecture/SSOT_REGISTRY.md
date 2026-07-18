@@ -1,7 +1,7 @@
 # sealingAI SSoT Registry
 
 Status: active registry for the ratified SSoT v2.0 and the production V2
-runtime. Updated 2026-07-11.
+runtime. Updated 2026-07-18.
 
 This file is a navigation map, not a competing source of truth. Authority is
 defined in `docs/ssot/sealingAI_SSoT_v2.0.md` and summarized in `AGENTS.md`.
@@ -44,6 +44,8 @@ defined in `docs/ssot/sealingAI_SSoT_v2.0.md` and summarized in `AGENTS.md`.
 | Technical answer contract | `backend/sealai_v2/core/technical_answer.py` |
 | Output guard | `backend/sealai_v2/core/output_guard.py` |
 | Case state | `backend/sealai_v2/core/case_state.py` |
+| Material-constraint governance (03A immutable snapshots, owner-accepted 03B non-authoritative shadow/pinning, immutable 01A/B/C v1 plus additive typed-scope v2 Evidence contracts, empty MED-NORM-01 catalog, and MAT-RULES-01 reviewed-pack seam plus gap-only inventory; default-off/sampling zero) | `docs/ssot/MATERIAL_CONSTRAINT_GOVERNANCE.md`, `docs/architecture/ADR_MAT_GOV_03A_PERSISTENCE.md`, `docs/architecture/ADR_MAT_GOV_03B_SHADOW_PINNING.md`, `docs/architecture/ADR_MAT_EVID_01A_PERSISTENCE.md`, `docs/architecture/ADR_MAT_EVID_01B_RUNTIME_BINDING.md`, `docs/architecture/ADR_MAT_EVID_01C_FACTUAL_REVIEW.md`, `docs/architecture/ADR_MAT_EVID_02_TYPED_SCOPES.md`, `docs/architecture/ADR_MED_NORM_01_CATALOG.md`, `docs/architecture/ADR_MAT_RULES_01_REVIEWED_PACK.md`, `backend/sealai_v2/core/material_rulesets.py`, `backend/sealai_v2/core/material_shadow.py`, `backend/sealai_v2/core/material_evidence.py`, `backend/sealai_v2/core/material_evidence_v2.py`, `backend/sealai_v2/core/material_evidence_binding.py`, `backend/sealai_v2/core/material_evidence_binding_v2.py`, `backend/sealai_v2/core/material_evidence_review.py`, `backend/sealai_v2/core/material_evidence_review_v2.py`, `backend/sealai_v2/core/medium_catalog.py`, `backend/sealai_v2/core/material_reviewed_rules.py`, `docs/ssot/material-rule-coverage-v1.json`; production migrations, real rule curation, ruleset activation and MAT-GOV-03C remain NO-GO |
+| RWDR adaptive interview (owner-approved limited production scope) | `docs/ssot/RWDR_ADAPTIVE_INTERVIEW_PHASE_0_1.md`, `docs/ssot/RWDR_SHADOW_REVIEW_PROTOCOL.md`, `docs/ssot/reviews/2026-07-14-rwdr-adaptive-interview-cutover/`, `backend/sealai_v2/core/interview/` |
 | Knowledge source of record | `backend/sealai_v2/db/models.py`, `backend/sealai_v2/knowledge/ledger.py` |
 | Derived retrieval index | `backend/sealai_v2/knowledge/qdrant_retrieval.py` |
 | Worker/outbox | `backend/sealai_v2/memory/outbox_daemon.py`, `backend/sealai_v2/knowledge/outbox_worker.py` |

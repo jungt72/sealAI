@@ -18,7 +18,7 @@ from sealai_v2.knowledge.ledger import LedgerWriteResult
 from sealai_v2.knowledge.paperless_client import PaperlessConfigError
 from sealai_v2.tests._fakes import ScriptedFakeLlmClient
 
-_TOKEN = "test-webhook-token"
+_TOKEN = "DUMMY_PAPERLESS_WEBHOOK_TOKEN"
 _EMPTY_CLAIMS = json.dumps({"claims": [], "scope": {}, "titel_vorschlag": "x"})
 
 

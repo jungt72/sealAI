@@ -189,6 +189,9 @@ class MemoryItem:
     content: str
     semantic_key: str
     sources: tuple[MemorySource, ...] = field(default_factory=tuple)
+    # Verified Keycloak subject that owns this private memory item. Empty only for legacy rows and
+    # internal fixtures; authenticated API and prompt-context reads always supply the subject.
+    owner_subject: str = ""
     version: int = 1
     # Timestamps are ISO-8601 strings stamped by the persistence layer (Patch 2), never generated
     # in this pure module — matches the workflow-script "no Date.now() in pure code" discipline

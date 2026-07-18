@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "volume": "/mnt/sealai-volume",
+  "docker_root_dir": "/mnt/sealai-volume/docker-data",
+  "state_dir": "/var/lib/sealai-disk-guard",
+  "lock_file": "/run/lock/sealai-disk-guard.lock"
+}

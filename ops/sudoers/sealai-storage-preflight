@@ -1,0 +1,1 @@
+thorsten ALL=(root) NOPASSWD: /usr/local/libexec/sealai/docker-disk-guard.sh --config /etc/sealai/disk-guard.json preflight

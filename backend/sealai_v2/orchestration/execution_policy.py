@@ -73,7 +73,6 @@ _TECHNICAL_ROUTES = frozenset(
         RouteName.LEAKAGE_TROUBLESHOOTING,
         RouteName.MATERIAL_COMPARISON,
         RouteName.RFQ_MANUFACTURER_BRIEF,
-        RouteName.UNSUPPORTED_OR_AMBIGUOUS,
     }
 )
 _KNOWLEDGE_ROUTES = frozenset(
@@ -87,7 +86,10 @@ _KNOWLEDGE_ROUTES = frozenset(
 
 def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
     route = features.route.route
-    technical = route in _TECHNICAL_ROUTES or features.route.forced_full_pipeline
+    # Execution depth and domain semantics are separate dimensions. A conservative
+    # ``forced_full_pipeline`` decision must not turn an otherwise signal-free,
+    # unclassified social turn into a technical case.
+    technical = route in _TECHNICAL_ROUTES
     evidence_missing = features.authoritative_evidence_count == 0
 
     if features.exact_cache_hit:
@@ -99,6 +101,27 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             StreamingMode.ATOMIC,
             False,
             "exact_validated_cache_hit",
+        )
+
+    if route is RouteName.UNSUPPORTED_OR_AMBIGUOUS:
+        if features.risk_flags:
+            return ExecutionDecision(
+                ExecutionClass.H1,
+                ModelTier.NONE,
+                None,
+                VerificationMode.HUMAN,
+                StreamingMode.ATOMIC,
+                True,
+                "ambiguous_high_risk_input",
+            )
+        return ExecutionDecision(
+            ExecutionClass.D1,
+            ModelTier.NONE,
+            None,
+            VerificationMode.DETERMINISTIC,
+            StreamingMode.ATOMIC,
+            False,
+            "ambiguous_no_domain_signal",
         )
 
     if features.contract_status == "NEEDS_CLARIFICATION" or (
@@ -231,6 +254,12 @@ def deterministic_response(
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
 ) -> str:
+    if decision.reason == "ambiguous_no_domain_signal":
+        return (
+            "Ich kann die Eingabe noch keiner eindeutigen Aufgabe zuordnen. "
+            "Möchtest du eine fachliche Frage zur Dichtungstechnik stellen oder "
+            "einen konkreten Dichtungsfall bearbeiten?"
+        )
     if decision.reason in {"knowledge_evidence_gap", "technical_evidence_gap"}:
         return (
             "Für diese konkrete Wissensfrage liegt im aktuell geprüften Wissensstand "

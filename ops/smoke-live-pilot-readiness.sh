@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 BASE_URL="${BASE_URL:-https://sealingai.com}"
 BASE_URL="${BASE_URL%/}"

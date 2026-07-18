@@ -1,0 +1,347 @@
+{
+  "schema_version": "1.0",
+  "review_set_id": "rwdr-shadow-controlled-v2",
+  "created_at": "2026-07-14",
+  "pack_id": "rwdr.v1",
+  "pack_version": "1.0.1",
+  "policy_version": "adaptive-interview.lexicographic.1.0.0",
+  "profiles": [
+    {
+      "profile_id": "RWDR-PROFILE-01",
+      "label_de": "Neuauslegung eines Hydraulikantriebs",
+      "fields": {
+        "dichtungstyp": "rwdr",
+        "anwendungsziel": "Neuauslegung",
+        "medium": "Hydrauliköl HLP 46",
+        "betriebstemperatur": "80 °C",
+        "druck": "0,2 bar Differenzdruck",
+        "wellendurchmesser": "50 mm",
+        "drehzahl": "1500 U/min"
+      }
+    },
+    {
+      "profile_id": "RWDR-PROFILE-02",
+      "label_de": "Austauschfall an einem Industriegetriebe",
+      "fields": {
+        "dichtungstyp": "Radialwellendichtring",
+        "anwendungsziel": "Austausch einer bestehenden Dichtung",
+        "medium": "Getriebeöl CLP 220",
+        "betriebstemperatur": "95 °C",
+        "druck": "weitgehend drucklos",
+        "wellendurchmesser": "80 mm",
+        "drehzahl": "900 U/min"
+      }
+    },
+    {
+      "profile_id": "RWDR-PROFILE-03",
+      "label_de": "Schadensanalyse an einer Prozesspumpe",
+      "fields": {
+        "dichtungstyp": "RWDR",
+        "anwendungsziel": "Analyse eines Leckageschadens",
+        "medium": "Wasser-Glykol HFC",
+        "betriebstemperatur": "60 °C",
+        "druck": "1,0 bar Differenzdruck",
+        "wellendurchmesser": "45 mm",
+        "drehzahl": "3000 U/min"
+      }
+    },
+    {
+      "profile_id": "RWDR-PROFILE-04",
+      "label_de": "Retrofit eines schnelllaufenden Nebenaggregats",
+      "fields": {
+        "dichtungstyp": "Simmerring",
+        "anwendungsziel": "Retrofit in vorhandenem Einbauraum",
+        "medium": "synthetisches Esteröl ISO VG 46",
+        "betriebstemperatur": "110 °C",
+        "druck": "0,5 bar Differenzdruck",
+        "wellendurchmesser": "35 mm",
+        "drehzahl": "1800 U/min"
+      }
+    },
+    {
+      "profile_id": "RWDR-PROFILE-05",
+      "label_de": "Lebensdaueroptimierung einer langsamlaufenden Lagerstelle",
+      "fields": {
+        "dichtungstyp": "Wellendichtung",
+        "anwendungsziel": "Lebensdaueroptimierung",
+        "medium": "Schmierfett NLGI 2",
+        "betriebstemperatur": "70 °C",
+        "druck": "druckloser Betrieb",
+        "wellendurchmesser": "120 mm",
+        "drehzahl": "450 U/min"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "RWDR-SHADOW-001",
+      "profile_id": "RWDR-PROFILE-01",
+      "scenario_group": "application_goal_missing",
+      "omit_fields": ["anwendungsziel"],
+      "legacy_question_de": "Welches konkrete Medium liegt an?",
+      "expected_controller_need": "rwdr.application.goal",
+      "expected_legacy_need": "rwdr.medium.primary"
+    },
+    {
+      "case_id": "RWDR-SHADOW-002",
+      "profile_id": "RWDR-PROFILE-02",
+      "scenario_group": "application_goal_missing",
+      "omit_fields": ["anwendungsziel"],
+      "legacy_question_de": "Welches konkrete Medium liegt an?",
+      "expected_controller_need": "rwdr.application.goal",
+      "expected_legacy_need": "rwdr.medium.primary"
+    },
+    {
+      "case_id": "RWDR-SHADOW-003",
+      "profile_id": "RWDR-PROFILE-03",
+      "scenario_group": "application_goal_missing",
+      "omit_fields": ["anwendungsziel"],
+      "legacy_question_de": "Welches konkrete Medium liegt an?",
+      "expected_controller_need": "rwdr.application.goal",
+      "expected_legacy_need": "rwdr.medium.primary"
+    },
+    {
+      "case_id": "RWDR-SHADOW-004",
+      "profile_id": "RWDR-PROFILE-04",
+      "scenario_group": "application_goal_missing",
+      "omit_fields": ["anwendungsziel"],
+      "legacy_question_de": "Welches konkrete Medium liegt an?",
+      "expected_controller_need": "rwdr.application.goal",
+      "expected_legacy_need": "rwdr.medium.primary"
+    },
+    {
+      "case_id": "RWDR-SHADOW-005",
+      "profile_id": "RWDR-PROFILE-05",
+      "scenario_group": "application_goal_missing",
+      "omit_fields": ["anwendungsziel"],
+      "legacy_question_de": "Welches konkrete Medium liegt an?",
+      "expected_controller_need": "rwdr.application.goal",
+      "expected_legacy_need": "rwdr.medium.primary"
+    },
+    {
+      "case_id": "RWDR-SHADOW-006",
+      "profile_id": "RWDR-PROFILE-01",
+      "scenario_group": "medium_missing",
+      "omit_fields": ["medium"],
+      "legacy_question_de": "Welche Betriebstemperatur liegt vor?",
+      "expected_controller_need": "rwdr.medium.primary",
+      "expected_legacy_need": "rwdr.temperature.operating"
+    },
+    {
+      "case_id": "RWDR-SHADOW-007",
+      "profile_id": "RWDR-PROFILE-02",
+      "scenario_group": "medium_missing",
+      "omit_fields": ["medium"],
+      "legacy_question_de": "Welche Betriebstemperatur liegt vor?",
+      "expected_controller_need": "rwdr.medium.primary",
+      "expected_legacy_need": "rwdr.temperature.operating"
+    },
+    {
+      "case_id": "RWDR-SHADOW-008",
+      "profile_id": "RWDR-PROFILE-03",
+      "scenario_group": "medium_missing",
+      "omit_fields": ["medium"],
+      "legacy_question_de": "Welche Betriebstemperatur liegt vor?",
+      "expected_controller_need": "rwdr.medium.primary",
+      "expected_legacy_need": "rwdr.temperature.operating"
+    },
+    {
+      "case_id": "RWDR-SHADOW-009",
+      "profile_id": "RWDR-PROFILE-04",
+      "scenario_group": "medium_missing",
+      "omit_fields": ["medium"],
+      "legacy_question_de": "Welche Betriebstemperatur liegt vor?",
+      "expected_controller_need": "rwdr.medium.primary",
+      "expected_legacy_need": "rwdr.temperature.operating"
+    },
+    {
+      "case_id": "RWDR-SHADOW-010",
+      "profile_id": "RWDR-PROFILE-05",
+      "scenario_group": "medium_missing",
+      "omit_fields": ["medium"],
+      "legacy_question_de": "Welche Betriebstemperatur liegt vor?",
+      "expected_controller_need": "rwdr.medium.primary",
+      "expected_legacy_need": "rwdr.temperature.operating"
+    },
+    {
+      "case_id": "RWDR-SHADOW-011",
+      "profile_id": "RWDR-PROFILE-01",
+      "scenario_group": "temperature_missing",
+      "omit_fields": ["betriebstemperatur"],
+      "legacy_question_de": "Welcher Differenzdruck liegt an?",
+      "expected_controller_need": "rwdr.temperature.operating",
+      "expected_legacy_need": "rwdr.pressure.regime"
+    },
+    {
+      "case_id": "RWDR-SHADOW-012",
+      "profile_id": "RWDR-PROFILE-02",
+      "scenario_group": "temperature_missing",
+      "omit_fields": ["betriebstemperatur"],
+      "legacy_question_de": "Welcher Differenzdruck liegt an?",
+      "expected_controller_need": "rwdr.temperature.operating",
+      "expected_legacy_need": "rwdr.pressure.regime"
+    },
+    {
+      "case_id": "RWDR-SHADOW-013",
+      "profile_id": "RWDR-PROFILE-03",
+      "scenario_group": "temperature_missing",
+      "omit_fields": ["betriebstemperatur"],
+      "legacy_question_de": "Welcher Differenzdruck liegt an?",
+      "expected_controller_need": "rwdr.temperature.operating",
+      "expected_legacy_need": "rwdr.pressure.regime"
+    },
+    {
+      "case_id": "RWDR-SHADOW-014",
+      "profile_id": "RWDR-PROFILE-04",
+      "scenario_group": "temperature_missing",
+      "omit_fields": ["betriebstemperatur"],
+      "legacy_question_de": "Welcher Differenzdruck liegt an?",
+      "expected_controller_need": "rwdr.temperature.operating",
+      "expected_legacy_need": "rwdr.pressure.regime"
+    },
+    {
+      "case_id": "RWDR-SHADOW-015",
+      "profile_id": "RWDR-PROFILE-05",
+      "scenario_group": "temperature_missing",
+      "omit_fields": ["betriebstemperatur"],
+      "legacy_question_de": "Welcher Differenzdruck liegt an?",
+      "expected_controller_need": "rwdr.temperature.operating",
+      "expected_legacy_need": "rwdr.pressure.regime"
+    },
+    {
+      "case_id": "RWDR-SHADOW-016",
+      "profile_id": "RWDR-PROFILE-01",
+      "scenario_group": "pressure_missing",
+      "omit_fields": ["druck"],
+      "legacy_question_de": "Welcher Wellendurchmesser d1 ist vorhanden?",
+      "expected_controller_need": "rwdr.pressure.regime",
+      "expected_legacy_need": "rwdr.shaft.diameter"
+    },
+    {
+      "case_id": "RWDR-SHADOW-017",
+      "profile_id": "RWDR-PROFILE-02",
+      "scenario_group": "pressure_missing",
+      "omit_fields": ["druck"],
+      "legacy_question_de": "Welcher Wellendurchmesser d1 ist vorhanden?",
+      "expected_controller_need": "rwdr.pressure.regime",
+      "expected_legacy_need": "rwdr.shaft.diameter"
+    },
+    {
+      "case_id": "RWDR-SHADOW-018",
+      "profile_id": "RWDR-PROFILE-03",
+      "scenario_group": "pressure_missing",
+      "omit_fields": ["druck"],
+      "legacy_question_de": "Welcher Wellendurchmesser d1 ist vorhanden?",
+      "expected_controller_need": "rwdr.pressure.regime",
+      "expected_legacy_need": "rwdr.shaft.diameter"
+    },
+    {
+      "case_id": "RWDR-SHADOW-019",
+      "profile_id": "RWDR-PROFILE-04",
+      "scenario_group": "pressure_missing",
+      "omit_fields": ["druck"],
+      "legacy_question_de": "Welcher Wellendurchmesser d1 ist vorhanden?",
+      "expected_controller_need": "rwdr.pressure.regime",
+      "expected_legacy_need": "rwdr.shaft.diameter"
+    },
+    {
+      "case_id": "RWDR-SHADOW-020",
+      "profile_id": "RWDR-PROFILE-05",
+      "scenario_group": "pressure_missing",
+      "omit_fields": ["druck"],
+      "legacy_question_de": "Welcher Wellendurchmesser d1 ist vorhanden?",
+      "expected_controller_need": "rwdr.pressure.regime",
+      "expected_legacy_need": "rwdr.shaft.diameter"
+    },
+    {
+      "case_id": "RWDR-SHADOW-021",
+      "profile_id": "RWDR-PROFILE-01",
+      "scenario_group": "shaft_diameter_missing",
+      "omit_fields": ["wellendurchmesser"],
+      "legacy_question_de": "Welche Drehzahl liegt im Normalbetrieb an?",
+      "expected_controller_need": "rwdr.shaft.diameter",
+      "expected_legacy_need": "rwdr.rotation.speed"
+    },
+    {
+      "case_id": "RWDR-SHADOW-022",
+      "profile_id": "RWDR-PROFILE-02",
+      "scenario_group": "shaft_diameter_missing",
+      "omit_fields": ["wellendurchmesser"],
+      "legacy_question_de": "Welche Drehzahl liegt im Normalbetrieb an?",
+      "expected_controller_need": "rwdr.shaft.diameter",
+      "expected_legacy_need": "rwdr.rotation.speed"
+    },
+    {
+      "case_id": "RWDR-SHADOW-023",
+      "profile_id": "RWDR-PROFILE-03",
+      "scenario_group": "shaft_diameter_missing",
+      "omit_fields": ["wellendurchmesser"],
+      "legacy_question_de": "Welche Drehzahl liegt im Normalbetrieb an?",
+      "expected_controller_need": "rwdr.shaft.diameter",
+      "expected_legacy_need": "rwdr.rotation.speed"
+    },
+    {
+      "case_id": "RWDR-SHADOW-024",
+      "profile_id": "RWDR-PROFILE-04",
+      "scenario_group": "shaft_diameter_missing",
+      "omit_fields": ["wellendurchmesser"],
+      "legacy_question_de": "Welche Drehzahl liegt im Normalbetrieb an?",
+      "expected_controller_need": "rwdr.shaft.diameter",
+      "expected_legacy_need": "rwdr.rotation.speed"
+    },
+    {
+      "case_id": "RWDR-SHADOW-025",
+      "profile_id": "RWDR-PROFILE-05",
+      "scenario_group": "shaft_diameter_missing",
+      "omit_fields": ["wellendurchmesser"],
+      "legacy_question_de": "Welche Drehzahl liegt im Normalbetrieb an?",
+      "expected_controller_need": "rwdr.shaft.diameter",
+      "expected_legacy_need": "rwdr.rotation.speed"
+    },
+    {
+      "case_id": "RWDR-SHADOW-026",
+      "profile_id": "RWDR-PROFILE-01",
+      "scenario_group": "rotation_speed_missing",
+      "omit_fields": ["drehzahl"],
+      "legacy_question_de": "Geht es bei diesem Anwendungsfall um Neuauslegung, Austausch oder Schadensanalyse?",
+      "expected_controller_need": "rwdr.rotation.speed",
+      "expected_legacy_need": "rwdr.application.goal"
+    },
+    {
+      "case_id": "RWDR-SHADOW-027",
+      "profile_id": "RWDR-PROFILE-02",
+      "scenario_group": "rotation_speed_missing",
+      "omit_fields": ["drehzahl"],
+      "legacy_question_de": "Geht es bei diesem Anwendungsfall um Neuauslegung, Austausch oder Schadensanalyse?",
+      "expected_controller_need": "rwdr.rotation.speed",
+      "expected_legacy_need": "rwdr.application.goal"
+    },
+    {
+      "case_id": "RWDR-SHADOW-028",
+      "profile_id": "RWDR-PROFILE-03",
+      "scenario_group": "rotation_speed_missing",
+      "omit_fields": ["drehzahl"],
+      "legacy_question_de": "Geht es bei diesem Anwendungsfall um Neuauslegung, Austausch oder Schadensanalyse?",
+      "expected_controller_need": "rwdr.rotation.speed",
+      "expected_legacy_need": "rwdr.application.goal"
+    },
+    {
+      "case_id": "RWDR-SHADOW-029",
+      "profile_id": "RWDR-PROFILE-04",
+      "scenario_group": "rotation_speed_missing",
+      "omit_fields": ["drehzahl"],
+      "legacy_question_de": "Geht es bei diesem Anwendungsfall um Neuauslegung, Austausch oder Schadensanalyse?",
+      "expected_controller_need": "rwdr.rotation.speed",
+      "expected_legacy_need": "rwdr.application.goal"
+    },
+    {
+      "case_id": "RWDR-SHADOW-030",
+      "profile_id": "RWDR-PROFILE-05",
+      "scenario_group": "rotation_speed_missing",
+      "omit_fields": ["drehzahl"],
+      "legacy_question_de": "Geht es bei diesem Anwendungsfall um Neuauslegung, Austausch oder Schadensanalyse?",
+      "expected_controller_need": "rwdr.rotation.speed",
+      "expected_legacy_need": "rwdr.application.goal"
+    }
+  ]
+}

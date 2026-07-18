@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealai.local/schemas/gate08-operational-controls.schema.json",
+  "title": "GATE-08 operational control installation approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gate_id",
+    "operation",
+    "decision",
+    "scope",
+    "approval_id",
+    "owner",
+    "approved_at",
+    "expires_at",
+    "source_git_sha",
+    "artifact_sha256",
+    "install_targets",
+    "target_preconditions"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "gate_id": {"const": "GATE-08"},
+    "operation": {"const": "operational-control-install"},
+    "decision": {"const": "APPROVED"},
+    "scope": {"const": "p0-operational-control-install"},
+    "approval_id": {"type": "string", "minLength": 1},
+    "owner": {"type": "string", "minLength": 1},
+    "approved_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "source_git_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "artifact_sha256": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docs/ops/operational-control-install.md",
+        "docs/ops/p0-operational-gate-unblock.md",
+        "docs/ops/production-release-freeze.md",
+        "ops/bootstrap_gate08_operational_controls.py",
+        "ops/credential_cutover.py",
+        "ops/install-operational-controls.sh",
+        "ops/permission_manifest.py",
+        "ops/production-release-state.json",
+        "ops/production_release_gate.py",
+        "ops/schemas/credential-cutover-approval.schema.json",
+        "ops/schemas/gate08-operational-controls.schema.json",
+        "ops/schemas/permission-manifest.schema.json"
+      ],
+      "properties": {
+        "docs/ops/operational-control-install.md": {"$ref": "#/$defs/sha256"},
+        "docs/ops/p0-operational-gate-unblock.md": {"$ref": "#/$defs/sha256"},
+        "docs/ops/production-release-freeze.md": {"$ref": "#/$defs/sha256"},
+        "ops/bootstrap_gate08_operational_controls.py": {"$ref": "#/$defs/sha256"},
+        "ops/credential_cutover.py": {"$ref": "#/$defs/sha256"},
+        "ops/install-operational-controls.sh": {"$ref": "#/$defs/sha256"},
+        "ops/permission_manifest.py": {"$ref": "#/$defs/sha256"},
+        "ops/production-release-state.json": {"$ref": "#/$defs/sha256"},
+        "ops/production_release_gate.py": {"$ref": "#/$defs/sha256"},
+        "ops/schemas/credential-cutover-approval.schema.json": {"$ref": "#/$defs/sha256"},
+        "ops/schemas/gate08-operational-controls.schema.json": {"$ref": "#/$defs/sha256"},
+        "ops/schemas/permission-manifest.schema.json": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "install_targets": {"$ref": "#/$defs/installTargets"},
+    "target_preconditions": {"$ref": "#/$defs/targetPreconditions"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "installTargets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ops/credential_cutover.py",
+        "ops/permission_manifest.py",
+        "ops/schemas/credential-cutover-approval.schema.json",
+        "ops/schemas/permission-manifest.schema.json"
+      ],
+      "properties": {
+        "ops/credential_cutover.py": {"const": "/usr/local/libexec/sealai/credential-cutover.py"},
+        "ops/permission_manifest.py": {"const": "/usr/local/libexec/sealai/permission-manifest.py"},
+        "ops/schemas/credential-cutover-approval.schema.json": {"const": "/usr/local/share/sealai/schemas/credential-cutover-approval.schema.json"},
+        "ops/schemas/permission-manifest.schema.json": {"const": "/usr/local/share/sealai/schemas/permission-manifest.schema.json"}
+      }
+    },
+    "targetPreconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "/usr/local/libexec/sealai/credential-cutover.py",
+        "/usr/local/libexec/sealai/permission-manifest.py",
+        "/usr/local/share/sealai/schemas/credential-cutover-approval.schema.json",
+        "/usr/local/share/sealai/schemas/permission-manifest.schema.json"
+      ],
+      "properties": {
+        "/usr/local/libexec/sealai/credential-cutover.py": {"$ref": "#/$defs/targetPreconditionProgram"},
+        "/usr/local/libexec/sealai/permission-manifest.py": {"$ref": "#/$defs/targetPreconditionProgram"},
+        "/usr/local/share/sealai/schemas/credential-cutover-approval.schema.json": {"$ref": "#/$defs/targetPreconditionSchema"},
+        "/usr/local/share/sealai/schemas/permission-manifest.schema.json": {"$ref": "#/$defs/targetPreconditionSchema"}
+      }
+    },
+    "absentTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {"state": {"const": "ABSENT"}}
+    },
+    "presentTargetBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "type", "sha256", "uid", "gid", "mode"],
+      "properties": {
+        "state": {"const": "PRESENT"},
+        "type": {"const": "file"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "uid": {"const": 0},
+        "gid": {"const": 0},
+        "mode": {"type": "string"}
+      }
+    },
+    "targetPreconditionProgram": {
+      "oneOf": [
+        {"$ref": "#/$defs/absentTarget"},
+        {"allOf": [{"$ref": "#/$defs/presentTargetBase"}, {"properties": {"mode": {"const": "0755"}}}]}
+      ]
+    },
+    "targetPreconditionSchema": {
+      "oneOf": [
+        {"$ref": "#/$defs/absentTarget"},
+        {"allOf": [{"$ref": "#/$defs/presentTargetBase"}, {"properties": {"mode": {"const": "0644"}}}]}
+      ]
+    }
+  }
+}

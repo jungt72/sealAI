@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ops/staging/gen-staging-conf.sh — generate the staging nginx conf (gitignored output).
 #
 # The staging conf is a BYTE-COPY of the prod nginx/default.conf with the V2 include applied by
@@ -8,6 +8,8 @@
 # POST (connect-src) and a future prompt=none iframe (frame-src) are cross-origin ON STAGING ONLY.
 # Prod keeps the stricter 'self'-only snippet untouched.
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 cd "$(dirname "$0")/../.."   # repo root
 
 OUT=ops/staging/conf
@@ -28,6 +30,7 @@ grep -q "connect-src 'self' https://sealingai.com;" "$OUT/snippets/v2_dashboard.
   || { echo "!! CSP delta did not apply — prod snippet wording changed?" >&2; exit 1; }
 
 # Apply the include with the real flip switch (file-only; nginx -t happens in the container).
-./ops/v2-flip.sh --apply --file "$OUT/default.conf" --no-reload
+/bin/bash -p ./ops/v2-flip.sh \
+  --apply --file "$OUT/default.conf" --container nginx-staging --no-reload
 
 echo ">> staging conf generated at $OUT (include applied + CSP delta)"

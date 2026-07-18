@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ─────────────────────────────────────────────────────────────────────────────
 # Doctrine gate — Claude Code PreToolUse hook (matcher: Bash). FAIL-CLOSED.
 #

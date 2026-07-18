@@ -23,9 +23,9 @@ def test_oauth_error_is_actionable_and_redacted(monkeypatch):
 
     client = GscClient(
         site_url="sc-domain:sealingai.com",
-        client_id="client-id",
-        client_secret="client-secret",
-        refresh_token="refresh-token",
+        client_id="DUMMY_CLIENT_ID",
+        client_secret="DUMMY_CLIENT_SECRET",
+        refresh_token="DUMMY_REFRESH_TOKEN",
     )
 
     with pytest.raises(GscApiError) as exc:
@@ -35,5 +35,5 @@ def test_oauth_error_is_actionable_and_redacted(monkeypatch):
     assert "GSC OAuth token refresh failed with HTTP 400" in message
     assert "invalid_grant" in message
     assert "expired or revoked" in message
-    assert "client-secret" not in message
-    assert "refresh-token" not in message
+    assert "DUMMY_CLIENT_SECRET" not in message
+    assert "DUMMY_REFRESH_TOKEN" not in message

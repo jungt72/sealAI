@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # ops/guard-nginx-reload.sh — cutover drift guard (runbook Phase 3 step 6).
 #
 # The worktree file nginx/default.conf IS the prod nginx config (bind-mounted); the release
@@ -8,15 +8,17 @@
 #
 # Override (deliberate un-flip goes through ops/v2-flip.sh --revert, not this): ALLOW_V2_ROUTE_DROP=1
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 CONTAINER="${NGINX_CONTAINER:-nginx}"
 FILE="${NGINX_CONF:-nginx/default.conf}"
 INCLUDE_RE='^[[:space:]]*include snippets/v2_dashboard\.conf;'
 
 # Nothing running → nothing to drop.
-docker ps --format '{{.Names}}' | grep -qx "$CONTAINER" || exit 0
+/usr/bin/docker ps --format '{{.Names}}' | grep -qx "$CONTAINER" || exit 0
 
-loaded="$(docker exec "$CONTAINER" nginx -T 2>/dev/null | grep -cE "$INCLUDE_RE" || true)"
+loaded="$(/usr/bin/docker exec "$CONTAINER" nginx -T 2>/dev/null | grep -cE "$INCLUDE_RE" || true)"
 in_file="$(grep -cE "$INCLUDE_RE" "$FILE" 2>/dev/null || true)"
 
 if [[ "${loaded:-0}" -gt 0 && "${in_file:-0}" -eq 0 ]]; then

@@ -203,7 +203,7 @@ def _display_flags(result: PipelineResult) -> dict:
 def chat_response(result: PipelineResult) -> dict:
     turn_state = result.turn_state
     case_state = result.case_state
-    return {
+    response = {
         "answer": result.answer.text,
         "model": result.answer.model,
         "run": (
@@ -283,3 +283,16 @@ def chat_response(result: PipelineResult) -> dict:
         # showing on smalltalk/off-topic turns. Render-only — never gates L1/L3/kernel/RAG.
         **_display_flags(result),
     }
+    # Default-off additive fields are omitted, rather than emitted as new null keys,
+    # so each disabled feature preserves the historical JSON shape.
+    if result.material_constraints_enabled:
+        if result.material_constraints is None:
+            raise ValueError(
+                "enabled material-constraint contract requires an explicit result"
+            )
+        response["material_constraints"] = result.material_constraints.to_dict()
+    elif result.material_constraints is not None:
+        raise ValueError("disabled material-constraint contract cannot carry a result")
+    if result.next_question is not None:
+        response["next_question"] = result.next_question.to_dict()
+    return response
