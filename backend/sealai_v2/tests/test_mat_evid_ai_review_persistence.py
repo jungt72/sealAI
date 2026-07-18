@@ -40,6 +40,8 @@ from sealai_v2.db.models import (
     V2MaterialEvidenceAIValidationEvent,
 )
 from sealai_v2.material_evidence_ai_review.audit import (
+    AIAdjudicationOutcome,
+    AIAdjudicationV1,
     AIFindingCategory,
     AIFindingSeverity,
     AUDIT_OUTPUT_DOMAIN,
@@ -50,6 +52,8 @@ from sealai_v2.material_evidence_ai_review.audit import (
     create_adjudication,
     create_corrected_media_identity_snapshot,
     parse_claude_audit_report,
+    _derive_adjudication_id,
+    _derive_challenge_id,
 )
 from sealai_v2.tests.test_mat_evid_ai_review_domain import (
     BATCH_ID,
@@ -168,6 +172,193 @@ def _challenge(snapshot: AIReviewSnapshotV1) -> ClaudeChallengeV1:
         isolation=AgentExecutionIsolationV1(False, False, False, 0, 0, False),
     )
     return ClaudeChallengeV1.create(snapshot, challenger, report)
+
+
+@pytest.mark.parametrize("bypass", ("creator_run", "audit_input"))
+def test_repository_rederives_challenge_and_rejects_direct_constructor_bypass(
+    tmp_path, bypass: str
+) -> None:
+    _, _, repo, context, snapshot = _setup(tmp_path)
+    report = parse_claude_audit_report(_pass_report(snapshot), snapshot)
+    report_hash = hashlib.sha256(
+        AUDIT_OUTPUT_DOMAIN
+        + json.dumps(
+            report.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    challenger = ChallengerAgentRunV1(
+        agent_version="claude-cli-test-version",
+        prompt_version="challenge.v1",
+        prompt_sha256="e" * 64,
+        run_id=(
+            snapshot.payload.creator.run_id
+            if bypass == "creator_run"
+            else "claude-direct-constructor-run"
+        ),
+        audit_input_sha256=(
+            "f" * 64
+            if bypass == "audit_input"
+            else build_claude_audit_input(snapshot).audit_input_sha256
+        ),
+        audit_output_sha256=report_hash,
+        isolation=AgentExecutionIsolationV1(False, False, False, 0, 0, False),
+    )
+    challenge = ClaudeChallengeV1(
+        challenge_id=_derive_challenge_id(
+            snapshot.review_snapshot_id, challenger, report_hash
+        ),
+        review_snapshot_id=snapshot.review_snapshot_id,
+        review_content_sha256=snapshot.content_sha256,
+        challenger=challenger,
+        report=report,
+        report_sha256=report_hash,
+    )
+    with pytest.raises(AIReviewValidationError) as exc:
+        repo.record_challenge(
+            challenge=challenge, context=context, created_at=CREATED_AT
+        )
+    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
+    assert (
+        repo.load_projection(snapshot.review_snapshot_id, context=context).state
+        is AIReviewState.AI_DRAFT
+    )
+
+
+def test_repository_rederives_adjudication_from_stored_report(tmp_path) -> None:
+    _, factory, repo, context, snapshot = _setup(tmp_path)
+    raw = json.loads(_pass_report(snapshot))
+    raw["overall_verdict"] = "CHANGES_REQUIRED"
+    result = next(
+        item
+        for item in raw["claim_results"]
+        if item["claim_ref"] == snapshot.payload.claims[0].claim_ref
+    )
+    result.update(
+        {
+            "findings": [
+                {
+                    "category": AIFindingCategory.SCOPE_ERROR.value,
+                    "detail": "Synthetic scope correction required.",
+                    "finding_ref": "AIF-DB-FORGED-001",
+                    "recommended_correction": "Create an immutable correction.",
+                    "severity": AIFindingSeverity.MEDIUM.value,
+                }
+            ],
+            "severity": "MEDIUM",
+            "verdict": "CHANGES_REQUIRED",
+        }
+    )
+    report = parse_claude_audit_report(json.dumps(raw), snapshot)
+    report_hash = hashlib.sha256(
+        AUDIT_OUTPUT_DOMAIN
+        + json.dumps(
+            report.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    challenge = ClaudeChallengeV1.create(
+        snapshot,
+        ChallengerAgentRunV1(
+            agent_version="claude-cli-test-version",
+            prompt_version="challenge.v1",
+            prompt_sha256="e" * 64,
+            run_id="claude-forged-adjudication-run",
+            audit_input_sha256=build_claude_audit_input(snapshot).audit_input_sha256,
+            audit_output_sha256=report_hash,
+            isolation=AgentExecutionIsolationV1(False, False, False, 0, 0, False),
+        ),
+        report,
+    )
+    repo.record_challenge(challenge=challenge, context=context, created_at=CREATED_AT)
+    adjudicator = _adjudicator("codex-forged-adjudicator")
+    value = {
+        "adjudication_contract_version": "MAT-EVID-AI-ADJUDICATION.v1",
+        "adjudication_schema_version": 1,
+        "adjudicator": adjudicator.to_dict(),
+        "challenge_id": challenge.challenge_id,
+        "challenger_report_sha256": challenge.report_sha256,
+        "finding_adjudications": [],
+        "outcome": AIAdjudicationOutcome.AI_CROSS_REVIEWED_NON_AUTHORITATIVE.value,
+        "replacement_evidence_snapshot_id": "not_applicable",
+        "replacement_media_identity_evidence": [],
+        "replacement_ruleset_snapshot_id": "not_applicable",
+        "review_content_sha256": snapshot.content_sha256,
+        "review_snapshot_id": snapshot.review_snapshot_id,
+    }
+    forged = AIAdjudicationV1(
+        adjudication_id=_derive_adjudication_id(value),
+        review_snapshot_id=snapshot.review_snapshot_id,
+        review_content_sha256=snapshot.content_sha256,
+        challenge_id=challenge.challenge_id,
+        challenger_report_sha256=challenge.report_sha256,
+        adjudicator=adjudicator,
+        outcome=AIAdjudicationOutcome.AI_CROSS_REVIEWED_NON_AUTHORITATIVE,
+        finding_adjudications=(),
+        replacement_ruleset_snapshot_id="not_applicable",
+        replacement_evidence_snapshot_id="not_applicable",
+        replacement_media_identity_evidence=(),
+    )
+    with pytest.raises(AIReviewValidationError) as exc:
+        repo.record_adjudication(
+            adjudication=forged, context=context, created_at=CREATED_AT
+        )
+    assert exc.value.code is AIReviewErrorCode.INCOMPLETE_COVERAGE
+    assert (
+        repo.load_projection(snapshot.review_snapshot_id, context=context).state
+        is AIReviewState.AI_CHALLENGED
+    )
+    with factory() as session:
+        assert not session.scalars(select(V2MaterialEvidenceAIAdjudication)).all()
+
+
+@pytest.mark.parametrize("same_as", ("creator", "challenger"))
+def test_repository_rejects_adjudicator_run_role_reuse(tmp_path, same_as: str) -> None:
+    _, _, repo, context, snapshot = _setup(tmp_path)
+    challenge = _challenge(snapshot)
+    repo.record_challenge(challenge=challenge, context=context, created_at=CREATED_AT)
+    run_id = (
+        snapshot.payload.creator.run_id
+        if same_as == "creator"
+        else challenge.challenger.run_id
+    )
+    adjudicator = _adjudicator(run_id)
+    value = {
+        "adjudication_contract_version": "MAT-EVID-AI-ADJUDICATION.v1",
+        "adjudication_schema_version": 1,
+        "adjudicator": adjudicator.to_dict(),
+        "challenge_id": challenge.challenge_id,
+        "challenger_report_sha256": challenge.report_sha256,
+        "finding_adjudications": [],
+        "outcome": AIAdjudicationOutcome.AI_CROSS_REVIEWED_NON_AUTHORITATIVE.value,
+        "replacement_evidence_snapshot_id": "not_applicable",
+        "replacement_media_identity_evidence": [],
+        "replacement_ruleset_snapshot_id": "not_applicable",
+        "review_content_sha256": snapshot.content_sha256,
+        "review_snapshot_id": snapshot.review_snapshot_id,
+    }
+    direct = AIAdjudicationV1(
+        adjudication_id=_derive_adjudication_id(value),
+        review_snapshot_id=snapshot.review_snapshot_id,
+        review_content_sha256=snapshot.content_sha256,
+        challenge_id=challenge.challenge_id,
+        challenger_report_sha256=challenge.report_sha256,
+        adjudicator=adjudicator,
+        outcome=AIAdjudicationOutcome.AI_CROSS_REVIEWED_NON_AUTHORITATIVE,
+        finding_adjudications=(),
+        replacement_ruleset_snapshot_id="not_applicable",
+        replacement_evidence_snapshot_id="not_applicable",
+        replacement_media_identity_evidence=(),
+    )
+    with pytest.raises(AIReviewValidationError) as exc:
+        repo.record_adjudication(
+            adjudication=direct, context=context, created_at=CREATED_AT
+        )
+    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
 
 
 def test_repository_round_trip_challenge_and_cross_review(tmp_path) -> None:

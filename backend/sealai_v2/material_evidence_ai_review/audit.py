@@ -44,6 +44,7 @@ CLAUDE_AUDIT_SCHEMA_VERSION = 1
 CLAUDE_AUDIT_CONTRACT_VERSION = "MAT-EVID-AI-CHALLENGE.v1"
 CODEX_ADJUDICATION_SCHEMA_VERSION = 1
 CODEX_ADJUDICATION_CONTRACT_VERSION = "MAT-EVID-AI-ADJUDICATION.v1"
+CORPUS_SAFETY_CONTRACT_VERSION = "MAT-EVID-AI-CORPUS-SAFETY.v1"
 CLAUDE_TASK_V1 = (
     "Independently red-team every claim against only the supplied source "
     "metadata and permitted excerpts. Return the closed JSON report."
@@ -53,10 +54,98 @@ AUDIT_INPUT_DOMAIN = b"sealai.material-evidence-ai-review.audit-input.v1\x00"
 AUDIT_OUTPUT_DOMAIN = b"sealai.material-evidence-ai-review.audit-output.v1\x00"
 CHALLENGE_DOMAIN = b"sealai.material-evidence-ai-review.challenge.v1\x00"
 ADJUDICATION_DOMAIN = b"sealai.material-evidence-ai-review.adjudication.v1\x00"
+CORPUS_SAFETY_DOMAIN = b"sealai.material-evidence-ai-review.corpus-safety.v1\x00"
 
 _CHALLENGE_ID_RE = re.compile(r"^mac_[0-9a-f]{64}$", re.ASCII)
 _ADJUDICATION_ID_RE = re.compile(r"^maa_[0-9a-f]{64}$", re.ASCII)
 _FINDING_REF_RE = re.compile(r"^AIF-[A-Z0-9][A-Z0-9._:-]{0,124}$", re.ASCII)
+
+_CORPUS_SECRET_PATTERNS = (
+    ("private_key", re.compile(r"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----")),
+    ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    (
+        "github_token",
+        re.compile(r"\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b"),
+    ),
+    (
+        "api_credential_assignment",
+        re.compile(
+            r"(?i)\b(?:api[_ -]?key|access[_ -]?token|password|secret)\s*[:=]\s*[^\s,;]{8,}"
+        ),
+    ),
+    ("bearer_token", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}")),
+    (
+        "jwt",
+        re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    ),
+)
+_CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
+    (
+        "email_address",
+        re.compile(
+            r"(?i)(?<![A-Z0-9._%+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![A-Z0-9.-])"
+        ),
+    ),
+    ("iban", re.compile(r"\b[A-Z]{2}[0-9]{2}(?:[ ]?[A-Z0-9]){11,30}\b")),
+    ("us_ssn", re.compile(r"\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b")),
+    (
+        "customer_identifier",
+        re.compile(r"(?i)\b(?:customer|tenant|case)[_-]?id\s*[:=]\s*[^\s,;]{3,}"),
+    ),
+)
+
+
+def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
+    """Scan the exact outbound corpus and fail closed without exposing matches."""
+
+    strings: list[str] = []
+
+    def collect(item: Any) -> None:
+        if type(item) is str:
+            strings.append(item)
+        elif type(item) is list:
+            for child in item:
+                collect(child)
+        elif type(item) is dict:
+            for child in item.values():
+                collect(child)
+
+    collect(value)
+    secret_classes = sorted(
+        name
+        for name, pattern in _CORPUS_SECRET_PATTERNS
+        if any(pattern.search(item) for item in strings)
+    )
+    identifier_classes = sorted(
+        name
+        for name, pattern in _CORPUS_DIRECT_IDENTIFIER_PATTERNS
+        if any(pattern.search(item) for item in strings)
+    )
+    if secret_classes or identifier_classes:
+        _fail(
+            AIReviewErrorCode.SENSITIVE_DATA_FORBIDDEN,
+            "outbound corpus failed the closed secret/direct-identifier preflight "
+            f"classes={secret_classes + identifier_classes}",
+        )
+    canonical = _canonical_json(value)
+    pattern_manifest = [
+        {"class": name, "pattern": pattern.pattern}
+        for name, pattern in (
+            *_CORPUS_SECRET_PATTERNS,
+            *_CORPUS_DIRECT_IDENTIFIER_PATTERNS,
+        )
+    ]
+    return {
+        "corpus_sha256": hashlib.sha256(CORPUS_SAFETY_DOMAIN + canonical).hexdigest(),
+        "creator_reasoning_fields_included": False,
+        "customer_or_tenant_fields_included": False,
+        "direct_identifier_match_count": 0,
+        "pattern_set_sha256": hashlib.sha256(
+            CORPUS_SAFETY_DOMAIN + _canonical_json({"patterns": pattern_manifest})
+        ).hexdigest(),
+        "scanner_contract_version": CORPUS_SAFETY_CONTRACT_VERSION,
+        "secret_match_count": 0,
+    }
 
 
 class ClaudeClaimVerdict(str, Enum):
@@ -76,6 +165,7 @@ class AIFindingSeverity(str, Enum):
 class AIFindingCategory(str, Enum):
     NON_FACTUAL_DOCUMENTATION = "non_factual_documentation"
     SOURCE_COVERAGE = "source_coverage"
+    SOURCE_INDEPENDENCE = "source_independence"
     SCOPE_ERROR = "scope_error"
     SOURCE_OVERREACH = "source_overreach"
     CONTRADICTION = "contradiction"
@@ -153,6 +243,7 @@ class ClaudeClaimAuditResultV1:
     verdict: ClaudeClaimVerdict
     severity: AIFindingSeverity
     source_coverage: str
+    source_independence_assessment: str
     scope_assessment: str
     source_overreach_assessment: str
     contradiction_assessment: str
@@ -174,6 +265,7 @@ class ClaudeClaimAuditResultV1:
             _fail(AIReviewErrorCode.INVALID_TYPE, "invalid Claude claim result enums")
         for name, value in (
             ("source_coverage", self.source_coverage),
+            ("source_independence_assessment", self.source_independence_assessment),
             ("scope_assessment", self.scope_assessment),
             ("source_overreach_assessment", self.source_overreach_assessment),
             ("contradiction_assessment", self.contradiction_assessment),
@@ -232,6 +324,7 @@ class ClaudeClaimAuditResultV1:
             "scope_assessment": self.scope_assessment,
             "severity": self.severity.value,
             "source_coverage": self.source_coverage,
+            "source_independence_assessment": self.source_independence_assessment,
             "source_overreach_assessment": self.source_overreach_assessment,
             "verdict": self.verdict.value,
         }
@@ -347,13 +440,9 @@ def build_claude_audit_input(snapshot: AIReviewSnapshotV1) -> ClaudeAuditInputV1
             "Family-wide or safety-critical effects require independent evidence or narrower treatment.",
             "AI review is non-authoritative and must never be described as human review.",
         ],
-        "privacy_attestation": {
-            "contains_customer_data": False,
-            "contains_personally_identifiable_information": False,
-            "contains_secrets": False,
-            "creator_reasoning_included": False,
-            "tenant_identity_included": False,
-        },
+        "media_identity_candidates": [
+            item.to_dict() for item in payload.media_identities
+        ],
         "required_output": {
             "claim_result_fields": [
                 "claim_ref",
@@ -365,6 +454,7 @@ def build_claude_audit_input(snapshot: AIReviewSnapshotV1) -> ClaudeAuditInputV1
                 "scope_assessment",
                 "severity",
                 "source_coverage",
+                "source_independence_assessment",
                 "source_overreach_assessment",
                 "verdict",
             ],
@@ -386,6 +476,7 @@ def build_claude_audit_input(snapshot: AIReviewSnapshotV1) -> ClaudeAuditInputV1
             "format": "exact JSON matching MAT-EVID-AI-CHALLENGE.v1",
             "required_assessments": [
                 "source_coverage",
+                "source_independence_assessment",
                 "scope_assessment",
                 "source_overreach_assessment",
                 "contradiction_assessment",
@@ -410,6 +501,7 @@ def build_claude_audit_input(snapshot: AIReviewSnapshotV1) -> ClaudeAuditInputV1
         "sources": [item.to_dict() for item in payload.sources],
         "task": CLAUDE_TASK_V1,
     }
+    audit_value["corpus_safety_receipt"] = _corpus_safety_receipt(audit_value)
     canonical = _canonical_json(audit_value)
     return ClaudeAuditInputV1(
         canonical_bytes=canonical,
@@ -452,6 +544,7 @@ def _parse_claim_result(value: Any, *, path: str) -> ClaudeClaimAuditResultV1:
                 "scope_assessment",
                 "severity",
                 "source_coverage",
+                "source_independence_assessment",
                 "source_overreach_assessment",
                 "verdict",
             }
@@ -465,6 +558,7 @@ def _parse_claim_result(value: Any, *, path: str) -> ClaudeClaimAuditResultV1:
         verdict=_enum(ClaudeClaimVerdict, value["verdict"], path=f"{path}.verdict"),
         severity=_enum(AIFindingSeverity, value["severity"], path=f"{path}.severity"),
         source_coverage=value["source_coverage"],
+        source_independence_assessment=value["source_independence_assessment"],
         scope_assessment=value["scope_assessment"],
         source_overreach_assessment=value["source_overreach_assessment"],
         contradiction_assessment=value["contradiction_assessment"],
@@ -595,6 +689,18 @@ class ClaudeChallengeV1:
             report=report,
             report_sha256=report_hash,
         )
+
+    def validate_against(self, snapshot: AIReviewSnapshotV1) -> None:
+        """Re-derive the complete challenge at every trust boundary."""
+
+        if type(snapshot) is not AIReviewSnapshotV1:
+            raise TypeError("snapshot must be AIReviewSnapshotV1")
+        expected = type(self).create(snapshot, self.challenger, self.report)
+        if self != expected or self.to_dict() != expected.to_dict():
+            _fail(
+                AIReviewErrorCode.HASH_MISMATCH,
+                "challenge differs from its canonical factory derivation",
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -122,6 +122,8 @@ def _load_cli_envelope(raw: bytes) -> dict[str, Any]:
         "result",
         "session_id",
         "type",
+        "web_fetch_requests",
+        "web_search_requests",
     }
     if not required <= set(value):
         raise AIReviewValidationError(
@@ -137,6 +139,10 @@ def _load_cli_envelope(raw: bytes) -> dict[str, Any]:
         or value["permission_denials"]
         or type(value["modelUsage"]) is not dict
         or set(value["modelUsage"]) != {"claude-sonnet-5"}
+        or type(value["web_search_requests"]) is not int
+        or value["web_search_requests"] != 0
+        or type(value["web_fetch_requests"]) is not int
+        or value["web_fetch_requests"] != 0
     ):
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
@@ -272,6 +278,8 @@ def run_claude_challenge(
         "result": envelope["result"],
         "session_id": "<redacted>",
         "type": "result",
+        "web_fetch_requests": 0,
+        "web_search_requests": 0,
     }
     _private_write(
         cli_result_path,

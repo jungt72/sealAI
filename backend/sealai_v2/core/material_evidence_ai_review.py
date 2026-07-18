@@ -59,6 +59,7 @@ SNAPSHOT_DOMAIN = b"sealai.material-evidence-ai-review.snapshot.v1\x00"
 VALIDATION_DOMAIN = b"sealai.material-evidence-ai-review.validation.v1\x00"
 AUDIT_DOMAIN = b"sealai.material-evidence-ai-review.audit.v1\x00"
 LIFECYCLE_DOMAIN = b"sealai.material-evidence-ai-review.lifecycle.v1\x00"
+SOURCE_ORIGIN_DOMAIN = b"sealai.material-evidence-ai-review.source-origin.v1\x00"
 
 _BATCH_ID_RE = re.compile(r"^mai_[0-9a-f]{32}$", re.ASCII)
 _SNAPSHOT_ID_RE = re.compile(r"^mas_[0-9a-f]{64}$", re.ASCII)
@@ -97,6 +98,7 @@ class AIReviewErrorCode(str, Enum):
     INVALID_TRANSITION = "MAT_EVID_AI_REVIEW_INVALID_TRANSITION"
     TENANT_MISMATCH = "MAT_EVID_AI_REVIEW_TENANT_MISMATCH"
     DB_INTEGRITY = "MAT_EVID_AI_REVIEW_DB_INTEGRITY"
+    SENSITIVE_DATA_FORBIDDEN = "MAT_EVID_AI_REVIEW_SENSITIVE_DATA_FORBIDDEN"
 
 
 class AIReviewValidationError(ValueError):
@@ -464,26 +466,36 @@ class AdjudicatorAgentRunV1:
 @dataclass(frozen=True, slots=True)
 class AISourceContextV1:
     metadata: ReviewedSourceMetadataV1
-    independence_group: str
 
     def __post_init__(self) -> None:
         if type(self.metadata) is not ReviewedSourceMetadataV1:
             _fail(AIReviewErrorCode.INVALID_TYPE, "invalid source metadata")
-        _text(
-            self.independence_group,
-            path="$.source.independence_group",
-            max_chars=256,
-        )
 
     @property
     def source_ref(self) -> str:
         return self.metadata.source_ref
 
+    @property
+    def origin_ref(self) -> str:
+        """Content-address the exact publisher identity; never trust a creator label."""
+
+        return derive_source_origin_ref(self.metadata.publisher)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             **self.metadata.to_dict(),
-            "independence_group": self.independence_group,
+            "origin_ref": self.origin_ref,
         }
+
+
+def derive_source_origin_ref(publisher: str) -> str:
+    """Derive the closed source-origin group from bound publisher metadata."""
+
+    _text(publisher, path="$.source.publisher", max_chars=256)
+    return (
+        "mso_"
+        + hashlib.sha256(SOURCE_ORIGIN_DOMAIN + publisher.encode("utf-8")).hexdigest()
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -874,6 +886,12 @@ class AIReviewPayloadV1:
     def eligibility_failures(self) -> tuple[str, ...]:
         failures: list[str] = []
         source_by_ref = {item.source_ref: item for item in self.sources}
+        primary_source_types = {
+            EvidenceDocumentType.MANUFACTURER_DATASHEET,
+            EvidenceDocumentType.PEER_REVIEWED_PUBLICATION,
+            EvidenceDocumentType.REGULATORY_DOCUMENT,
+            EvidenceDocumentType.TECHNICAL_REPORT,
+        }
         for source in self.sources:
             if source.metadata.rights_state in {
                 EvidenceRightsState.UNKNOWN,
@@ -886,9 +904,15 @@ class AIReviewPayloadV1:
                 failures.append(f"excerpt:{source.source_ref}")
         for claim in self.claims:
             groups = {
-                source_by_ref[source_ref].independence_group
+                source_by_ref[source_ref].origin_ref
                 for source_ref in claim.primary_source_refs
             }
+            if any(
+                source_by_ref[source_ref].metadata.document_type
+                not in primary_source_types
+                for source_ref in claim.primary_source_refs
+            ):
+                failures.append(f"primary_source_quality:{claim.claim_ref}")
             if claim.conflicting_claim_refs and (
                 claim.expected_verdict is not MaterialConstraintVerdict.BEDINGT
             ):
@@ -983,6 +1007,12 @@ class AIReviewPayloadV1:
             (binding.rule_ref, binding.claim_ref)
             for binding in evidence.payload.rule_claim_bindings
         }
+        expected_bindings = {(claim.rule_ref, claim.claim_ref) for claim in self.claims}
+        if bindings != expected_bindings:
+            _fail(
+                AIReviewErrorCode.INCOMPLETE_COVERAGE,
+                "rule-to-claim binding set differs from the exact AI review scope",
+            )
         if set(evidence_claims) != {claim.claim_ref for claim in self.claims}:
             _fail(AIReviewErrorCode.INCOMPLETE_COVERAGE, "claim coverage drift")
         all_evidence_sources = dict(evidence_sources)
@@ -1062,7 +1092,6 @@ class AIReviewPayloadV1:
                 claim.claim_text != evidence_claim.claim_text
                 or claim.scope != evidence_claim.scope
                 or claim.source_refs != evidence_claim.source_refs
-                or (claim.rule_ref, claim.claim_ref) not in bindings
             ):
                 _fail(AIReviewErrorCode.SCOPE_MISMATCH, "claim or binding drift")
             rule = rules.get(claim.rule_ref)
@@ -1363,7 +1392,7 @@ def _parse_source(value: Any, *, path: str) -> AISourceContextV1:
                 "document_title",
                 "document_type",
                 "excerpt",
-                "independence_group",
+                "origin_ref",
                 "locator",
                 "publication_edition",
                 "publisher",
@@ -1374,7 +1403,7 @@ def _parse_source(value: Any, *, path: str) -> AISourceContextV1:
         ),
         path=path,
     )
-    return AISourceContextV1(
+    source = AISourceContextV1(
         metadata=ReviewedSourceMetadataV1(
             source_ref=value["source_ref"],
             document_id=value["document_id"],
@@ -1396,9 +1425,15 @@ def _parse_source(value: Any, *, path: str) -> AISourceContextV1:
             ),
             rights_basis=value["rights_basis"],
             excerpt=_parse_excerpt(value["excerpt"], path=f"{path}.excerpt"),
-        ),
-        independence_group=value["independence_group"],
+        )
     )
+    if value["origin_ref"] != source.origin_ref:
+        _fail(
+            AIReviewErrorCode.HASH_MISMATCH,
+            "source origin is not derived from the exact publisher identity",
+            path=f"{path}.origin_ref",
+        )
+    return source
 
 
 def _parse_claim(value: Any, *, path: str) -> AIClaimContextV1:
@@ -1713,6 +1748,7 @@ __all__ = [
     "compute_ai_review_lifecycle_sha256",
     "compute_ai_review_validation_sha256",
     "derive_ai_review_snapshot_id",
+    "derive_source_origin_ref",
     "parse_ai_review_payload",
     "transition_ai_review",
     "validate_ai_review_batch_id",

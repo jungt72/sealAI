@@ -37,7 +37,8 @@ Each review snapshot is content addressed and includes:
   source-derived identity claims for every rule medium;
 - atomic rule, claim, material, canonical medium and condition scope;
 - exact source identity, digest, locator, rights state and permitted excerpt;
-- source-independence groups, explicit conflicts and source-risk treatment;
+- publisher-derived source-origin hashes, explicit conflicts and source-risk
+  treatment; creator-supplied independence labels are not accepted;
 - separate creator-agent model/version/prompt/run/input/output provenance.
 
 Source eligibility fails closed. Missing locators or permitted excerpts,
@@ -45,11 +46,19 @@ unknown or restricted rights, dangling/self conflict references, a family-wide s
 or an explicit quarantine treatment cannot reach the challenger. High-risk
 single-source claims require exact narrow-scope or opaque-`bedingt` treatment;
 this mechanism cannot manufacture a second source or support a family rule.
+Ordinary primary evidence is restricted to the closed manufacturer-datasheet,
+peer-reviewed-publication, regulatory-document or technical-report classes.
+Every `rule_ref -> claim_ref` binding must equal, not merely contain, the
+review snapshot's canonical pair set.
 
 The challenger is exactly `anthropic/claude-sonnet-5`. Its execution contract
 requires tools, MCP, hooks, web search, web fetch and session persistence to be
-disabled. The audit input excludes customer identity, tenant identity, Codex
-reasoning and any preapproval. It includes only the frozen corpus and closed
+disabled. The CLI transport must report exact zero web-search and web-fetch
+counters. Before transmission, the exact outbound corpus receives a
+content-addressed, deterministic secret/direct-identifier scan; a match stops
+the run. The audit input structurally excludes customer and tenant fields,
+Codex reasoning and preapproval. It includes every structured media-identity
+preimage (canonical name, type and aliases), the frozen corpus and closed
 invariants. The output is a closed, complete per-claim report with
 `PASS | CHANGES_REQUIRED | QUARANTINE`. Transport failure, invalid JSON,
 permission denial, wrong model usage or incomplete coverage is not a verdict.
@@ -76,6 +85,9 @@ reject update/delete, downgrade refuses populated tables, and exact catalog
 fingerprints protect structural adoption. Tenant and non-production environment
 are revalidated on every repository access. The repository exposes no update,
 delete, approval, active pointer, sampling, API or deployment method.
+At persistence, challenges and adjudications are re-derived against the exact
+stored snapshot and report; publicly constructible domain objects cannot skip
+run separation, input binding, finding coverage or outcome derivation.
 
 The authenticated local Claude CLI is invoked once from a new private directory
 outside the repository. Secret-bearing environment variables are removed.

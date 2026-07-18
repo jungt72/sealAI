@@ -22,7 +22,12 @@ from sealai_v2.tests.test_mat_evid_ai_review_domain import (
 
 
 def _fake_claude(
-    path: Path, *, invalid_transport: bool = False, wrong_model: bool = False
+    path: Path,
+    *,
+    invalid_transport: bool = False,
+    wrong_model: bool = False,
+    web_search_requests: int = 0,
+    web_fetch_requests: int = 0,
 ) -> Path:
     script = path / "fake-claude"
     body = """#!/usr/bin/env python3
@@ -50,6 +55,7 @@ for claim in audit['claims']:
         'scope_assessment': 'Scope matches frozen corpus.',
         'severity': 'NONE',
         'source_coverage': 'Exact supplied source and locator.',
+        'source_independence_assessment': 'Publisher-derived origin checked.',
         'source_overreach_assessment': 'No overreach found.',
         'verdict': 'PASS',
     })
@@ -69,9 +75,17 @@ envelope = {
     'session_id': 'sensitive-session-id-never-persist-raw',
     'modelUsage': {'claude-sonnet-5': {'inputTokens': 10, 'outputTokens': 10}},
     'permission_denials': [],
+    'web_search_requests': 0,
+    'web_fetch_requests': 0,
 }
 print(json.dumps(envelope))
 """
+    body = body.replace(
+        "'web_search_requests': 0", f"'web_search_requests': {web_search_requests}"
+    )
+    body = body.replace(
+        "'web_fetch_requests': 0", f"'web_fetch_requests': {web_fetch_requests}"
+    )
     if invalid_transport:
         body = body.replace(
             "'permission_denials': [],", "'permission_denials': ['unexpected'],"
@@ -168,5 +182,30 @@ def test_runner_rejects_non_exact_model_usage(tmp_path) -> None:
             media_identity_evidence=(_identity_evidence(),),
             output_directory=tmp_path / "wrong-model-output",
             claude_executable=_fake_claude(tmp_path, wrong_model=True),
+        )
+    assert exc.value.code is AIReviewErrorCode.INVALID_AGENT
+
+
+@pytest.mark.parametrize(
+    "web_search_requests,web_fetch_requests",
+    ((1, 0), (0, 1)),
+)
+def test_runner_rejects_nonzero_web_transport_receipt(
+    tmp_path, web_search_requests: int, web_fetch_requests: int
+) -> None:
+    payload, ruleset, evidence = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    with pytest.raises(AIReviewValidationError) as exc:
+        run_claude_challenge(
+            snapshot,
+            ruleset=ruleset,
+            evidence=evidence,
+            media_identity_evidence=(_identity_evidence(),),
+            output_directory=tmp_path / "web-enabled-output",
+            claude_executable=_fake_claude(
+                tmp_path,
+                web_search_requests=web_search_requests,
+                web_fetch_requests=web_fetch_requests,
+            ),
         )
     assert exc.value.code is AIReviewErrorCode.INVALID_AGENT

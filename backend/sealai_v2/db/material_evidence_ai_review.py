@@ -50,6 +50,7 @@ from sealai_v2.material_evidence_ai_review.audit import (
     AIAdjudicationOutcome,
     AIAdjudicationV1,
     ClaudeChallengeV1,
+    create_adjudication,
     parse_claude_audit_report,
 )
 
@@ -262,6 +263,7 @@ class MaterialEvidenceAIReviewRepositoryV1:
             raise TypeError("challenge must be ClaudeChallengeV1")
         timestamp = _metadata(created_at, field="created_at")
         snapshot = self.load_snapshot(challenge.review_snapshot_id, context=context)
+        challenge.validate_against(snapshot)
         failures = snapshot.payload.eligibility_failures()
         if failures:
             raise AIReviewValidationError(
@@ -405,6 +407,7 @@ class MaterialEvidenceAIReviewRepositoryV1:
                     report=stored_report,
                     report_sha256=challenge.report_sha256,
                 )
+                stored_challenge.validate_against(snapshot)
             except (AIReviewValidationError, TypeError, ValueError) as exc:
                 raise AIReviewIntegrityError(
                     AIReviewErrorCode.DB_INTEGRITY,
@@ -433,6 +436,8 @@ class MaterialEvidenceAIReviewRepositoryV1:
                 if adjudication.replacement_evidence_snapshot_id != "not_applicable"
                 else None
             )
+            replacement_ruleset = None
+            replacement_evidence = None
             if replacement_ruleset_id is not None:
                 replacement_ruleset = self._rulesets.load_snapshot(
                     replacement_ruleset_id
@@ -448,6 +453,7 @@ class MaterialEvidenceAIReviewRepositoryV1:
                         AIReviewErrorCode.HASH_MISMATCH,
                         "replacement snapshot pair is not bound",
                     )
+            replacement_identity_evidence = []
             for correction in adjudication.replacement_media_identity_evidence:
                 replacement = self._evidence.load_snapshot(
                     correction.replacement_evidence_snapshot_id
@@ -462,6 +468,26 @@ class MaterialEvidenceAIReviewRepositoryV1:
                         AIReviewErrorCode.HASH_MISMATCH,
                         "media identity replacement binding drift",
                     )
+                replacement_identity_evidence.append(replacement)
+            expected_adjudication = create_adjudication(
+                snapshot=snapshot,
+                challenge=stored_challenge,
+                adjudicator=adjudication.adjudicator,
+                finding_adjudications=adjudication.finding_adjudications,
+                replacement_ruleset=replacement_ruleset,
+                replacement_evidence=replacement_evidence,
+                replacement_media_identity_evidence=tuple(
+                    replacement_identity_evidence
+                ),
+            )
+            if (
+                adjudication != expected_adjudication
+                or adjudication.to_dict() != expected_adjudication.to_dict()
+            ):
+                raise AIReviewValidationError(
+                    AIReviewErrorCode.INVALID_TRANSITION,
+                    "adjudication differs from the canonical stored-report derivation",
+                )
             run = adjudication.adjudicator
             session.add(
                 V2MaterialEvidenceAIAdjudication(

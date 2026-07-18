@@ -450,6 +450,11 @@ bound to an exact, separately source-derived v2 `media_identity` Evidence
 snapshot and assertion hash without entering the verified-human MED-NORM
 catalog. A factual correction creates new immutable ruleset and/or identity
 Evidence plus review snapshots and requires a new Claude input and run.
+The frozen Claude corpus includes every media-identity preimage and a bound
+secret/direct-identifier scan receipt. Source independence is derived from
+publisher identity rather than a creator label, source quality uses a closed
+primary-source set, rule/claim bindings are exact, CLI web counters must be
+zero, and persistence re-derives every challenge and adjudication.
 
 ### Consequence
 

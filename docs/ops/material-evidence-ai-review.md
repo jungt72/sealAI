@@ -27,6 +27,12 @@ active pointer, sampling, public output or deployment authority.
    independent primary sources. A family-wide single-source claim is always
    blocked. Other high-risk single-source claims must be narrowly scoped,
    opaque `bedingt`, or quarantined.
+9. Treat independence as the publisher-derived `origin_ref`, never as a free
+   creator label. A normal primary source must use one of the closed eligible
+   source classes; internal attestations and standard metadata do not satisfy
+   that gate.
+10. Verify the Evidence `rule_ref -> claim_ref` set is exactly equal to the AI
+    review's canonical set; extra cross-bindings are forbidden.
 
 ## Creator step
 
@@ -43,10 +49,13 @@ active pointer, sampling, public output or deployment authority.
 
 Build the corpus only with the contract helper. Confirm it contains exact
 claims, rules, scopes, allowed source metadata/excerpts, source and artifact
-digests, conflict references, rights, expected disqualifying effect, and the
-ratified invariants. Confirm it contains no tenant/customer identity, Codex
-reasoning, preapproval, secret, `.env` value, application prompt or protected
-full text.
+digests, conflict references, rights, expected disqualifying effect, the
+complete structured preimage of every media identity and the ratified
+invariants. Confirm the bound corpus safety receipt reports the exact scanner
+contract and zero secret/direct-identifier matches. A scan match is a
+fail-closed stop, not something an operator may redact silently. The schema
+contains no tenant/customer fields, Codex reasoning or preapproval and accepts
+no `.env` value, application prompt or protected full text.
 
 Hash the canonical corpus before execution. A changed byte creates a different
 input hash and invalidates any previous challenge receipt.
@@ -61,9 +70,9 @@ outside the repository. It does not retry.
 
 Accept the transport only when the process returns zero, the envelope is a
 complete result, model usage includes `claude-sonnet-5`, permission denials are
-empty, and the closed report binds the exact review snapshot/hash and every
-claim. The persisted result has its session ID redacted; only a one-way run hash
-enters provenance.
+empty, both CLI web counters are exact integer zero, and the closed report binds
+the exact review snapshot/hash and every claim. The persisted result has its
+session ID redacted; only a one-way run hash enters provenance.
 
 A timeout, transport error, invalid JSON, wrong model, permission denial,
 incomplete report or hash mismatch is `REVIEW_INCOMPLETE`, not PASS. Do not
@@ -82,6 +91,8 @@ silently repair or retry; create a new owner-visible execution decision.
 - Mark `ai_cross_reviewed_non_authoritative` only after Claude PASS, complete
   claim coverage, no open CRITICAL/HIGH/MEDIUM finding, unchanged facts and
   valid rights/scope/hash/source bindings.
+- Persist only after repository-side canonical re-derivation of the challenge
+  and adjudication from the stored snapshot/report succeeds.
 
 ## Postconditions and evidence
 

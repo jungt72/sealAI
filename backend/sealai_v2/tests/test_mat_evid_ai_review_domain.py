@@ -33,6 +33,7 @@ from sealai_v2.core.material_evidence_ai_review import (
     compute_ai_review_audit_sha256,
     compute_ai_review_lifecycle_sha256,
     compute_ai_review_validation_sha256,
+    derive_source_origin_ref,
     parse_ai_review_payload,
     transition_ai_review,
 )
@@ -246,8 +247,7 @@ def _payload(
                             rights_basis="Synthetic test permission",
                         )
                     ),
-                ),
-                independence_group="publisher:synthetic-independent",
+                )
             ),
         ),
         media_identities=(
@@ -308,6 +308,9 @@ def _pass_report(snapshot: AIReviewSnapshotV1) -> str:
                 "scope_assessment": "Scope matches the supplied test source.",
                 "severity": "NONE",
                 "source_coverage": "One exact source and locator supplied.",
+                "source_independence_assessment": (
+                    "Publisher-derived source origin matches the supplied evidence."
+                ),
                 "source_overreach_assessment": "No overreach found.",
                 "verdict": "PASS",
             }
@@ -391,25 +394,25 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
     )
 
     assert snapshot.content_sha256 == (
-        "1045adaa6023086c0bde3f86055866be3b856b73179d369a29b11dd914d35d2b"
+        "af1bb657677ae9289953d981f11266e337d266205c5b5ad1a8a916801210209e"
     )
     assert snapshot.review_snapshot_id == (
-        "mas_336fd08b3b68b8840089ca6dfd50ed4b981413be1821cbaef3415b304fc24f05"
+        "mas_faeb1c5ec671760d762ec32b05abe57d9c27de8fa3f3243bf9c3db1dedda5e27"
     )
     assert compute_ai_review_validation_sha256(snapshot) == (
-        "1136f191fb071ca35f139fe25db584a9dea2f2207fbdbb393ca5b695cfde9583"
+        "7b569f85964b0c70bc445fa6b3f6734fe4aefb4532eabe0e047ef811927bb0d6"
     )
     assert audit_input.audit_input_sha256 == (
-        "a234959e7f8e7d481f6db36a238b1efd4590c5c084e3491abdeb1d825c49bce9"
+        "7ae2a2e44bc89cf017d67f3a633662ccc5da44c27106d7f6d6146e754b977877"
     )
     assert report_hash == (
-        "605c1f7c24179141744c63a53bd13f81d4586c525d0162f0492a0359732991b2"
+        "9c7798ef0d28f96a58b63ab28ff8bc02b41aa27140834650875b6232fb2b5ec5"
     )
     assert challenge.challenge_id == (
-        "mac_dbe9a7ca462a0ddb448c3283cbeb7ca0ceb5fae7da20c050b269d818b2f84a6d"
+        "mac_f39e9270ee88137cdee96d857fc24a4cdd25f7da1b3083c53dd0d8aeafa2a7ab"
     )
     assert adjudication.adjudication_id == (
-        "maa_63705bb5799482cbe54c67044484cbacaabf6e4f1cde35f179682d0138477c46"
+        "maa_8564ab19f34500439918487e0f918a1f0db34de71535885fb115802dc8d42490"
     )
     assert compute_ai_review_audit_sha256({"event": "golden", "sequence": 1}) == (
         "630e79eb4ead1dee89a3f6d88ac4f04c8cebcacc45ab44fadc8ee6b091b85948"
@@ -692,8 +695,188 @@ def test_audit_input_is_deterministic_and_excludes_identity_and_reasoning() -> N
     decoded = first.canonical_bytes.decode("utf-8")
     assert payload.tenant_id not in decoded
     assert payload.creator.run_id not in decoded
-    assert 'creator_reasoning_included":false' in decoded
+    assert 'creator_reasoning_fields_included":false' in decoded
+    assert '"scanner_contract_version":"MAT-EVID-AI-CORPUS-SAFETY.v1"' in decoded
+    assert '"media_identity_candidates"' in decoded
+    assert f'"canonical_name":"{MEDIUM_NAME}"' in decoded
+    assert f'"identity_kind":"{MEDIUM_KIND.value}"' in decoded
     assert CLAIM_TEXT in decoded
+
+
+def _payload_with_identity_shape(
+    payload: AIReviewPayloadV1,
+    *,
+    canonical_name: str,
+    identity_kind: MediumIdentityKind,
+    aliases: tuple[str, ...],
+) -> AIReviewPayloadV1:
+    media_ref = derive_media_id(canonical_name, identity_kind)
+    assertion_ref = derive_medium_identity_assertion_ref(
+        media_id=media_ref,
+        canonical_name=canonical_name,
+        identity_kind=identity_kind,
+        aliases=aliases,
+    )
+    previous = payload.media_identities[0]
+    identity_claims = tuple(
+        replace(
+            claim,
+            scope=MediaIdentityClaimScopeV2(
+                media_ref=media_ref,
+                identity_assertion_ref=assertion_ref,
+            ),
+        )
+        for claim in previous.claims
+    )
+    identity = AIMediumIdentityContextV1(
+        media_ref=media_ref,
+        canonical_name=canonical_name,
+        identity_kind=identity_kind,
+        aliases=aliases,
+        identity_assertion_ref=assertion_ref,
+        evidence_snapshot_id=previous.evidence_snapshot_id,
+        evidence_content_sha256=previous.evidence_content_sha256,
+        claims=identity_claims,
+    )
+    material_claim = payload.claims[0]
+    material_scope = replace(material_claim.scope, media=(media_ref,))
+    return replace(
+        payload,
+        media_identities=(identity,),
+        claims=(replace(material_claim, scope=material_scope),),
+    )
+
+
+def test_audit_input_exposes_and_binds_every_structured_identity_preimage() -> None:
+    payload, _, _ = _payload()
+    variants = (
+        payload,
+        _payload_with_identity_shape(
+            payload,
+            canonical_name="SYNTHETIC-MEDIUM-RENAMED",
+            identity_kind=MEDIUM_KIND,
+            aliases=(),
+        ),
+        _payload_with_identity_shape(
+            payload,
+            canonical_name=MEDIUM_NAME,
+            identity_kind=MediumIdentityKind.CHEMICAL_SUBSTANCE,
+            aliases=(),
+        ),
+        _payload_with_identity_shape(
+            payload,
+            canonical_name=MEDIUM_NAME,
+            identity_kind=MEDIUM_KIND,
+            aliases=("SYNTHETIC-MEDIUM-ALIAS",),
+        ),
+    )
+    inputs = tuple(
+        build_claude_audit_input(AIReviewSnapshotV1.create(BATCH_ID, item))
+        for item in variants
+    )
+    assert len({item.audit_input_sha256 for item in inputs}) == len(inputs)
+    for variant, audit_input in zip(variants, inputs, strict=True):
+        identity = variant.media_identities[0]
+        corpus = json.loads(audit_input.canonical_bytes)
+        assert corpus["media_identity_candidates"] == [identity.to_dict()]
+
+
+@pytest.mark.parametrize(
+    "unsafe_value",
+    (
+        "Contact source-owner@example.invalid for this source.",
+        "Authorization: Bearer " + "synthetic-token-value-1234567890",
+        "-----BEGIN " + "PRIVATE KEY----- synthetic",
+        "customer_id=synthetic-customer-42",
+    ),
+)
+def test_audit_corpus_safety_preflight_blocks_sensitive_content(
+    unsafe_value: str,
+) -> None:
+    payload, _, _ = _payload()
+    source = payload.sources[0]
+    unsafe_source = AISourceContextV1(
+        metadata=replace(source.metadata, document_title=unsafe_value)
+    )
+    unsafe_payload = replace(payload, sources=(unsafe_source,))
+    with pytest.raises(AIReviewValidationError) as exc:
+        build_claude_audit_input(AIReviewSnapshotV1.create(BATCH_ID, unsafe_payload))
+    assert exc.value.code is AIReviewErrorCode.SENSITIVE_DATA_FORBIDDEN
+
+
+def test_source_origin_is_publisher_derived_and_primary_quality_is_closed() -> None:
+    payload, _, _ = _payload()
+    source = payload.sources[0]
+    assert source.origin_ref == derive_source_origin_ref(source.metadata.publisher)
+    assert source.to_dict()["origin_ref"] == source.origin_ref
+
+    internal = AISourceContextV1(
+        metadata=replace(
+            source.metadata,
+            document_type=EvidenceDocumentType.INTERNAL_EXPERT_ATTESTATION,
+        )
+    )
+    internal_payload = replace(payload, sources=(internal,))
+    assert (
+        f"primary_source_quality:{payload.claims[0].claim_ref}"
+        in internal_payload.eligibility_failures()
+    )
+
+    raw = payload.to_dict()
+    raw["sources"][0]["origin_ref"] = "mso_" + "0" * 64
+    with pytest.raises(AIReviewValidationError) as drift:
+        parse_ai_review_payload(json.dumps(raw))
+    assert drift.value.code is AIReviewErrorCode.HASH_MISMATCH
+
+
+def test_same_publisher_cannot_be_relabeled_as_two_independent_sources() -> None:
+    payload, _, _ = _payload()
+    first = payload.sources[0]
+    second = AISourceContextV1(
+        metadata=replace(
+            first.metadata,
+            source_ref="msr_" + "f" * 64,
+            document_id="DOC-AI-TEST-002",
+            content_sha256="9" * 64,
+        )
+    )
+    assert first.origin_ref == second.origin_ref
+    sources = tuple(sorted((first, second), key=lambda item: item.source_ref))
+    source_refs = tuple(item.source_ref for item in sources)
+    claim = replace(
+        payload.claims[0],
+        source_refs=source_refs,
+        primary_source_refs=source_refs,
+        evidence_risk=AIEvidenceRisk.FAMILY_WIDE,
+        material_granularity=AIMaterialGranularity.MATERIAL_FAMILY,
+    )
+    widened = replace(payload, sources=sources, claims=(claim,))
+    assert f"family_single_source:{claim.claim_ref}" in widened.eligibility_failures()
+
+
+def test_rule_claim_bindings_must_equal_the_exact_ai_review_pairs() -> None:
+    payload, ruleset, evidence = _payload()
+    claim_ref = evidence.payload.claims[0].claim_ref
+    expanded_evidence = EvidenceManifestSnapshotV2.create(
+        MANIFEST_ID,
+        replace(
+            evidence.payload,
+            rule_claim_bindings=(
+                *evidence.payload.rule_claim_bindings,
+                RuleClaimBindingV2("MR-FOREIGN-EXTRA", claim_ref),
+            ),
+        ),
+    )
+    expanded_payload = replace(
+        payload,
+        evidence_snapshot_id=expanded_evidence.snapshot_id,
+        evidence_content_sha256=expanded_evidence.content_sha256,
+    )
+    with pytest.raises(AIReviewValidationError) as exc:
+        expanded_payload.validate_against(
+            ruleset, expanded_evidence, (_identity_evidence(),)
+        )
+    assert exc.value.code is AIReviewErrorCode.INCOMPLETE_COVERAGE
 
 
 def test_pass_report_challenge_and_adjudication_are_independent() -> None:
