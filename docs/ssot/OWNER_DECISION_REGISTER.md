@@ -373,3 +373,28 @@ matrix import, public/admin API, frontend output, pointer, activation,
 production migration, sampling, or deployment is authorized. MED-NORM-01,
 evidence-bound rules, MAT-GOV-03C, public integration, dark staging, and the
 single final external audit remain separate gates.
+
+## ODR-MAT-RULES-01-20260718-05
+
+### Decision
+
+`MAT_RULES_01_INERT_INFRASTRUCTURE_AND_GAP_INVENTORY_GO` is ratified by the
+autonomous material-intelligence completion Auftrag. A rule may enter the
+reviewed pack only through one exact, currently valid MAT-GOV-03A, MAT-EVID-
+01A/B/C and MED-NORM-01 dependency chain. Version 1 is disqualify-only and
+accepts no positive compatibility rule. Missing Evidence is explicitly a
+correct result.
+
+### Consequence
+
+No existing matrix prose, knowledge-ledger claim, URL, seed, model output, or
+agent-authored assertion is migrated or treated as reviewed. The initial
+coverage inventory records every required material family and service group as
+`evidence_gap` with no factual authority. Real rule content remains blocked on
+source curation and independent verified-human creation, review, and approval.
+
+The package adds no migration, pointer, evaluator integration, public API,
+frontend output, activation, sampling, or deployment. All material flags stay
+false and sampling stays zero. MAT-GOV-03C cannot start from synthetic tests or
+the gap inventory; it requires a real reviewed rule pack and remains `NO-GO` at
+this boundary.

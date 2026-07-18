@@ -46,6 +46,7 @@ _ALLOWLIST_FILES = {
     "core/interview/policy.py",  # reads that internal verification state; no user-facing wording
     "core/legal_doctrine.py",  # defines the terms themselves (this module's own source list)
     "core/material_evidence_review.py",  # internal factual-review/approval states; never suitability language
+    "core/material_reviewed_rules.py",  # exact factual-review gate; disqualify-only and never public suitability language
     "core/output_guard.py",  # IS the existing forbidden-phrase enforcement list this lint mirrors
     "core/response_contract_policy.py",  # same doctrine — banned-phrase list + negated comments
     "knowledge/produktspec/contracts.py",  # `freigegeben: bool = False` G1 structural invariant

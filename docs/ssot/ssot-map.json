@@ -102,13 +102,13 @@
   "capabilities": {
     "material_constraints": {
       "status": "in_build_default_off",
-      "implementation_status": "med_norm_01_empty_catalog_inert_default_off_sampling_zero",
-      "contract_version": "MED-NORM-01.v1",
+      "implementation_status": "mat_rules_01_inert_reviewed_pack_seam_all_required_coverage_evidence_gap_default_off_sampling_zero",
+      "contract_version": "MAT-RULES-01.v1",
       "activation_gate": "G8",
       "activation_blockers": [
         "MAT-GOV-03C",
         "reviewed_media_catalog_content",
-        "material_rule_evidence",
+        "real_reviewed_material_rule_content",
         "tested_shadow_purge_and_maintenance_role",
         "mat_gov_02_payload_and_hard_gate_followups",
         "owner_activation"
@@ -121,18 +121,22 @@
         "docs/architecture/ADR_MAT_EVID_01B_RUNTIME_BINDING.md",
         "docs/architecture/ADR_MAT_EVID_01C_FACTUAL_REVIEW.md",
         "docs/architecture/ADR_MED_NORM_01_CATALOG.md",
+        "docs/architecture/ADR_MAT_RULES_01_REVIEWED_PACK.md",
         "backend/sealai_v2/core/material_rulesets.py",
         "backend/sealai_v2/core/material_shadow.py",
         "backend/sealai_v2/core/material_evidence.py",
         "backend/sealai_v2/core/material_evidence_binding.py",
         "backend/sealai_v2/core/material_evidence_review.py",
         "backend/sealai_v2/core/medium_catalog.py",
+        "backend/sealai_v2/core/material_reviewed_rules.py",
+        "backend/sealai_v2/core/material_rule_coverage.py",
         "backend/sealai_v2/db/material_rulesets.py",
         "backend/sealai_v2/db/material_shadow.py",
         "backend/sealai_v2/db/material_evidence.py",
         "backend/sealai_v2/db/material_evidence_binding.py",
         "backend/sealai_v2/db/material_evidence_review.py",
         "backend/sealai_v2/db/medium_catalog.py",
+        "backend/sealai_v2/db/material_reviewed_rules.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0011_mat_gov_03a_snapshots.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0012_mat_gov_03b_shadow.py",
         "backend/sealai_v2/db/migrations/versions/20260717_0013_mat_gov_03b_leases.py",
@@ -160,10 +164,14 @@
         "backend/sealai_v2/tests/test_mat_evid_01b_postgres.py",
         "backend/sealai_v2/tests/test_mat_evid_01c_review.py",
         "backend/sealai_v2/tests/test_mat_evid_01c_postgres.py",
+        "backend/sealai_v2/tests/test_material_reviewed_rules.py",
+        "backend/sealai_v2/tests/test_material_rule_coverage.py",
         "backend/tests/architecture/test_mat_gov_03a_isolation.py",
         "backend/tests/architecture/test_mat_evid_01a_isolation.py",
         "backend/tests/architecture/test_mat_evid_01b_isolation.py",
-        "backend/tests/architecture/test_mat_evid_01c_isolation.py"
+        "backend/tests/architecture/test_mat_evid_01c_isolation.py",
+        "backend/tests/architecture/test_material_reviewed_rules_isolation.py",
+        "docs/ssot/material-rule-coverage-v1.json"
       ]
     },
     "adaptive_interview_rwdr": {
