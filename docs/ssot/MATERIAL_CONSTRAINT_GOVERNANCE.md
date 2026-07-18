@@ -249,6 +249,34 @@ card, RAG document, URL, seed, backfill, or LLM-generated content. MAT-EVID-01B
 must separately implement fail-closed evaluation binding; MAT-GOV-03C owns the
 still-separate review, approval, and deployment axes.
 
+## MAT-EVID-01B fail-closed runtime binding
+
+MAT-EVID-01B is a new companion contract and does not reinterpret either
+MAT-GOV-03A v1 or MAT-EVID-01A v1. It pins an exact ruleset snapshot ID/hash and
+an exact evidence-manifest snapshot ID/hash. The only binding states are
+`unbound` and `bound_unreviewed`; the only authority gained by a technically
+complete binding is `TECHNICAL_UNREVIEWED`. Positive material statements remain
+constructively forbidden.
+
+For `bound_unreviewed`, every rule in the exact ruleset requires one or more
+claims. Each `rule_ref -> claim_ref` is resolved object-exactly; foreign or
+missing rules, claim reuse across rules, hash/version/domain drift, and any
+difference between rule scope and claim scope block before evaluation. Claim
+text is never interpreted. The existing evaluator then runs unchanged, and
+verdict, precedence, matches, decisive reference, and technical result hash are
+preserved exactly. The evidence companion adds only immutable technical
+references and its own envelope hash. Any integrity failure yields
+`integrity_blocked` without verdict, matches, or decisive reference.
+
+Five additive empty tables store immutable companions and append-only technical
+audit events with restrictive foreign keys and update/delete triggers. The
+separate collision-safe cache domain pins both snapshot identities and hashes,
+all relevant versions, tenant HMAC identity, runtime/build identity, and input
+hash; blocked results are not cached. No active pointer, review, approval,
+deployment, public/admin API, seed, backfill, matrix import, or LLM evidence is
+introduced. The feature defaults off, sampling remains zero, and production
+migration and deployment remain prohibited.
+
 ## MAT-GOV-03B non-authoritative shadow contract
 
 03B selects no snapshot implicitly. An immutable, time-bounded binding names

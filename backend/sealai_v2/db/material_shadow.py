@@ -11,6 +11,11 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import sessionmaker
 
 from sealai_v2.core.contracts import VerifiedIdentity
+from sealai_v2.core.material_evidence_binding import (
+    EvidenceRuntimeBindingState,
+    EvidenceRuntimeBindingV1,
+    validate_runtime_binding,
+)
 from sealai_v2.core.material_shadow import (
     SHADOW_PIN_SCHEMA_VERSION,
     ShadowBinding,
@@ -24,6 +29,8 @@ from sealai_v2.core.material_shadow import (
     validate_shadow_reason,
 )
 from sealai_v2.db.models import (
+    V2MaterialEvidenceRuntimeBinding,
+    V2MaterialEvidenceRuntimePin,
     V2MaterialShadowBinding,
     V2MaterialShadowBindingEvent,
     V2MaterialShadowOutbox,
@@ -31,6 +38,11 @@ from sealai_v2.db.models import (
     V2MaterialShadowSessionUpgradeEvent,
     V2MaterialShadowSessionVersion,
 )
+from sealai_v2.db.material_evidence import MaterialEvidenceRepository
+from sealai_v2.db.material_evidence_binding import (
+    MaterialEvidenceRuntimeRepository,
+)
+from sealai_v2.db.material_rulesets import MaterialRulesetRepository
 from sealai_v2.material_shadow.hmac_refs import (
     BINDING_LOCK_DOMAIN,
     CASE_REF_DOMAIN,
@@ -92,6 +104,7 @@ class MaterialShadowRepository:
         identity: VerifiedIdentity,
         created_at: str,
         hmac_keyring: ShadowHmacKeyring | None = None,
+        evidence_binding: EvidenceRuntimeBindingV1 | None = None,
     ) -> None:
         if not isinstance(binding, ShadowBinding):
             raise TypeError("binding must be ShadowBinding")
@@ -99,6 +112,26 @@ class MaterialShadowRepository:
             raise TypeError("identity must be VerifiedIdentity")
         if binding.creator_subject != identity.subject:
             raise ValueError("binding creator must equal the verified subject")
+        if evidence_binding is not None:
+            if type(evidence_binding) is not EvidenceRuntimeBindingV1:
+                raise TypeError("evidence_binding must be EvidenceRuntimeBindingV1")
+            MaterialEvidenceRuntimeRepository.assert_shadow_binding(
+                evidence_binding, binding
+            )
+            ruleset = MaterialRulesetRepository(self._session_factory).load_snapshot(
+                binding.snapshot_id
+            )
+            evidence = None
+            if evidence_binding.state is EvidenceRuntimeBindingState.BOUND_UNREVIEWED:
+                assert evidence_binding.evidence_snapshot_id is not None
+                evidence = MaterialEvidenceRepository(
+                    self._session_factory
+                ).load_snapshot(evidence_binding.evidence_snapshot_id)
+                validate_runtime_binding(
+                    evidence_binding,
+                    ruleset=ruleset,
+                    evidence=evidence,
+                )
         if binding.scope_kind is ShadowScopeKind.TENANT_CANARY:
             if hmac_keyring is None or binding.hmac_key_id is None:
                 raise ValueError("tenant canary requires the server HMAC keyring")
@@ -198,6 +231,14 @@ class MaterialShadowRepository:
                 )
             )
             session.flush()
+            if evidence_binding is not None:
+                MaterialEvidenceRuntimeRepository.insert_binding_companion(
+                    session,
+                    companion=evidence_binding,
+                    shadow=binding,
+                    actor_subject=identity.subject,
+                    created_at=created_at,
+                )
             session.add(
                 V2MaterialShadowBindingEvent(
                     event_id=event_id,
@@ -376,6 +417,7 @@ class MaterialShadowRepository:
         hmac_keyring: ShadowHmacKeyring,
         acquired_at: str,
         upgrade_reason: str | None = None,
+        evidence_binding_required: bool = False,
     ) -> AtomicCaptureResult:
         """Atomically create a pin and outbox job under session ordering.
 
@@ -523,6 +565,23 @@ class MaterialShadowRepository:
                     raise RuntimeError(
                         "shadow idempotency row references a missing pin"
                     )
+                if evidence_binding_required:
+                    evidence_pin_row = session.get(
+                        V2MaterialEvidenceRuntimePin, existing_job.pin_id
+                    )
+                    if evidence_pin_row is None:
+                        raise RuntimeError(
+                            "shadow idempotency row lacks an evidence pin"
+                        )
+                    evidence_binding_row = session.get(
+                        V2MaterialEvidenceRuntimeBinding,
+                        evidence_pin_row.binding_id,
+                    )
+                    if evidence_binding_row is None:
+                        raise RuntimeError("evidence pin references a missing binding")
+                    MaterialEvidenceRuntimeRepository.pin_from_rows(
+                        evidence_pin_row, evidence_binding_row
+                    )
                 return AtomicCaptureResult(
                     pin=self._pin_from_row(pin_row),
                     job_id=existing_job.job_id,
@@ -607,6 +666,12 @@ class MaterialShadowRepository:
                     binding_valid_until=pin.binding_valid_until,
                 )
             )
+            if evidence_binding_required:
+                MaterialEvidenceRuntimeRepository.insert_pin_companion(
+                    session,
+                    shadow_pin=pin,
+                    created_at=acquired_at,
+                )
             if not versions:
                 session_version_id = _id("mshs")
                 session.add(

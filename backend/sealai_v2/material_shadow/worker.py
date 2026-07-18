@@ -14,6 +14,10 @@ from sealai_v2.core.contracts import (
     MediumCardinality,
     RelationState,
 )
+from sealai_v2.core.material_evidence_binding import (
+    EvidenceRuntimeBindingState,
+    MaterialEvidenceRuntimeErrorCode,
+)
 from sealai_v2.core.material_shadow import (
     ServerVerifiedCanonicalId,
     ShadowAuthority,
@@ -22,6 +26,10 @@ from sealai_v2.core.material_shadow import (
     ShadowMaterialInput,
 )
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
+from sealai_v2.db.material_evidence import MaterialEvidenceRepository
+from sealai_v2.db.material_evidence_binding import (
+    MaterialEvidenceRuntimeRepository,
+)
 from sealai_v2.db.models import (
     V2MaterialShadowBinding,
     V2MaterialShadowBindingEvent,
@@ -39,6 +47,16 @@ from sealai_v2.material_shadow.cache import (
 )
 from sealai_v2.material_shadow.evaluator import evaluate_snapshot
 from sealai_v2.material_shadow.hmac_refs import ShadowHmacKeyring
+from sealai_v2.material_evidence_binding.cache import (
+    EvidenceRuntimeCache,
+    EvidenceRuntimeCacheUnavailable,
+    evidence_cache_key,
+)
+from sealai_v2.material_evidence_binding.evaluator import (
+    EvidenceRuntimeEvaluationV1,
+    evaluate_with_evidence,
+    integrity_blocked_evaluation,
+)
 
 
 _RETENTION_DAYS = 90
@@ -84,6 +102,8 @@ class MaterialShadowWorker:
         retry_base_s: int = 5,
         retry_max_s: int = 300,
         worker_id: str | None = None,
+        evidence_binding_enabled: bool = False,
+        evidence_cache: EvidenceRuntimeCache | None = None,
     ) -> None:
         if type(max_attempts) is not int or max_attempts <= 0:
             raise ValueError("shadow max_attempts must be positive")
@@ -91,7 +111,13 @@ class MaterialShadowWorker:
             raise ValueError("shadow claim timeout must be positive")
         self._sessions = session_factory
         self._rulesets = MaterialRulesetRepository(session_factory)
+        self._evidence_manifests = MaterialEvidenceRepository(session_factory)
+        self._evidence_runtime = MaterialEvidenceRuntimeRepository(session_factory)
         self._cache = cache
+        self._evidence_binding_enabled = evidence_binding_enabled
+        self._evidence_cache = evidence_cache
+        if evidence_binding_enabled and evidence_cache is None:
+            raise ValueError("enabled runtime evidence binding requires its cache")
         self._keyring = keyring
         self._max_attempts = max_attempts
         self._claim_timeout_s = claim_timeout_s
@@ -255,7 +281,13 @@ class MaterialShadowWorker:
         )
 
     def _complete(
-        self, job_id: str, projection: dict, *, now: str, cache_hit: bool
+        self,
+        job_id: str,
+        projection: dict,
+        *,
+        now: str,
+        cache_hit: bool,
+        evidence_result: EvidenceRuntimeEvaluationV1 | None = None,
     ) -> None:
         with self._sessions() as session, session.begin():
             database_now = _format(self._database_now(session))
@@ -332,8 +364,17 @@ class MaterialShadowWorker:
                             authority=ShadowAuthority.NON_AUTHORITATIVE.value,
                         )
                     )
+                if evidence_result is not None:
+                    evidence_pin = self._evidence_runtime.load_pin(job.pin_id)
+                    MaterialEvidenceRuntimeRepository.insert_evaluation_companion(
+                        session,
+                        evaluation_id=evaluation_id,
+                        pin=evidence_pin,
+                        result=evidence_result,
+                        created_at=now,
+                    )
             job.status = ShadowJobStatus.DONE.value
-            job.stable_error_code = ShadowErrorCode.NONE.value
+            job.stable_error_code = projection["stable_error_code"]
             job.completed_at = database_now
             job.next_attempt_at = None
             job.lease_owner = None
@@ -386,6 +427,8 @@ class MaterialShadowWorker:
             return ShadowErrorCode.SNAPSHOT_DRIFT
         if isinstance(exc, ShadowCacheUnavailable):
             return ShadowErrorCode.CACHE_UNAVAILABLE
+        if isinstance(exc, EvidenceRuntimeCacheUnavailable):
+            return ShadowErrorCode.CACHE_UNAVAILABLE
         return ShadowErrorCode.INTERNAL
 
     def drain_once(self, *, now: str, batch_size: int = 50) -> ShadowDrainResult:
@@ -398,16 +441,72 @@ class MaterialShadowWorker:
                     job_id, now=now
                 )
                 pin = MaterialShadowRepositoryPinAdapter.from_row(pin_row)
-                key = cache_key(pin=pin, input_fingerprint=job.input_fingerprint)
-                projection = self._cache.get(key)
-                cache_hit = projection is not None
-                if projection is None:
-                    snapshot = self._rulesets.load_snapshot(pin.snapshot_id)
-                    if snapshot.content_sha256 != pin.content_sha256:
-                        raise RuntimeError("SHADOW_SNAPSHOT_DRIFT")
-                    projection = evaluate_snapshot(snapshot, self._material_input(job))
-                    self._cache.put(key, projection, ttl_s=_RETENTION_DAYS * 86400)
-                self._complete(job_id, projection, now=now, cache_hit=cache_hit)
+                evidence_result = None
+                if self._evidence_binding_enabled:
+                    evidence_pin = self._evidence_runtime.load_pin(pin.pin_id)
+                    assert self._evidence_cache is not None
+                    key = evidence_cache_key(
+                        shadow_pin=pin,
+                        evidence_pin=evidence_pin,
+                        input_fingerprint=job.input_fingerprint,
+                    )
+                    evidence_result = self._evidence_cache.get(key)
+                    cache_hit = evidence_result is not None
+                    try:
+                        snapshot = self._rulesets.load_snapshot(pin.snapshot_id)
+                        evidence_snapshot = None
+                        if (
+                            evidence_pin.state
+                            is EvidenceRuntimeBindingState.BOUND_UNREVIEWED
+                        ):
+                            assert evidence_pin.binding.evidence_snapshot_id is not None
+                            evidence_snapshot = self._evidence_manifests.load_snapshot(
+                                evidence_pin.binding.evidence_snapshot_id
+                            )
+                        verified_result = evaluate_with_evidence(
+                            pin=evidence_pin,
+                            ruleset=snapshot,
+                            evidence=evidence_snapshot,
+                            material_input=self._material_input(job),
+                        )
+                    except Exception:  # noqa: BLE001 - pinned integrity blocks
+                        verified_result = integrity_blocked_evaluation(
+                            evidence_pin,
+                            MaterialEvidenceRuntimeErrorCode.INTERNAL,
+                        )
+                    if evidence_result is not None:
+                        if evidence_result != verified_result:
+                            raise EvidenceRuntimeCacheUnavailable(
+                                "runtime evidence cache differs from Postgres state"
+                            )
+                    else:
+                        evidence_result = verified_result
+                        if evidence_result.evaluation_state != "integrity_blocked":
+                            self._evidence_cache.put(
+                                key,
+                                evidence_result,
+                                ttl_s=_RETENTION_DAYS * 86400,
+                            )
+                    projection = evidence_result.shadow_projection()
+                else:
+                    key = cache_key(pin=pin, input_fingerprint=job.input_fingerprint)
+                    projection = self._cache.get(key)
+                    cache_hit = projection is not None
+                    if projection is None:
+                        snapshot = self._rulesets.load_snapshot(pin.snapshot_id)
+                        if snapshot.content_sha256 != pin.content_sha256:
+                            raise RuntimeError("SHADOW_SNAPSHOT_DRIFT")
+                        projection = evaluate_snapshot(
+                            snapshot, self._material_input(job)
+                        )
+                        self._cache.put(key, projection, ttl_s=_RETENTION_DAYS * 86400)
+                self._complete(
+                    job_id,
+                    projection,
+                    now=now,
+                    cache_hit=cache_hit,
+                    evidence_result=evidence_result,
+                )
                 evaluated += 1
             except Exception as exc:  # noqa: BLE001 - stable shadow-only failure state
                 terminal = self._fail(job_id, code=self._stable_code(exc))

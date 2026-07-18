@@ -65,6 +65,7 @@ _NON_BEHAVIOR_FIELDS = frozenset(
         "database_url",
         "material_ruleset_shadow_redis_url",
         "material_ruleset_shadow_hmac_keyring_json",
+        "material_evidence_runtime_binding_enabled",
         "qdrant_url",
         "qdrant_api_key",
         "outbox_poll_interval_s",
