@@ -1,0 +1,412 @@
+{
+  "entries": [
+    {
+      "case_id": "RWDR-SHADOW-001",
+      "controller_need_id": "rwdr.application.goal",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-SCOPE-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "application_goal_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-002",
+      "controller_need_id": "rwdr.application.goal",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-SCOPE-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "application_goal_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-003",
+      "controller_need_id": "rwdr.application.goal",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-SCOPE-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "application_goal_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-004",
+      "controller_need_id": "rwdr.application.goal",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-SCOPE-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "application_goal_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-005",
+      "controller_need_id": "rwdr.application.goal",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-SCOPE-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.medium.primary",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "application_goal_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-006",
+      "controller_need_id": "rwdr.medium.primary",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-MEDIUM-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "medium_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-007",
+      "controller_need_id": "rwdr.medium.primary",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-MEDIUM-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "medium_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-008",
+      "controller_need_id": "rwdr.medium.primary",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-MEDIUM-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "medium_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-009",
+      "controller_need_id": "rwdr.medium.primary",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-MEDIUM-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "medium_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-010",
+      "controller_need_id": "rwdr.medium.primary",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-MEDIUM-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.temperature.operating",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "medium_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-011",
+      "controller_need_id": "rwdr.temperature.operating",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-TEMP-001",
+        "RWDR-TEMP-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "temperature_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-012",
+      "controller_need_id": "rwdr.temperature.operating",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-TEMP-001",
+        "RWDR-TEMP-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "temperature_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-013",
+      "controller_need_id": "rwdr.temperature.operating",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-TEMP-001",
+        "RWDR-TEMP-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "temperature_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-014",
+      "controller_need_id": "rwdr.temperature.operating",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-TEMP-001",
+        "RWDR-TEMP-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "temperature_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-015",
+      "controller_need_id": "rwdr.temperature.operating",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-TEMP-001",
+        "RWDR-TEMP-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.pressure.regime",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "temperature_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-016",
+      "controller_need_id": "rwdr.pressure.regime",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-PRESSURE-001",
+        "RWDR-PRESSURE-002",
+        "RWDR-PRESSURE-003"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "pressure_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-017",
+      "controller_need_id": "rwdr.pressure.regime",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-PRESSURE-001",
+        "RWDR-PRESSURE-002",
+        "RWDR-PRESSURE-003"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "pressure_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-018",
+      "controller_need_id": "rwdr.pressure.regime",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-PRESSURE-001",
+        "RWDR-PRESSURE-002",
+        "RWDR-PRESSURE-003"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "pressure_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-019",
+      "controller_need_id": "rwdr.pressure.regime",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-PRESSURE-001",
+        "RWDR-PRESSURE-002",
+        "RWDR-PRESSURE-003"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "pressure_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-020",
+      "controller_need_id": "rwdr.pressure.regime",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-PRESSURE-001",
+        "RWDR-PRESSURE-002",
+        "RWDR-PRESSURE-003"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.shaft.diameter",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "pressure_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-021",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "shaft_diameter_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-022",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "shaft_diameter_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-023",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "shaft_diameter_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-024",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "shaft_diameter_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-025",
+      "controller_need_id": "rwdr.shaft.diameter",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-001"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.rotation.speed",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "shaft_diameter_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-026",
+      "controller_need_id": "rwdr.rotation.speed",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "rotation_speed_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-027",
+      "controller_need_id": "rwdr.rotation.speed",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "rotation_speed_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-028",
+      "controller_need_id": "rwdr.rotation.speed",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "question_a_source": "controller",
+      "question_b_source": "legacy",
+      "scenario_group": "rotation_speed_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-029",
+      "controller_need_id": "rwdr.rotation.speed",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "rotation_speed_missing"
+    },
+    {
+      "case_id": "RWDR-SHADOW-030",
+      "controller_need_id": "rwdr.rotation.speed",
+      "controller_rule_refs": [
+        "AI-T4-REQUIRED-001",
+        "RWDR-KINEMATICS-002"
+      ],
+      "divergence_type": "different_need",
+      "legacy_need_id": "rwdr.application.goal",
+      "question_a_source": "legacy",
+      "question_b_source": "controller",
+      "scenario_group": "rotation_speed_missing"
+    }
+  ],
+  "review_set_id": "rwdr-shadow-controlled-v2",
+  "schema_version": "1.0",
+  "warning": "Do not open before the blinded worksheet is complete."
+}

@@ -1,28 +1,107 @@
-#!/bin/bash
-# Nightly backup orchestrator (ops hardening, 2026-07-03) — runs backup_postgres.sh + backup_qdrant.sh,
-# logs a one-line summary per run to $LOG_FILE (append-only; rotated by size via `logrotate`-style
-# truncation is NOT set up here — the log is tiny, one line/day). Scheduled via the invoking user's own
-# crontab (no root needed): `crontab -e` -> `0 3 * * * $HOME/sealai/ops/backup_run.sh`.
-#
-# Each backup script is independent + fail-closed (a failure in one does not skip the other, and does
-# NOT delete any existing good backup) — this script's job is only orchestration + a durable log trail
-# a human (or a future monitoring hook) can check.
-set -uo pipefail  # NOT -e: one script failing must not skip the other
+#!/bin/bash -p
+# Nightly backup orchestrator. Child scripts fail independently and log JSON events.
+set -euo pipefail
+umask 077
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset PYTHONPATH PYTHONHOME
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_FILE=${LOG_FILE:-"$HOME/sealai-backups/backup.log"}
-mkdir -p "$(dirname "$LOG_FILE")"
+readonly SAFETY_HELPER="${DIR}/backup_safety.py"
+readonly SAFE_HOME=/home/thorsten
+readonly CHILD_TIMEOUT_SECONDS=14400
+readonly LOG_FILE=/home/thorsten/sealai-backups/backup.log
+RETENTION_DAYS=${RETENTION_DAYS:-14}
+BACKUP_MIN_LOCAL_COPIES=${BACKUP_MIN_LOCAL_COPIES:-2}
+BACKUP_MIN_FREE_BYTES=${BACKUP_MIN_FREE_BYTES:-3221225472}
+BACKUP_SAFETY_STATE_DIR=${BACKUP_SAFETY_STATE_DIR:-"${SAFE_HOME}/.local/state/sealai-backup"}
+POSTGRES_BACKUP_ESTIMATED_BYTES=${POSTGRES_BACKUP_ESTIMATED_BYTES:-1073741824}
+QDRANT_BACKUP_ESTIMATED_BYTES=${QDRANT_BACKUP_ESTIMATED_BYTES:-1073741824}
+POSTGRES_CONTAINER=${POSTGRES_CONTAINER:-postgres}
+BACKEND_CONTAINER=${BACKEND_CONTAINER:-backend-v2}
+QDRANT_CONTAINER=${QDRANT_CONTAINER:-qdrant}
+QDRANT_INTERNAL_URL=${QDRANT_INTERNAL_URL:-http://qdrant:6333}
+QDRANT_REMOTE_DELETE_POLICY=${QDRANT_REMOTE_DELETE_POLICY:-verified-local}
+QDRANT_OFFSITE_RECEIPT=${QDRANT_OFFSITE_RECEIPT:-}
+LOG_DIRECTORY_FD=${SEALAI_BACKUP_LOG_DIR_FD:-}
+LOG_FD=${SEALAI_BACKUP_LOG_FD:-}
+RUN_LOCK_FD=${SEALAI_BACKUP_RUN_LOCK_FD:-}
 
-STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+safe_helper() {
+  /usr/bin/env -i HOME="${SAFE_HOME}" PATH="${PATH}" LANG=C LC_ALL=C \
+    /usr/bin/python3 -I "${SAFETY_HELPER}" "$@"
+}
+
+fatal_event() {
+  if ! safe_helper event --component backup_run \
+    --event backup_run --status error --reason "$1" >&2; then
+    printf '%s\n' \
+      '{"component":"backup_run","event":"backup_run","reason":"event_failure","status":"error"}' \
+      >&2
+  fi
+}
+
+cleanup() {
+  if [[ -n "${RUN_LOCK_FD}" ]]; then
+    flock -u "${RUN_LOCK_FD}" || true
+    exec {RUN_LOCK_FD}>&-
+    RUN_LOCK_FD=""
+  fi
+  if [[ -n "${LOG_FD}" ]]; then
+    exec {LOG_FD}>&-
+    LOG_FD=""
+  fi
+  if [[ -n "${LOG_DIRECTORY_FD}" ]]; then
+    exec {LOG_DIRECTORY_FD}>&-
+    LOG_DIRECTORY_FD=""
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
+if [[ -z "${LOG_DIRECTORY_FD}" || -z "${LOG_FD}" || -z "${RUN_LOCK_FD}" ]]; then
+  exec /usr/bin/env -i HOME="${SAFE_HOME}" PATH="${PATH}" LANG=C LC_ALL=C \
+    /usr/bin/python3 -I "${SAFETY_HELPER}" run-with-orchestrator-lock \
+    --setting "RETENTION_DAYS=${RETENTION_DAYS}" \
+    --setting "BACKUP_MIN_LOCAL_COPIES=${BACKUP_MIN_LOCAL_COPIES}" \
+    --setting "BACKUP_MIN_FREE_BYTES=${BACKUP_MIN_FREE_BYTES}" \
+    --setting "BACKUP_SAFETY_STATE_DIR=${BACKUP_SAFETY_STATE_DIR}" \
+    --setting "POSTGRES_BACKUP_ESTIMATED_BYTES=${POSTGRES_BACKUP_ESTIMATED_BYTES}" \
+    --setting "QDRANT_BACKUP_ESTIMATED_BYTES=${QDRANT_BACKUP_ESTIMATED_BYTES}" \
+    --setting "POSTGRES_CONTAINER=${POSTGRES_CONTAINER}" \
+    --setting "BACKEND_CONTAINER=${BACKEND_CONTAINER}" \
+    --setting "QDRANT_CONTAINER=${QDRANT_CONTAINER}" \
+    --setting "QDRANT_INTERNAL_URL=${QDRANT_INTERNAL_URL}" \
+    --setting "QDRANT_REMOTE_DELETE_POLICY=${QDRANT_REMOTE_DELETE_POLICY}" \
+    --setting "QDRANT_OFFSITE_RECEIPT=${QDRANT_OFFSITE_RECEIPT}"
+fi
+if ! safe_helper validate-orchestrator \
+  --directory-fd "${LOG_DIRECTORY_FD}" --log-fd "${LOG_FD}" \
+  --lock-fd "${RUN_LOCK_FD}" >&2; then
+  fatal_event orchestrator_binding_changed
+  exit 1
+fi
+
+event() {
+  safe_helper event --component backup_run "$@" >&"${LOG_FD}" 2>&1
+}
+
+event --event backup_run --status ok --reason run_started
 PG_OK=1
 QD_OK=1
 
-if "$DIR/backup_postgres.sh" >>"$LOG_FILE" 2>&1; then PG_OK=0; fi
-if "$DIR/backup_qdrant.sh" >>"$LOG_FILE" 2>&1; then QD_OK=0; fi
+if /usr/bin/timeout --signal=TERM --kill-after=60s "${CHILD_TIMEOUT_SECONDS}s" \
+  "${DIR}/backup_postgres.sh" >&"${LOG_FD}" 2>&1; then PG_OK=0; fi
+if /usr/bin/timeout --signal=TERM --kill-after=60s "${CHILD_TIMEOUT_SECONDS}s" \
+  "${DIR}/backup_qdrant.sh" >&"${LOG_FD}" 2>&1; then QD_OK=0; fi
 
-if [[ "$PG_OK" -eq 0 && "$QD_OK" -eq 0 ]]; then
-  echo "${STAMP} backup_run: OK (postgres + qdrant)" >>"$LOG_FILE"
+if [[ "${PG_OK}" -eq 0 && "${QD_OK}" -eq 0 ]]; then
+  event --event backup_run --status ok --reason run_completed \
+    --metric postgres_ok=true --metric qdrant_ok=true
   exit 0
 fi
-echo "${STAMP} backup_run: FAILED (postgres_ok=$([[ $PG_OK -eq 0 ]] && echo yes || echo NO) qdrant_ok=$([[ $QD_OK -eq 0 ]] && echo yes || echo NO)) — see log above" >>"$LOG_FILE"
+event --event backup_run --status error --reason child_backup_failed \
+  --metric "postgres_ok=$([[ ${PG_OK} -eq 0 ]] && echo true || echo false)" \
+  --metric "qdrant_ok=$([[ ${QD_OK} -eq 0 ]] && echo true || echo false)"
 exit 1

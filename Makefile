@@ -117,7 +117,7 @@ frontend-v2: ## Dashboard: Grenzen, Typen, Tests und Produktionsbuild
 verify-v2: lint-v2 architecture-v2 test-v2 frontend-v2 ## Gesamter lokale V2-Freigabenachweis
 
 tree-hash: ## Kanonischen Backend-V2 Release-Hash ausgeben
-	bash ops/tree-hash.sh
+	/bin/bash -p ops/tree-hash.sh
 
 test-v1-container: ## Legacy-V1-Pytest im laufenden Container
 	docker exec -t -w /app backend python -m pytest -q

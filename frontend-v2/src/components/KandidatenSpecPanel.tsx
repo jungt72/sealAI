@@ -31,6 +31,23 @@ function Section({ title, items }: { title: string; items: string[] }) {
  * language is owner-governed — this panel invents none of it). Render-only.
  */
 export function KandidatenSpecPanel({ data }: { data: KandidatenSpec }) {
+  // OD-3 (routing audit follow-up): a non-RWDR seal type is a structural scope boundary, not an
+  // empty/absent panel -- render the backend's own geltungsrahmen honestly instead of a candidate
+  // space the rule engine never computed for this seal type. Render-only, no candidate content.
+  if ("status" in data) {
+    return (
+      <section
+        className="medium-panel"
+        data-testid="kandidaten-spec-panel-unavailable"
+        aria-label="Produkt-Kandidat"
+      >
+        <header className="medium-panel-head">
+          <span className="medium-panel-title">PRODUKT-KANDIDAT</span>
+        </header>
+        <p className="medium-panel-unsicher">{data.geltungsrahmen}</p>
+      </section>
+    );
+  }
   const axisItems = data.axes
     .filter((a) => a.value || a.status === "open_verification" || a.status === "gate_blocked")
     .map((a) => {

@@ -1,0 +1,59 @@
+schema_version: 1
+document_class: DURABLE_POLICY
+approval_template: ../templates/approvals.template.yaml
+approval_template_authorizes_actions: false
+historical_evidence_authorizes_actions: false
+release_freeze:
+  default_status: ACTIVE
+  lift_gate: GATE-10
+  prerequisites:
+    - P0_SECRETS_CONTAINED
+    - P0_STORAGE_STABLE
+    - P0_REDIS_STABLE
+    - RELEASE_GATE_FAIL_CLOSED
+  denied_while_active:
+    - production deployment
+    - waiver-based critical gate bypass
+    - unattested dashboard publication
+    - image build or pull while production data filesystem is critical
+    - migration before all P0 checks are complete
+gates:
+  GATE-01: CREDENTIAL_ROTATION
+  GATE-02: FILE_PERMISSION_REMEDIATION
+  GATE-03: STORAGE_CLEANUP
+  GATE-04: REDIS_DATA_CHANGE
+  GATE-05: NETWORK_CUTOVER
+  GATE-06: AUTH_FLOW_CHANGE
+  GATE-07: DATABASE_MIGRATION
+  GATE-08: PRODUCTION_DEPLOYMENT
+  GATE-09: HISTORY_REWRITE
+  GATE-10: RELEASE_FREEZE_LIFT
+required_gate_record_fields:
+  - gate_id
+  - objective
+  - current_state
+  - exact_actions
+  - exact_commands_sanitized
+  - affected_services
+  - expected_downtime
+  - data_risk
+  - security_risk
+  - preconditions
+  - backup_status
+  - verification
+  - rollback
+  - stop_conditions
+stop_conditions:
+  - free production storage below 3 GiB
+  - unverified required backup
+  - Redis write errors or maxmemory breach
+  - unexpected unhealthy production container
+  - authentication failure
+  - unprovable tenant isolation
+  - unexpected database row-count change
+  - Qdrant and ledger drift
+  - secret material in output
+  - non-executable rollback
+  - unexpected production fingerprint change
+  - parallel deployment process
+  - approval not exactly matching planned action

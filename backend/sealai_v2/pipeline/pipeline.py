@@ -20,11 +20,12 @@ from sealai_v2.config.settings import Settings
 from sealai_v2.llm.cache_key import build_prompt_cache_key
 from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projection
 from sealai_v2.pipeline.routing import (
+    RouteDecision,
     RouteName,
     classify_route,
     classify_route_deterministic,
     is_explicit_knowledge_overview,
-    resolve_material_comparison_followup,
+    resolve_comparison_followup,
     requests_calculation,
 )
 from sealai_v2.orchestration.execution_policy import (
@@ -42,6 +43,12 @@ from sealai_v2.orchestration.answer_cache import (
     exact_answer_key,
 )
 from sealai_v2.pipeline.smalltalk_generator import SmalltalkGenerator
+from sealai_v2.pipeline.semantic_router import SemanticRouter
+from sealai_v2.pipeline.adaptive_interview import (
+    AdaptiveInterviewUnavailable,
+    AdaptiveInterviewEvaluation,
+    AdaptiveInterviewService,
+)
 from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
 from sealai_v2.pipeline.route_telemetry import (
     LoggingRouteTelemetrySink,
@@ -65,8 +72,13 @@ from sealai_v2.core.contracts import (
     ConversationMemory,
     CrossSessionMemory,
     DerivedFact,
+    EvaluationState,
     Flags,
     LlmClient,
+    MaterialConstraintResult,
+    MaterialConstraintPreconditions,
+    MaterialConstraintScopeState,
+    MaterialConstraintVerdict,
     ModelConfig,
     PipelineResult,
     RetrievalResult,
@@ -81,6 +93,7 @@ from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
+from sealai_v2.core.seal_type_extract import extract_seal_type_facts
 from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContextService
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
@@ -536,6 +549,9 @@ class Pipeline:
     matrix: object | None = (
         None  # §4 Verträglichkeitsmatrix (Gap #2) — compatibility verdicts for L2 grounding
     )
+    # MAT-GOV-01 canonical result exposure. Default-OFF; the historical
+    # Gegencheck computation and response are unchanged while disabled.
+    material_constraints_enabled: bool = False
     versagensmodi: object | None = None  # Dim. 5 Versagensmodi store (Modus D Diagnose)
     partner_registry: object | None = (
         None  # Dim. 6 Hersteller-Partner pool (Modus F — PartnerRegistry; payment ≠ ranking)
@@ -568,6 +584,11 @@ class Pipeline:
     # (never gates/routes), threaded through the existing `understand` LLM call. OFF -> the two new
     # Understanding fields stay None -> byte-identical prompt/eval.
     pack_suggestion_enabled: bool = False
+    # Adaptive Bedarfsanalyse Phase 0/1. The service is pure-controller + persistence only and is
+    # constructed exclusively when the rwdr pack plus active or shadow mode are enabled.
+    adaptive_interview_enabled: bool = False
+    adaptive_interview_shadow_enabled: bool = False
+    adaptive_interview_service: AdaptiveInterviewService | None = None
     # V2.2 INC-COVERAGE-GATE (§4): when True, compute the deterministic coverage_status this turn and
     # attach it to the result. OFF → coverage stays None → byte-identical. (The status→mode COUPLING
     # into L1 is a separate, also-gated sub-step; this field only governs the computation/exposure.)
@@ -608,15 +629,17 @@ class Pipeline:
     # from the already-loaded catalogs (fachkarten/matrix/traps/versagensmodi), not per turn.
     # "" when no catalogs wired. Attached to every PipelineResult; never fed to L1/L3.
     wissensstand: str = ""
-    # Phase 2B (LangGraph-suitability audit): conservative routing. OFF -> classify_route() is
+    # Phase 2B (LangGraph-suitability audit): conservative routing. False: classify_route() is
     # never called at all (not just unused) -- strictly byte-identical to pre-Phase-2B behavior.
-    # ON -> a route is computed (telemetry-only unless the route is a CHEAP route with zero
+    # True: a route is computed (telemetry-only unless the route is a CHEAP route with zero
     # deterministic engineering signals, in which case L3 is skipped in favor of the SAME
     # existing run_parametric_guard fallback already used when the verifier is disabled --
     # no new guard mechanism is invented). Never affects engineering_case/leakage_troubleshooting/
     # material_comparison/rfq_manufacturer_brief -- those always force the full pipeline.
     route_optimization_enabled: bool = False
     route_telemetry_sink: "RouteTelemetrySink | None" = None
+    semantic_router_enabled: bool = False
+    semantic_router: SemanticRouter | None = None
     # Phase 2D (LangGraph-suitability audit): controlled wiring of the Phase 2C-prepared compact
     # smalltalk_navigation prompt family. None (default) -> nothing to branch to, so
     # route_prompt_families_enabled being True with no generator wired is still a safe no-op
@@ -704,17 +727,24 @@ class Pipeline:
                 session=session,
                 question=question,
             )
-        comparison_followup = resolve_material_comparison_followup(
+        comparison_followup = resolve_comparison_followup(
             question,
             mem.window,
             material_terms=self.knowledge_material_terms,
         )
-        # A canonical, context-enriched query is used only by deterministic
-        # routing, retrieval and answer planning. The generator still receives
-        # the user's exact current question and never the raw prior transcript.
+        context_clarification = (
+            comparison_followup.clarification
+            if comparison_followup is not None
+            and comparison_followup.needs_clarification
+            else ""
+        )
+        # A canonical, context-enriched request is the sole input to routing,
+        # retrieval, answer planning, generation and verification. Raw prior
+        # transcript text never enters those stages.
         knowledge_question = (
             comparison_followup.resolved_question
             if comparison_followup is not None
+            and not comparison_followup.needs_clarification
             else question
         )
         effective_case_id = (
@@ -757,13 +787,48 @@ class Pipeline:
                 question,
                 tenant_id=scope.tenant_id,
                 now=datetime.now(timezone.utc).isoformat(),
+                owner_subject=session.owner_subject if session is not None else "",
             )
         # Modus E: deterministic Gegencheck verdict - None unless the case carries an existing
         # seal material AND a medium. Backend owns the verdict; L1 narrates the why via the
         # matrix_facts grounded below. Never affirms suitability (E4-1). Pure + sync, no I/O.
-        gegencheck_verdict = stages.gegencheck(
-            self.matrix, case, tenant_id=scope.tenant_id
-        )
+        material_constraint_result: MaterialConstraintResult | None = None
+        governed_matrix_grounding_allowed = True
+        if self.material_constraints_enabled:
+            conflict_refs = tuple(
+                sorted(
+                    f"case-conflict:{conflict.field_key}"
+                    for conflict in case_state_v2.open_conflicts
+                )
+            )
+            material_constraint_result = stages.material_constraints(
+                self.matrix,
+                case,
+                tenant_id=scope.tenant_id,
+                preconditions=MaterialConstraintPreconditions(
+                    scope=MaterialConstraintScopeState.IN_SCOPE,
+                    conflict_refs=conflict_refs,
+                ),
+            )
+            from sealai_v2.core.material_constraints import (
+                material_constraint_to_gegencheck,
+            )
+
+            gegencheck_verdict = material_constraint_to_gegencheck(
+                material_constraint_result
+            )
+            governed_matrix_grounding_allowed = bool(
+                material_constraint_result.evaluation_state is EvaluationState.EVALUATED
+                and material_constraint_result.verdict
+                in {
+                    MaterialConstraintVerdict.UNVERTRAEGLICH,
+                    MaterialConstraintVerdict.BEDINGT,
+                }
+            )
+        else:
+            gegencheck_verdict = stages.gegencheck(
+                self.matrix, case, tenant_id=scope.tenant_id
+            )
         # Modus D: deterministic Diagnose - None unless the turn reports a recognised symptom.
         # Backend owns the grounded(draft) ursache/fix; draft -> provisional. Pure + sync, no I/O.
         diagnosis = stages.diagnose(
@@ -809,8 +874,10 @@ class Pipeline:
             tenant_id=scope.tenant_id,
         )
         # Kandidaten-Spezifikation (Produktspec v3.1): deterministic candidate Bauform/Werkstoff/DIN.
-        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3) +
-        # fail-open. A render surface only — never injected into L1/L3 (the prompt stays byte-identical).
+        # FLAG-gated (default OFF) + RWDR-scoped + structurally capped (always "vorläufig", G1/G2/G3).
+        # Non-RWDR seal type -> the structured not_available_for_seal_type marker (OD-3), not a silent
+        # None; an actual compute error still fails open to plain None (see produktspec_step.py). A
+        # render surface only — never injected into L1/L3 (the prompt stays byte-identical).
         seal_type = next(
             (
                 f.wert
@@ -825,6 +892,10 @@ class Pipeline:
             enabled=self.produktspec_enabled,
             seal_type=seal_type,
         )
+        if material_constraint_result is not None:
+            # Produktspec has not been migrated to this governance contract and
+            # cannot consume a neutral/blocked result as positive candidate input.
+            kandidaten_spec = None
         durable_context = [{"feld": f.feld, "wert": f.wert} for f in mem.durable]
         conversation_window = [{"role": t.role, "text": t.text} for t in mem.window]
         if self.execution_policy_enabled:
@@ -832,31 +903,104 @@ class Pipeline:
             # are not re-injected into the one-shot production prompt.
             durable_context = []
             conversation_window = []
-        policy_route_decision = (
-            classify_route_deterministic(
+        case_active = bool(
+            case_state_v2.fields
+            or case_state_v2.open_conflicts
+            or case_state_v2.required_missing
+        )
+        policy_route_decision = None
+        if self.execution_policy_enabled:
+            policy_route_decision = classify_route_deterministic(
                 knowledge_question,
-                case_state_nonempty=bool(
-                    case_state_v2.fields
-                    or case_state_v2.open_conflicts
-                    or case_state_v2.required_missing
-                ),
+                case_state_nonempty=case_active,
                 decode_result=decode_result,
                 diagnosis=diagnosis,
                 gegencheck_verdict=gegencheck_verdict,
                 material_terms=self.knowledge_material_terms,
             )
-            if self.execution_policy_enabled
-            else None
-        )
+            if comparison_followup is not None and (
+                comparison_followup.needs_clarification
+                or policy_route_decision.route
+                in {
+                    RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+                    RouteName.GENERAL_SEALING_KNOWLEDGE,
+                    RouteName.MATERIAL_KNOWLEDGE,
+                    RouteName.MATERIAL_COMPARISON,
+                }
+            ):
+                policy_route_decision = RouteDecision(
+                    route=RouteName.MATERIAL_COMPARISON,
+                    reason=(
+                        "context_comparison_needs_clarification"
+                        if comparison_followup.needs_clarification
+                        else "context_comparison_resolved"
+                    ),
+                    confidence=1.0,
+                    forced_full_pipeline=True,
+                    deterministic_signal_count=(
+                        0 if comparison_followup.needs_clarification else 1
+                    ),
+                )
+            # Known engineering signals and validated fast paths remain deterministic. The model
+            # is consulted only where the current router would otherwise emit the generic
+            # ambiguity response. Any model failure returns this exact fallback decision.
+            if (
+                self.semantic_router_enabled
+                and self.semantic_router is not None
+                and policy_route_decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+                and policy_route_decision.deterministic_signal_count == 0
+                and not risk_flags
+                and not untrusted
+            ):
+                with _staged(timer, progress, "route_ms", "route"):
+                    policy_route_decision = await self.semantic_router.classify(
+                        knowledge_question,
+                        fallback=policy_route_decision,
+                        case_active=case_active,
+                    )
+            # The semantic router can recognise comparison paraphrases that no
+            # finite phrase list covers.  It still cannot authorize an answer:
+            # every comparison route must pass through the typed, user-authored
+            # reference resolver before retrieval or generation.
+            if (
+                policy_route_decision.route is RouteName.MATERIAL_COMPARISON
+                and comparison_followup is None
+            ):
+                comparison_followup = resolve_comparison_followup(
+                    question,
+                    mem.window,
+                    material_terms=self.knowledge_material_terms,
+                    comparison_intent=True,
+                )
+                if comparison_followup is not None:
+                    context_clarification = (
+                        comparison_followup.clarification
+                        if comparison_followup.needs_clarification
+                        else ""
+                    )
+                    knowledge_question = (
+                        question
+                        if comparison_followup.needs_clarification
+                        else comparison_followup.resolved_question
+                    )
+                    policy_route_decision = RouteDecision(
+                        route=RouteName.MATERIAL_COMPARISON,
+                        reason=(
+                            "semantic_comparison_needs_clarification"
+                            if comparison_followup.needs_clarification
+                            else "semantic_comparison_context_resolved"
+                        ),
+                        confidence=1.0,
+                        forced_full_pipeline=True,
+                        deterministic_signal_count=(
+                            0 if comparison_followup.needs_clarification else 1
+                        ),
+                    )
         activation_route_decision = (
             policy_route_decision
             or classify_route_deterministic(
                 knowledge_question,
-                case_state_nonempty=bool(
-                    case_state_v2.fields
-                    or case_state_v2.open_conflicts
-                    or case_state_v2.required_missing
-                ),
+                case_state_nonempty=case_active,
                 decode_result=decode_result,
                 diagnosis=diagnosis,
                 gegencheck_verdict=gegencheck_verdict,
@@ -869,9 +1013,12 @@ class Pipeline:
         ):
             raise ProductModeUnavailable("knowledge", "pilot_not_activated")
         early_clarification = bool(
-            policy_route_decision is not None
-            and policy_route_decision.forced_full_pipeline
-            and case_state_v2.required_missing
+            context_clarification
+            or (
+                policy_route_decision is not None
+                and policy_route_decision.forced_full_pipeline
+                and case_state_v2.required_missing
+            )
         )
         cache_key: str | None = None
         cached_answer: Answer | None = None
@@ -904,6 +1051,7 @@ class Pipeline:
         # failure cancels it (same failure surface as the serial order, pure reordering).
         understand_task: asyncio.Task | None = None
         understanding: Understanding | None = None
+        adaptive_next_question = None
         if self.understand_enabled and not self.execution_policy_enabled:
             archetype_keys = (
                 tuple(self.archetypes.keys) if self.archetypes is not None else ()
@@ -950,7 +1098,7 @@ class Pipeline:
                 with _staged(timer, progress, "ground_ms", "ground"):
                     retrieval = await stages.ground(
                         self.retriever,
-                        self.matrix,
+                        (self.matrix if governed_matrix_grounding_allowed else None),
                         knowledge_question,
                         tenant_id=scope.tenant_id,
                         case_facts=mem.case_state,
@@ -966,7 +1114,10 @@ class Pipeline:
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
             trap_facts = retrieve_reviewed_trap_facts(self.catalog, knowledge_question)
-            l1_grounding = grounding_facts + retrieval.matrix_facts + trap_facts
+            governed_matrix_facts = (
+                retrieval.matrix_facts if governed_matrix_grounding_allowed else ()
+            )
+            l1_grounding = grounding_facts + governed_matrix_facts + trap_facts
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
@@ -1016,9 +1167,9 @@ class Pipeline:
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
 
-            # Phase 2B (LangGraph-suitability audit): conservative routing. OFF (default) ->
+            # Phase 2B (LangGraph-suitability audit): conservative routing. False:
             # this whole block is skipped -- classify_route() is never invoked, so behavior is
-            # strictly byte-identical to pre-Phase-2B. ON -> compute a route from the SAME
+            # strictly byte-identical to pre-Phase-2B. True: compute a route from the SAME
             # deterministic signals already computed above (decode_result/diagnosis/
             # gegencheck_verdict/mem.case_state) + the already-running understand() intent.
             # skip_l3_for_route stays False unless the route is a CHEAP route with ZERO
@@ -1157,7 +1308,11 @@ class Pipeline:
             if self.coverage_gate_enabled:
                 from sealai_v2.core.coverage import coverage_for
 
-                coverage = coverage_for(gegencheck_verdict, archetype_context)
+                coverage = coverage_for(
+                    gegencheck_verdict,
+                    archetype_context,
+                    material_constraints=material_constraint_result,
+                )
             # INC-NARRATOR-CONTRACT: assemble the deterministic answer-contract from the SAME grounded
             # evidence, BEFORE generate. Phase 2 — when the flag is ON it is PASSED to generate (renderer
             # mode); OFF → contract is None → not passed → the L1 prompt is byte-identical.
@@ -1169,10 +1324,15 @@ class Pipeline:
                 _rc = build_contract(
                     coverage=coverage
                     if coverage is not None
-                    else coverage_for(gegencheck_verdict, archetype_context),
+                    else coverage_for(
+                        gegencheck_verdict,
+                        archetype_context,
+                        material_constraints=material_constraint_result,
+                    ),
                     grounding_facts=l1_grounding,
                     gegencheck_verdict=gegencheck_verdict,
                     calc=l1_calc if self.execution_policy_enabled else calc,
+                    material_constraints=material_constraint_result,
                 )
                 contract = _rc.to_dict() if _rc is not None else None
             # P0-B: on turns where the Gegencheck-shaped contract above is None (no verdict — general
@@ -1206,7 +1366,11 @@ class Pipeline:
                 # Treating that generic list as intake requirements made valid grounded questions
                 # stop at D1 (for example, asking about FKM in steam requested shaft diameter and
                 # O-ring groove depth). Calculation transparency remains in ``calc.not_computed``.
-                policy_missing_fields = case_state_v2.required_missing
+                policy_missing_fields = (
+                    ("zwei eindeutig benannte Vergleichsgegenstände",)
+                    if context_clarification
+                    else case_state_v2.required_missing
+                )
                 source_ids = {
                     source for fact in l1_grounding for source in fact.sources if source
                 }
@@ -1283,6 +1447,7 @@ class Pipeline:
                     subject_order=(
                         comparison_followup.subjects
                         if comparison_followup is not None
+                        and not comparison_followup.needs_clarification
                         else ()
                     ),
                 )
@@ -1324,11 +1489,18 @@ class Pipeline:
                 # prompt) is completely untouched below -- every route except a fully-qualified
                 # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
                 # EXACT same call it always has.
-                if cached_answer is not None:
+                if context_clarification:
+                    answer = Answer(
+                        text=context_clarification,
+                        model="deterministic-context-clarification",
+                        grounding_facts=(),
+                    )
+                elif cached_answer is not None:
                     answer = cached_answer
                 elif active_generator is None and execution_decision is not None:
                     answer = Answer(
-                        text=deterministic_response(
+                        text=context_clarification
+                        or deterministic_response(
                             execution_decision,
                             missing_fields=policy_missing_fields,
                             conflicts=policy_conflicts,
@@ -1365,7 +1537,7 @@ class Pipeline:
                     # through the unchanged output_guard + L3 verify pipeline below.
                     answer = await self._l1_generate(
                         active_generator or self.generator,
-                        question,
+                        knowledge_question,
                         token_sink=token_sink,
                         draft_stream_active=draft_stream_active,
                         flags=flags,
@@ -1423,7 +1595,7 @@ class Pipeline:
                 )
 
                 _check_sentence_coverage = contract is not None
-                _kv, _km = _guard_known(question)
+                _kv, _km = _guard_known(knowledge_question)
                 if material_params:
                     from sealai_v2.core.engineering_answer import numeric_tokens
                     from sealai_v2.knowledge.material_parameters import parameter_text
@@ -1451,7 +1623,7 @@ class Pipeline:
                     with _staged(timer, progress, "regenerate_ms", "regenerate"):
                         answer = await self._l1_generate(
                             active_generator or self.generator,
-                            question,
+                            knowledge_question,
                             token_sink=token_sink,
                             draft_stream_active=draft_stream_active,
                             flags=flags,
@@ -1498,7 +1670,7 @@ class Pipeline:
                     if _gr2.action == "BLOCK":
                         answer = Answer(
                             text=_guard_fallback(
-                                _effective_contract, question=question
+                                _effective_contract, question=knowledge_question
                             ),
                             model="deterministic-output-guard",
                             grounding_facts=l1_grounding,
@@ -1511,19 +1683,20 @@ class Pipeline:
                 self.verifier is not None
                 and self.catalog is not None
                 and not skip_l3_for_route
+                and not context_clarification
             ):
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = await stages.verify(
                         self.verifier,
                         active_generator or self.generator,
                         self.catalog,
-                        question,
+                        knowledge_question,
                         answer,
                         flags=flags,
                         grounding_facts=grounding_facts,
                         computed_values=calc.computed,
                         not_computed=calc.not_computed,
-                        matrix_facts=retrieval.matrix_facts,  # Gap #2 Step B: matrix = L3 correction source
+                        matrix_facts=governed_matrix_facts,
                         # OPTIMIZE_BACKLOG #5: full draft context → topic-scoped correction + non-degraded regen
                         calc=calc,
                         case_context=case_context or None,
@@ -1656,7 +1829,13 @@ class Pipeline:
             result_case_state = case_state_v2
             committed_revision = case_state_v2.revision
             if self.memory is not None and session is not None:
-                immediate_facts = extract_medium_facts(question)
+                # Explicit type/medium mentions are canonical inputs, not model
+                # judgments. Persist them before interview reconciliation so an
+                # initial "Ich benötige einen RWDR" turn enters rwdr.v1 even when
+                # the conservative LLM distiller returns an empty fact list.
+                immediate_facts = extract_medium_facts(
+                    question
+                ) + extract_seal_type_facts(question)
                 self.memory.record_turn(
                     tenant_id=scope.tenant_id,
                     session_id=session.session_id,
@@ -1665,32 +1844,74 @@ class Pipeline:
                     facts=immediate_facts,
                     now=datetime.now(timezone.utc).isoformat(),
                     expected_case_revision=case_state_v2.revision,
+                    owner_subject=session.owner_subject,
                 )
                 if immediate_facts:
                     committed_revision += 1
                     if self.cross_session is not None:
                         self.cross_session.remember_durable(
-                            tenant_id=scope.tenant_id, facts=immediate_facts
+                            tenant_id=scope.tenant_id,
+                            facts=immediate_facts,
+                            owner_subject=session.owner_subject,
                         )
                 committed_view = self.memory.recall(
-                    tenant_id=scope.tenant_id, session_id=session.session_id
+                    tenant_id=scope.tenant_id,
+                    session_id=session.session_id,
+                    owner_subject=session.owner_subject,
                 )
                 result_case_state = committed_view.case_state_v2 or case_state_v2
                 if self.distiller is not None:
-                    self._schedule_remember(
-                        timer,
-                        tenant_id=scope.tenant_id,
-                        session=session,
-                        question=question,
-                        answer_text=answer.text,
-                        expected_case_revision=committed_revision,
-                    )
-                    scheduled_background = True
+                    if self.adaptive_interview_enabled:
+                        # A visible next question must be based on facts from THIS turn. Waiting for
+                        # the already-existing distillation adds no model call, but prevents the
+                        # controller from re-asking the pending question against stale CaseState.
+                        evaluation = await self._remember_and_refresh_interview(
+                            timer,
+                            tenant_id=scope.tenant_id,
+                            session=session,
+                            question=question,
+                            answer_text=answer.text,
+                            expected_case_revision=committed_revision,
+                            legacy_answer_text=answer.text,
+                            persist_shadow=self.adaptive_interview_shadow_enabled,
+                        )
+                        adaptive_next_question = (
+                            evaluation.next_question if evaluation is not None else None
+                        )
+                        committed_view = self.memory.recall(
+                            tenant_id=scope.tenant_id,
+                            session_id=session.session_id,
+                            owner_subject=session.owner_subject,
+                        )
+                        result_case_state = (
+                            committed_view.case_state_v2 or result_case_state
+                        )
+                    else:
+                        self._schedule_remember(
+                            timer,
+                            tenant_id=scope.tenant_id,
+                            session=session,
+                            question=question,
+                            answer_text=answer.text,
+                            expected_case_revision=committed_revision,
+                        )
+                        scheduled_background = True
                 else:
                     # M8: settle the derived slice from the merged inputs (no distiller path)
                     self.recompute_derived_for(
-                        tenant_id=scope.tenant_id, session_id=session.session_id
+                        tenant_id=scope.tenant_id,
+                        session_id=session.session_id,
+                        owner_subject=session.owner_subject,
                     )
+                    evaluation = self.refresh_adaptive_interview(
+                        tenant_id=scope.tenant_id,
+                        session_id=session.session_id,
+                        owner_subject=session.owner_subject,
+                        legacy_answer_text=answer.text,
+                        persist_shadow=self.adaptive_interview_shadow_enabled,
+                    )
+                    if self.adaptive_interview_enabled and evaluation is not None:
+                        adaptive_next_question = evaluation.next_question
         except BaseException:
             if understand_task is not None:
                 if understand_task.done():
@@ -1760,6 +1981,8 @@ class Pipeline:
             not_computed=calc.not_computed,
             calc_notes=calc.notes,
             gegencheck=gegencheck_verdict,
+            material_constraints=material_constraint_result,
+            material_constraints_enabled=self.material_constraints_enabled,
             coverage=coverage,
             contract=contract,
             guard=guard,
@@ -1779,6 +2002,7 @@ class Pipeline:
             route_name=(
                 route_decision.route.value if route_decision is not None else None
             ),
+            next_question=adaptive_next_question,
         )
 
     async def _l1_generate(
@@ -1865,7 +2089,9 @@ class Pipeline:
             return None
         return {"medium_hint": hint}
 
-    def compute_for(self, *, tenant_id: str, session_id: str) -> DerivedComputation:
+    def compute_for(
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
+    ) -> DerivedComputation:
         """M8: recompute the kernel from the session's CURRENT settled inputs, PERSIST the derived
         slice (wholesale replace — a stale value can never survive), and return the full result
         (derived + not_computed + notes) for the read surface (/compute, the panel). No engine or no
@@ -1873,21 +2099,105 @@ class Pipeline:
         if self.engine is None or self.memory is None:
             return DerivedComputation(derived=(), calc=CalcResult())
         inputs = self.memory.recall(
-            tenant_id=tenant_id, session_id=session_id
+            tenant_id=tenant_id,
+            session_id=session_id,
+            owner_subject=owner_subject,
         ).case_state
         comp = recompute_derived(inputs, self.engine)
         self.memory.set_derived(
-            tenant_id=tenant_id, session_id=session_id, derived=comp.derived
+            tenant_id=tenant_id,
+            session_id=session_id,
+            derived=comp.derived,
+            owner_subject=owner_subject,
         )
         return comp
 
     def recompute_derived_for(
-        self, *, tenant_id: str, session_id: str
+        self, *, tenant_id: str, session_id: str, owner_subject: str = ""
     ) -> tuple[DerivedFact, ...]:
         """The mutation-channel projection of ``compute_for``: recompute + persist, return just the
         derived facts. Called on every input-mutation channel (background remember after distill;
         edit/forget routes)."""
-        return self.compute_for(tenant_id=tenant_id, session_id=session_id).derived
+        return self.compute_for(
+            tenant_id=tenant_id,
+            session_id=session_id,
+            owner_subject=owner_subject,
+        ).derived
+
+    def refresh_adaptive_interview(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        owner_subject: str = "",
+        legacy_answer_text: str = "",
+        persist_shadow: bool | None = None,
+    ) -> AdaptiveInterviewEvaluation | None:
+        """Evaluate the one canonical interview policy from the committed state.
+
+        Shadow-only instrumentation remains fail-open. Once the controller is active,
+        every internal contract/persistence failure is a typed fail-closed error.
+        """
+        if self.adaptive_interview_service is None or self.memory is None:
+            if self.adaptive_interview_enabled:
+                raise AdaptiveInterviewUnavailable()
+            return None
+        try:
+            view = self.memory.recall(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                owner_subject=owner_subject,
+            )
+            case_state = view.case_state_v2 or CaseStateV2.from_remembered_facts(
+                case_id=session_id,
+                revision=0,
+                facts=view.case_state,
+            )
+            derived_reader = getattr(self.memory, "derived_facts", None)
+            derived = (
+                derived_reader(
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    owner_subject=owner_subject,
+                )
+                if callable(derived_reader)
+                else ()
+            )
+            return self.adaptive_interview_service.evaluate(
+                tenant_id=tenant_id,
+                session_id=session_id,
+                case_state=case_state,
+                derived_facts=tuple(derived),
+                legacy_answer_text=legacy_answer_text,
+                persist_shadow=(
+                    self.adaptive_interview_shadow_enabled
+                    if persist_shadow is None
+                    else persist_shadow
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - translated at this trust boundary
+            _log.warning(
+                "adaptive interview shadow evaluation failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
+            if self.adaptive_interview_enabled:
+                raise AdaptiveInterviewUnavailable() from exc
+            return None
+
+    def clear_adaptive_interview(self, *, tenant_id: str, session_id: str) -> None:
+        if self.adaptive_interview_service is None:
+            return
+        try:
+            self.adaptive_interview_service.clear(
+                tenant_id=tenant_id, session_id=session_id
+            )
+        except Exception as exc:  # noqa: BLE001 - legacy clear must still succeed
+            _log.warning(
+                "adaptive interview state clear failed: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
 
     async def flush_memory(self, *, tenant_id: str, session_id: str) -> None:
         """P2 ordering guard: await this session's in-flight background remember so the
@@ -1970,6 +2280,37 @@ class Pipeline:
         values are discarded rather than overwriting the newer state.
         """
         try:
+            await self._remember_and_refresh_interview(
+                timer,
+                tenant_id=tenant_id,
+                session=session,
+                question=question,
+                answer_text=answer_text,
+                expected_case_revision=expected_case_revision,
+                legacy_answer_text=answer_text,
+                persist_shadow=self.adaptive_interview_shadow_enabled,
+            )
+        finally:
+            timer.emit()
+
+    async def _remember_and_refresh_interview(
+        self,
+        timer: TurnTimer,
+        *,
+        tenant_id: str,
+        session: SessionContext,
+        question: str,
+        answer_text: str,
+        expected_case_revision: int,
+        legacy_answer_text: str,
+        persist_shadow: bool,
+    ) -> AdaptiveInterviewEvaluation | None:
+        """Commit distilled facts, settle derived values, then evaluate the controller.
+
+        Shadow/default operation calls this from a background task. Visible adaptive-interview
+        operation awaits the same work so its next-question payload cannot lag one user turn.
+        """
+        try:
             with timer.stage("distill_ms"):
                 facts = await self.distiller.distill(
                     question=question, answer=answer_text
@@ -1979,25 +2320,36 @@ class Pipeline:
                     session_id=session.session_id,
                     facts=facts,
                     expected_case_revision=expected_case_revision,
+                    owner_subject=session.owner_subject,
                 )
                 if self.cross_session is not None and facts:
                     self.cross_session.remember_durable(
-                        tenant_id=tenant_id, facts=facts
+                        tenant_id=tenant_id,
+                        facts=facts,
+                        owner_subject=session.owner_subject,
                     )
             # M8: settle the derived slice from the just-distilled inputs (chat channel). Inside the
             # try so a recompute fault is caught by the same fail-safe (a lost derived slice is never
             # a failed request; the next read/mutation recomputes anyway).
             self.recompute_derived_for(
-                tenant_id=tenant_id, session_id=session.session_id
+                tenant_id=tenant_id,
+                session_id=session.session_id,
+                owner_subject=session.owner_subject,
+            )
+            return self.refresh_adaptive_interview(
+                tenant_id=tenant_id,
+                session_id=session.session_id,
+                owner_subject=session.owner_subject,
+                legacy_answer_text=legacy_answer_text,
+                persist_shadow=persist_shadow,
             )
         except Exception as exc:  # noqa: BLE001 — a background task must never die unhandled
             _log.warning(
-                "background remember failed (turn memory lost): %s: %s",
+                "remember/interview refresh failed (turn memory lost): %s: %s",
                 type(exc).__name__,
                 exc,
             )
-        finally:
-            timer.emit()
+            return None
 
 
 def build_pipeline(
@@ -2017,12 +2369,25 @@ def build_pipeline(
             "build_pipeline needs either a single ``client`` (all roles share it) or a "
             "``client_for`` provider factory (per-role routing) — never neither."
         )
+    if settings.understand_enabled and settings.execution_policy_enabled:
+        # Logged once here (build time), not per-turn: run()'s own guard (`if self.understand_enabled
+        # and not self.execution_policy_enabled`, pipeline.py:1006) is False on every turn whenever
+        # both flags are True, so understand() (the soft LLM-intent stage) never actually runs in
+        # this configuration -- purely observational, no behavior change.
+        _log.warning(
+            "understand() ist in dieser Konfiguration deaktiviert: "
+            "execution_policy_enabled=true unterdrückt die soft-intent-Stufe trotz "
+            "understand_enabled=true (siehe pipeline.py:1006)."
+        )
     # Single-client mode: ignore provider, return the one client (preserves the fake-client tests
     # and the default object graph). Factory mode: each role resolves its provider's client.
     resolve = client_for if client_for is not None else (lambda _provider: client)
     l1_client = resolve(settings.l1_provider or settings.provider)
     verifier_client = resolve(settings.verifier_provider or settings.provider)
     helper_client = resolve(settings.helper_provider or settings.provider)
+    router_client = (
+        resolve(settings.router_provider) if settings.semantic_router_enabled else None
+    )
     standard_client = (
         resolve(settings.standard_provider)
         if settings.execution_policy_enabled
@@ -2055,6 +2420,20 @@ def build_pipeline(
         cache_key="sealai-v2-helper",
         stage="helper",
     )
+    semantic_router = None
+    if router_client is not None:
+        semantic_router = SemanticRouter(
+            router_client,
+            ModelConfig(
+                model=settings.router_model,
+                temperature=settings.router_temperature,
+                max_output_tokens=settings.router_max_output_tokens,
+                cache_key="sealai-v2-semantic-router-v1",
+                stage="semantic-router",
+            ),
+            confidence_threshold=settings.router_confidence_threshold,
+            timeout_s=settings.router_timeout_s,
+        )
     generator = L1Generator(
         l1_client,
         assembler,
@@ -2136,6 +2515,7 @@ def build_pipeline(
     memory: ConversationMemory | None = None
     cross_session: CrossSessionMemory | None = None
     distiller: Distiller | None = None
+    session_factory = None
     if settings.memory_enabled:
         if settings.database_url:
             # Lazy import: the offline path never touches SQLAlchemy.
@@ -2161,6 +2541,30 @@ def build_pipeline(
                     model=settings.helper_model, temperature=settings.helper_temperature
                 ),
             )
+
+    adaptive_interview_service: AdaptiveInterviewService | None = None
+    if (
+        memory is not None
+        and settings.adaptive_interview_pack_rwdr_enabled
+        and (
+            settings.adaptive_interview_enabled
+            or settings.adaptive_interview_shadow_enabled
+        )
+    ):
+        from sealai_v2.db.interview import (
+            InProcessInterviewRepository,
+            PostgresInterviewRepository,
+        )
+        from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
+
+        interview_repository = (
+            PostgresInterviewRepository(session_factory)
+            if session_factory is not None
+            else InProcessInterviewRepository()
+        )
+        adaptive_interview_service = AdaptiveInterviewService(
+            pack=load_rwdr_v1_pack(), repository=interview_repository
+        )
 
     # G4: owner-reviewed archetype store (Anwendungs-Archetypen) — feeds the understand annotation +
     # the L1 interview. Loaded with understand (it is the understand stage's grounding); file-backed
@@ -2270,6 +2674,7 @@ def build_pipeline(
         catalog=catalog,
         retriever=retriever,
         matrix=matrix,
+        material_constraints_enabled=settings.material_constraints_enabled,
         versagensmodi=versagensmodi,
         partner_registry=partner_registry,
         engine=engine,
@@ -2282,6 +2687,9 @@ def build_pipeline(
         memory_context_enabled=settings.memory_context_enabled,
         produktspec_enabled=settings.produktspec_enabled,
         pack_suggestion_enabled=settings.pack_suggestion_enabled,
+        adaptive_interview_enabled=settings.adaptive_interview_enabled,
+        adaptive_interview_shadow_enabled=settings.adaptive_interview_shadow_enabled,
+        adaptive_interview_service=adaptive_interview_service,
         coverage_gate_enabled=settings.coverage_gate_enabled,
         response_contract_enabled=settings.response_contract_enabled,
         response_contract_general_guard_enabled=settings.response_contract_general_guard_enabled,
@@ -2291,6 +2699,8 @@ def build_pipeline(
         authoritative_knowledge_required=True,
         wissensstand=wissensstand,
         route_optimization_enabled=settings.route_optimization_enabled,
+        semantic_router_enabled=settings.semantic_router_enabled,
+        semantic_router=semantic_router,
         route_telemetry_sink=(
             LoggingRouteTelemetrySink()
             if settings.route_optimization_enabled or settings.execution_policy_enabled

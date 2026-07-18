@@ -1,0 +1,11 @@
+/home/thorsten/sealai-backups/backup.log {
+    weekly
+    maxsize 10M
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0600 thorsten thorsten
+    su thorsten thorsten
+}

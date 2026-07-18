@@ -11,6 +11,9 @@ on:
       - "nginx/default.conf"
       - "ops/check-env-drift.sh"
       - "ops/keycloak_*.sh"
+      - "ops/production-release-gate-check.sh"
+      - "ops/production_release_gate.py"
+      - "ops/production-release-state.json"
       - ".github/workflows/keycloak.yml"
   push:
     branches: [main]
@@ -23,6 +26,9 @@ on:
       - "nginx/default.conf"
       - "ops/check-env-drift.sh"
       - "ops/keycloak_*.sh"
+      - "ops/production-release-gate-check.sh"
+      - "ops/production_release_gate.py"
+      - "ops/production-release-state.json"
       - ".github/workflows/keycloak.yml"
   workflow_dispatch:
 
@@ -43,7 +49,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Validate operational scripts and Compose model
-        shell: bash
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         run: |
           set -euo pipefail
           bash -n ops/keycloak_ensure_roles.sh
@@ -80,6 +86,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Enforce release freeze before image build or publication
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          # shellcheck source=ops/production-release-gate-check.sh
+          source "$PWD/ops/production-release-gate-check.sh"
+          production_release_gate_check \
+            "$PWD/ops/production_release_gate.py" build
+
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
@@ -110,7 +125,7 @@ jobs:
             org.opencontainers.image.version=26.7.0
 
       - name: Extract and validate pushed SPDX SBOM
-        shell: bash
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         env:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -138,6 +153,7 @@ jobs:
           push-to-registry: true
 
       - name: Publish artifact coordinates
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         run: |
           {
             echo "### Keycloak 26.7.0 artifact"

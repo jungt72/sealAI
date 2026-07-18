@@ -1,0 +1,26 @@
+evidence_class: HISTORICAL_SNAPSHOT
+authoritative_current_state: false
+captured_at: "2026-07-14T14:47:44Z"
+source_repository_commit: 35690352c68750c7fbbcbbd6ea46b13571c43f08
+production_commit_at_capture: 6e5608c3d9c61f67560e6a27f632e73969fe3e86
+superseded: true
+schema_version: 1
+run_id: REM-2026-07-14
+status: FROZEN_NOT_AUTHORIZED
+release_freeze: ACTIVE
+strategy:
+  - build one immutable digest once
+  - verify that digest with production-equivalent isolated dependencies
+  - attest code, configuration, dataset and authority epochs, migrations, SBOM, and dashboard artifact
+  - request exact GATE-08 approval
+  - revalidate production fingerprint and stop conditions
+  - promote only the attested digest and immutable dashboard artifact
+  - verify health, auth, isolation, data counts, retrieval, and rollback readiness
+prohibited:
+  - building or pulling on the critical production data filesystem
+  - injecting production secrets into an ungated release candidate
+  - waiver or provisional evidence for final production promotion
+  - mutable dashboard bind-mount publication
+  - automatic deployment or restart
+next_gate: null
+next_local_package: p0-redis-stability

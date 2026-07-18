@@ -20,7 +20,7 @@ guarantee, enforced structurally.
 ## Develop / build / verify
 ```bash
 cd frontend-v2
-npm ci                      # prod/CI: own deps  (this session reuses ../frontend/node_modules via a symlink)
+npm ci                      # reproducible install from this package's lockfile
 npm run verify              # check:boundary + typecheck + test + build  (all green)
 npm run dev                 # local dev server
 ```
@@ -34,7 +34,10 @@ Env (public, not secrets): `VITE_OIDC_ISSUER`, `VITE_OIDC_CLIENT_ID=sealai-v2`, 
    Without these the M6c validator fails closed (correct).
 
 ## Serving / cutover (owner-gated, NOT applied to prod by M7)
-Build → `dist/`; mount at nginx `/usr/share/nginx/v2-client`; `include snippets/v2_dashboard.conf;`
-in the `sealingai.com` server block (serves `/dashboard` + strict CSP, enables `/api/v2 →
-backend-v2:8001`); bring `backend-v2` online (`v2` profile) with `auth_*` config. Verify with `nginx
--t` + a local/staging bring-up — **the production cutover is a separate owner-gated deploy.**
+A normal build writes only to `.build/dashboard-candidate/`; it must never overwrite the live `dist/`
+bind mount. Only the separately gated publisher may promote a verified candidate into `dist/`, which
+nginx mounts at `/usr/share/nginx/v2-client`. The `sealingai.com` server block includes
+`snippets/v2_dashboard.conf` (serves `/dashboard` with strict CSP and enables `/api/v2 →
+backend-v2:8001`); bring `backend-v2` online (`v2` profile) with `auth_*` config. Verify with
+`nginx -t` plus a local/staging bring-up — **the production cutover remains a separate owner-gated
+deploy.**

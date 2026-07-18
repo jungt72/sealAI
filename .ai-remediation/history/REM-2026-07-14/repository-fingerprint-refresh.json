@@ -1,0 +1,23 @@
+{
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "source_repository_commit": "35690352c68750c7fbbcbbd6ea46b13571c43f08",
+  "production_commit_at_capture": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "superseded": true,
+  "schema_version": 1,
+  "run_id": "REM-2026-07-14",
+  "captured_at": "2026-07-14T14:35:28Z",
+  "origin_main_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "production_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "new_content_commit_after_prior_fingerprint": "85f0bafcbff3de452bb6adb1bb248780302ba2ea",
+  "new_merge_commit_after_prior_fingerprint": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "scope": "Explicit RWDR chat-entry extraction and its tests; no P0 audit finding, release gate, storage control, backup control, or secret hygiene implementation was changed.",
+  "remediation_branch": "remediation/p0-storage-safety",
+  "implementation_parent_commit": "b870a27f30ce22ec0d55559b18001ce4350ea5de",
+  "integrated_p0a_commit": "9d822aca296d3dc79349a538aa8e4ecb3f0a9b97",
+  "integrated_origin_main_commit": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "worktree_clean_except_sanitized_run_evidence": true,
+  "fetch_completed": true,
+  "fetch_pruned": true,
+  "contains_secret_values": false
+}

@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "evidence_class": "HISTORICAL_SNAPSHOT",
+  "authoritative_current_state": false,
+  "captured_at": "2026-07-14T14:47:44Z",
+  "source_repository_commit": "35690352c68750c7fbbcbbd6ea46b13571c43f08",
+  "production_commit_at_capture": "6e5608c3d9c61f67560e6a27f632e73969fe3e86",
+  "superseded": true,
+  "historical_gate_eligible": false,
+  "historical_artifacts": [
+    {"path": "current-state.snapshot.json", "sha256": "531b34c818ccf9e9f4ba1f2bd35eb237262327db6a4dc06ba80aa81799e9ae32"},
+    {"path": "deployment-plan.yaml", "sha256": "388efe4d6d1f99fdfac96be71397100efe17b826ba9898bac90e50ebd21a28f5"},
+    {"path": "evidence/README.md", "sha256": "d9236a4104c7a9d88e37a5b5f79256703054fdd020b31ec056b203bffc86ea1f"},
+    {"path": "findings-matrix.yaml", "sha256": "b95d1b04420b51a84a9c3e867b696f2e6adaeb6c7da1d615a94b8da71619fd2c"},
+    {"path": "production-fingerprint-refresh.json", "sha256": "3e26a68aa5dc6751c5606a0eda88af7205835bd780370e07facd10443000133d"},
+    {"path": "production-fingerprint.json", "sha256": "757dc8d3e9405330d03eb56b8c472034aaf0d88ec15cebfcbd21f76e7cedbf89"},
+    {"path": "redis-inventory-summary.json", "sha256": "6d9902e1df79dfe619e33a9835547db6205a49f0845a9607c3ec798cc3897dac"},
+    {"path": "remediation-plan.yaml", "sha256": "a8c1ec99048c43d2e61801149428ce5ca467bcdc3735c06331410c6fa76d4eeb"},
+    {"path": "repository-fingerprint-refresh.json", "sha256": "f37d66351a85e44eaee6524d951a613d433b6f8ed0e85f6cadb74009207c02b4"},
+    {"path": "repository-fingerprint.json", "sha256": "ad3abd8c0ec9db5f875a29e667563e9e2283c5781ecd8f13d2aaf4aafb17175e"},
+    {"path": "residual-risks.yaml", "sha256": "ca296ea6518f6d22ecaad18b5c0e7157e382e39fda9a8b20e8c89e0660d93a4b"},
+    {"path": "rollback-plan.yaml", "sha256": "00b2201ef250138f7dc91c1626ec859f50c490c27ed5e3a590dd121a510044cf"},
+    {"path": "storage-inventory.yaml", "sha256": "52fd5cb6c3fed5415fce6ba456c29f1ffeb793d677afbf60b668a9b75f580dcb"},
+    {"path": "test-plan.yaml", "sha256": "665f89b75a4785412533dacb54a71d841659ffd23ebff03c40b9bc2c95cb32e5"},
+    {"path": "verification-results.json", "sha256": "0a84d1461af5e6e9509deb0691392ad48881d6b338ffb178a8ea2a79879bd037"}
+  ],
+  "operative_gate_inputs": [
+    {"path": "ops/check-secret-hygiene.py", "purpose": "secret scanner"},
+    {"path": ".github/workflows/secret-scan.yml", "purpose": "CI enforcement"},
+    {"path": ".githooks/pre-commit", "purpose": "local index enforcement"},
+    {"path": ".githooks/pre-push", "purpose": "local introduced-commit enforcement"},
+    {"path": "ops/production_release_gate.py", "purpose": "fail-closed release gate"},
+    {"path": "ops/docker_disk_guard.py", "purpose": "filesystem-bound disk guard"},
+    {"path": "ops/docker_image_cleanup.py", "purpose": "object-exact GATE-03 cleanup"},
+    {"path": "ops/backup_safety.py", "purpose": "backup and restore evidence gate"},
+    {"path": "frontend-v2/vite.config.ts", "purpose": "attested dashboard output guard"}
+  ],
+  "durable_non_authorizing_control_documents": [
+    ".ai-remediation/policies/",
+    ".ai-remediation/schemas/",
+    ".ai-remediation/templates/"
+  ],
+  "local_generated_untracked": [
+    ".ai-remediation/runtime/current-state.json",
+    ".ai-remediation/runtime/REM-2026-07-14/evidence/production-sensitive-file-metadata.jsonl",
+    ".ai-remediation/runtime/REM-2026-07-14/evidence/docker-unreferenced-images.jsonl"
+  ],
+  "never_valid_for_production_release": [
+    ".ai-remediation/history/**",
+    ".ai-remediation/templates/**",
+    ".ai-remediation/runtime/**"
+  ]
+}

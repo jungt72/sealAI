@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set -euo pipefail
+readonly PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 CHAIN="DOCKER-USER"
 
@@ -41,4 +43,3 @@ main() {
 }
 
 main "$@"
-

@@ -10,6 +10,9 @@ on:
       - "backend/requirements-v2.txt"
       - "backend/sealai_v2/**"
       - "ops/release-backend-v2.sh"
+      - "ops/production-release-gate-check.sh"
+      - "ops/production_release_gate.py"
+      - "ops/production-release-state.json"
       - "ops/tree-hash.sh"
       - "ops/verify-image-attestations.sh"
       - "ops/verify_attestation_payload.py"
@@ -40,13 +43,22 @@ jobs:
         with:
           ref: ${{ inputs.source_sha || github.sha }}
 
+      - name: Enforce release freeze before image build or publication
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          # shellcheck source=ops/production-release-gate-check.sh
+          source "$PWD/ops/production-release-gate-check.sh"
+          production_release_gate_check \
+            "$PWD/ops/production_release_gate.py" build
+
       - name: Compute served tree hash
         id: source
-        shell: bash
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
-          tree_hash="$(bash ops/tree-hash.sh)"
+          tree_hash="$(/bin/bash -p ops/tree-hash.sh)"
           test -n "$tree_hash"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "short_sha=${sha:0:8}" >> "$GITHUB_OUTPUT"
@@ -86,7 +98,7 @@ jobs:
             io.sealai.served-tree-hash=${{ steps.source.outputs.tree_hash }}
 
       - name: Extract and validate pushed SPDX SBOM
-        shell: bash
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         env:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -114,6 +126,7 @@ jobs:
           push-to-registry: true
 
       - name: Publish artifact coordinates
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
         run: |
           {
             echo "### backend-v2 artifact"

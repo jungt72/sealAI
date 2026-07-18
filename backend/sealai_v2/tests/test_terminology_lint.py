@@ -42,12 +42,22 @@ _ALLOWLIST_FILES = {
     "core/contracts.py",  # negated doctrine comment: "keine Empfehlung ist auf den Wissensstand..."
     "core/decision_records.py",  # internal SSoT case-review status, not suitability approval
     "core/gegencheck.py",  # describes what it does NOT do: "never an affirmative passt/geeignet"
+    "core/interview/contracts.py",  # internal expert verification state; never suitability approval
+    "core/interview/policy.py",  # reads that internal verification state; no user-facing wording
     "core/legal_doctrine.py",  # defines the terms themselves (this module's own source list)
+    "core/material_evidence_review.py",  # internal factual-review/approval states; never suitability language
+    "core/material_reviewed_rules.py",  # exact factual-review gate; disqualify-only and never public suitability language
     "core/output_guard.py",  # IS the existing forbidden-phrase enforcement list this lint mirrors
     "core/response_contract_policy.py",  # same doctrine — banned-phrase list + negated comments
     "knowledge/produktspec/contracts.py",  # `freigegeben: bool = False` G1 structural invariant
     "knowledge/produktspec/kernel.py",  # constructs with `freigegeben=False` (always)
     "knowledge/ledger.py",  # `approved` is an internal review-state enum; never user-facing advice
+    "db/material_evidence_review.py",  # persists the same internal factual-review lifecycle only
+    "db/material_evidence_review_v2.py",  # persists the v2 internal factual-review lifecycle only
+    "db/medium_catalog.py",  # verifies internal factual approval; grants normalization authority only
+    "db/models.py",  # schema constraints for internal review states; never public suitability wording
+    "db/migrations/versions/20260718_0016_mat_evid_01c_review.py",  # immutable internal review schema
+    "db/migrations/versions/20260718_0018_mat_evid_02_typed_scopes.py",  # immutable v2 factual-review schema
     "pipeline/produktspec_step.py",  # surfaces the same always-False `freigegeben` field
     "pipeline/routing.py",  # regex DETECTING "geeignet für" in USER input, not an output claim
     "pipeline/stages.py",  # "Herstellerempfehlung" = WHICH manufacturer partner to route an RFQ

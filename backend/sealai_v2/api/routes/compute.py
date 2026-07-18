@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from sealai_v2.api.deps import get_pipeline, require_legal_acceptance
 from sealai_v2.api.serializers import compute_response
-from sealai_v2.core.contracts import VerifiedIdentity
+from sealai_v2.core.contracts import ConversationAccessDenied, VerifiedIdentity
 from sealai_v2.pipeline.pipeline import Pipeline
 
 router = APIRouter(prefix="/api/v2", tags=["compute"])
@@ -37,6 +37,18 @@ async def compute(
         raise HTTPException(status_code=503, detail="compute not enabled")
     # flush-then-recompute: a pending background distill must land first (mirror view_memory)
     session_id = case_id or identity.session_id
-    await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
-    comp = pipeline.compute_for(tenant_id=identity.tenant_id, session_id=session_id)
+    try:
+        pipeline.memory.assert_session_access(
+            tenant_id=identity.tenant_id,
+            session_id=session_id,
+            owner_subject=identity.subject,
+        )
+        await pipeline.flush_memory(tenant_id=identity.tenant_id, session_id=session_id)
+        comp = pipeline.compute_for(
+            tenant_id=identity.tenant_id,
+            session_id=session_id,
+            owner_subject=identity.subject,
+        )
+    except ConversationAccessDenied as exc:
+        raise HTTPException(status_code=404, detail="conversation not found") from exc
     return compute_response(comp)

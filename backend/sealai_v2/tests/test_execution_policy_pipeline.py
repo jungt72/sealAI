@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from sealai_v2.core.contracts import (
     GroundingFact,
@@ -14,6 +15,7 @@ from sealai_v2.core.case_state import CaseStateV2
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.pipeline.pipeline import Pipeline
+from sealai_v2.pipeline.semantic_router import SemanticRouter
 from sealai_v2.orchestration.answer_cache import InProcessExactAnswerCache
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.security.tenant import TenantContext
@@ -132,6 +134,36 @@ def test_low_risk_knowledge_is_one_standard_call_without_helper():
     assert "Einordnung und Werkstoffstruktur" in standard.systems[0]
 
 
+def test_unclassified_regional_greeting_uses_bounded_semantic_router():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
+    router_client = _RecordingClient(
+        json.dumps(
+            {
+                "primary_route": "smalltalk_navigation",
+                "speech_act": "social",
+                "conversation_relation": "new_topic",
+                "case_bound": False,
+                "contains_technical_request": False,
+                "confidence": 0.99,
+            }
+        )
+    )
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+
+    result = asyncio.run(pipeline.run("Moin", tenant=TenantContext("tenant-1")))
+
+    assert result.route_name == "smalltalk_navigation"
+    assert len(router_client.calls) == 1
+    assert router_client.calls[0].model == "ministral-8b-2512"
+    assert helper.calls == []
+    assert frontier.calls == []
+    assert len(standard.calls) == 1
+
+
 def test_deep_well_sourced_knowledge_stays_one_standard_call():
     pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
     result = asyncio.run(
@@ -156,20 +188,158 @@ def test_followup_comparison_uses_typed_prior_subject_without_raw_history_prompt
     result = asyncio.run(pipeline.run(second_question, tenant=tenant, session=session))
 
     assert result.route_name == "material_comparison"
-    assert (
-        "Aufgeloester Werkstoffvergleich: NBR und PTFE"
-        in pipeline.retriever.queries[-1]
-    )
+    assert "NBR und PTFE" in pipeline.retriever.queries[-1]
     assert pipeline.retriever.limits[-1] == 12
     final_client = next(
-        client for client in (standard, frontier) if second_question in client.users
+        client
+        for client in (standard, frontier)
+        if any("NBR und PTFE" in user for user in client.users)
     )
     final_system = final_client.systems[-1]
     assert "Profil: material_comparison" in final_system
     assert "Gegenstand: NBR, PTFE" in final_system
     assert first_question not in final_system
-    assert final_client.users[-1] == second_question
+    assert "NBR und PTFE" in final_client.users[-1]
     assert helper.calls == []
+
+
+def test_plural_material_comparison_binds_both_prior_subjects_end_to_end():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = InProcessConversationMemory()
+    session = SessionContext("plural-comparison-session")
+    tenant = TenantContext("tenant-1")
+
+    asyncio.run(
+        pipeline.run("Bitte gib mir nur Infos zu PTFE", tenant=tenant, session=session)
+    )
+    asyncio.run(pipeline.run("Jetzt bitte ueber NBR", tenant=tenant, session=session))
+    result = asyncio.run(
+        pipeline.run("bitte vergleiche nun beide", tenant=tenant, session=session)
+    )
+
+    assert result.route_name == "material_comparison"
+    assert "PTFE und NBR" in pipeline.retriever.queries[-1]
+    final_client = next(
+        client
+        for client in (standard, frontier)
+        if client.users and "PTFE und NBR" in client.users[-1]
+    )
+    assert "PTFE und NBR" in final_client.users[-1]
+    assert "Profil: material_comparison" in final_client.systems[-1]
+    assert "Gegenstand: PTFE, NBR" in final_client.systems[-1]
+    assert helper.calls == []
+
+
+def test_semantic_comparison_intent_still_requires_typed_context_binding():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = InProcessConversationMemory()
+    router_client = _RecordingClient(
+        json.dumps(
+            {
+                "primary_route": "material_comparison",
+                "speech_act": "request_comparison",
+                "conversation_relation": "continuation",
+                "case_bound": False,
+                "contains_technical_request": True,
+                "confidence": 0.99,
+            }
+        )
+    )
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+    session = SessionContext("semantic-comparison-session")
+    tenant = TenantContext("tenant-1")
+
+    asyncio.run(pipeline.run("Details zu PTFE", tenant=tenant, session=session))
+    asyncio.run(pipeline.run("Details zu NBR", tenant=tenant, session=session))
+    result = asyncio.run(
+        pipeline.run(
+            "Wie verhalten sie sich zueinander?", tenant=tenant, session=session
+        )
+    )
+
+    assert len(router_client.calls) == 1
+    assert result.route_name == "material_comparison"
+    assert "PTFE und NBR" in pipeline.retriever.queries[-1]
+    assert any(
+        "PTFE und NBR" in user
+        for client in (standard, frontier)
+        for user in client.users
+    )
+
+
+def test_semantic_comparison_without_provable_pair_abstains():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    router_client = _RecordingClient(
+        json.dumps(
+            {
+                "primary_route": "material_comparison",
+                "speech_act": "request_comparison",
+                "conversation_relation": "continuation",
+                "case_bound": False,
+                "contains_technical_request": True,
+                "confidence": 0.99,
+            }
+        )
+    )
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+
+    result = asyncio.run(
+        pipeline.run(
+            "Wie verhalten sie sich zueinander?", tenant=TenantContext("tenant-1")
+        )
+    )
+
+    assert result.route_name == "material_comparison"
+    assert "Welche zwei Gegenstände" in result.answer.text
+    assert pipeline.retriever.calls == 0
+    assert len(router_client.calls) == 1
+    assert helper.calls == standard.calls == frontier.calls == []
+
+
+def test_context_binding_does_not_downgrade_leakage_hard_route():
+    pipeline, _helper, _standard, _frontier = _pipeline(evidence_count=8)
+    pipeline.memory = InProcessConversationMemory()
+    session = SessionContext("leakage-comparison-session")
+    tenant = TenantContext("tenant-1")
+
+    asyncio.run(pipeline.run("Details zu PTFE", tenant=tenant, session=session))
+    asyncio.run(pipeline.run("Details zu NBR", tenant=tenant, session=session))
+    result = asyncio.run(
+        pipeline.run(
+            "Vergleiche beide: Beide Dichtungen sind undicht.",
+            tenant=tenant,
+            session=session,
+        )
+    )
+
+    assert result.route_name == "leakage_troubleshooting"
+    assert "PTFE und NBR" in pipeline.retriever.queries[-1]
+
+
+def test_unresolved_plural_comparison_clarifies_without_retrieval_or_model_call():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = InProcessConversationMemory()
+    session = SessionContext("unresolved-comparison-session")
+    tenant = TenantContext("tenant-1")
+
+    result = asyncio.run(
+        pipeline.run("Vergleiche bitte beide", tenant=tenant, session=session)
+    )
+
+    assert result.route_name == "material_comparison"
+    assert "Welche zwei Gegenstände" in result.answer.text
+    assert "nenne beide ausdrücklich" in result.answer.text
+    assert pipeline.retriever.calls == 0
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.turn_state.execution_class == "D1"
 
 
 def test_complex_multidocument_case_goes_frontier_directly():

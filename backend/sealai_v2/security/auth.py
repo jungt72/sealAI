@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from hashlib import sha256
 
 import jwt
 from jwt.algorithms import RSAAlgorithm
@@ -18,6 +19,12 @@ from jwt.algorithms import RSAAlgorithm
 from sealai_v2.core.contracts import AuthError, VerifiedIdentity
 
 _ALGORITHMS = ("RS256",)  # PINNED — never trust the token header's alg
+
+
+def _personal_tenant_id(*, issuer: str, subject: str) -> str:
+    """Stable private workspace for verified self-service identities without an organisation."""
+    digest = sha256(f"{issuer}\x00{subject}".encode()).hexdigest()[:32]
+    return f"personal-{digest}"
 
 
 class KeycloakJwtValidator:
@@ -88,13 +95,15 @@ class KeycloakJwtValidator:
         except jwt.InvalidTokenError as exc:
             raise AuthError(f"token rejected: {exc}") from exc
 
-        tenant_id = claims.get(self._tenant_claim)
         subject = claims.get("sub")
         session_id = (
             claims.get("sid") or subject
         )  # conversation scope from the verified session
-        if not tenant_id or not session_id or not subject:
+        if not session_id or not subject:
             raise AuthError("token missing required identity claims (fail-closed)")
+        tenant_id = claims.get(self._tenant_claim) or _personal_tenant_id(
+            issuer=self._issuer, subject=str(subject)
+        )
         realm = claims.get("realm_access")
         raw_roles = realm.get("roles") if isinstance(realm, dict) else None
         roles = (

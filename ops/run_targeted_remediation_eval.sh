@@ -1,6 +1,8 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Runs only the owner-approved failed M15 topics. This wrapper cannot degrade into a full replay.
 set -euo pipefail
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "${REPO_ROOT}"
@@ -23,7 +25,7 @@ VERIFY_ONLY="${2:-}"
 SCOPE_FILE="backend/sealai_v2/eval/remediation/m15_failed_topics_v2.json"
 RUNS_DIR="backend/sealai_v2/eval/runs"
 
-SCOPE_OUTPUT="$(python3 - "${SCOPE_FILE}" "${RUNS_DIR}" <<'PY'
+SCOPE_OUTPUT="$(/usr/bin/python3 -I - "${SCOPE_FILE}" "${RUNS_DIR}" <<'PY'
 import hashlib
 import json
 import sys
@@ -72,7 +74,7 @@ print(",".join(case_ids) + "\t" + scope["target"]["tree_hash"])
 PY
 )"
 IFS=$'\t' read -r CASE_IDS EXPECTED_TREE <<< "${SCOPE_OUTPUT}"
-ACTUAL_TREE="$(bash ops/tree-hash.sh)"
+ACTUAL_TREE="$(/bin/bash -p ops/tree-hash.sh)"
 [[ "${ACTUAL_TREE}" == "${EXPECTED_TREE}" ]] || {
   echo "target tree mismatch: expected ${EXPECTED_TREE}, got ${ACTUAL_TREE}" >&2
   exit 2
@@ -80,7 +82,7 @@ ACTUAL_TREE="$(bash ops/tree-hash.sh)"
 
 echo ">> targeted remediation scope: ${CASE_IDS}"
 [[ "${VERIFY_ONLY}" == "--verify-only" ]] && exit 0
-exec bash ops/run_eval.sh \
+exec /bin/bash -p ops/run_eval.sh \
   --label "${LABEL}" \
   --case-ids "${CASE_IDS}" \
   --columns flags_off,flags_on

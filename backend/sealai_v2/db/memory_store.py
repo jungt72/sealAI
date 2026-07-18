@@ -65,6 +65,7 @@ def _item_to_domain(row: V2MemoryItem, sources: tuple[MemorySource, ...]) -> Mem
         content=row.content,
         semantic_key=row.semantic_key,
         sources=sources,
+        owner_subject=row.owner_subject or "",
         version=row.version,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -106,6 +107,7 @@ def _outbox_payload(item: MemoryItem) -> dict:
     return {
         "id": item.id,
         "tenant_id": item.tenant_id,
+        "owner_subject": item.owner_subject,
         "scope": item.scope.value,
         "scope_id": item.scope_id,
         "status": item.status.value,
@@ -126,9 +128,12 @@ class MemoryStore(Protocol):
         status: MemoryStatus | None = None,
         project_id: str | None = None,
         case_id: str | None = None,
+        owner_subject: str = "",
     ) -> tuple[MemoryItem, ...]: ...
-    def summary(self, *, tenant_id: str) -> dict: ...
-    def get_item(self, *, tenant_id: str, item_id: str) -> MemoryItem | None: ...
+    def summary(self, *, tenant_id: str, owner_subject: str = "") -> dict: ...
+    def get_item(
+        self, *, tenant_id: str, item_id: str, owner_subject: str = ""
+    ) -> MemoryItem | None: ...
     def transition_status(
         self,
         *,
@@ -139,6 +144,7 @@ class MemoryStore(Protocol):
         now: str,
         note: str = "",
         purge_after: str | None = None,
+        owner_subject: str = "",
     ) -> MemoryItem: ...
 
 
@@ -161,9 +167,12 @@ class InProcessMemoryStore:
         status: MemoryStatus | None = None,
         project_id: str | None = None,
         case_id: str | None = None,
+        owner_subject: str = "",
     ) -> tuple[MemoryItem, ...]:
         require_tenant(TenantContext(tenant_id))
         out = [it for it in self._items.values() if it.tenant_id == tenant_id]
+        if owner_subject:
+            out = [it for it in out if it.owner_subject == owner_subject]
         if scope is not None:
             out = [it for it in out if it.scope == scope]
         if status is not None:
@@ -182,9 +191,11 @@ class InProcessMemoryStore:
             ]
         return tuple(out)
 
-    def summary(self, *, tenant_id: str) -> dict:
+    def summary(self, *, tenant_id: str, owner_subject: str = "") -> dict:
         require_tenant(TenantContext(tenant_id))
         items = [it for it in self._items.values() if it.tenant_id == tenant_id]
+        if owner_subject:
+            items = [it for it in items if it.owner_subject == owner_subject]
         by_status: dict[str, int] = {}
         by_scope: dict[str, int] = {}
         for it in items:
@@ -192,10 +203,16 @@ class InProcessMemoryStore:
             by_scope[it.scope.value] = by_scope.get(it.scope.value, 0) + 1
         return {"total": len(items), "by_status": by_status, "by_scope": by_scope}
 
-    def get_item(self, *, tenant_id: str, item_id: str) -> MemoryItem | None:
+    def get_item(
+        self, *, tenant_id: str, item_id: str, owner_subject: str = ""
+    ) -> MemoryItem | None:
         require_tenant(TenantContext(tenant_id))
         item = self._items.get(item_id)
-        if item is None or item.tenant_id != tenant_id:
+        if (
+            item is None
+            or item.tenant_id != tenant_id
+            or (owner_subject and item.owner_subject != owner_subject)
+        ):
             return None
         return item
 
@@ -209,9 +226,12 @@ class InProcessMemoryStore:
         now: str,
         note: str = "",
         purge_after: str | None = None,
+        owner_subject: str = "",
     ) -> MemoryItem:
         require_tenant(TenantContext(tenant_id))
-        item = self.get_item(tenant_id=tenant_id, item_id=item_id)
+        item = self.get_item(
+            tenant_id=tenant_id, item_id=item_id, owner_subject=owner_subject
+        )
         if item is None:
             raise MemoryItemNotFound(item_id)
         if not is_valid_transition(item.status, to_status):
@@ -241,6 +261,7 @@ class PostgresMemoryStore:
             row = V2MemoryItem(
                 id=item.id,
                 tenant_id=item.tenant_id,
+                owner_subject=item.owner_subject or None,
                 scope=item.scope.value,
                 scope_id=item.scope_id,
                 # Read-path denormalization (Patch 2 design note, extended Patch 9): populated here
@@ -322,10 +343,13 @@ class PostgresMemoryStore:
         status: MemoryStatus | None = None,
         project_id: str | None = None,
         case_id: str | None = None,
+        owner_subject: str = "",
     ) -> tuple[MemoryItem, ...]:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
             q = select(V2MemoryItem).where(V2MemoryItem.tenant_id == tenant_id)
+            if owner_subject:
+                q = q.where(V2MemoryItem.owner_subject == owner_subject)
             if scope is not None:
                 q = q.where(V2MemoryItem.scope == scope.value)
             if status is not None:
@@ -337,19 +361,24 @@ class PostgresMemoryStore:
             rows = s.scalars(q.order_by(V2MemoryItem.updated_at.desc())).all()
             return tuple(_item_to_domain(r, self._sources_for(s, r.id)) for r in rows)
 
-    def summary(self, *, tenant_id: str) -> dict:
+    def summary(self, *, tenant_id: str, owner_subject: str = "") -> dict:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
-            status_rows = s.execute(
-                select(V2MemoryItem.status, func.count())
-                .where(V2MemoryItem.tenant_id == tenant_id)
-                .group_by(V2MemoryItem.status)
-            ).all()
-            scope_rows = s.execute(
-                select(V2MemoryItem.scope, func.count())
-                .where(V2MemoryItem.tenant_id == tenant_id)
-                .group_by(V2MemoryItem.scope)
-            ).all()
+            status_query = select(V2MemoryItem.status, func.count()).where(
+                V2MemoryItem.tenant_id == tenant_id
+            )
+            scope_query = select(V2MemoryItem.scope, func.count()).where(
+                V2MemoryItem.tenant_id == tenant_id
+            )
+            if owner_subject:
+                status_query = status_query.where(
+                    V2MemoryItem.owner_subject == owner_subject
+                )
+                scope_query = scope_query.where(
+                    V2MemoryItem.owner_subject == owner_subject
+                )
+            status_rows = s.execute(status_query.group_by(V2MemoryItem.status)).all()
+            scope_rows = s.execute(scope_query.group_by(V2MemoryItem.scope)).all()
             by_status = {status: count for status, count in status_rows}
             by_scope = {scope: count for scope, count in scope_rows}
             return {
@@ -358,11 +387,17 @@ class PostgresMemoryStore:
                 "by_scope": by_scope,
             }
 
-    def get_item(self, *, tenant_id: str, item_id: str) -> MemoryItem | None:
+    def get_item(
+        self, *, tenant_id: str, item_id: str, owner_subject: str = ""
+    ) -> MemoryItem | None:
         require_tenant(TenantContext(tenant_id))
         with self._sf() as s:
             row = s.get(V2MemoryItem, item_id)
-            if row is None or row.tenant_id != tenant_id:
+            if (
+                row is None
+                or row.tenant_id != tenant_id
+                or (owner_subject and row.owner_subject != owner_subject)
+            ):
                 return None
             return _item_to_domain(row, self._sources_for(s, row.id))
 
@@ -376,6 +411,7 @@ class PostgresMemoryStore:
         now: str,
         note: str = "",
         purge_after: str | None = None,
+        owner_subject: str = "",
     ) -> MemoryItem:
         require_tenant(TenantContext(tenant_id))
         # ONE transaction: the row update, the audit event, and the outbox enqueue all commit
@@ -383,7 +419,11 @@ class PostgresMemoryStore:
         # of a real status change (the exact failure mode an outbox pattern exists to prevent).
         with self._sf() as s:
             row = s.get(V2MemoryItem, item_id)
-            if row is None or row.tenant_id != tenant_id:
+            if (
+                row is None
+                or row.tenant_id != tenant_id
+                or (owner_subject and row.owner_subject != owner_subject)
+            ):
                 raise MemoryItemNotFound(item_id)
             from_status = MemoryStatus(row.status)
             if not is_valid_transition(from_status, to_status):

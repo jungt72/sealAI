@@ -7,17 +7,28 @@ not a Gegencheck situation. Offline, no LLM.
 
 from __future__ import annotations
 
+import pytest
+
 from sealai_v2.api.serializers import chat_response
 from sealai_v2.core.contracts import (
     Answer,
+    EvaluationState,
     Flags,
+    InputResolutionState,
+    MaterialConstraintMatch,
+    MaterialConstraintResult,
+    MaterialConstraintVerdict,
+    MediumCardinality,
     PipelineResult,
+    RelationState,
     VerifierAction,
     VerifierVerdict,
 )
 
 
-def _result(gegencheck):
+def _result(
+    gegencheck, *, material_constraints=None, material_constraints_enabled=False
+):
     return PipelineResult(
         question="Wir verwenden FKM in Heißdampf, passt das?",
         tenant_id="t1",
@@ -25,6 +36,8 @@ def _result(gegencheck):
         understanding=None,
         answer=Answer(text="…", model="fake"),
         gegencheck=gegencheck,
+        material_constraints=material_constraints,
+        material_constraints_enabled=material_constraints_enabled,
     )
 
 
@@ -54,6 +67,73 @@ def test_disqualifying_verdict_is_serialised():
 def test_no_gegencheck_situation_serialises_none():
     out = chat_response(_result(None))
     assert out["gegencheck"] is None
+
+
+def test_flag_off_legacy_payload_has_no_new_key_and_keeps_verdict_exactly() -> None:
+    verdict = {"disqualified": False, "basis": "matrix_compatible"}
+    out = chat_response(_result(verdict))
+    assert out["gegencheck"] == verdict
+    assert "material_constraints" not in out
+
+
+def test_enabled_canonical_result_is_additive_and_legacy_output_is_unchanged() -> None:
+    match = MaterialConstraintMatch(
+        rule_ref="MX-NBR-SYNTHETIKOEL",
+        verdict=MaterialConstraintVerdict.BEDINGT,
+        statement="Nur nach anwendungsbezogener Prüfung.",
+        source_ref="matrix-cell:MX-NBR-SYNTHETIKOEL",
+    )
+    canonical = MaterialConstraintResult(
+        material_state=InputResolutionState.KNOWN,
+        medium_state=InputResolutionState.KNOWN,
+        medium_cardinality=MediumCardinality.SINGLE,
+        relation_state=RelationState.NOT_APPLICABLE,
+        evaluation_state=EvaluationState.EVALUATED,
+        verdict=MaterialConstraintVerdict.BEDINGT,
+        matches=(match,),
+        decisive_ref=match.rule_ref,
+    )
+    legacy = {
+        "disqualified": False,
+        "basis": "matrix_conditional",
+        "condition": match.statement,
+        "source": match.source_ref,
+    }
+    out = chat_response(
+        _result(
+            legacy,
+            material_constraints=canonical,
+            material_constraints_enabled=True,
+        )
+    )
+    assert out["gegencheck"] == legacy
+    assert out["material_constraints"] == canonical.to_dict()
+
+
+def test_enabled_contract_cannot_be_silently_omitted() -> None:
+    with pytest.raises(ValueError, match="requires an explicit result"):
+        chat_response(_result(None, material_constraints_enabled=True))
+
+
+def test_disabled_contract_cannot_leak_a_canonical_result() -> None:
+    match = MaterialConstraintMatch(
+        rule_ref="MX-NBR-SYNTHETIKOEL",
+        verdict=MaterialConstraintVerdict.BEDINGT,
+        statement="Nur nach anwendungsbezogener Prüfung.",
+        source_ref="matrix-cell:MX-NBR-SYNTHETIKOEL",
+    )
+    canonical = MaterialConstraintResult(
+        material_state=InputResolutionState.KNOWN,
+        medium_state=InputResolutionState.KNOWN,
+        medium_cardinality=MediumCardinality.SINGLE,
+        relation_state=RelationState.NOT_APPLICABLE,
+        evaluation_state=EvaluationState.EVALUATED,
+        verdict=MaterialConstraintVerdict.BEDINGT,
+        matches=(match,),
+        decisive_ref=match.rule_ref,
+    )
+    with pytest.raises(ValueError, match="disabled material-constraint"):
+        chat_response(_result(None, material_constraints=canonical))
 
 
 # --- P1.5: L3 verification status on the chat payload ------------------------------------------

@@ -1,110 +1,183 @@
 #!/usr/bin/env python3
-"""Masked repository secret hygiene check.
+"""Fail-closed, value-redacting repository secret scanner.
 
-The check intentionally reports only file paths, key/field names, and risk
-classes. It never prints env values, JSON secret values, tokens, passwords, or
-private keys.
+The worktree scan reads tracked and non-ignored candidate files; ignored local
+runtime env/backup files are never opened. Index/tree/range modes read immutable
+Git blobs. Findings contain rule IDs, paths, line numbers, and sources only.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
 import subprocess
 import sys
-from pathlib import Path
-from typing import Iterable
+from enum import Enum
+from pathlib import Path, PurePosixPath
+from typing import Iterable, Iterator, NamedTuple
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-ENV_SENSITIVE_KEY_RE = re.compile(
-    r"(?:^|_)(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CLIENT_SECRET|AUTH_SECRET)(?:$|_)",
-    re.IGNORECASE,
-)
-JSON_SECRET_KEYS = {
-    "apikey",
-    "api_key",
-    "authsecret",
-    "auth_secret",
-    "clientsecret",
-    "client_secret",
-    "credentialdata",
-    "password",
-    "privatekey",
-    "private_key",
-    "secret",
-    "secretdata",
+NON_SECRET_KEY_SUFFIXES = {
+    ("max", "output", "token"),
+    ("input", "token", "count"),
+    ("token", "limit"),
+    ("token", "budget"),
+    ("context", "token"),
+    ("token", "per", "minute"),
+    ("secret", "name"),
+    ("password", "policy"),
+    ("secret", "creation", "time"),
 }
 PLACEHOLDER_RE = re.compile(
-    r"^(|<[^>]+>|\\$\\{[^}]+\\}|SET_IN_SECRET_STORE|REPLACE_ME|CHANGE_ME|"
-    r"YOUR_[A-Z0-9_]+|PLACEHOLDER|DUMMY|EXAMPLE|TEST|DEV|LOCAL|NOT_SET|"
-    r"DISABLED|UNSET|NONE|null|false|0|\\*+)$",
+    r"^(?:|<[^>]+>|\$\{[^}]+\}|\$\$\{[^}]+\}|"
+    r"SET_IN_SECRET_STORE|INJECT_AT_RUNTIME|REPLACE_ME|CHANGE[-_]?ME(?:[-_.][A-Z0-9]+)*|"
+    r"YOUR_[A-Z0-9_]+|PLACEHOLDER|DUMMY(?:_[A-Z0-9_]+)*|"
+    r"EXAMPLE|TEST|FAKE|MOCK|"
+    r"DEV|LOCAL|"
+    r"NOT_SET|DISABLED|UNSET|NONE|NULL|FALSE|0|\*+)$",
     re.IGNORECASE,
 )
-IGNORED_DIRS = {
-    ".git",
-    ".next",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".venv",
-    ".venv_audit",
-    "archive",
-    "backups",
-    "__pycache__",
-    "backend/.venv",
-    "frontend/.next",
-    "frontend/node_modules",
-    "node_modules",
-}
-ALLOWED_TRACKED_ENV_FILES = {
-    ".env.example",
-    ".env.prod.example",
-    ".env.frontend.example",
-    ".env.backend.example",
-    ".env.keycloak.example",
-    ".env.shared.example",
-    "backend/.env.example",
-    "langgraph_backup/.env.example",
-    "strapi-backend/.env.example",
-}
-TRACKED_KEYCLOAK_EXPORTS = {
-    "keycloak/realm-export.json",
-    "keycloak/import/realm-export.json",
-    "keycloak-realm-backup/sealAI-realm-export.json",
-    "realm-export.json",
-}
+
+PEM_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----",
+    re.IGNORECASE,
+)
+JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\b")
+BEARER_RE = re.compile(
+    r"\bbearer\s+[A-Za-z0-9._~+/=-]{16,}",
+    re.IGNORECASE,
+)
+PROVIDER_TOKEN_RES = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+)
+CONNECTION_RE = re.compile(
+    r"\b(?:postgres(?:ql)?|redis|rediss|mysql|mariadb|mongodb(?:\+srv)?|"
+    r"amqp|amqps|https?)://([^:\s/@]+):([^@\s/]+)@",
+    re.IGNORECASE,
+)
+ASSIGNMENT_RE = re.compile(
+    r"^\s*(?:export\s+)?[\"']?([A-Za-z_][A-Za-z0-9_.-]*)[\"']?" r"\s*[:=]\s*(.*?)\s*$"
+)
+SQL_DATA_DUMP_RE = re.compile(r"^COPY\s+.+\s+FROM\s+stdin;\s*$", re.MULTILINE)
+
+RAW_PEM_PRIVATE_KEY_RE = re.compile(
+    rb"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----", re.IGNORECASE
+)
+RAW_JWT_RE = re.compile(
+    rb"\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{8,}\b"
+)
+RAW_BEARER_RE = re.compile(rb"\bbearer[ \t]+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE)
+RAW_PROVIDER_TOKEN_RES = (
+    re.compile(rb"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(rb"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+    re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
+)
+RAW_CONNECTION_RE = re.compile(
+    rb"\b(?:postgres(?:ql)?|redis|rediss|mysql|mariadb|mongodb(?:\+srv)?|"
+    rb"amqp|amqps|https?)://([^:\s/@]+):([^@\s/]+)@",
+    re.IGNORECASE,
+)
+RAW_ASSIGNMENT_RE = re.compile(
+    rb"(?im)(?<![A-Za-z0-9_.-])(?:export[ \t]+)?[\"']?"
+    rb"([A-Za-z_][A-Za-z0-9_.-]*)[\"']?[ \t]*[:=][ \t]*"
+    rb"([\"']?)([A-Za-z0-9._~+/=@:$%!{}-]{1,4096})\2"
+)
+RAW_SENSITIVE_MARKER_RE = re.compile(
+    rb"(?im)(?<![A-Za-z0-9_.-])(?:export[ \t]+)?[\"']?"
+    rb"([A-Za-z_][A-Za-z0-9_.-]*)[\"']?[ \t]*[:=]"
+)
+ZERO_OID_RE = re.compile(r"^0+$")
+
+
+class RawMarkerStatus(Enum):
+    DETECTED = "DETECTED"
+    COVERED_BY_FINDING = "COVERED_BY_FINDING"
+    SAFE_PLACEHOLDER = "SAFE_PLACEHOLDER"
+    UNSCANNABLE_FINDING = "UNSCANNABLE_FINDING"
+
+
+class RawSensitiveMarker(NamedTuple):
+    marker_id: str
+    kind: str
+    start: int
+    end: int
+    line_number: int
+
+
+class ScannerError(RuntimeError):
+    """A scanner/runtime error that must fail the gate closed."""
 
 
 class Finding:
-    def __init__(self, severity: str, path: str, detail: str) -> None:
-        self.severity = severity
+    def __init__(
+        self,
+        rule: str,
+        path: str,
+        *,
+        source: str,
+        line_number: int | None = None,
+        marker_id: str | None = None,
+    ) -> None:
+        self.rule = rule
         self.path = path
-        self.detail = detail
+        self.source = source
+        self.line_number = line_number
+        self.marker_id = marker_id
 
     def line(self) -> str:
-        return f"{self.severity}: {self.path}: {self.detail}"
+        location = f" line={self.line_number}" if self.line_number is not None else ""
+        return (
+            f"ERROR rule={self.rule} path={self.path}{location} "
+            f"source={self.source} value=[REDACTED]"
+        )
+
+    def sort_key(self) -> tuple[str, str, int, str, str]:
+        return (
+            self.path,
+            self.rule,
+            self.line_number or 0,
+            self.source,
+            self.marker_id or "",
+        )
+
+    def identity(self) -> tuple[str, str, int | None, str, str | None]:
+        return (self.rule, self.path, self.line_number, self.source, self.marker_id)
 
 
-def git_files(*args: str) -> list[str]:
-    proc = subprocess.run(
-        ["git", *args, "-z"],
+def run_git(*args: str) -> bytes:
+    process = subprocess.run(
+        ["git", *args],
         cwd=REPO_ROOT,
-        check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        check=False,
     )
-    if not proc.stdout:
-        return []
+    if process.returncode != 0:
+        safe_command = " ".join(args[:2])
+        raise ScannerError(
+            f"git operation failed ({safe_command}); output intentionally suppressed"
+        )
+    return process.stdout
+
+
+def nul_items(raw: bytes) -> list[str]:
     return [
-        item.decode("utf-8", errors="replace")
-        for item in proc.stdout.split(b"\0")
+        item.decode("utf-8", errors="surrogateescape")
+        for item in raw.split(b"\0")
         if item
     ]
 
 
 def is_env_file(path: str) -> bool:
-    name = Path(path).name
+    name = PurePosixPath(path).name.lower()
     return (
         name.startswith(".env")
         or name.endswith(".env")
@@ -115,81 +188,8 @@ def is_env_file(path: str) -> bool:
 
 
 def is_example_env(path: str) -> bool:
-    name = Path(path).name
-    return (
-        name.endswith(".example")
-        or name.endswith(".template")
-        or name.endswith(".sample")
-    )
-
-
-def is_ignored_path(path: str) -> bool:
-    parts = Path(path).parts
-    if "node_modules" in parts or "__pycache__" in parts:
-        return True
-    prefixes = {"/".join(parts[:idx]) for idx in range(1, len(parts) + 1)}
-    return bool(prefixes & IGNORED_DIRS)
-
-
-def parse_env_keys(path: Path) -> Iterable[tuple[int, str, str]]:
-    for lineno, raw in enumerate(path.read_text(errors="replace").splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        yield lineno, key.strip().removeprefix("export "), value.strip().strip("'\"")
-
-
-def check_tracked_envs(tracked: list[str]) -> list[Finding]:
-    findings: list[Finding] = []
-    for path in tracked:
-        if not is_env_file(path):
-            continue
-        if path not in ALLOWED_TRACKED_ENV_FILES:
-            findings.append(
-                Finding(
-                    "ERROR",
-                    path,
-                    "tracked env-like file is not an approved placeholder example",
-                )
-            )
-            continue
-        file_path = REPO_ROOT / path
-        for lineno, key, value in parse_env_keys(file_path):
-            if ENV_SENSITIVE_KEY_RE.search(key) and not PLACEHOLDER_RE.match(value):
-                findings.append(
-                    Finding(
-                        "ERROR",
-                        path,
-                        f"{key} on line {lineno} does not look like a placeholder; rotate if ever real",
-                    )
-                )
-    return findings
-
-
-def check_untracked_envs() -> list[Finding]:
-    findings: list[Finding] = []
-    candidates = git_files("ls-files", "--others", "--ignored", "--exclude-standard")
-    for path in candidates:
-        if is_ignored_path(path) or not is_env_file(path):
-            continue
-        if is_example_env(path):
-            findings.append(
-                Finding(
-                    "WARN",
-                    path,
-                    "untracked env example; verify placeholders before committing",
-                )
-            )
-        else:
-            findings.append(
-                Finding(
-                    "WARN",
-                    path,
-                    "local env/backup/rollback file; keep untracked and rotate if exposed",
-                )
-            )
-    return findings
+    name = PurePosixPath(path).name.lower()
+    return name.endswith((".example", ".sample", ".template"))
 
 
 def placeholderish(value: object) -> bool:
@@ -197,73 +197,743 @@ def placeholderish(value: object) -> bool:
         return True
     if not isinstance(value, str):
         return False
-    return bool(PLACEHOLDER_RE.match(value.strip()))
+    return bool(PLACEHOLDER_RE.fullmatch(value.strip()))
 
 
-def walk_json(value: object, trail: str = "$") -> Iterable[tuple[str, str, object]]:
+def _key_segments(key: str) -> tuple[str, ...]:
+    separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
+    raw = tuple(part.lower() for part in re.split(r"[^A-Za-z0-9]+", separated) if part)
+    compact_aliases = {
+        "apikey": ("api", "key"),
+        "accesstoken": ("access", "token"),
+        "authsecret": ("auth", "secret"),
+        "clientsecret": ("client", "secret"),
+        "credentialdata": ("credential", "data"),
+        "privatekey": ("private", "key"),
+        "secretdata": ("secret", "data"),
+    }
+    expanded: list[str] = []
+    for part in raw:
+        expanded.extend(compact_aliases.get(part, (part,)))
+    singular = {
+        "password" + "s": "pass" + "word",
+        "tokens": "token",
+        "secrets": "secret",
+        "keys": "key",
+        "credential" + "s": "credential",
+    }
+    return tuple(singular.get(part, part) for part in expanded)
+
+
+def is_sensitive_key(key: str) -> bool:
+    """Classify credential keys without treating technical token counters as secrets."""
+
+    segments = _key_segments(key)
+    if not segments:
+        return False
+    if any(
+        len(segments) >= len(suffix) and segments[-len(suffix) :] == suffix
+        for suffix in NON_SECRET_KEY_SUFFIXES
+    ):
+        return False
+    if any(part in {"password", "passwd", "secret", "credential"} for part in segments):
+        return True
+    if "token" in segments:
+        return True
+    return any(
+        first in segments and second in segments
+        for first, second in (("api", "key"), ("private", "key"))
+    )
+
+
+def _byte_textlike(content: bytes, *, require_nul: bool) -> bool:
+    if not content or (require_nul and b"\x00" not in content):
+        return False
+    accepted = sum(
+        byte == 0 or byte in {9, 10, 13} or 32 <= byte <= 126 for byte in content
+    )
+    return accepted / len(content) >= 0.9
+
+
+def decode_scan_candidates(content: bytes) -> tuple[str, ...]:
+    """Return strict, deduplicated text views for UTF-8 and recognizable UTF-16."""
+
+    if not content:
+        return ("",)
+    candidates: list[str] = []
+    if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        try:
+            candidates.append(content.decode("utf-16", errors="strict"))
+        except UnicodeError as exc:
+            raise ScannerError(
+                "malformed UTF-16 content is not safely scannable"
+            ) from exc
+    else:
+        try:
+            candidates.append(content.decode("utf-8-sig", errors="strict"))
+        except UnicodeError:
+            pass
+
+        if len(content) >= 8 and len(content) % 2 == 0 and b"\x00" in content:
+            even = content[0::2]
+            odd = content[1::2]
+            even_ratio = even.count(0) / len(even)
+            odd_ratio = odd.count(0) / len(odd)
+            encoding = None
+            if odd_ratio >= 0.6 and even_ratio <= 0.1:
+                encoding = "utf-16le"
+            elif even_ratio >= 0.6 and odd_ratio <= 0.1:
+                encoding = "utf-16be"
+            if encoding is not None:
+                try:
+                    candidates.append(content.decode(encoding, errors="strict"))
+                except UnicodeError as exc:
+                    raise ScannerError(
+                        "malformed UTF-16 content is not safely scannable"
+                    ) from exc
+            elif _byte_textlike(content, require_nul=True):
+                try:
+                    candidates.append(
+                        content.replace(b"\x00", b"").decode("utf-8", errors="strict")
+                    )
+                except UnicodeError as exc:
+                    raise ScannerError(
+                        "ambiguous wide text is not safely scannable"
+                    ) from exc
+
+        if not candidates and _byte_textlike(content, require_nul=False):
+            raise ScannerError("text-like content has an unsupported encoding")
+
+    return tuple(dict.fromkeys(candidates))
+
+
+def normalized_scalar(raw: str) -> str:
+    value = raw.strip().rstrip(",").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1].strip()
+    return value
+
+
+def secretish_scalar(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    candidate = normalized_scalar(value)
+    if placeholderish(candidate) or len(candidate) < 8:
+        return False
+    return bool(re.fullmatch(r"[A-Za-z0-9._~+/=@:$%!-]+", candidate))
+
+
+def private_jwk_scalar(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    candidate = normalized_scalar(value)
+    return bool(candidate) and not placeholderish(candidate)
+
+
+def assignment_scalar(path: str, raw_value: str) -> str | None:
+    """Return only literal/config scalars, never code expressions."""
+
+    stripped = raw_value.strip().rstrip(",;").strip()
+    suffix = PurePosixPath(path).suffix.lower()
+    config_like = (
+        is_env_file(path)
+        or suffix
+        in {
+            ".cfg",
+            ".conf",
+            ".http",
+            ".ini",
+            ".log",
+            ".md",
+            ".properties",
+            ".service",
+            ".txt",
+            ".toml",
+            ".yaml",
+            ".yml",
+        }
+        or suffix in {".sh", ".bash", ".zsh"}
+        or PurePosixPath(path).name.lower() in {"dockerfile", "containerfile"}
+    )
+    if config_like:
+        return normalized_scalar(stripped)
+    if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in {"'", '"'}:
+        return stripped[1:-1].strip()
+    return None
+
+
+def line_number(text: str, offset: int) -> int:
+    return text.count("\n", 0, offset) + 1
+
+
+def raw_line_number(content: bytes, offset: int) -> int:
+    return content.count(b"\n", 0, offset) + 1
+
+
+def filename_findings(path: str, source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    pure_path = PurePosixPath(path)
+    name = pure_path.name.lower()
+    lowered = path.lower()
+    suffixes = [suffix.lower() for suffix in pure_path.suffixes]
+
+    if is_env_file(path) and not is_example_env(path):
+        findings.append(Finding("filename.env", path, source=source))
+
+    private_name = (
+        name.endswith((".key", ".p8", ".private.pem"))
+        or name in {"key.pem", "private_key.json", "id_rsa", "id_ed25519"}
+        or name.startswith(("id_rsa.", "id_ed25519."))
+        or ("private" in name and name.endswith((".jwk", ".json", ".pem")))
+    )
+    if private_name:
+        findings.append(Finding("filename.private-key", path, source=source))
+
+    dump_name = name.endswith(
+        (".dump", ".pgdump", ".rdb", ".aof", ".sql.gz", ".sql.bz2", ".sql.xz")
+    ) or (
+        ("backup" in lowered or "dump" in lowered or "export" in lowered)
+        and bool(set(suffixes) & {".sql", ".dump", ".pgdump", ".rdb", ".aof"})
+    )
+    if dump_name:
+        findings.append(Finding("filename.database-dump", path, source=source))
+
+    diagnostic_auth_capture = (
+        ("/live/" in f"/{lowered}" or "debug" in lowered)
+        and any(marker in name for marker in ("auth", "token", "credential"))
+        and name.endswith((".txt", ".log", ".json", ".http"))
+    )
+    if diagnostic_auth_capture:
+        findings.append(Finding("filename.auth-capture", path, source=source))
+
+    return findings
+
+
+def walk_json(value: object) -> Iterator[tuple[str, object]]:
     if isinstance(value, dict):
         for key, child in value.items():
-            child_path = f"{trail}.{key}"
-            yield child_path, key, child
-            yield from walk_json(child, child_path)
+            yield str(key), child
+            yield from walk_json(child)
     elif isinstance(value, list):
-        for idx, child in enumerate(value):
-            yield from walk_json(child, f"{trail}[{idx}]")
+        for child in value:
+            yield from walk_json(child)
 
 
-def check_keycloak_exports(tracked: list[str]) -> list[Finding]:
+def json_findings(path: str, text: str, source: str) -> list[Finding]:
+    stripped = text.strip()
+    if not stripped or stripped[0] not in "[{":
+        return []
+    try:
+        document = json.loads(stripped)
+    except (json.JSONDecodeError, RecursionError):
+        return []
+
     findings: list[Finding] = []
-    for path in sorted(set(tracked) & TRACKED_KEYCLOAK_EXPORTS):
-        file_path = REPO_ROOT / path
-        raw_text = file_path.read_text(errors="replace")
-        if not raw_text.strip():
-            findings.append(
-                Finding(
-                    "WARN",
-                    path,
-                    "empty tracked Keycloak export; no secret fields to scan",
-                )
-            )
-            continue
-        try:
-            data = json.loads(raw_text)
-        except json.JSONDecodeError as exc:
-            findings.append(Finding("ERROR", path, f"invalid JSON: {exc.msg}"))
-            continue
+    values: Iterable[object]
+    if isinstance(document, list):
+        values = document
+    else:
+        values = (document,)
 
-        for json_path, key, value in walk_json(data):
-            normalized_key = re.sub(r"[^a-zA-Z0-9_]", "", key).lower()
-            if normalized_key not in JSON_SECRET_KEYS:
-                continue
-            if placeholderish(value):
-                continue
+    stack = list(values)
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            if "kty" in current and private_jwk_scalar(current.get("d")):
+                findings.append(
+                    Finding("content.private-jwk", path, source=source, line_number=1)
+                )
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            stack.extend(current)
+
+    for key, child in walk_json(document):
+        if is_sensitive_key(key) and secretish_scalar(child):
             findings.append(
                 Finding(
-                    "ERROR",
+                    "content.sensitive-assignment",
                     path,
-                    f"{json_path} may contain a live secret; value suppressed; rotation required if real",
+                    source=source,
+                    line_number=1,
                 )
             )
     return findings
 
 
-def main() -> int:
-    tracked = git_files("ls-files")
-    findings = [
-        *check_tracked_envs(tracked),
-        *check_keycloak_exports(tracked),
-        *check_untracked_envs(),
-    ]
+def detect_fragmented_token_markers(
+    content: bytes,
+) -> tuple[RawSensitiveMarker, ...]:
+    """Return strong token-prefix markers split by an interior invalid byte."""
 
-    if not findings:
-        print("OK: secret hygiene check found no reportable env/Auth risks.")
-        return 0
+    token_specs = (
+        (
+            "jwt_prefix",
+            re.compile(rb"\beyJ"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.",
+            16,
+        ),
+        (
+            "bearer_prefix",
+            re.compile(rb"\bbearer[ \t]+", re.IGNORECASE),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-",
+            16,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bsk-"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-",
+            20,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bgh[pousr]_"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            20,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bxox[baprs]-"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-",
+            20,
+        ),
+        (
+            "provider_token_prefix",
+            re.compile(rb"\bAKIA"),
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            16,
+        ),
+    )
+    markers: list[RawSensitiveMarker] = []
+    for kind, prefix_pattern, allowed, minimum_token_bytes in token_specs:
+        allowed_bytes = frozenset(allowed)
+        for prefix in prefix_pattern.finditer(content):
+            token_start = prefix.end()
+            limit = min(len(content), token_start + 128)
+            cursor = token_start
+            while cursor < limit and content[cursor] in allowed_bytes:
+                cursor += 1
+            prefix_token_length = cursor - token_start
+            if cursor >= limit or content[cursor] < 0x80 or prefix_token_length < 4:
+                continue
+            suffix_start = cursor + 1
+            suffix_end = suffix_start
+            while suffix_end < limit and content[suffix_end] in allowed_bytes:
+                suffix_end += 1
+            suffix_token_length = suffix_end - suffix_start
+            if (
+                suffix_token_length < 4
+                or prefix_token_length + suffix_token_length < minimum_token_bytes
+            ):
+                continue
+            markers.append(
+                RawSensitiveMarker(
+                    marker_id=f"{kind}:{prefix.start()}",
+                    kind=kind,
+                    start=prefix.start(),
+                    end=suffix_end,
+                    line_number=raw_line_number(content, prefix.start()),
+                )
+            )
+    return tuple(markers)
 
-    print("Masked secret hygiene findings:")
+
+def raw_assignment_value_is_fragmented(content: bytes, match: re.Match[bytes]) -> bool:
+    """Return whether invalid bytes split an otherwise token-like raw value."""
+
+    if match.group(2):
+        return False
+    boundary = match.end()
+    if boundary >= len(content) or content[boundary] < 0x80:
+        return False
+    suffix_start = boundary + 1
+    if suffix_start >= len(content):
+        return False
+    return content[suffix_start] in frozenset(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=@:$%!{}-"
+    )
+
+
+def scan_raw_bytes(path: str, content: bytes, source: str) -> list[Finding]:
+    """Resolve every recognized raw marker to a safe, redacted outcome."""
+
+    findings: list[Finding] = []
+    markers: dict[str, RawSensitiveMarker] = {}
+    marker_status: dict[str, RawMarkerStatus] = {}
+
+    def register_marker(kind: str, start: int, end: int) -> RawSensitiveMarker:
+        marker_id = f"{kind}:{start}"
+        marker = markers.get(marker_id)
+        if marker is None:
+            marker = RawSensitiveMarker(
+                marker_id=marker_id,
+                kind=kind,
+                start=start,
+                end=end,
+                line_number=raw_line_number(content, start),
+            )
+            markers[marker_id] = marker
+            marker_status[marker_id] = RawMarkerStatus.DETECTED
+        return marker
+
+    def cover_with_finding(marker: RawSensitiveMarker, rule: str) -> None:
+        findings.append(
+            Finding(
+                rule,
+                path,
+                source=source,
+                line_number=marker.line_number,
+            )
+        )
+        marker_status[marker.marker_id] = RawMarkerStatus.COVERED_BY_FINDING
+
+    for match in RAW_PEM_PRIVATE_KEY_RE.finditer(content):
+        marker = register_marker("pem_marker", match.start(), match.end())
+        cover_with_finding(marker, "content.private-key-pem")
+    for match in RAW_JWT_RE.finditer(content):
+        marker = register_marker("jwt_prefix", match.start(), match.end())
+        cover_with_finding(marker, "content.jwt")
+    for match in RAW_BEARER_RE.finditer(content):
+        marker = register_marker("bearer_prefix", match.start(), match.end())
+        cover_with_finding(marker, "content.bearer-token")
+    for pattern in RAW_PROVIDER_TOKEN_RES:
+        for match in pattern.finditer(content):
+            marker = register_marker(
+                "provider_token_prefix", match.start(), match.end()
+            )
+            cover_with_finding(marker, "content.api-token")
+
+    try:
+        content.decode("utf-8-sig", errors="strict")
+        invalid_utf8 = False
+    except UnicodeError:
+        invalid_utf8 = True
+
+    connection_matches: dict[int, re.Match[bytes]] = {
+        match.start(): match for match in RAW_CONNECTION_RE.finditer(content)
+    }
+    for match in connection_matches.values():
+        marker = register_marker("credentialed_connection", match.start(), match.end())
+        try:
+            embedded_password = match.group(2).decode("ascii", errors="strict")
+        except UnicodeError:
+            continue
+        if placeholderish(embedded_password):
+            marker_status[marker.marker_id] = RawMarkerStatus.SAFE_PLACEHOLDER
+        elif embedded_password:
+            cover_with_finding(marker, "content.connection-string")
+
+    if invalid_utf8:
+        for match in RAW_SENSITIVE_MARKER_RE.finditer(content):
+            key = match.group(1).decode("ascii", errors="strict")
+            if is_sensitive_key(key):
+                register_marker("sensitive_assignment", match.start(), match.end())
+
+        for match in RAW_ASSIGNMENT_RE.finditer(content):
+            key = match.group(1).decode("ascii", errors="strict")
+            if not is_sensitive_key(key):
+                continue
+            marker = register_marker("sensitive_assignment", match.start(), match.end())
+            quote = match.group(2).decode("ascii", errors="strict")
+            value = match.group(3).decode("ascii", errors="strict")
+            scalar = normalized_scalar(f"{quote}{value}{quote}")
+            if raw_assignment_value_is_fragmented(content, match):
+                continue
+            if placeholderish(scalar):
+                marker_status[marker.marker_id] = RawMarkerStatus.SAFE_PLACEHOLDER
+            elif secretish_scalar(scalar):
+                cover_with_finding(marker, "content.sensitive-assignment")
+
+        for fragmented_marker in detect_fragmented_token_markers(content):
+            register_marker(
+                fragmented_marker.kind,
+                fragmented_marker.start,
+                fragmented_marker.end,
+            )
+
+    for marker in markers.values():
+        if marker_status[marker.marker_id] is RawMarkerStatus.DETECTED:
+            findings.append(
+                Finding(
+                    "content.unscannable-sensitive-data",
+                    path,
+                    source=source,
+                    line_number=marker.line_number,
+                    marker_id=marker.marker_id,
+                )
+            )
+            marker_status[marker.marker_id] = RawMarkerStatus.UNSCANNABLE_FINDING
+
+    if any(status is RawMarkerStatus.DETECTED for status in marker_status.values()):
+        raise ScannerError("raw sensitive marker did not reach a safe state")
+
+    if content.startswith((b"PGDMP", b"REDIS")):
+        findings.append(
+            Finding("content.database-dump", path, source=source, line_number=1)
+        )
+
+    return findings
+
+
+def scan_blob(path: str, content: bytes, *, source: str) -> list[Finding]:
+    findings = filename_findings(path, source)
+    raw_findings = scan_raw_bytes(path, content, source)
+    findings.extend(raw_findings)
+    try:
+        texts = decode_scan_candidates(content)
+    except ScannerError:
+        if raw_findings:
+            texts = ()
+        else:
+            raise
+
+    for text in texts:
+        findings.extend(_scan_text(path, text, source))
+
+    unique: dict[tuple[str, str, int | None, str, str | None], Finding] = {}
     for finding in findings:
-        print(finding.line())
-    print("Values are intentionally suppressed. Treat ERROR findings as blockers.")
-    return 1 if any(f.severity == "ERROR" for f in findings) else 0
+        unique[finding.identity()] = finding
+    return sorted(unique.values(), key=Finding.sort_key)
+
+
+def _scan_text(path: str, text: str, source: str) -> list[Finding]:
+    findings: list[Finding] = []
+
+    for match in PEM_PRIVATE_KEY_RE.finditer(text):
+        findings.append(
+            Finding(
+                "content.private-key-pem",
+                path,
+                source=source,
+                line_number=line_number(text, match.start()),
+            )
+        )
+    for match in JWT_RE.finditer(text):
+        findings.append(
+            Finding(
+                "content.jwt",
+                path,
+                source=source,
+                line_number=line_number(text, match.start()),
+            )
+        )
+    for match in BEARER_RE.finditer(text):
+        findings.append(
+            Finding(
+                "content.bearer-token",
+                path,
+                source=source,
+                line_number=line_number(text, match.start()),
+            )
+        )
+    for pattern in PROVIDER_TOKEN_RES:
+        for match in pattern.finditer(text):
+            findings.append(
+                Finding(
+                    "content.api-token",
+                    path,
+                    source=source,
+                    line_number=line_number(text, match.start()),
+                )
+            )
+    for match in CONNECTION_RE.finditer(text):
+        embedded_password = match.group(2)
+        if placeholderish(embedded_password):
+            continue
+        findings.append(
+            Finding(
+                "content.connection-string",
+                path,
+                source=source,
+                line_number=line_number(text, match.start()),
+            )
+        )
+
+    for lineno, raw_line in enumerate(text.splitlines(), 1):
+        match = ASSIGNMENT_RE.match(raw_line)
+        if not match:
+            continue
+        key, raw_value = match.groups()
+        scalar = assignment_scalar(path, raw_value)
+        if is_sensitive_key(key) and scalar is not None and secretish_scalar(scalar):
+            findings.append(
+                Finding(
+                    "content.sensitive-assignment",
+                    path,
+                    source=source,
+                    line_number=lineno,
+                )
+            )
+
+    findings.extend(json_findings(path, text, source))
+
+    for match in SQL_DATA_DUMP_RE.finditer(text):
+        findings.append(
+            Finding(
+                "content.database-dump",
+                path,
+                source=source,
+                line_number=line_number(text, match.start()),
+            )
+        )
+
+    return findings
+
+
+def read_blob(oid: str) -> bytes:
+    if ZERO_OID_RE.fullmatch(oid):
+        return b""
+    return run_git("cat-file", "blob", oid)
+
+
+def tree_entries(treeish: str) -> list[tuple[str, str]]:
+    run_git("rev-parse", "--verify", f"{treeish}^{{tree}}")
+    entries: list[tuple[str, str]] = []
+    for item in nul_items(run_git("ls-tree", "-r", "-z", treeish)):
+        try:
+            metadata, path = item.split("\t", 1)
+            _mode, object_type, oid = metadata.split(" ", 2)
+        except ValueError as exc:
+            raise ScannerError("unexpected git tree entry format") from exc
+        if object_type == "blob":
+            entries.append((path, oid))
+    return entries
+
+
+def scan_entries(entries: Iterable[tuple[str, str]], source: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for path, oid in entries:
+        findings.extend(scan_blob(path, read_blob(oid), source=source))
+    return findings
+
+
+def scan_tree(treeish: str, *, source: str | None = None) -> list[Finding]:
+    return scan_entries(tree_entries(treeish), source or f"tree:{treeish}")
+
+
+def scan_staged() -> list[Finding]:
+    staged_paths = set(
+        nul_items(
+            run_git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z")
+        )
+    )
+    index: dict[str, str] = {}
+    for item in nul_items(run_git("ls-files", "--stage", "-z")):
+        try:
+            metadata, path = item.split("\t", 1)
+            _mode, oid, stage = metadata.split(" ", 2)
+        except ValueError as exc:
+            raise ScannerError("unexpected git index entry format") from exc
+        if stage == "0":
+            index[path] = oid
+
+    missing = sorted(staged_paths - set(index))
+    if missing:
+        raise ScannerError(
+            "staged paths could not be resolved from index; path output suppressed"
+        )
+    return scan_entries(((path, index[path]) for path in sorted(staged_paths)), "index")
+
+
+def scan_worktree() -> list[Finding]:
+    findings: list[Finding] = []
+    candidates = run_git("ls-files", "--cached", "--others", "--exclude-standard", "-z")
+    for path in nul_items(candidates):
+        file_path = REPO_ROOT / path
+        if not file_path.exists() and not file_path.is_symlink():
+            continue
+        try:
+            if file_path.is_symlink():
+                content = os.readlink(file_path).encode(
+                    "utf-8", errors="surrogateescape"
+                )
+            else:
+                content = file_path.read_bytes()
+        except OSError as exc:
+            raise ScannerError(f"tracked file could not be read: {path}") from exc
+        findings.extend(scan_blob(path, content, source="worktree"))
+    return findings
+
+
+def scan_range(revision_range: str) -> list[Finding]:
+    commits = [
+        line
+        for line in run_git("rev-list", "--reverse", revision_range)
+        .decode()
+        .splitlines()
+        if line
+    ]
+    seen: set[tuple[str, str]] = set()
+    findings: list[Finding] = []
+    for commit in commits:
+        entries = []
+        for path, oid in tree_entries(commit):
+            identity = (path, oid)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            entries.append((path, oid))
+        findings.extend(scan_entries(entries, f"commit:{commit[:12]}"))
+    return findings
+
+
+def render_findings(findings: Iterable[Finding]) -> str:
+    unique: dict[tuple[str, str, int | None, str], Finding] = {}
+    for finding in findings:
+        unique[finding.identity()] = finding
+    ordered = sorted(unique.values(), key=Finding.sort_key)
+    return "\n".join(finding.line() for finding in ordered)
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
+        "--worktree",
+        action="store_true",
+        help="scan tracked and non-ignored worktree files",
+    )
+    scope.add_argument(
+        "--staged", action="store_true", help="scan staged blobs from the Git index"
+    )
+    scope.add_argument("--tree", metavar="TREEISH", help="scan one explicit Git tree")
+    scope.add_argument(
+        "--range",
+        dest="revision_range",
+        metavar="REV_RANGE",
+        help="scan each commit tree in a revision range",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv or sys.argv[1:])
+    try:
+        if args.staged:
+            findings = scan_staged()
+            scope_name = "staged index"
+        elif args.tree:
+            findings = scan_tree(args.tree)
+            scope_name = f"tree {args.tree}"
+        elif args.revision_range:
+            findings = scan_range(args.revision_range)
+            scope_name = f"range {args.revision_range}"
+        else:
+            findings = scan_worktree()
+            scope_name = "tracked and non-ignored worktree"
+    except (OSError, ScannerError, UnicodeError) as exc:
+        print(f"FATAL: secret scan failed closed: {exc}", file=sys.stderr)
+        return 2
+
+    if findings:
+        print("Committed-secret gate failed. Values are always redacted.")
+        print(render_findings(findings))
+        print(
+            "Remove the artifact and follow docs/security/credential-rotation-runbook.md."
+        )
+        return 1
+
+    print(f"OK: no secret artifacts detected in {scope_name}.")
+    return 0
 
 
 if __name__ == "__main__":
