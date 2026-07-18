@@ -30,9 +30,11 @@ Owner decision `RP001-OD-01` explicitly forbids a material placeholder for that
 identity claim. The Evidence Manifest v2 scope is the typed
 `media_identity` variant with no `materials` field and exactly one `media_ref`.
 MAT-EVID-01A.v1 is not converted or reinterpreted. V2 is implemented and
-validated through MAT-EVID-01B, MAT-EVID-01C, and MED-NORM, but catalog identity
-import remains `BLOCKED_PENDING_VERIFIED_HUMAN_REVIEW` until this package's
-human evidence and three-subject workflow are complete.
+validated through MAT-EVID-01C and MED-NORM. MAT-EVID-01B.v2 is intentionally
+not applicable to `media_identity` and rejects that variant fail-closed with
+`SCOPE_MISMATCH`; it only binds `material_relation` for the material evaluator.
+Catalog identity import remains `BLOCKED_PENDING_VERIFIED_HUMAN_REVIEW` until
+this package's human evidence and three-subject workflow are complete.
 
 ## 1. Deterministic source preparation
 

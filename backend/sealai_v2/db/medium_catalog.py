@@ -77,9 +77,16 @@ class MediumCatalogRepository:
         evidence_review_repository: (
             MaterialEvidenceReviewRepository | MaterialEvidenceReviewRepositoryV2
         ),
+        *,
+        evidence_review_repository_v2: MaterialEvidenceReviewRepositoryV2 | None = None,
     ) -> None:
         self._session_factory = session_factory
-        self._reviews = evidence_review_repository
+        repositories = (evidence_review_repository,)
+        if evidence_review_repository_v2 is not None:
+            if evidence_review_repository_v2 is evidence_review_repository:
+                raise ValueError("review repositories must be distinct")
+            repositories += (evidence_review_repository_v2,)
+        self._review_repositories = repositories
 
     def create_catalog(
         self,
@@ -311,10 +318,7 @@ class MediumCatalogRepository:
         self, snapshot: MediumCatalogSnapshotV1, *, identity: VerifiedIdentity
     ) -> None:
         for entry in snapshot.payload.entries:
-            review = self._reviews.load_snapshot(
-                entry.evidence_review_snapshot_id, identity=identity
-            )
-            projection = self._reviews.load_projection(
+            review, projection = self._resolve_review(
                 entry.evidence_review_snapshot_id, identity=identity
             )
             review_claims = {claim.claim_ref: claim for claim in review.payload.claims}
@@ -332,6 +336,33 @@ class MediumCatalogRepository:
                     "catalog entry lacks exact approved factual evidence",
                     path=f"$.entries[{entry.media_id}]",
                 )
+
+    def _resolve_review(self, review_snapshot_id: str, *, identity: VerifiedIdentity):
+        """Resolve exactly one immutable v1/v2 review provenance per entry.
+
+        Review snapshot IDs intentionally remain unchanged in the MED-NORM v1
+        payload.  The additive router therefore probes only the explicitly
+        configured repositories.  Missing and cross-version-colliding IDs are
+        both rejected; no repository order can select authority.
+        """
+
+        matches = []
+        for repository in self._review_repositories:
+            try:
+                review = repository.load_snapshot(review_snapshot_id, identity=identity)
+            except KeyError:
+                continue
+            projection = repository.load_projection(
+                review_snapshot_id, identity=identity
+            )
+            matches.append((review, projection))
+        if len(matches) != 1:
+            raise MediumCatalogValidationError(
+                MediumCatalogErrorCode.DANGLING_REF,
+                "catalog entry must resolve to exactly one v1/v2 review snapshot",
+                path=f"$.reviews[{review_snapshot_id}]",
+            )
+        return matches[0]
 
     @staticmethod
     def _claims_match_entry(selected_claims, *, entry) -> bool:

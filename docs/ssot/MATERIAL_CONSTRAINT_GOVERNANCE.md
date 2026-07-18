@@ -363,7 +363,10 @@ Evidence validation is version-explicit. Historical v1 identity reviews retain
 their exact legacy material/media/condition shape. New identity reviews use
 only the v2 `media_identity` scope with the exact scalar `media_ref` and
 identity-assertion reference; no material placeholder is accepted. Both paths
-remain tenant-bound, approval-dependent, and fail closed.
+remain tenant-bound, approval-dependent, and fail closed. MED-NORM resolves
+each review snapshot against its explicitly configured v1/v2 repositories;
+missing or cross-version-colliding identities are rejected, so mixed historical
+catalogs never depend on repository order.
 
 Only an exact whole-value match in one pinned catalog snapshot or a verified
 user confirmation of an existing catalog entry can create a canonical

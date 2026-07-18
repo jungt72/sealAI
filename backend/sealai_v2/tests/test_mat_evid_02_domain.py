@@ -109,6 +109,9 @@ def _raw(payload: EvidenceManifestPayloadV2) -> str:
 def test_v2_golden_hash_domains_are_frozen_and_distinct_from_v1() -> None:
     material = EvidenceManifestSnapshotV2.create(MANIFEST_ID, _material_payload())
     media = EvidenceManifestSnapshotV2.create(MANIFEST_ID, _media_payload())
+    manifest_golden = {
+        key: value for key, value in GOLDEN.items() if not key.startswith("runtime_")
+    }
     assert {
         "source_ref": _source().source_ref,
         "material_claim_ref": _material_payload().claims[0].claim_ref,
@@ -122,7 +125,7 @@ def test_v2_golden_hash_domains_are_frozen_and_distinct_from_v1() -> None:
         "audit_sha256": compute_audit_sha256_v2(
             {"event_type": "snapshot_created", "snapshot_id": media.snapshot_id}
         ),
-    } == GOLDEN
+    } == manifest_golden
 
     v1_scope = EvidenceClaimScopeV1(
         materials=("SYNTHETIC-MATERIAL",),

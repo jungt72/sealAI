@@ -20,6 +20,9 @@ from sealai_v2.core.material_reviewed_rules import (
 from sealai_v2.db.material_evidence import MaterialEvidenceRepository
 from sealai_v2.db.material_evidence_binding import MaterialEvidenceRuntimeRepository
 from sealai_v2.db.material_evidence_review import MaterialEvidenceReviewRepository
+from sealai_v2.db.material_evidence_review_v2 import (
+    MaterialEvidenceReviewRepositoryV2,
+)
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
 from sealai_v2.db.medium_catalog import MediumCatalogRepository
 
@@ -33,7 +36,12 @@ class ReviewedMaterialRulesRepository:
         self._evidence = MaterialEvidenceRepository(session_factory)
         self._bindings = MaterialEvidenceRuntimeRepository(session_factory)
         self._reviews = MaterialEvidenceReviewRepository(session_factory)
-        self._catalogs = MediumCatalogRepository(session_factory, self._reviews)
+        self._reviews_v2 = MaterialEvidenceReviewRepositoryV2(session_factory)
+        self._catalogs = MediumCatalogRepository(
+            session_factory,
+            self._reviews,
+            evidence_review_repository_v2=self._reviews_v2,
+        )
 
     def load_capability(
         self,

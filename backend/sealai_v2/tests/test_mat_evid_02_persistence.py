@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+from pathlib import Path
 
 from alembic import command
 import pytest
@@ -42,6 +43,7 @@ from sealai_v2.db.material_evidence_review_v2 import (
 )
 from sealai_v2.db.material_evidence_binding_v2 import (
     MaterialEvidenceRuntimeRepositoryV2,
+    _audit_hash,
 )
 from sealai_v2.db.material_evidence_v2 import MaterialEvidenceRepositoryV2
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
@@ -112,6 +114,11 @@ V2_TABLES = {
     "v2_material_evidence_review_lifecycle_events_v2",
     "v2_material_evidence_review_audit_events_v2",
 }
+GOLDEN = json.loads(
+    (Path(__file__).parent / "fixtures/mat_evid_02_golden.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
 def _actor(subject: str, role: str, tenant: str = "tenant-a") -> VerifiedIdentity:
@@ -505,6 +512,20 @@ def test_01b_v2_persists_exact_binding_pin_and_evaluation_companions(tmp_path) -
         ruleset=ruleset,
         evidence=manifest,
         material_input=material_input,
+    )
+    fixed_audit_payload = {
+        "binding_id": "msb_" + "b" * 32,
+        "evaluation_id": "mse_" + "a" * 32,
+        "pin_id": "msp_" + "c" * 32,
+        "result_sha256": result.result_sha256,
+        "stable_error_code": result.stable_error_code,
+    }
+    assert (
+        result.result_sha256,
+        _audit_hash(fixed_audit_payload),
+    ) == (
+        GOLDEN["runtime_result_sha256"],
+        GOLDEN["runtime_audit_sha256"],
     )
     with factory() as session, session.begin():
         shadow_evaluation = session.scalar(

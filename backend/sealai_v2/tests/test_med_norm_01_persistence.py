@@ -14,7 +14,9 @@ from sealai_v2.core.material_evidence_review import (
     FactualApprovalState,
     ReviewedClaimMetadataV1,
 )
+from sealai_v2.core.material_evidence_review_v2 import ReviewedClaimMetadataV2
 from sealai_v2.core.material_evidence import EvidenceClaimScopeV1
+from sealai_v2.core.material_evidence_v2 import MediaIdentityClaimScopeV2
 from sealai_v2.core.medium_catalog import (
     MediumCatalogEntryV1,
     MediumIdentityKind,
@@ -36,8 +38,13 @@ from sealai_v2.db.models import (
 CATALOG_ID = "mcf_" + "1" * 32
 REVIEW_ID = "mrv_" + "2" * 64
 CLAIM_REF = "mec_" + "3" * 64
+REVIEW_ID_V2 = "mrv_" + "4" * 64
+CLAIM_REF_V2 = "mec_" + "6" * 64
 MEDIA_ID = derive_media_id(
     "Synthetic Catalog Medium", MediumIdentityKind.DEFINED_MIXTURE
+)
+MEDIA_ID_V2 = derive_media_id(
+    "Synthetic V2 Catalog Medium", MediumIdentityKind.DEFINED_MIXTURE
 )
 IDENTITY_ASSERTION_REF = MediumCatalogEntryV1(
     media_id=MEDIA_ID,
@@ -47,6 +54,15 @@ IDENTITY_ASSERTION_REF = MediumCatalogEntryV1(
     evidence_review_snapshot_id=REVIEW_ID,
     evidence_review_content_sha256="5" * 64,
     claim_refs=(CLAIM_REF,),
+).identity_assertion_ref
+IDENTITY_ASSERTION_REF_V2 = MediumCatalogEntryV1(
+    media_id=MEDIA_ID_V2,
+    canonical_name="Synthetic V2 Catalog Medium",
+    identity_kind=MediumIdentityKind.DEFINED_MIXTURE,
+    aliases=("Synthetic V2 Catalog Alias",),
+    evidence_review_snapshot_id=REVIEW_ID_V2,
+    evidence_review_content_sha256="7" * 64,
+    claim_refs=(CLAIM_REF_V2,),
 ).identity_assertion_ref
 CREATED_AT = "2026-07-18T16:00:00Z"
 TABLES = {
@@ -102,7 +118,8 @@ class _ReviewRepository:
         self.conditions = conditions
 
     def load_snapshot(self, review_snapshot_id, *, identity):
-        assert review_snapshot_id == REVIEW_ID
+        if review_snapshot_id != REVIEW_ID:
+            raise KeyError(review_snapshot_id)
         assert identity.tenant_id == "tenant-a"
         return SimpleNamespace(
             content_sha256=self.content_hash,
@@ -125,7 +142,8 @@ class _ReviewRepository:
         )
 
     def load_projection(self, review_snapshot_id, *, identity):
-        assert review_snapshot_id == REVIEW_ID
+        if review_snapshot_id != REVIEW_ID:
+            raise KeyError(review_snapshot_id)
         assert identity.tenant_id == "tenant-a"
         return SimpleNamespace(
             approval_state=(
@@ -134,6 +152,48 @@ class _ReviewRepository:
                 else FactualApprovalState.NOT_APPROVED
             )
         )
+
+
+class _V2ReviewRepository:
+    def load_snapshot(self, review_snapshot_id, *, identity):
+        if review_snapshot_id != REVIEW_ID_V2:
+            raise KeyError(review_snapshot_id)
+        assert identity.tenant_id == "tenant-a"
+        return SimpleNamespace(
+            content_sha256="7" * 64,
+            payload=SimpleNamespace(
+                claims=(
+                    ReviewedClaimMetadataV2(
+                        claim_ref=CLAIM_REF_V2,
+                        claim_type=EvidenceClaimType.OTHER_TECHNICAL,
+                        scope=MediaIdentityClaimScopeV2(
+                            MEDIA_ID_V2, IDENTITY_ASSERTION_REF_V2
+                        ),
+                        required_source_types=(
+                            EvidenceDocumentType.MANUFACTURER_DATASHEET,
+                        ),
+                    ),
+                )
+            ),
+        )
+
+    def load_projection(self, review_snapshot_id, *, identity):
+        if review_snapshot_id != REVIEW_ID_V2:
+            raise KeyError(review_snapshot_id)
+        assert identity.tenant_id == "tenant-a"
+        return SimpleNamespace(approval_state=FactualApprovalState.APPROVED)
+
+
+def _entry_v2() -> dict:
+    return {
+        "media_id": MEDIA_ID_V2,
+        "canonical_name": "Synthetic V2 Catalog Medium",
+        "identity_kind": "defined_mixture",
+        "aliases": ["Synthetic V2 Catalog Alias"],
+        "evidence_review_snapshot_id": REVIEW_ID_V2,
+        "evidence_review_content_sha256": "7" * 64,
+        "claim_refs": [CLAIM_REF_V2],
+    }
 
 
 def _repository(tmp_path, *, reviews=None):
@@ -177,6 +237,58 @@ def test_migration_is_additive_empty_and_repository_roundtrips(tmp_path) -> None
         assert session.scalar(select(V2MediumCatalogSnapshot)) is not None
         assert session.scalar(select(V2MediumCatalogValidationEvent)) is not None
         assert session.scalar(select(V2MediumCatalogAuditEvent)) is not None
+
+
+def test_catalog_routes_mixed_v1_v2_review_provenance_per_entry(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'mixed-review-versions.db'}")
+    _upgrade_engine(engine)
+    factory = make_sessionmaker(engine)
+    repository = MediumCatalogRepository(
+        factory,
+        _ReviewRepository(),
+        evidence_review_repository_v2=_V2ReviewRepository(),
+    )
+    repository.create_catalog(
+        identity=_identity(),
+        domain_pack_id="material.test.v1",
+        created_at=CREATED_AT,
+        catalog_id=CATALOG_ID,
+    )
+    entries = sorted((_entry(), _entry_v2()), key=lambda item: item["media_id"])
+    snapshot = repository.store_snapshot(
+        catalog_id=CATALOG_ID,
+        raw_payload=_payload(entries=entries),
+        identity=_identity(),
+        created_at=CREATED_AT,
+    )
+    assert len(snapshot.payload.entries) == 2
+    assert (
+        repository.load_snapshot(snapshot.snapshot_id, identity=_identity()) == snapshot
+    )
+
+
+def test_catalog_rejects_ambiguous_cross_version_review_identity(tmp_path) -> None:
+    engine = make_engine(f"sqlite:///{tmp_path / 'ambiguous-review-version.db'}")
+    _upgrade_engine(engine)
+    factory = make_sessionmaker(engine)
+    repository = MediumCatalogRepository(
+        factory,
+        _ReviewRepository(),
+        evidence_review_repository_v2=_ReviewRepository(),
+    )
+    repository.create_catalog(
+        identity=_identity(),
+        domain_pack_id="material.test.v1",
+        created_at=CREATED_AT,
+        catalog_id=CATALOG_ID,
+    )
+    with pytest.raises(MediumCatalogValidationError, match="exactly one"):
+        repository.store_snapshot(
+            catalog_id=CATALOG_ID,
+            raw_payload=_payload(entries=[_entry()]),
+            identity=_identity(),
+            created_at=CREATED_AT,
+        )
 
 
 def test_catalog_is_tenant_isolated(tmp_path) -> None:
