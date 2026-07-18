@@ -272,6 +272,44 @@ def test_evaluation_postflight_discards_midflight_revocation() -> None:
     assert state["calls"] == 3
 
 
+def test_unresolved_catalog_input_still_fails_closed_after_revocation() -> None:
+    state = {"approved": True, "calls": 0}
+
+    def revalidate() -> None:
+        state["calls"] += 1
+        if not state["approved"]:
+            raise MediumCatalogValidationError(
+                MediumCatalogErrorCode.DANGLING_REF,
+                "synthetic unresolved revocation",
+            )
+
+    snapshot = _bind_evidence_verified_medium_catalog(
+        _raw_snapshot(
+            [
+                _entry(MEDIA_A, "Synthetic A"),
+                _entry(MEDIA_B, "Synthetic B", claim_ref=CLAIM_B),
+            ]
+        ),
+        tenant_id=IDENTITY.tenant_id,
+        revalidate=revalidate,
+    )
+    unresolved = resolve_exact_catalog_values(
+        ("Synthetic A", "Synthetic B"),
+        snapshot=snapshot,
+        identity=IDENTITY,
+        component_refs=(REF_A, REF_B),
+    )
+    state["approved"] = False
+    with pytest.raises(MediumCatalogValidationError, match="unresolved revocation"):
+        evaluate_normalized_media(
+            unresolved,
+            evaluate_component=lambda _component: pytest.fail(
+                "unresolved revoked input reached evaluator"
+            ),
+        )
+    assert state["calls"] == 2
+
+
 @pytest.mark.parametrize(
     "mutation,code",
     [

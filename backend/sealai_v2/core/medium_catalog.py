@@ -1486,20 +1486,6 @@ def evaluate_normalized_media(
 ) -> NormalizedMaterialEvaluationV1:
     """Evaluate every canonical component separately and aggregate fail-closed."""
 
-    if not medium_input.evaluable:
-        blocker = MaterialConstraintBlocker(
-            MaterialConstraintBlockerKind.MEDIUM_RELATION,
-            (
-                f"medium-input:{medium_input.medium_state.value}"
-                if medium_input.medium_state is not InputResolutionState.KNOWN
-                else f"medium-relation:{medium_input.relation_state.value}"
-            ),
-        )
-        return NormalizedMaterialEvaluationV1(
-            medium_input,
-            EvaluationState.BLOCKED,
-            blockers=(blocker,),
-        )
     verified_catalogs: dict[tuple[str, str], CatalogEvidenceProvenanceV1] = {}
     for component in medium_input.components:
         provenance = component.provenance
@@ -1517,7 +1503,22 @@ def evaluate_normalized_media(
         for key in sorted(verified_catalogs):
             verified_catalogs[key].assert_current()
 
+    # A blocked result must not make stale catalog provenance observable.
     assert_catalogs_current()
+    if not medium_input.evaluable:
+        blocker = MaterialConstraintBlocker(
+            MaterialConstraintBlockerKind.MEDIUM_RELATION,
+            (
+                f"medium-input:{medium_input.medium_state.value}"
+                if medium_input.medium_state is not InputResolutionState.KNOWN
+                else f"medium-relation:{medium_input.relation_state.value}"
+            ),
+        )
+        return NormalizedMaterialEvaluationV1(
+            medium_input,
+            EvaluationState.BLOCKED,
+            blockers=(blocker,),
+        )
     results: list[tuple[str, str, MaterialConstraintResult]] = []
     attributed: list[AttributedMaterialMatchV1] = []
     for component in medium_input.components:
