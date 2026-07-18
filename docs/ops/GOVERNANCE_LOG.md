@@ -6,6 +6,123 @@ per activation/verification event. Newest on top.
 
 ---
 
+## 2026-07-09T11:34:47Z — Phase 3B PRODUCTION ACTIVATION (owner-authorized): draft_token_streaming_enabled = true
+
+Owner explicitly authorized production activation of Phase 3B (draft-token streaming for every
+L1-generating route, PR #206 / commit `bd891ba1`) this session. `main` HEAD at activation:
+`d0523c0fadb6baca951e199fc1fc93d6f2072a4b`.
+
+**1 — Product decision this implements.** Owner asked whether RAG-grounded knowledge routes
+(general_sealing_knowledge/material_knowledge) could stream their final answer directly like
+smalltalk. Deep-dive analysis found two concrete reasons not to: (a) RAG grounding reduces but does
+not eliminate synthesis hallucination, and (b) this repo's own Phase-2B stress-test finding
+(documented in `route_prompt_matrix.py`) shows a measured router-detection gap for exactly these
+routes — real eval questions, including injection fixtures, under-detected by keyword signals — so
+L3 is the safety net catching cases the router missed, not a formality. Agreed design instead:
+stream raw LLM tokens for ALL routes into a clearly-marked, non-authoritative "draft" preview; the
+delivered/verified answer is unchanged — still requires full output_guard + L3 verify for every
+route except smalltalk (which never had L3 in the first place).
+
+**2 — Same compose-passthrough gap, again, caught before activation.** Pre-activation check found
+`SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED` had no entry in `docker-compose.deploy.yml`'s `backend-v2`
+environment allow-list (settings.py default `False`, `.env.prod` override alone would have silently
+done nothing) — the same class of gap as Phase 2D and Phase 3A, now hit a third time. Owner
+explicitly approved the named shared-edge change; fixed in PR #207 (`d88bb5f9`, merged), same
+`${VAR:-false}` pattern as every other entry. A GitHub Actions transient runner-availability issue
+("job was not acquired by Runner of type hosted") caused all 7 required checks to fail after ~15
+minutes on the first CI run — confirmed as GitHub-side infra, unrelated to the change; a `gh run
+rerun --failed` cleared it on retry, all checks green.
+
+**3 — Activation.** `.env.prod` set `SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED=true` (the three prior
+flags — route_optimization_enabled, route_prompt_families_enabled, smalltalk_token_streaming_enabled
+— were already `true` from prior activations). `ops/release-backend-v2.sh` run twice: once to ship
+the compose fix (flag still inert), once after the flag flip to activate. Both deploys GREEN
+(build/health internal+public/kern-one-shot `v=16.755`/`PV=50.0`/restart-survival). **Verified live
+in the running container:** all four flags = `true`, `APP_ENV=production`.
+
+**4 — Smoke / logs.** `ops/smoke-live-pilot-readiness.sh` full pass (both deploys). `docker logs
+backend-v2` for the 10 minutes following activation: no errors/exceptions.
+
+**5 — Doctrine invariants (unchanged, re-verified):** No LangGraph. No knowledge-route L3 bypass. No
+material-route L3 bypass. No unverified engineering *answers* delivered — draft previews are
+explicitly non-authoritative and structurally distinct from the gated `result` event; the actual
+delivered answer for every non-smalltalk route still passes output_guard + L3 verify unchanged.
+`general_sealing_knowledge`, `material_knowledge`, `material_comparison` remain `l3=True` and their
+DELIVERED answer is never streamed pre-verification — only a draft preview is. Only
+`smalltalk_navigation` has draft==final (unchanged from Phase 3A, since it never had L3 verification
+to bypass).
+
+**6 — Rollback plan (documented, not executed — nothing failed).** Set
+`SEALAI_V2_DRAFT_TOKEN_STREAMING_ENABLED=false` in `.env.prod`, recreate `backend-v2` via
+`ops/release-backend-v2.sh`. Rollback-tagged images from this session's deploys remain available as
+an image-level rung if needed. Rolling back this flag alone does not affect
+`smalltalk_token_streaming_enabled` or either Phase 2D flag — all four are independently
+switchable.
+
+**7 — Remaining owner-only items (unchanged, still open):** LangSmith API-key rotation or explicit
+deferral; old-trace review/deletion/retention or explicit deferral; LangSmith project-split decision
+or explicit deferral; owner-run authenticated smoke (`ops/smoke-v2.sh`); ongoing monitoring of real
+route-telemetry distribution, `l3_bypassed` rate, and now also draft-vs-final token volume/latency
+as live traffic accrues. The two residual SDK unknowns from the Phase 3A pre-implementation audit
+(real `cached_tokens` population for Mistral on a streamed final chunk; `prompt_cache_key`+
+`stream=True` live provider acceptance) remain empirically unverified against the live API for both
+the smalltalk and the new draft-streaming paths — usage parsing is None-safe either way, so this
+does not block correctness, only cache-hit telemetry accuracy.
+
+## 2026-07-09T08:10:33Z — Phase 3A PRODUCTION ACTIVATION (owner-authorized): smalltalk_token_streaming_enabled = true
+
+Owner explicitly authorized production activation of Phase 3A (smalltalk-only live token
+streaming, PR #202 / commit `46bc2b97`) this session. `main` HEAD at activation:
+`c47c4368e76a70539ad1d55000211ca81483cae4`.
+
+**1 — Same compose-passthrough gap as Phase 2D, caught before activation.** Pre-activation check
+found `SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED` had no entry in `docker-compose.deploy.yml`'s
+`backend-v2` environment allow-list (settings.py default `False`, but a `.env.prod` override alone
+would have silently done nothing). Owner explicitly approved the named shared-edge change; fixed
+in PR #204 (`d3bbddde`, merged), same `${VAR:-false}` pattern as every other entry.
+
+**2 — Activation.** `.env.prod` set `SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED=true` (the two
+Phase 2D flags were already `true` from the prior activation). `ops/release-backend-v2.sh` run
+twice: once to ship the compose fix (flags still inert at that point), once after the flag flip to
+actually activate. Both deploys GREEN (build/health internal+public/kern-one-shot
+`v=16.755`/`PV=50.0`/restart-survival). **Verified live in the running container:** all three flags
+(`route_optimization_enabled`, `route_prompt_families_enabled`,
+`smalltalk_token_streaming_enabled`) = `true`, `APP_ENV=production`.
+
+**3 — Targeted behavior verification (against the live deployed code, via `Settings()` +
+`classify_route()` directly in the running container, no real LLM calls):**
+- *"Hallo, wie geht es dir?"* (intent `GESPRAECH`) → `smalltalk_navigation`, `forced_full_pipeline=False`,
+  `deterministic_signal_count=0` → **stream-eligible** (the only route that can be).
+- *"Ich brauche einen RWDR 45x62x8 bei 1500 rpm und 2 bar."* → `engineering_case`,
+  `forced_full_pipeline=True` → **not stream-eligible**.
+- *"Was ist PTFE?"* (intent `WISSENSFRAGE`) → `material_knowledge`, not forced, but route ≠
+  smalltalk → **not stream-eligible**, `l3=True` preserved (matrix unchanged).
+
+**4 — Smoke / logs.** `ops/smoke-live-pilot-readiness.sh` full pass (both deploys). `docker logs
+backend-v2` for the 10 minutes following activation: no errors/exceptions.
+
+**5 — Doctrine invariants (unchanged, re-verified):** No LangGraph. No knowledge-route L3 bypass.
+No material-route L3 bypass. No unverified engineering streaming — structurally enforced via the
+existing `smalltalk_prompt_active` gate (route==smalltalk_navigation, not forced,
+zero deterministic signals), never reimplemented. `general_sealing_knowledge`,
+`material_knowledge`, `material_comparison` remain `l3=True` and never stream. Only
+`smalltalk_navigation` is eligible for the compact prompt path and token streaming.
+
+**6 — Rollback plan (documented, not executed — nothing failed).** Set
+`SEALAI_V2_SMALLTALK_TOKEN_STREAMING_ENABLED=false` in `.env.prod`, recreate `backend-v2` via
+`ops/release-backend-v2.sh` (or the manual compose up --force-recreate path). Rollback-tagged
+images from both deploys this session remain available as an image-level rung if needed.
+
+**7 — Remaining owner-only items (unchanged, still open):** LangSmith API-key rotation or explicit
+deferral; old-trace review/deletion/retention or explicit deferral; LangSmith project-split
+decision or explicit deferral; owner-run authenticated smoke (`ops/smoke-v2.sh`); ongoing
+monitoring of real route-telemetry distribution, `l3_bypassed` rate, and token-stream usage/error
+rate on the smalltalk route as live traffic accrues. The two residual SDK unknowns from the Phase
+3A pre-implementation audit (real `cached_tokens` population for Mistral on a streamed final
+chunk; `prompt_cache_key`+`stream=True` live provider acceptance) remain empirically unverified
+against the live API — usage parsing is None-safe either way, so this does not block correctness,
+only cache-hit telemetry accuracy.
+
 ## 2026-07-08T13:24:37Z — Phase 2D PRODUCTION ACTIVATION (owner-authorized): route_optimization_enabled + route_prompt_families_enabled = true
 
 Owner explicitly authorized controlled production activation of Phase 2D (smalltalk_navigation
