@@ -60,3 +60,43 @@ byte-identisch unveraendert, testverifiziert). Voraussetzung war die Owner-Besta
 alte remediation/p0-p2-Stack (#293-#305, dieselben Gate-Dateien beruehrend) tot/aufgegeben ist --
 damit keine Kollision. GATE-10-Freeze selbst weiterhin unangetastet; nur der additive
 Notfall-Korridor ist jetzt tatsaechlich aufrufbar, nicht nur dokumentiert.
+
+2026-07-18 | Claude Code | .env.prod-Verschluesselung (sops+age) | ops/env-prod.sops jetzt
+git-getrackt (PR #334): jeder Wert verschluesselt, Keys lesbar fuer git diff. Live-Workflow
+unveraendert -- .env.prod selbst bleibt die Klartext-Datei. sops-Binary manuell installiert
+(~/bin/sops, per cosign gegen offizielle getsops/sops-Sigstore-Signatur verifiziert), age =
+offizielles Ubuntu-Paket. Age-Private-Key liegt nur in ~/.config/sops/age/keys.txt (0600, nie
+committed). Zwei Stolpersteine unterwegs gefunden+behoben: (1) urspruenglicher Dateiname
+.env.prod.sops wurde von ops/check-secret-hygiene.py's filename.env-Regel abgelehnt (Namens-Regel,
+unabhaengig vom Inhalt) -> nach ops/env-prod.sops verschoben; (2) secrets/ ist bereits ein
+reserviertes, komplett gitignortes "nie committen"-Verzeichnis in diesem Repo -> nicht verwendet.
+Damit sind jetzt alle 3 vom Owner freigegebenen Restpunkte (Branch/Stash-Cleanup, GATE-11-Wiring,
+.env.prod-Overhaul) abgeschlossen.
+
+2026-07-18 (Nachtrag) | Claude Code | PR-Aufraeumung + Secret-Scan-Struktur-Fund | 13
+remediation-Stack-PRs (#293-#305, #311) geschlossen -- Owner bestaetigte den Stack als tot/
+aufgegeben (Basis bereits als #291 gemerged). 5 alte Alt-PRs geschlossen (#5, #6, #89, #120, #127
+-- alle inhaltlich superseded/V1-Backend-Ziel/bereits andernorts gelandet, einzeln verifiziert).
+3 Dependabot-PRs (#222, #223, #308) geschlossen, NACHDEM ein Branch-Update bei ihnen einen
+Struktur-Fund ausgeloest hat: jeder Branch-Update/Merge, der main ueber den 2026-07-14-
+Remediation-Commit hinweg einholt, laesst den Range-basierten Secret-Scanner die dort bereits
+bekannten, dokumentierten Alt-Funde (certs/tls.key, keycloak/certs/key.pem, ACME-JWK,
+docs/debug_internal_error/live/*, siehe docs/security/credential-rotation-runbook.md) erneut als
+"neu eingefuehrt" markieren -- kein neuer Leak, aber ein strukturelles Problem: JEDER
+Branch-Update ueber diese Grenze hinweg wird das gleiche tun, bis entweder ein separat
+freizugebender History-Rewrite passiert oder gewuenschter Inhalt als frischer Commit direkt auf
+aktuellem main neu erstellt wird (statt den alten Branch zu aktualisieren). Verifiziert an einem
+9 Tage alten Branch (PR #208) -- Alter des Branches ist NICHT der Faktor.
+Noch offen, Owner-Entscheidung noetig: #187 (staging deploy script, DIRTY/CONFLICTING, teils schon
+anders gelandet), #205 (Phase-3A-Governance-Log-Eintrag, DIRTY/CONFLICTING, Inhalt echt fehlend),
+#208 (Phase-3B-Governance-Log-Eintrag, BLOCKED durch obigen Fund, Inhalt echt fehlend). Keine
+Werte je angezeigt/kopiert/geloggt -- nur redigierte CI-Ausgabe gelesen, im Einklang mit dem
+Runbook.
+
+2026-07-18 (Nachtrag 2) | Claude Code | Governance-Log-Backfill statt Merge | #205/#208 (Phase-3A/
+3B-Aktivierungs-Logs) als frische Commits wortgetreu direkt auf main nachgezogen (PR #338,
+gemerged) statt die alten Branches zu mergen -- umgeht den Struktur-Fund zum Range-Secret-Scanner
+sauber. 4 fehlende ops/deploy-ledger.jsonl-Zeilen an ihrer historisch korrekten chronologischen
+Position eingefuegt (nicht ans Ende angehaengt). #205 + #208 geschlossen als superseded durch #338.
+#187 (staging deploy script) bleibt bewusst unangetastet -- echte Merge-Konflikte, kein
+Empfehlungs-Fall wie bei 205/208, Owner-Entscheidung noetig.
