@@ -4,8 +4,9 @@ Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, the
 owner-accepted non-authoritative MAT-GOV-03B shadow/pinning foundation, and the
 inert MAT-EVID-01A evidence-manifest foundation, MAT-EVID-01B fail-closed
 runtime-binding companion, MAT-EVID-01C factual-review foundation, and the
-inert MED-NORM-01 closed media-catalog foundation are implemented default-off
-locally; no
+inert MED-NORM-01 closed media-catalog foundation, and the MAT-RULES-01
+reviewed-pack seam plus gap-only coverage inventory are implemented default-off
+locally; no real material rule, reviewed catalog content,
 material-rule activation, production migration, or production runtime binding
 is authorized. MAT-GOV-03C and every activation gate remain
 required. Owner decisions ratified through 2026-07-18.
@@ -141,6 +142,7 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | MAT-EVID-01B | Implemented inert/default-off fail-closed evidence binding in evaluation; technical binding grants no factual authority |
 | MAT-EVID-01C | Implemented inert factual Evidence review with immutable dossiers, separate review/approval axes, and distinct verified-human creator/reviewer/approver; no runtime authority |
 | MED-NORM-01 | Closed versioned media catalog, stable IDs, exact reviewed-Evidence provenance, structured components/relations, and internal per-medium attribution; initially empty and runtime-inert |
+| MAT-RULES-01 | Repository-issued exact join of 03A/01A/01B/01C/MED-NORM for reviewed disqualify-only atomic rules, plus a content-addressed gap-only coverage inventory; no real rules or runtime integration |
 
 MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
 and MAT-EVID-01A add only inert technical snapshot persistence and are not
@@ -355,6 +357,37 @@ immutability. The repository revalidates tenant, catalog identity, hashes,
 technical audit, and the exact approved factual-review state on every read.
 There is no active pointer, `latest`, cache authority, public API, pipeline
 import, or production migration authorization.
+
+## MAT-RULES-01 reviewed rule-pack boundary
+
+`MAT-RULES-01.v1` does not reinterpret any prior schema. It creates an internal
+repository capability only after the exact 03A ruleset, 01B companion, 01A
+manifest, approved 01C review/projection, and tenant-bound MED-NORM catalog
+validate together. All dependencies are identity- and hash-pinned and are
+reloaded before every authority-bearing access. Revocation, quarantine,
+same-ID retargeting, catalog approval drift, tenant drift, or any content drift
+invalidates the held capability without cache or last-known-good fallback.
+
+Rules are atomic over one material, one canonical media ID, and one condition.
+Only `unvertraeglich` and opaque `bedingt` are accepted. The complete rule
+statement must equal exactly one approved primary claim of the matching closed
+claim type. Supporting claims are limited to temperature, application, and
+regulatory constraints. The capability has
+`FACTUAL_REVIEWED_DISQUALIFY_ONLY` authority and permanently forbids positive
+statements; it grants no activation or public-output authority.
+
+`docs/ssot/material-rule-coverage-v1.json` is the separate
+`MAT-RULES-COVERAGE.v1` gap inventory. It lists all 53 required material/service
+subjects exactly once as `evidence_gap`, has authority
+`NONE_EVIDENCE_GAPS_ONLY`, and contains no rule, claim, review, verdict, fact,
+temperature, coefficient, or positive statement. No existing matrix prose or
+knowledge-ledger claim is migrated. Creating a real rule pack requires new
+exact Evidence and distinct verified-human creator, reviewer, and approver.
+
+This package adds no persistence or migration because it composes the existing
+immutable aggregates. It has no pointer, evaluator, pipeline, cache, API,
+serializer, frontend, prompt, productspec, config, deployment, or activation
+integration. MAT-GOV-03C remains blocked until a real reviewed rule pack exists.
 
 ## MAT-GOV-03B non-authoritative shadow contract
 
