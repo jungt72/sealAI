@@ -63,6 +63,12 @@ CORPUS_SAFETY_DOMAIN = b"sealai.material-evidence-ai-review.corpus-safety.v1\x00
 _CHALLENGE_ID_RE = re.compile(r"^mac_[0-9a-f]{64}$", re.ASCII)
 _ADJUDICATION_ID_RE = re.compile(r"^maa_[0-9a-f]{64}$", re.ASCII)
 _FINDING_REF_RE = re.compile(r"^AIF-[A-Z0-9][A-Z0-9._:-]{0,124}$", re.ASCII)
+_PERSON_NAME_TOKEN = (
+    r"(?:[A-ZÀ-ÖØ-Þ](?:[a-zà-öø-ÿ]+"
+    r"(?:[-'’][A-ZÀ-ÖØ-Þ]?[a-zà-öø-ÿ]+)?|\.)?|"
+    r"[A-ZÀ-ÖØ-Þ]{2,40})"
+)
+_PERSON_NAME_SEQUENCE = rf"{_PERSON_NAME_TOKEN}(?:\s+{_PERSON_NAME_TOKEN}){{1,3}}"
 
 _CORPUS_SECRET_PATTERNS = (
     ("private_key", re.compile(r"-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----")),
@@ -154,15 +160,31 @@ _CORPUS_DIRECT_IDENTIFIER_PATTERNS = (
     (
         "embedded_person_name",
         re.compile(
-            r"(?<![A-ZÀ-ÖØ-öø-ÿ])(?:"
-            r"(?:[A-ZÄÖÜÀ-ÖØ-Þ]\.\s*){1,3}"
-            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}|"
-            r"[A-ZÄÖÜÀ-ÖØ-Þ]{2,40}\s+"
-            r"[A-ZÄÖÜÀ-ÖØ-Þ]{2,40}|"
-            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40}\s+"
-            r"[A-ZÄÖÜÀ-ÖØ-Þ][a-zäöüßà-öø-ÿ]{1,40})"
-            r"(?![A-ZÀ-ÖØ-öø-ÿ])"
+            rf"(?<![A-ZÀ-ÖØ-öø-ÿ]){_PERSON_NAME_SEQUENCE}" r"(?![A-ZÀ-ÖØ-öø-ÿ.'’-])"
         ),
+    ),
+    (
+        "contextual_person_name",
+        re.compile(
+            r"(?i:\b(?:author|authored by|contact|contact person|prepared by|"
+            r"reviewed by|approv"
+            r"ed by|ansprechpartner|bearbeiter)\b)"
+            r"\s*(?::|=)?\s*"
+            rf"{_PERSON_NAME_TOKEN}"
+            r"(?![A-ZÀ-ÖØ-öø-ÿ.'’-])"
+        ),
+    ),
+    (
+        "honorific_person_name",
+        re.compile(
+            r"(?i:\b(?:dr|mr|mrs|ms|prof)\.?)\s+"
+            rf"{_PERSON_NAME_TOKEN}"
+            r"(?![A-ZÀ-ÖØ-öø-ÿ.'’-])"
+        ),
+    ),
+    (
+        "single_person_name_candidate",
+        re.compile(rf"^\s*{_PERSON_NAME_TOKEN}\s*$"),
     ),
     (
         "customer_identifier",
@@ -183,6 +205,21 @@ _ORGANIZATION_PUBLISHER_SUFFIXES = (
     " publisher",
     " solutions",
     " university",
+)
+_PUBLISHER_EXCEPTION_CONTRACT = {
+    "comparison": "normalized-full-value-endswith-any.v1",
+    "normalization": "unicode-casefold-after-split-join-ascii-space.v1",
+    "path_suffix": ".publisher",
+    "pattern_class": "embedded_person_name",
+}
+_SINGLE_NAME_PATH_SUFFIXES = (
+    ".claim_text",
+    ".document_title",
+    ".excerpt.text",
+    ".locator.reason",
+    ".locator.value",
+    ".publisher",
+    ".rights_basis",
 )
 
 
@@ -213,7 +250,13 @@ def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
     ) -> bool:
         if not pattern.search(item):
             return False
-        if name == "embedded_person_name" and path.endswith(".publisher"):
+        if name == "single_person_name_candidate" and not path.endswith(
+            _SINGLE_NAME_PATH_SUFFIXES
+        ):
+            return False
+        if name == _PUBLISHER_EXCEPTION_CONTRACT["pattern_class"] and path.endswith(
+            _PUBLISHER_EXCEPTION_CONTRACT["path_suffix"]
+        ):
             normalized = " ".join(item.split()).casefold()
             return not normalized.endswith(_ORGANIZATION_PUBLISHER_SUFFIXES)
         return True
@@ -235,9 +278,17 @@ def _corpus_safety_receipt(value: dict[str, Any]) -> dict[str, Any]:
     scanner_manifest = {
         "exceptions": [
             {
+                "comparison": _PUBLISHER_EXCEPTION_CONTRACT["comparison"],
+                "normalization": _PUBLISHER_EXCEPTION_CONTRACT["normalization"],
                 "organization_suffixes": list(_ORGANIZATION_PUBLISHER_SUFFIXES),
-                "path_suffix": ".publisher",
-                "pattern_class": "embedded_person_name",
+                "path_suffix": _PUBLISHER_EXCEPTION_CONTRACT["path_suffix"],
+                "pattern_class": _PUBLISHER_EXCEPTION_CONTRACT["pattern_class"],
+            }
+        ],
+        "path_scopes": [
+            {
+                "path_suffixes": list(_SINGLE_NAME_PATH_SUFFIXES),
+                "pattern_class": "single_person_name_candidate",
             }
         ],
         "patterns": [

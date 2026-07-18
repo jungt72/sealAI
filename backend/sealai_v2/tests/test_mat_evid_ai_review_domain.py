@@ -403,16 +403,16 @@ def test_ai_review_golden_hash_domains_are_frozen() -> None:
         "cfa653f2c7e9a1d7389f18804c0530f998687d4c94bfe339d49e5a2feed28506"
     )
     assert audit_input.audit_input_sha256 == (
-        "ac790fa016537b2ec0cdd4ee29e304b7a4b005fb90ca11916d691315c37f8864"
+        "ca50e7049e9ca5245a86ae7c4ac93b505da9a956ab9d5d8bd6c9ee3ff740111e"
     )
     assert report_hash == (
         "2b4331dcec56ed65895941ff895b5824293eeef79bbd5ba4c4d8aaf7ca63662d"
     )
     assert challenge.challenge_id == (
-        "mac_5fe5eb2a9bba7c7115d8b7cf661019d4bd6965bce23fea64de3d17caf4b900d0"
+        "mac_1f3b54e42e3d63c67bf724fb5864c6e780a6eed7b2fa4a18c69f703378994987"
     )
     assert adjudication.adjudication_id == (
-        "maa_2f3f665d13edf98982899ee37cff607146b7f4a433625a21ed969a10367fb84c"
+        "maa_dd803f6ab401d5be8e90aab85c6d9090576f127e0da8b80cacd6ed64940a5eff"
     )
     assert compute_ai_review_audit_sha256({"event": "golden", "sequence": 1}) == (
         "630e79eb4ead1dee89a3f6d88ac4f04c8cebcacc45ab44fadc8ee6b091b85948"
@@ -816,7 +816,16 @@ def test_audit_input_exposes_and_binds_every_structured_identity_preimage() -> N
         "John Smith prepared this source.",
         "Please contact John Smith for details.",
         "Please contact J. Smith for details.",
+        "Please contact J Smith for details.",
+        "Please contact John S. for details.",
+        "Please contact John SMITH for details.",
         "Please contact JOHN SMITH for details.",
+        "Please contact Cher for details.",
+        "Cher",
+        "SMITH",
+        "J.",
+        "Prepared by Anne-Marie O'Neill",
+        "Reviewed by Dr. Smith",
         "The appendix cites John Smith for this claim.",
         "Report by John Smith",
         "Musterstraße 1",
@@ -842,7 +851,18 @@ def test_audit_corpus_safety_preflight_blocks_sensitive_content(
     assert exc.value.code is AIReviewErrorCode.SENSITIVE_DATA_FORBIDDEN
 
 
-@pytest.mark.parametrize("person_name", ("John Smith", "J. Smith", "JOHN SMITH"))
+@pytest.mark.parametrize(
+    "person_name",
+    (
+        "John Smith",
+        "J. Smith",
+        "J Smith",
+        "John S.",
+        "John SMITH",
+        "JOHN SMITH",
+        "Cher",
+    ),
+)
 def test_audit_corpus_safety_preflight_blocks_person_name_in_publisher(
     person_name: str,
 ) -> None:
@@ -867,6 +887,45 @@ def test_audit_corpus_safety_receipt_binds_publisher_exception_contract(
         audit_module,
         "_ORGANIZATION_PUBLISHER_SUFFIXES",
         (*audit_module._ORGANIZATION_PUBLISHER_SUFFIXES, " laboratory"),
+    )
+    changed = json.loads(build_claude_audit_input(snapshot).canonical_bytes)
+    assert (
+        original["corpus_safety_receipt"]["pattern_set_sha256"]
+        != changed["corpus_safety_receipt"]["pattern_set_sha256"]
+    )
+
+
+def test_audit_corpus_safety_receipt_binds_exception_algorithm_contract(
+    monkeypatch,
+) -> None:
+    payload, _, _ = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    original = json.loads(build_claude_audit_input(snapshot).canonical_bytes)
+    monkeypatch.setattr(
+        audit_module,
+        "_PUBLISHER_EXCEPTION_CONTRACT",
+        {
+            **audit_module._PUBLISHER_EXCEPTION_CONTRACT,
+            "normalization": "synthetic-drift.v1",
+        },
+    )
+    changed = json.loads(build_claude_audit_input(snapshot).canonical_bytes)
+    assert (
+        original["corpus_safety_receipt"]["pattern_set_sha256"]
+        != changed["corpus_safety_receipt"]["pattern_set_sha256"]
+    )
+
+
+def test_audit_corpus_safety_receipt_binds_single_name_path_scope(
+    monkeypatch,
+) -> None:
+    payload, _, _ = _payload()
+    snapshot = AIReviewSnapshotV1.create(BATCH_ID, payload)
+    original = json.loads(build_claude_audit_input(snapshot).canonical_bytes)
+    monkeypatch.setattr(
+        audit_module,
+        "_SINGLE_NAME_PATH_SUFFIXES",
+        (*audit_module._SINGLE_NAME_PATH_SUFFIXES, ".synthetic_drift"),
     )
     changed = json.loads(build_claude_audit_input(snapshot).canonical_bytes)
     assert (
