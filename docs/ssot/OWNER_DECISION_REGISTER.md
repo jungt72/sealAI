@@ -417,3 +417,11 @@ implemented and bound explicitly through MAT-EVID-01B, MAT-EVID-01C, and
 MED-NORM. This decision creates no claim, material fact, catalog entry, rule,
 approval, activation, public output, production migration, or deployment
 authority.
+
+### Implementation status
+
+The additive typed contract is implemented as `MAT-EVID-01A.v2`, with explicit
+`MAT-EVID-01B.v2` and `MAT-EVID-01C.v2` companions and an exact MED-NORM
+consumer seam. Existing v1 histories remain unchanged. The implementation is
+empty and default-off: it creates no source, claim, review, catalog entry,
+material rule, activation, production migration, or deployment authority.

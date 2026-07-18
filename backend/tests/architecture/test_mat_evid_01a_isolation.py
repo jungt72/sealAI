@@ -58,6 +58,29 @@ EXPECTED_SCHEMA = {
         }
     ),
 }
+EXPECTED_SCHEMA_V2 = {
+    "v2_material_evidence_manifests_v2": frozenset(
+        {
+            "manifest_id",
+            "target_type",
+            "target_ref",
+            "ruleset_snapshot_id",
+            "media_ref",
+            "domain_pack_id",
+            "created_by_subject",
+            "created_at",
+        }
+    ),
+    "v2_material_evidence_snapshots_v2": EXPECTED_SCHEMA[
+        "v2_material_evidence_snapshots"
+    ],
+    "v2_material_evidence_validation_events_v2": EXPECTED_SCHEMA[
+        "v2_material_evidence_validation_events"
+    ],
+    "v2_material_evidence_audit_events_v2": EXPECTED_SCHEMA[
+        "v2_material_evidence_audit_events"
+    ],
+}
 MAT_GOV_03A_TABLES = frozenset(
     {
         "v2_material_rulesets",
@@ -119,6 +142,7 @@ def test_evidence_schema_is_exact_and_contains_no_lifecycle_or_runtime_tables() 
     schema = load_material_schema(MODELS)
     actual = {name: schema[name] for name in EXPECTED_SCHEMA}
     assert actual == EXPECTED_SCHEMA
+    assert {name: schema[name] for name in EXPECTED_SCHEMA_V2} == EXPECTED_SCHEMA_V2
     forbidden = (
         "review",
         "approval",
@@ -133,7 +157,9 @@ def test_evidence_schema_is_exact_and_contains_no_lifecycle_or_runtime_tables() 
     non_shadow = {
         table for table in schema if not table.startswith("v2_material_shadow_")
     }
-    assert MAT_GOV_03A_TABLES | set(EXPECTED_SCHEMA) <= non_shadow
+    assert MAT_GOV_03A_TABLES | set(EXPECTED_SCHEMA) | set(EXPECTED_SCHEMA_V2) <= (
+        non_shadow
+    )
 
 
 def test_mat_gov_03a_schema_v1_files_are_byte_identical_to_accepted_baseline() -> None:
@@ -161,7 +187,9 @@ def test_request_runtime_does_not_import_evidence_foundation() -> None:
     for relative in runtime_files:
         imports = _imports(REPO / relative)
         assert "sealai_v2.core.material_evidence" not in imports
+        assert "sealai_v2.core.material_evidence_v2" not in imports
         assert "sealai_v2.db.material_evidence" not in imports
+        assert "sealai_v2.db.material_evidence_v2" not in imports
         assert "sealai_v2.core.material_evidence_binding" not in imports
         assert "sealai_v2.db.material_evidence_binding" not in imports
         assert "sealai_v2.material_evidence_binding" not in imports

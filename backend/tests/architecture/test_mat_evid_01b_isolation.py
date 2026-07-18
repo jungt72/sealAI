@@ -81,6 +81,7 @@ EXPECTED = {
         }
     ),
 }
+EXPECTED_V2 = {f"{name}_v2": columns for name, columns in EXPECTED.items()}
 EVIDENCE_TABLES = frozenset(
     {
         "v2_material_evidence_manifests",
@@ -88,6 +89,11 @@ EVIDENCE_TABLES = frozenset(
         "v2_material_evidence_audit_events",
         "v2_material_evidence_validation_events",
         *EXPECTED,
+        "v2_material_evidence_manifests_v2",
+        "v2_material_evidence_snapshots_v2",
+        "v2_material_evidence_audit_events_v2",
+        "v2_material_evidence_validation_events_v2",
+        *EXPECTED_V2,
     }
 )
 
@@ -105,6 +111,7 @@ def _imports(path: Path) -> set[str]:
 def test_runtime_evidence_schema_is_exact_and_has_no_activation_lifecycle() -> None:
     schema = load_material_schema(MODELS)
     assert {name: schema[name] for name in EXPECTED} == EXPECTED
+    assert {name: schema[name] for name in EXPECTED_V2} == EXPECTED_V2
     assert {
         name
         for name in schema

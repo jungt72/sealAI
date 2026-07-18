@@ -320,7 +320,7 @@ def test_real_postgres_loads_exact_pack_and_revocation_invalidates_capability() 
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0017", "20260718_0017")
+    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
     factory = make_sessionmaker(engine)
     binding, review, reviews = _store_reviewed_rule_chain(factory)
     catalog = _store_catalog(factory)

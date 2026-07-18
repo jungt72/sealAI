@@ -10,8 +10,11 @@ from sqlalchemy.exc import DBAPIError
 from sealai_v2.core.contracts import VerifiedIdentity
 from sealai_v2.core.material_evidence_review import (
     EvidenceClaimType,
+    EvidenceDocumentType,
     FactualApprovalState,
+    ReviewedClaimMetadataV1,
 )
+from sealai_v2.core.material_evidence import EvidenceClaimScopeV1
 from sealai_v2.core.medium_catalog import (
     MediumCatalogEntryV1,
     MediumIdentityKind,
@@ -105,11 +108,16 @@ class _ReviewRepository:
             content_sha256=self.content_hash,
             payload=SimpleNamespace(
                 claims=(
-                    SimpleNamespace(
+                    ReviewedClaimMetadataV1(
                         claim_ref=CLAIM_REF,
                         claim_type=self.claim_type,
-                        scope=SimpleNamespace(
-                            media=self.media_scope, conditions=self.conditions
+                        scope=EvidenceClaimScopeV1(
+                            materials=("TEST-MATERIAL",),
+                            media=self.media_scope,
+                            conditions=self.conditions,
+                        ),
+                        required_source_types=(
+                            EvidenceDocumentType.MANUFACTURER_DATASHEET,
                         ),
                     ),
                 )

@@ -53,9 +53,11 @@ _ALLOWLIST_FILES = {
     "knowledge/produktspec/kernel.py",  # constructs with `freigegeben=False` (always)
     "knowledge/ledger.py",  # `approved` is an internal review-state enum; never user-facing advice
     "db/material_evidence_review.py",  # persists the same internal factual-review lifecycle only
+    "db/material_evidence_review_v2.py",  # persists the v2 internal factual-review lifecycle only
     "db/medium_catalog.py",  # verifies internal factual approval; grants normalization authority only
     "db/models.py",  # schema constraints for internal review states; never public suitability wording
     "db/migrations/versions/20260718_0016_mat_evid_01c_review.py",  # immutable internal review schema
+    "db/migrations/versions/20260718_0018_mat_evid_02_typed_scopes.py",  # immutable v2 factual-review schema
     "pipeline/produktspec_step.py",  # surfaces the same always-False `freigegeben` field
     "pipeline/routing.py",  # regex DETECTING "geeignet für" in USER input, not an output claim
     "pipeline/stages.py",  # "Herstellerempfehlung" = WHICH manufacturer partner to route an RFQ

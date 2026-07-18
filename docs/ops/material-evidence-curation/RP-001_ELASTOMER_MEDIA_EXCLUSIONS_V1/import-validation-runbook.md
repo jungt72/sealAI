@@ -27,11 +27,12 @@ separate MED-NORM identity-evidence workflow first. A MED-NORM
 must not be mixed into the rule claim set.
 
 Owner decision `RP001-OD-01` explicitly forbids a material placeholder for that
-identity claim. The future Evidence Manifest v2 scope must be the typed
+identity claim. The Evidence Manifest v2 scope is the typed
 `media_identity` variant with no `materials` field and exactly one `media_ref`.
-MAT-EVID-01A.v1 is not converted or reinterpreted. Until v2 is implemented and
-validated through MAT-EVID-01B, MAT-EVID-01C, and MED-NORM, source curation may
-continue but the catalog identity import is `BLOCKED_PENDING_EVIDENCE_SCOPE_V2`.
+MAT-EVID-01A.v1 is not converted or reinterpreted. V2 is implemented and
+validated through MAT-EVID-01B, MAT-EVID-01C, and MED-NORM, but catalog identity
+import remains `BLOCKED_PENDING_VERIFIED_HUMAN_REVIEW` until this package's
+human evidence and three-subject workflow are complete.
 
 ## 1. Deterministic source preparation
 
