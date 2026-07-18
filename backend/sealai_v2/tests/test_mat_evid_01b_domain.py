@@ -17,6 +17,7 @@ from sealai_v2.core.material_evidence import (
     derive_source_ref,
 )
 from sealai_v2.core.material_evidence_binding import (
+    BoundEvidenceReferenceV1,
     EvidenceRuntimeAuthority,
     EvidenceRuntimeBindingState,
     EvidenceRuntimeBindingV1,
@@ -37,6 +38,7 @@ from sealai_v2.core.material_shadow import (
 from sealai_v2.material_evidence_binding.cache import evidence_cache_key
 from sealai_v2.material_evidence_binding.evaluator import (
     EvidenceRuntimeEvaluationV1,
+    _build_result,
     evaluate_with_evidence,
     integrity_blocked_evaluation,
 )
@@ -370,6 +372,60 @@ def test_closed_result_deserialization_rejects_positive_or_unknown_states() -> N
         payload = {**result.to_dict(), field: value}
         with pytest.raises((TypeError, ValueError)):
             EvidenceRuntimeEvaluationV1.from_dict(payload)
+
+
+def _replace_result_references(
+    result: EvidenceRuntimeEvaluationV1,
+    references: tuple[BoundEvidenceReferenceV1, ...],
+) -> EvidenceRuntimeEvaluationV1:
+    return _build_result(
+        evaluation_state=result.evaluation_state,
+        verdict=result.verdict,
+        decisive_ref=result.decisive_ref,
+        matches=result.matches,
+        stable_error_code=result.stable_error_code,
+        technical_result_sha256=result.technical_result_sha256,
+        evidence_binding_state=result.evidence_binding_state,
+        ruleset_snapshot_id=result.ruleset_snapshot_id,
+        ruleset_content_sha256=result.ruleset_content_sha256,
+        evidence_snapshot_id=result.evidence_snapshot_id,
+        evidence_content_sha256=result.evidence_content_sha256,
+        references=references,
+    )
+
+
+@pytest.mark.parametrize("case", ("missing", "foreign_rule"))
+def test_completed_result_requires_references_for_exactly_its_matches(case) -> None:
+    ruleset = _ruleset()
+    evidence = _evidence(ruleset)
+    binding = _binding(ruleset, evidence)
+    result = evaluate_with_evidence(
+        pin=EvidenceRuntimePinV1(pin_id="mshp_" + "4" * 32, binding=binding),
+        ruleset=ruleset,
+        evidence=evidence,
+        material_input=_input(),
+    )
+    references = (
+        ()
+        if case == "missing"
+        else tuple(
+            sorted(
+                (
+                    *result.references,
+                    BoundEvidenceReferenceV1(
+                        rule_ref="MR-FOREIGN",
+                        claim_ref="claim-forged",
+                        source_refs=("source-forged",),
+                    ),
+                )
+            )
+        )
+    )
+    with pytest.raises(
+        ValueError,
+        match="requires evidence for exactly its matches",
+    ):
+        _replace_result_references(result, references)
 
 
 def test_rule_and_manifest_order_do_not_change_bound_result() -> None:

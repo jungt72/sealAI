@@ -33,8 +33,13 @@ Migration `20260718_0015` creates five initially empty tables for immutable
 binding, pin, evaluation, evaluation-reference, and technical audit records.
 All aggregate foreign keys are restrictive; database triggers reject update
 and delete. Binding creation and pin capture write their shadow record and
-evidence companion in one transaction. No pointer, review, approval,
-deployment, seed, backfill, or public/admin API exists.
+evidence companion in one transaction. Before the evaluation companion is
+persisted, the same transaction verifies the stored technical projection and
+object-exact claim/source references against the pinned immutable ruleset and
+manifest snapshots. No pointer, review, approval, deployment, seed, backfill,
+or public/admin API exists. The public product-maturity payload remains
+byte-identical while this companion is default-off; implementation status is
+registered only in this ADR and the SSoT map.
 
 The separate `mat-evid-bind:v1:` cache key is collision-safe and binds tenant
 HMAC/key identity, both snapshot IDs and hashes, binding/schema/contract

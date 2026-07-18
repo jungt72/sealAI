@@ -7,9 +7,12 @@ from sqlalchemy import func, inspect, select, text
 from sqlalchemy.exc import DBAPIError
 
 from sealai_v2.core.material_evidence_binding import (
+    BoundEvidenceReferenceV1,
     EvidenceRuntimeBindingState,
     MaterialEvidenceRuntimeErrorCode,
+    MaterialEvidenceRuntimeIntegrityError,
 )
+from sealai_v2.core.material_shadow import ShadowAuthority
 from sealai_v2.db.engine import make_engine, make_sessionmaker
 from sealai_v2.db.material_evidence import MaterialEvidenceRepository
 from sealai_v2.db.material_evidence_binding import MaterialEvidenceRuntimeRepository
@@ -26,10 +29,15 @@ from sealai_v2.db.models import (
     V2MaterialShadowEvaluationMatch,
     V2MaterialShadowOutbox,
 )
-from sealai_v2.material_evidence_binding.evaluator import integrity_blocked_evaluation
+from sealai_v2.material_evidence_binding.evaluator import (
+    _build_result,
+    evaluate_with_evidence,
+    integrity_blocked_evaluation,
+)
 from sealai_v2.material_shadow.worker import MaterialShadowWorker
 from sealai_v2.tests.test_mat_evid_01b_domain import _binding as _evidence_binding
 from sealai_v2.tests.test_mat_evid_01b_domain import _evidence, _ruleset
+from sealai_v2.tests.test_mat_evid_01b_domain import _input as _evidence_input
 from sealai_v2.tests.test_mat_gov_03b_persistence import (
     IDENTITY,
     NOW,
@@ -386,3 +394,155 @@ def test_cache_cannot_replace_postgres_bound_evaluation(tmp_path) -> None:
             session.scalar(select(func.count()).select_from(V2MaterialShadowEvaluation))
             == 0
         )
+
+
+def _replace_result_references(result, references):
+    return _build_result(
+        evaluation_state=result.evaluation_state,
+        verdict=result.verdict,
+        decisive_ref=result.decisive_ref,
+        matches=result.matches,
+        stable_error_code=result.stable_error_code,
+        technical_result_sha256=result.technical_result_sha256,
+        evidence_binding_state=result.evidence_binding_state,
+        ruleset_snapshot_id=result.ruleset_snapshot_id,
+        ruleset_content_sha256=result.ruleset_content_sha256,
+        evidence_snapshot_id=result.evidence_snapshot_id,
+        evidence_content_sha256=result.evidence_content_sha256,
+        references=references,
+    )
+
+
+def _add_shadow_evaluation(session, *, captured, result, result_sha256=None):
+    evaluation_id = "mshe_" + "a" * 32
+    session.add(
+        V2MaterialShadowEvaluation(
+            evaluation_id=evaluation_id,
+            job_id=captured.job_id,
+            pin_id=captured.pin.pin_id,
+            hmac_key_id=captured.pin.hmac_key_id,
+            evaluation_state=result.evaluation_state,
+            verdict=result.verdict,
+            decisive_ref=result.decisive_ref,
+            result_sha256=result_sha256 or result.technical_result_sha256,
+            stable_error_code=result.stable_error_code,
+            cache_hit=False,
+            authority=ShadowAuthority.NON_AUTHORITATIVE.value,
+            positive_statement_allowed=False,
+            created_at="2026-07-17T12:07:00.000000Z",
+            expires_at="2026-10-15T12:07:00.000000Z",
+        )
+    )
+    for index, (rule_ref, verdict, source_ref) in enumerate(result.matches):
+        session.add(
+            V2MaterialShadowEvaluationMatch(
+                match_id=f"mshm_{index:032x}",
+                evaluation_id=evaluation_id,
+                rule_ref=rule_ref,
+                verdict=verdict,
+                source_ref=source_ref,
+            )
+        )
+    session.flush()
+    return evaluation_id
+
+
+def _runtime_persistence_fixture(tmp_path, name):
+    _engine, factory, ruleset, evidence = _database(tmp_path, name)
+    repository = MaterialShadowRepository(factory)
+    shadow_binding = _binding(ruleset)
+    companion = replace(
+        _evidence_binding(ruleset, evidence), binding_id=shadow_binding.binding_id
+    )
+    repository.create_binding(
+        shadow_binding,
+        identity=IDENTITY,
+        created_at=NOW,
+        evidence_binding=companion,
+    )
+    captured = repository.persist_pin_and_job(
+        binding=shadow_binding,
+        identity=IDENTITY,
+        session_id=f"session-{name}",
+        correlation_id=f"request-{name}",
+        material_input=_input(),
+        hmac_keyring=_keyring(),
+        acquired_at="2026-07-17T12:05:00.000000Z",
+        evidence_binding_required=True,
+    )
+    evidence_pin = MaterialEvidenceRuntimeRepository(factory).load_pin(
+        captured.pin.pin_id
+    )
+    result = evaluate_with_evidence(
+        pin=evidence_pin,
+        ruleset=ruleset,
+        evidence=evidence,
+        material_input=_evidence_input(),
+    )
+    return factory, ruleset, evidence, captured, evidence_pin, result
+
+
+@pytest.mark.parametrize("case", ("foreign_claim", "extra_claim", "source_drift"))
+def test_persistence_rejects_references_not_in_exact_manifest(tmp_path, case) -> None:
+    factory, ruleset, evidence, captured, evidence_pin, result = (
+        _runtime_persistence_fixture(tmp_path, f"reference-{case}.db")
+    )
+    first = result.references[0]
+    forged = BoundEvidenceReferenceV1(
+        rule_ref=first.rule_ref,
+        claim_ref=("claim-forged" if case != "source_drift" else first.claim_ref),
+        source_refs=(
+            "source-forged"
+            if case in {"foreign_claim", "source_drift"}
+            else first.source_refs[0],
+        ),
+    )
+    references = (
+        tuple(sorted((*result.references, forged)))
+        if case == "extra_claim"
+        else tuple(sorted((forged, *result.references[1:])))
+    )
+    forged_result = _replace_result_references(result, references)
+    with pytest.raises(MaterialEvidenceRuntimeIntegrityError) as exc:
+        with factory() as session, session.begin():
+            evaluation_id = _add_shadow_evaluation(
+                session,
+                captured=captured,
+                result=forged_result,
+            )
+            MaterialEvidenceRuntimeRepository.insert_evaluation_companion(
+                session,
+                evaluation_id=evaluation_id,
+                pin=evidence_pin,
+                result=forged_result,
+                ruleset=ruleset,
+                evidence=evidence,
+                created_at="2026-07-17T12:07:00.000000Z",
+            )
+    assert exc.value.code is MaterialEvidenceRuntimeErrorCode.REFERENCE_DRIFT
+    with factory() as session:
+        assert session.get(V2MaterialShadowEvaluation, "mshe_" + "a" * 32) is None
+
+
+def test_persistence_rejects_shadow_projection_drift(tmp_path) -> None:
+    factory, ruleset, evidence, captured, evidence_pin, result = (
+        _runtime_persistence_fixture(tmp_path, "projection-drift.db")
+    )
+    with pytest.raises(MaterialEvidenceRuntimeIntegrityError) as exc:
+        with factory() as session, session.begin():
+            evaluation_id = _add_shadow_evaluation(
+                session,
+                captured=captured,
+                result=result,
+                result_sha256="f" * 64,
+            )
+            MaterialEvidenceRuntimeRepository.insert_evaluation_companion(
+                session,
+                evaluation_id=evaluation_id,
+                pin=evidence_pin,
+                result=result,
+                ruleset=ruleset,
+                evidence=evidence,
+                created_at="2026-07-17T12:07:00.000000Z",
+            )
+    assert exc.value.code is MaterialEvidenceRuntimeErrorCode.TECHNICAL_RESULT_DRIFT

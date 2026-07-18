@@ -81,6 +81,15 @@ EXPECTED = {
         }
     ),
 }
+EVIDENCE_TABLES = frozenset(
+    {
+        "v2_material_evidence_manifests",
+        "v2_material_evidence_snapshots",
+        "v2_material_evidence_audit_events",
+        "v2_material_evidence_validation_events",
+        *EXPECTED,
+    }
+)
 
 
 def _imports(path: Path) -> set[str]:
@@ -96,6 +105,9 @@ def _imports(path: Path) -> set[str]:
 def test_runtime_evidence_schema_is_exact_and_has_no_activation_lifecycle() -> None:
     schema = load_material_schema(MODELS)
     assert {name: schema[name] for name in EXPECTED} == EXPECTED
+    assert {
+        name for name in schema if name.startswith("v2_material_evidence_")
+    } == EVIDENCE_TABLES
     forbidden = ("active_pointer", "approval", "deployment", "cohort", "reviewed")
     assert not any(token in name for name in EXPECTED for token in forbidden)
 

@@ -95,6 +95,14 @@ class EvidenceRuntimeEvaluationV1:
             if self.stable_error_code != "none" or self.technical_result_sha256 is None:
                 raise ValueError("completed bound result requires a technical hash")
             validate_cache_value(self.shadow_projection())
+            matched_rule_refs = {
+                rule_ref for rule_ref, _verdict, _source in self.matches
+            }
+            referenced_rule_refs = {reference.rule_ref for reference in self.references}
+            if referenced_rule_refs != matched_rule_refs:
+                raise ValueError(
+                    "completed bound result requires evidence for exactly its matches"
+                )
         expected = _compute_result_sha256(self._hash_payload())
         if self.result_sha256 != expected:
             raise ValueError("runtime evidence result hash mismatch")

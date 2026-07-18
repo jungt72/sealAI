@@ -6,15 +6,19 @@ import hashlib
 import json
 import secrets
 
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from sealai_v2.core.material_evidence import EvidenceManifestSnapshotV1
 from sealai_v2.core.material_evidence_binding import (
     EvidenceRuntimeBindingState,
     EvidenceRuntimeBindingV1,
     EvidenceRuntimePinV1,
     MaterialEvidenceRuntimeErrorCode,
     MaterialEvidenceRuntimeIntegrityError,
+    validate_runtime_binding,
 )
+from sealai_v2.core.material_rulesets import MaterialRulesetSnapshotV1
 from sealai_v2.core.material_shadow import ShadowBinding, ShadowMaterialRulesetPin
 from sealai_v2.db.models import (
     V2MaterialEvidenceRuntimeAuditEvent,
@@ -22,6 +26,8 @@ from sealai_v2.db.models import (
     V2MaterialEvidenceRuntimeEvaluation,
     V2MaterialEvidenceRuntimeEvaluationRef,
     V2MaterialEvidenceRuntimePin,
+    V2MaterialShadowEvaluation,
+    V2MaterialShadowEvaluationMatch,
 )
 from sealai_v2.material_evidence_binding.evaluator import EvidenceRuntimeEvaluationV1
 
@@ -274,8 +280,14 @@ class MaterialEvidenceRuntimeRepository:
         evaluation_id: str,
         pin: EvidenceRuntimePinV1,
         result: EvidenceRuntimeEvaluationV1,
+        ruleset: MaterialRulesetSnapshotV1 | None,
+        evidence: EvidenceManifestSnapshotV1 | None,
         created_at: str,
     ) -> None:
+        if type(pin) is not EvidenceRuntimePinV1:
+            raise TypeError("pin must be EvidenceRuntimePinV1")
+        if type(result) is not EvidenceRuntimeEvaluationV1:
+            raise TypeError("result must be EvidenceRuntimeEvaluationV1")
         binding = pin.binding
         if (
             result.evidence_binding_state is not binding.state
@@ -288,6 +300,81 @@ class MaterialEvidenceRuntimeRepository:
                 MaterialEvidenceRuntimeErrorCode.BINDING_DRIFT,
                 "runtime evidence evaluation differs from its pin",
             )
+        session.flush()
+        pin_row = session.get(V2MaterialEvidenceRuntimePin, pin.pin_id)
+        binding_row = session.get(
+            V2MaterialEvidenceRuntimeBinding,
+            binding.binding_id,
+        )
+        if (
+            pin_row is None
+            or binding_row is None
+            or cls.pin_from_rows(pin_row, binding_row) != pin
+        ):
+            raise MaterialEvidenceRuntimeIntegrityError(
+                MaterialEvidenceRuntimeErrorCode.BINDING_DRIFT,
+                "runtime evidence evaluation pin differs from persisted state",
+            )
+        shadow_row = session.get(V2MaterialShadowEvaluation, evaluation_id)
+        if shadow_row is None:
+            raise MaterialEvidenceRuntimeIntegrityError(
+                MaterialEvidenceRuntimeErrorCode.TECHNICAL_RESULT_DRIFT,
+                "runtime evidence evaluation has no shadow evaluation",
+            )
+        shadow_matches = tuple(
+            (
+                match.rule_ref,
+                match.verdict,
+                match.source_ref,
+            )
+            for match in session.scalars(
+                select(V2MaterialShadowEvaluationMatch)
+                .where(V2MaterialShadowEvaluationMatch.evaluation_id == evaluation_id)
+                .order_by(
+                    V2MaterialShadowEvaluationMatch.rule_ref,
+                    V2MaterialShadowEvaluationMatch.verdict,
+                    V2MaterialShadowEvaluationMatch.source_ref,
+                )
+            ).all()
+        )
+        if (
+            shadow_row.pin_id != pin.pin_id
+            or shadow_row.evaluation_state != result.evaluation_state
+            or shadow_row.verdict != result.verdict
+            or shadow_row.decisive_ref != result.decisive_ref
+            or shadow_row.result_sha256
+            != (result.technical_result_sha256 or result.result_sha256)
+            or shadow_row.stable_error_code != result.stable_error_code
+            or shadow_matches != tuple(sorted(result.matches))
+        ):
+            raise MaterialEvidenceRuntimeIntegrityError(
+                MaterialEvidenceRuntimeErrorCode.TECHNICAL_RESULT_DRIFT,
+                "persisted shadow evaluation differs from the evidence envelope",
+            )
+        if result.evaluation_state != "integrity_blocked":
+            if type(ruleset) is not MaterialRulesetSnapshotV1:
+                raise MaterialEvidenceRuntimeIntegrityError(
+                    MaterialEvidenceRuntimeErrorCode.RULESET_DRIFT,
+                    "completed evaluation requires its exact ruleset snapshot",
+                )
+            if type(evidence) is not EvidenceManifestSnapshotV1:
+                raise MaterialEvidenceRuntimeIntegrityError(
+                    MaterialEvidenceRuntimeErrorCode.EVIDENCE_DRIFT,
+                    "completed evaluation requires its exact evidence snapshot",
+                )
+            resolved = validate_runtime_binding(
+                binding,
+                ruleset=ruleset,
+                evidence=evidence,
+            )
+            expected_references = resolved.for_rules(
+                tuple(rule_ref for rule_ref, _verdict, _source in result.matches)
+            )
+            if result.references != expected_references:
+                raise MaterialEvidenceRuntimeIntegrityError(
+                    MaterialEvidenceRuntimeErrorCode.REFERENCE_DRIFT,
+                    "evaluation references differ from the exact evidence manifest",
+                )
         session.add(
             V2MaterialEvidenceRuntimeEvaluation(
                 evaluation_id=evaluation_id,

@@ -14,6 +14,7 @@ from sealai_v2.core.contracts import (
     MediumCardinality,
     RelationState,
 )
+from sealai_v2.core.material_evidence import EvidenceManifestSnapshotV1
 from sealai_v2.core.material_evidence_binding import (
     EvidenceRuntimeBindingState,
     MaterialEvidenceRuntimeErrorCode,
@@ -25,6 +26,7 @@ from sealai_v2.core.material_shadow import (
     ShadowJobStatus,
     ShadowMaterialInput,
 )
+from sealai_v2.core.material_rulesets import MaterialRulesetSnapshotV1
 from sealai_v2.db.material_rulesets import MaterialRulesetRepository
 from sealai_v2.db.material_evidence import MaterialEvidenceRepository
 from sealai_v2.db.material_evidence_binding import (
@@ -288,6 +290,8 @@ class MaterialShadowWorker:
         now: str,
         cache_hit: bool,
         evidence_result: EvidenceRuntimeEvaluationV1 | None = None,
+        evidence_ruleset: MaterialRulesetSnapshotV1 | None = None,
+        evidence_snapshot: EvidenceManifestSnapshotV1 | None = None,
     ) -> None:
         with self._sessions() as session, session.begin():
             database_now = _format(self._database_now(session))
@@ -371,6 +375,8 @@ class MaterialShadowWorker:
                         evaluation_id=evaluation_id,
                         pin=evidence_pin,
                         result=evidence_result,
+                        ruleset=evidence_ruleset,
+                        evidence=evidence_snapshot,
                         created_at=now,
                     )
             job.status = ShadowJobStatus.DONE.value
@@ -442,6 +448,8 @@ class MaterialShadowWorker:
                 )
                 pin = MaterialShadowRepositoryPinAdapter.from_row(pin_row)
                 evidence_result = None
+                evidence_ruleset = None
+                evidence_snapshot = None
                 if self._evidence_binding_enabled:
                     evidence_pin = self._evidence_runtime.load_pin(pin.pin_id)
                     assert self._evidence_cache is not None
@@ -453,8 +461,7 @@ class MaterialShadowWorker:
                     evidence_result = self._evidence_cache.get(key)
                     cache_hit = evidence_result is not None
                     try:
-                        snapshot = self._rulesets.load_snapshot(pin.snapshot_id)
-                        evidence_snapshot = None
+                        evidence_ruleset = self._rulesets.load_snapshot(pin.snapshot_id)
                         if (
                             evidence_pin.state
                             is EvidenceRuntimeBindingState.BOUND_UNREVIEWED
@@ -465,7 +472,7 @@ class MaterialShadowWorker:
                             )
                         verified_result = evaluate_with_evidence(
                             pin=evidence_pin,
-                            ruleset=snapshot,
+                            ruleset=evidence_ruleset,
                             evidence=evidence_snapshot,
                             material_input=self._material_input(job),
                         )
@@ -506,6 +513,8 @@ class MaterialShadowWorker:
                     now=now,
                     cache_hit=cache_hit,
                     evidence_result=evidence_result,
+                    evidence_ruleset=evidence_ruleset,
+                    evidence_snapshot=evidence_snapshot,
                 )
                 evaluated += 1
             except Exception as exc:  # noqa: BLE001 - stable shadow-only failure state
