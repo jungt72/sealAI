@@ -345,6 +345,10 @@ def test_snapshot_integrity_and_event_hashes_are_deterministic() -> None:
     with pytest.raises(MaterialEvidenceValidationError) as floating:
         compute_audit_sha256({"nested": {"value": 1.5}})
     assert floating.value.code is MaterialEvidenceErrorCode.FLOAT_FORBIDDEN
+    for invalid_value in ((1.5,), ("Cafe\u0301",)):
+        with pytest.raises(MaterialEvidenceValidationError) as non_json_sequence:
+            compute_audit_sha256({"nested": invalid_value})
+        assert non_json_sequence.value.code is MaterialEvidenceErrorCode.INVALID_TYPE
     with pytest.raises(MaterialEvidenceIntegrityError):
         EvidenceManifestSnapshotV1(
             manifest_id=MANIFEST_ID,

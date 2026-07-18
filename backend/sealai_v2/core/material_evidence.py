@@ -200,19 +200,43 @@ def _validate_unicode(value: Any, *, path: str = "$") -> None:
             _validate_unicode(item, path=f"{path}.{key}")
 
 
-def _reject_floats(value: Any, *, path: str = "$") -> None:
+def _validate_canonical_json_value(value: Any, *, path: str = "$") -> None:
     if type(value) is float:
         _fail(
             MaterialEvidenceErrorCode.FLOAT_FORBIDDEN,
             "floating-point values are forbidden",
             path=path,
         )
+    if value is None or type(value) in {bool, int}:
+        return
+    if type(value) is str:
+        _validate_unicode(value, path=path)
+        return
     if type(value) is list:
         for index, item in enumerate(value):
-            _reject_floats(item, path=f"{path}[{index}]")
-    elif type(value) is dict:
+            _validate_canonical_json_value(item, path=f"{path}[{index}]")
+        return
+    if type(value) is dict:
         for key, item in value.items():
-            _reject_floats(item, path=f"{path}.{key}")
+            if type(key) is not str:
+                _fail(
+                    MaterialEvidenceErrorCode.INVALID_TYPE,
+                    "object keys must be exact strings",
+                    path=path,
+                )
+            if not key.isascii():
+                _fail(
+                    MaterialEvidenceErrorCode.INVALID_ID,
+                    "property names must be ASCII",
+                    path=path,
+                )
+            _validate_canonical_json_value(item, path=f"{path}.{key}")
+        return
+    _fail(
+        MaterialEvidenceErrorCode.INVALID_TYPE,
+        "value is outside the exact JSON domain",
+        path=path,
+    )
 
 
 def _reject_float(_value: str) -> NoReturn:
@@ -278,8 +302,7 @@ def parse_json_without_duplicates(raw: str | bytes) -> dict[str, Any]:
 
 
 def _canonical_json(value: dict[str, Any]) -> bytes:
-    _reject_floats(value)
-    _validate_unicode(value)
+    _validate_canonical_json_value(value)
     try:
         return json.dumps(
             value,
