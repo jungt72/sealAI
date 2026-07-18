@@ -62,7 +62,7 @@ def test_real_postgres_fk_triggers_and_downgrade_contract() -> None:
     assert inspect(engine).get_table_names() == []
 
     _upgrade_engine(engine, "20260717_0011")
-    assert migration_status(engine) == ("20260717_0011", "20260717_0013")
+    assert migration_status(engine) == ("20260717_0011", "20260718_0014")
     with engine.begin() as connection:
         command.downgrade(_config(connection=connection), "20260714_0010")
     assert "v2_material_rulesets" not in inspect(engine).get_table_names()
