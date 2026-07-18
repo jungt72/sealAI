@@ -102,21 +102,20 @@ def test_maturity_manifest_cannot_claim_unbounded_availability() -> None:
 
     material = maturity["capabilities"]["material_constraints"]
     assert material["implementation_status"] == (
-        "mat_gov_03b_local_shadow_default_off_sampling_zero"
+        "med_norm_01_empty_catalog_inert_default_off_sampling_zero"
     )
-    assert material["contract_version"] == "MAT-GOV-03B"
+    assert material["contract_version"] == "MED-NORM-01.v1"
     assert {
-        "MAT-GOV-03B-independent-audit-and-owner-acceptance",
         "MAT-GOV-03C",
-        "MAT-EVID-01",
-        "MED-NORM-01",
+        "reviewed_media_catalog_content",
+        "material_rule_evidence",
         "tested_shadow_purge_and_maintenance_role",
         "mat_gov_02_payload_and_hard_gate_followups",
         "owner_activation",
     } <= set(material["activation_blockers"])
     assert material["scope_limit"] == (
-        "local_non_authoritative_pointerless_shadow_foundation_"
-        "no_production_migration_or_sampling"
+        "empty_tenant_isolated_catalog_and_internal_attribution_no_public_runtime_"
+        "production_migration_or_sampling"
     )
 
 

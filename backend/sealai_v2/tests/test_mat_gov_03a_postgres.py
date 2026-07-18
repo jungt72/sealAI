@@ -24,7 +24,7 @@ pytestmark = pytest.mark.skipif(
 
 def _assert_dedicated_local_database(url: str) -> None:
     parsed = make_url(url)
-    assert parsed.host in {"127.0.0.1", "localhost"}
+    assert parsed.host in {"127.0.0.1", "localhost", "host.docker.internal"}
     assert (parsed.database or "").startswith("sealai_mat_gov_03a_test")
 
 
@@ -62,7 +62,7 @@ def test_real_postgres_fk_triggers_and_downgrade_contract() -> None:
     assert inspect(engine).get_table_names() == []
 
     _upgrade_engine(engine, "20260717_0011")
-    assert migration_status(engine) == ("20260717_0011", "20260718_0016")
+    assert migration_status(engine) == ("20260717_0011", "20260718_0017")
     with engine.begin() as connection:
         command.downgrade(_config(connection=connection), "20260714_0010")
     assert "v2_material_rulesets" not in inspect(engine).get_table_names()

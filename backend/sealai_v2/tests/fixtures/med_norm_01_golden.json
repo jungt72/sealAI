@@ -1,0 +1,12 @@
+{
+  "catalog_id": "mcf_11111111111111111111111111111111",
+  "empty": {
+    "content_sha256": "e4970436e6026ecb3aa4d0e613e41577882bb08f02e4e9d1c66f65dd65751fa7",
+    "snapshot_id": "mcs_32f2673e9ef7f557f6c75d4859e2217a364eeb47e50b5b8c3c4d2a218d9e585a"
+  },
+  "single_entry": {
+    "content_sha256": "f388aa257130a94b2a560479d25afc1cce896d8d5ed09c91558aa609e502b5fc",
+    "entry_sha256": "1f9893e1b3d8b07342c5dafbd96b5a07b0cbdd9bf106f68d46f630d24becece5",
+    "snapshot_id": "mcs_0a03954f57967273c2c2cf156f167c8b2a26adde87596fe31a71e7665a20dd42"
+  }
+}

@@ -318,6 +318,34 @@ activation, sampling, or deployment is authorized. MAT-EVID-01C,
 MED-NORM-01, MAT-GOV-03C, evidence-bound initial rules, dark staging, and the
 single final external audit remain separate gates.
 
+## ODR-MED-NORM-01-20260718-04
+
+### Decision
+
+`MED_NORM_01_PLAN_AND_IMPLEMENTATION_GO` is ratified by the autonomous material
+intelligence completion Auftrag as an additive, empty and runtime-inert closed
+media-catalog foundation. Canonical media require stable IDs and exact approved
+MAT-EVID-01C provenance. Multiple media require structured components and
+explicit relations. LLM output remains a candidate and cannot create a
+canonical classification.
+
+### Consequence
+
+The implementation contains no media entries or material facts. Exact whole
+catalog lookup and verified user confirmation are the only canonical
+provenance forms; punctuation and token heuristics never release a
+classification. The internal companion may evaluate separately identified,
+resolved components and retains medium attribution, but the public pipeline,
+legacy extractor, shadow capture, API, prompt, frontend and deployment remain
+unchanged. Technical normalization grants no factual approval, verdict,
+positive statement, active pointer, or deployment authority.
+
+Migration `20260718_0017` is additive and initially empty and is not authorized
+for production. Initial reviewed catalog content, evidence-bound material
+rules, MAT-GOV-03C, public integration, dark staging, and the final external
+audit remain separate gates. All material flags remain false and sampling
+remains zero.
+
 ## ODR-MAT-EVID-01C-20260718-03
 
 ### Decision

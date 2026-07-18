@@ -3,8 +3,9 @@
 Status: MAT-GOV-01/02, the inert MAT-GOV-03A snapshot foundation, the
 owner-accepted non-authoritative MAT-GOV-03B shadow/pinning foundation, and the
 inert MAT-EVID-01A evidence-manifest foundation, MAT-EVID-01B fail-closed
-runtime-binding companion, and MAT-EVID-01C factual-review foundation are
-implemented default-off locally; no
+runtime-binding companion, MAT-EVID-01C factual-review foundation, and the
+inert MED-NORM-01 closed media-catalog foundation are implemented default-off
+locally; no
 material-rule activation, production migration, or production runtime binding
 is authorized. MAT-GOV-03C and every activation gate remain
 required. Owner decisions ratified through 2026-07-18.
@@ -42,7 +43,10 @@ relation marked resolved: that relation state alone does not prove that a
 structured, separately evaluable list of contact media exists. No punctuation
 or conjunction in free text is used to infer cardinality. MED-NORM-01 must
 establish the structured media representation before any multiple-media
-evaluation can become eligible.
+evaluation can become eligible. The unchanged public and legacy paths still
+block all multiple media. The internal MED-NORM companion may evaluate
+`known + multiple + resolved` only with separately identified components and
+exactly one explicit relationship for every pair.
 
 `bedingt` is opaque and cannot collapse into `vertraeglich`. Every applicable
 conditional rule remains attached through its stable matrix-cell reference,
@@ -136,11 +140,12 @@ fail-open and non-authoritative. Domain-pack booleans accept only JSON booleans.
 | MAT-EVID-01A | Versioned atomic claim/source identities, exact claim scope, structured rule-to-claim binding, content-addressed immutable manifests, empty persistence and technical audit; no runtime binding or authority |
 | MAT-EVID-01B | Implemented inert/default-off fail-closed evidence binding in evaluation; technical binding grants no factual authority |
 | MAT-EVID-01C | Implemented inert factual Evidence review with immutable dossiers, separate review/approval axes, and distinct verified-human creator/reviewer/approver; no runtime authority |
+| MED-NORM-01 | Closed versioned media catalog, stable IDs, exact reviewed-Evidence provenance, structured components/relations, and internal per-medium attribution; initially empty and runtime-inert |
 
 MAT-GOV-01/02 contain no database migration or ruleset lifecycle. MAT-GOV-03A
 and MAT-EVID-01A add only inert technical snapshot persistence and are not
 imported by the request runtime. No package imports existing evidence or adds a
-material rule, medium catalog, thermal model, or frontend recommendation.
+material rule, catalog entry, thermal model, or frontend recommendation.
 `material_constraints_enabled` defaults to false. While false, the historical
 Gegencheck code path and API payload remain unchanged and contain no
 `material_constraints` key. Enabling the contract requires the separately
@@ -312,6 +317,37 @@ restrictive foreign keys and append-only validation, lifecycle and audit
 events. There is no seed, backfill, public/admin API, pointer, activation,
 frontend, cache, or deployment path.
 
+## MED-NORM-01 closed normalization foundation
+
+`MED-NORM-01.v1` is a separate immutable catalog schema. Every entry has a
+stable media ID, exact canonical label, typed identity kind, optional exact
+aliases, and exact approved MAT-EVID-01C review/hash/claim provenance. The
+catalog is tenant-isolated and initially empty. It contains no built-in media
+facts, generic fallback class, trade-name mapping, seed, or backfill.
+The reviewed claim scope binds the derived media ID and a domain-separated hash
+of the canonical name, identity kind, and complete alias set.
+
+Only an exact whole-value match in one pinned catalog snapshot or a verified
+user confirmation of an existing catalog entry can create a canonical
+component. An LLM value is permanently a candidate and cannot satisfy the
+canonical provenance contract. No punctuation, conjunction, fuzzy match, or
+token heuristic establishes a medium or cardinality.
+
+Canonical medium components form a stable ordered tuple. Multiple known media
+without relationships remain `multiple + unresolved`. A resolved set requires
+exactly one explicit relation for every component pair. Unknown and ambiguous
+inputs carry no canonical components and block before evaluation. The internal
+companion evaluates every resolved component separately, preserves all matches
+with component and media attribution, and uses the existing verdict enum and
+precedence. It never permits a positive statement.
+
+Four additive empty tables persist catalog families, snapshots, validation and
+creation audit. Mutation triggers and restrictive foreign keys enforce
+immutability. The repository revalidates tenant, catalog identity, hashes,
+technical audit, and the exact approved factual-review state on every read.
+There is no active pointer, `latest`, cache authority, public API, pipeline
+import, or production migration authorization.
+
 ## MAT-GOV-03B non-authoritative shadow contract
 
 03B selects no snapshot implicitly. An immutable, time-bounded binding names
@@ -326,7 +362,8 @@ A persistable input requires server-verified canonical structured material and
 single-medium IDs plus the closed `known + single + not_applicable` state. Free
 text, unknown, ambiguous, missing, multiple, separator-derived, or LLM-derived
 input is `ineligible_unresolved_input` and creates no pin, job, evaluation, or
-cache entry. MED-NORM-01 is not implemented.
+cache entry. MED-NORM-01 now supplies an inert verified catalog seam, but no
+public or shadow runtime adapter imports it before the later integration gate.
 
 The shadow pin is always `SHADOW_NON_AUTHORITATIVE` and can never allow a
 positive statement. Pin and outbox job are atomic; tenant/session/request/case/
@@ -389,12 +426,16 @@ is read-only; name-only matches, partial objects, and semantic drift fail closed
 6. Conflicts and hard gates always precede `unobtainable`.
 7. Executable RWDR thermal calculation remains NO-GO until separately sourced,
    reviewed, tested, and owner-activated.
+8. Canonical media assignments require an exact Evidence-bound catalog entry
+   or a verified user confirmation of such an entry. Model output remains a
+   non-authoritative candidate.
 
 Items 1, 2, 3, and 6 are enforced by MAT-GOV-02. Technical immutable snapshot
 identity is implemented by MAT-GOV-03A, runtime pinning by MAT-GOV-03B, and the
 inert fail-closed Evidence companion by MAT-EVID-01B, and factual Evidence
 review by MAT-EVID-01C. Evidence-bound ruleset approval and activation require
-MAT-GOV-03C. Structured multi-medium evaluation requires MED-NORM-01. Until
-those open packages, both MAT-GOV-02 activation follow-ups, independent review,
+MAT-GOV-03C. Structured multi-medium evaluation exists only in the inert
+MED-NORM companion. Until initial reviewed catalog content and the remaining
+packages, both MAT-GOV-02 activation follow-ups, independent review,
 and owner activation are complete, the contract remains default-off and no
 snapshot is approvable or active.

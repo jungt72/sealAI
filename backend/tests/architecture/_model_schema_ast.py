@@ -28,6 +28,8 @@ _ALLOWED_FOREIGN_KEYS = frozenset(
         "v2_material_shadow_session_versions.session_version_id",
         "v2_material_shadow_outbox.job_id",
         "v2_material_shadow_evaluations.evaluation_id",
+        "v2_medium_catalogs.catalog_id",
+        "v2_medium_catalog_snapshots.snapshot_id",
     }
 )
 _PROTECTED_HELPERS = frozenset(
@@ -685,6 +687,8 @@ def parse_material_schema_source(
                 table_assignments.append(statement)
 
         named_material_class = node.name.startswith("V2Material")
+        named_medium_catalog_class = node.name.startswith("V2MediumCatalog")
+        named_governed_class = named_material_class or named_medium_catalog_class
         direct_base_model = _is_direct_base_model(node)
         has_base_reference = any(
             isinstance(base, ast.Name) and base.id == "Base" for base in node.bases
@@ -695,7 +699,17 @@ def parse_material_schema_source(
             and assignment.value.value.startswith("v2_material_")
             for assignment in table_assignments
         )
-        material_candidate = named_material_class or literal_material_table
+        literal_medium_catalog_table = any(
+            isinstance(assignment.value, ast.Constant)
+            and type(assignment.value.value) is str
+            and assignment.value.value.startswith("v2_medium_catalog")
+            for assignment in table_assignments
+        )
+        material_candidate = (
+            named_governed_class
+            or literal_material_table
+            or literal_medium_catalog_table
+        )
 
         if has_base_reference and not direct_base_model:
             raise AssertionError(
@@ -730,7 +744,13 @@ def parse_material_schema_source(
             raise AssertionError(
                 f"{filename}:{assignment.lineno}: unrecognized MAT-GOV table name"
             )
-        if not table_name.startswith("v2_material_"):
+        if named_medium_catalog_class and not table_name.startswith(
+            "v2_medium_catalog"
+        ):
+            raise AssertionError(
+                f"{filename}:{assignment.lineno}: unrecognized MED-NORM table name"
+            )
+        if not table_name.startswith(("v2_material_", "v2_medium_catalog")):
             continue
         if table_name in schema:
             raise AssertionError(

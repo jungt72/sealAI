@@ -45,7 +45,7 @@ pytestmark = pytest.mark.skipif(
 
 def _assert_dedicated_local_database(url: str) -> None:
     parsed = make_url(url)
-    assert parsed.host in {"127.0.0.1", "localhost"}
+    assert parsed.host in {"127.0.0.1", "localhost", "host.docker.internal"}
     assert (parsed.database or "").startswith("sealai_mat_gov_03b_test")
 
 
@@ -132,7 +132,7 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     _clear_database(engine)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0016", "20260718_0016")
+    assert migration_status(engine) == ("20260718_0017", "20260718_0017")
 
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
