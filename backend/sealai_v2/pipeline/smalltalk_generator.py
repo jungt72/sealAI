@@ -53,7 +53,9 @@ class SmalltalkGenerator:
     client: LlmClient
     # 2026-07-19: widened to also accept CaseIntakeNavigationPromptAssembler — see the module
     # docstring. Both assemblers expose the identical zero-argument system_prompt() shape.
-    assembler: "SmalltalkNavigationPromptAssembler | CaseIntakeNavigationPromptAssembler"
+    assembler: (
+        "SmalltalkNavigationPromptAssembler | CaseIntakeNavigationPromptAssembler"
+    )
     model_config: ModelConfig
 
     async def generate(self, question: str) -> Answer:

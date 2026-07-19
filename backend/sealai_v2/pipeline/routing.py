@@ -325,6 +325,7 @@ def _is_case_opening_shape(question: str) -> bool:
     surrounding = len(text[: match.start()]) + len(text[match.end() :])
     return surrounding <= _CASE_OPENING_SURROUNDING_MAX_LEN
 
+
 # A possessive/deictic reference makes even an explanation-shaped question case-bound: "Erklaere
 # meine Auslegung" is not the same route as "Erklaere die Auslegung". Numeric operating values,
 # failures, suitability requests and other hard signals are handled independently below.

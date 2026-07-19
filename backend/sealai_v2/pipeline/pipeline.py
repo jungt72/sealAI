@@ -1585,8 +1585,7 @@ class Pipeline:
                 elif smalltalk_prompt_active and self.smalltalk_generator is not None:
                     answer = await self.smalltalk_generator.generate(question)
                 elif (
-                    case_intake_prompt_active
-                    and self.case_intake_generator is not None
+                    case_intake_prompt_active and self.case_intake_generator is not None
                 ):
                     # 2026-07-19 (case-intake fix): the compact, content-free case_intake_invite
                     # answer -- same shape as the smalltalk branch above, different assembler/

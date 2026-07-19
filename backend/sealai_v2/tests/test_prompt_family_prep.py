@@ -217,7 +217,10 @@ class TestRoutePromptMatrixIsInactiveAndComplete:
         that never makes a domain claim, so there is nothing for L3 to verify — NOT a general
         widening of the bypass to any route that merely has zero Stage-1 signals (see
         general_sealing_knowledge/material_knowledge below, which stay l3=True on purpose)."""
-        _l3_false_routes = {RouteName.SMALLTALK_NAVIGATION, RouteName.CASE_INTAKE_INVITE}
+        _l3_false_routes = {
+            RouteName.SMALLTALK_NAVIGATION,
+            RouteName.CASE_INTAKE_INVITE,
+        }
         for plan in ROUTE_PROMPT_MATRIX:
             if plan.route in _l3_false_routes:
                 assert plan.l3 is False
