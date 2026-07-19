@@ -16,10 +16,25 @@ factual approval, MED-NORM catalog authority, active
 pointer, sampling, public API/frontend surface, production migration or
 deployment authority.
 
+The subsequently authorized third formal job produced a valid redacted Claude
+transport envelope for exact `claude-sonnet-5` with ten turns, zero web use and
+zero permission denials. Its inner report contained no JSON object and was
+rejected by the strict parser as `INVALID_REPORT_NO_VERDICT`. No challenge or
+adjudication row was created. A fourth formal attempt is prohibited, so the
+package remains `REVIEW_INCOMPLETE`, `NO CROSS-REVIEWED CLAIMS`, and
+`MERGE_NO_GO`.
+
 `generated/review-job-planned-after-transport-02.json` binds that next job to
 the same immutable review snapshot and both unchanged audit-input hashes. It is
 planning evidence only, carries `automatic_execution_authority=false`, and is
 not a challenge, verdict, approval or permission to retry.
+
+The completed transport diagnosis is registered in
+`generated/transport-diagnostic-20260719.json`; the exact supported CLI option
+inventory is `generated/claude-cli-options-2.1.205.json`. Raw canary stdout,
+stderr and authentication material remain private outside the repository. No
+email address, organization identifier, session identifier, UUID, token or
+credential is persisted here.
 
 ## Selected evidence gaps
 

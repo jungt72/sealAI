@@ -522,3 +522,11 @@ before a result envelope. Its input hashes remained exact, and it created zero
 challenge and adjudication rows. Therefore the six candidates remain
 `ai_draft`; no first-pack gate, MAT-GOV-03C gate or dark-staging gate is
 satisfied by this execution evidence.
+
+The bounded transport diagnostic then established the current Claude CLI
+contract and a passing synthetic transport canary. The one authorized third
+formal job produced a valid exact-model envelope with zero web requests and
+permission denials, but no strict JSON report. It is therefore
+`INVALID_REPORT_NO_VERDICT`; no challenge or adjudication was persisted and a
+fourth formal attempt is prohibited. RP-001 remains `ai_draft` and all
+downstream gates remain closed.

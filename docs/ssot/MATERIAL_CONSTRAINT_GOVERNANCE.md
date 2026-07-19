@@ -527,6 +527,11 @@ both exited before producing a result envelope, so both attempts are
 `REVIEW_INCOMPLETE`, not challenge verdicts. No challenge or adjudication was
 persisted. The retry is exhausted; another transport must be represented as a
 new identical review job with a new transport identity.
+That third formal job reached a valid exact-model envelope with zero web and
+permission use, but its inner report was prose rather than strict JSON. The
+closed parser rejected it as `INVALID_REPORT_NO_VERDICT`; challenge and
+adjudication counts remain zero. No fourth formal attempt is allowed. This is
+an audit-output failure, not a claim finding and not a cross-review state.
 The package therefore remains in `ai_draft`; the activation blocker requiring
 a first `ai_cross_reviewed_non_authoritative` rule pack remains open. The exact
 draft, source boundaries, artifact hashes and incomplete transport receipt are

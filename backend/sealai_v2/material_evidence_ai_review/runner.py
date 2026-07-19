@@ -57,14 +57,52 @@ _TRUST_INSTALLATION_FIELDS = frozenset(
 _SHA256_HEX = frozenset("0123456789abcdef")
 _ENVELOPE_FIELDS = frozenset(
     {
+        "api_error_status",
+        "duration_api_ms",
+        "duration_ms",
+        "fast_mode_state",
         "is_error",
         "modelUsage",
+        "num_turns",
         "permission_denials",
         "result",
         "session_id",
+        "stop_reason",
+        "subtype",
+        "terminal_reason",
+        "time_to_request_ms",
+        "total_cost_usd",
+        "ttft_ms",
+        "ttft_stream_ms",
         "type",
-        "web_fetch_requests",
-        "web_search_requests",
+        "usage",
+        "uuid",
+    }
+)
+_MODEL_USAGE_FIELDS = frozenset(
+    {
+        "cacheCreationInputTokens",
+        "cacheReadInputTokens",
+        "contextWindow",
+        "costUSD",
+        "inputTokens",
+        "maxOutputTokens",
+        "outputTokens",
+        "webSearchRequests",
+    }
+)
+_USAGE_FIELDS = frozenset(
+    {
+        "cache_creation",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "inference_geo",
+        "input_tokens",
+        "iterations",
+        "output_tokens",
+        "server_tool_use",
+        "service_tier",
+        "speed",
     }
 )
 
@@ -666,7 +704,11 @@ def validate_persisted_claude_run_artifacts(
             "persisted Claude CLI receipt file hash mismatch",
         )
     envelope = _load_cli_envelope(envelope_bytes)
-    if set(envelope) != _ENVELOPE_FIELDS or envelope["session_id"] != "<redacted>":
+    if (
+        set(envelope) != _ENVELOPE_FIELDS
+        or envelope["session_id"] != "<redacted>"
+        or envelope["uuid"] != "<redacted>"
+    ):
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
             "persisted Claude transport receipt is not the closed redacted envelope",
@@ -790,37 +832,119 @@ def _load_cli_envelope(raw: bytes) -> dict[str, Any]:
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_JSON, "Claude CLI result must be an object"
         )
-    required = _ENVELOPE_FIELDS
-    if not required <= set(value):
+    if set(value) != _ENVELOPE_FIELDS:
         raise AIReviewValidationError(
             AIReviewErrorCode.UNKNOWN_FIELD,
-            f"Claude CLI result missing {sorted(required - set(value))}",
+            "Claude CLI result fields are not exact",
         )
+    usage = value["usage"]
+    model_usage = value["modelUsage"]
+    model_receipt = (
+        model_usage.get("claude-sonnet-5") if type(model_usage) is dict else None
+    )
+    server_tool_use = usage.get("server_tool_use") if type(usage) is dict else None
+    cache_creation = usage.get("cache_creation") if type(usage) is dict else None
     if (
         value["type"] != "result"
+        or value["subtype"] != "success"
         or value["is_error"] is not False
+        or value["api_error_status"] is not None
         or type(value["result"]) is not str
         or type(value["session_id"]) is not str
+        or not value["session_id"]
+        or type(value["uuid"]) is not str
+        or not value["uuid"]
         or type(value["permission_denials"]) is not list
         or value["permission_denials"]
-        or type(value["modelUsage"]) is not dict
-        or set(value["modelUsage"]) != {"claude-sonnet-5"}
-        or type(value["web_search_requests"]) is not int
-        or value["web_search_requests"] != 0
-        or type(value["web_fetch_requests"]) is not int
-        or value["web_fetch_requests"] != 0
+        or type(model_usage) is not dict
+        or set(model_usage) != {"claude-sonnet-5"}
+        or type(model_receipt) is not dict
+        or set(model_receipt) != _MODEL_USAGE_FIELDS
+        or type(model_receipt["webSearchRequests"]) is not int
+        or model_receipt["webSearchRequests"] != 0
+        or type(usage) is not dict
+        or set(usage) != _USAGE_FIELDS
+        or type(server_tool_use) is not dict
+        or set(server_tool_use) != {"web_fetch_requests", "web_search_requests"}
+        or type(server_tool_use["web_search_requests"]) is not int
+        or server_tool_use["web_search_requests"] != 0
+        or type(server_tool_use["web_fetch_requests"]) is not int
+        or server_tool_use["web_fetch_requests"] != 0
+        or type(cache_creation) is not dict
+        or set(cache_creation)
+        != {"ephemeral_1h_input_tokens", "ephemeral_5m_input_tokens"}
+        or type(value["num_turns"]) is not int
+        or not 1 <= value["num_turns"] <= 20
+        or value["stop_reason"] != "end_turn"
+        or value["terminal_reason"] != "completed"
+        or value["fast_mode_state"] != "off"
+        or type(usage["iterations"]) is not list
+        or usage["iterations"]
     ):
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
             "Claude CLI transport, model usage or permission receipt is invalid",
         )
-    usage = value["modelUsage"]["claude-sonnet-5"]
+    for field in (
+        "duration_api_ms",
+        "duration_ms",
+        "time_to_request_ms",
+        "ttft_ms",
+        "ttft_stream_ms",
+    ):
+        if type(value[field]) is not int or value[field] < 0:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "Claude CLI duration receipt is invalid",
+            )
+    for field in (
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "input_tokens",
+        "output_tokens",
+    ):
+        if type(usage[field]) is not int or usage[field] < 0:
+            raise AIReviewValidationError(
+                AIReviewErrorCode.INVALID_AGENT,
+                "Claude CLI usage receipt is invalid",
+            )
     if (
-        type(usage) is not dict
-        or type(usage.get("inputTokens")) is not int
+        type(value["total_cost_usd"]) not in {int, float}
+        or value["total_cost_usd"] < 0
+        or any(
+            type(usage[field]) is not str or not usage[field]
+            for field in (
+                "inference_geo",
+                "service_tier",
+                "speed",
+            )
+        )
+        or any(
+            type(cache_creation[field]) is not int or cache_creation[field] < 0
+            for field in cache_creation
+        )
+    ):
+        raise AIReviewValidationError(
+            AIReviewErrorCode.INVALID_AGENT,
+            "Claude CLI service or cache receipt is invalid",
+        )
+    usage = model_receipt
+    if (
+        type(usage.get("inputTokens")) is not int
         or usage["inputTokens"] <= 0
         or type(usage.get("outputTokens")) is not int
         or usage["outputTokens"] <= 0
+        or any(
+            type(usage[field]) is not int or usage[field] < 0
+            for field in (
+                "cacheCreationInputTokens",
+                "cacheReadInputTokens",
+                "contextWindow",
+                "maxOutputTokens",
+            )
+        )
+        or type(usage["costUSD"]) not in {int, float}
+        or usage["costUSD"] < 0
     ):
         raise AIReviewValidationError(
             AIReviewErrorCode.INVALID_AGENT,
@@ -967,7 +1091,7 @@ def run_claude_challenge(
     empty_mcp = output / "empty-mcp.json"
     audit_input_path = output / "audit-input.json"
     cli_result_path = output / "claude-result.json"
-    _private_write(empty_mcp, b"{}\n")
+    _private_write(empty_mcp, b'{"mcpServers":{}}\n')
     audit_input = build_claude_audit_input(snapshot)
     _private_write(audit_input_path, audit_input.canonical_bytes)
     agent_version, completed = _invoke_trusted_claude(
@@ -980,14 +1104,9 @@ def run_claude_challenge(
     )
     envelope = _load_cli_envelope(completed.stdout)
     redacted_envelope = {
-        "is_error": False,
-        "modelUsage": envelope["modelUsage"],
-        "permission_denials": [],
-        "result": envelope["result"],
+        **envelope,
         "session_id": "<redacted>",
-        "type": "result",
-        "web_fetch_requests": 0,
-        "web_search_requests": 0,
+        "uuid": "<redacted>",
     }
     _private_write(
         cli_result_path,

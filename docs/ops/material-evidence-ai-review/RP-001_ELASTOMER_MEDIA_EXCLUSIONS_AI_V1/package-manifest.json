@@ -2,6 +2,7 @@
   "activation_authority": false,
   "artifacts": {
     "adjudicator-prompt.txt": "f84c8fcc4dfaab5f4fbc9079ec9b3054ed39fc8f4ce98ad609b1767a9bed7113",
+    "generated/claude-cli-options-2.1.205.json": "691b38900721abfe294fbd6ef2beed1c26f550ca25e16774c2879c8403ec31c1",
     "creator-input.json": "9f3a5c1bda89588ca086eb0922eb7949a66a2121f56fe977f2bbf99290ed45fc",
     "creator-prompt.txt": "42d0e125d017a79f1c86149d8cc800da32cb5bc62a91cee71a14a287ba4ce77b",
     "generated/draft/ai-review-payload.json": "08637edb9ec773d96616146f5f93921a95f320ef1e1bcb9bf455b0fd53e01af0",
@@ -13,9 +14,11 @@
     "generated/draft/media-identity-med_db5ffa2c867ef6ab082b1e88c8cda0f32b6f70bd7234f168e18ec33c42030ed4.json": "3c4c6d82dd409a1d184e4aca7c8b3863c3b7286047e97a373ac6dd97b15fcf41",
     "generated/draft/ruleset-payload.json": "7f7e7609aec492fa3e09244bb30e23274c3a4505440b83fb36758ead4b17b01e",
     "generated/draft/snapshot-index.json": "4db6f28f067db1c1f9c6bf53508dcd7a6999411fc76d567d311cd12d9c8726e5",
+    "generated/formal-review-incomplete-20260719T052301Z.json": "82e00350503dbe56da57a7e918077ee5465652529a37d5c428a3d18fa2c75783",
     "generated/review-job-planned-after-transport-02.json": "0786f4914376d34e6cba03c90487e6c2bb8f4ddadf0b3cade0282ee95bf52a05",
     "generated/review-incomplete-20260718T220426Z.json": "746bc8248bacb1daf4255ec96891e97a8efec7cc45e6099d9f795d226c2a32fe",
-    "generated/review-incomplete-20260719T045705Z.json": "0fc0e40a74d120be9fd81f84f1133cf34fabe747bd1ce00ae75a6e847a11cce4"
+    "generated/review-incomplete-20260719T045705Z.json": "0fc0e40a74d120be9fd81f84f1133cf34fabe747bd1ce00ae75a6e847a11cce4",
+    "generated/transport-diagnostic-20260719.json": "058ab3ddcd5fb37da8d21c6e30312cf3c078d54ecb3d5f95e6198d235c904142"
   },
   "authority": "AI_CROSS_REVIEW_NON_AUTHORITATIVE",
   "candidate_count": 6,

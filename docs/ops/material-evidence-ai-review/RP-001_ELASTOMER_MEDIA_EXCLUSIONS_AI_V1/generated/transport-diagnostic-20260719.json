@@ -1,0 +1,69 @@
+{
+  "auth": {
+    "auth_method_present": true,
+    "logged_in": true,
+    "pii_persisted": false,
+    "subscription_type_present": true
+  },
+  "canary_attempts": [
+    {
+      "attempt": 1,
+      "duration_ms": 191,
+      "envelope_valid": false,
+      "error_class": "CLI_argument",
+      "json_generated": false,
+      "process_exit_code": 1,
+      "result_exact": false,
+      "stderr_sha256": "527402a1802b7997c67036cd7e8e596f497547ae44b649ce8a135201ebc6f59b",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "terminal_reason": "invalid_empty_mcp_shape",
+      "timeout": false
+    },
+    {
+      "actual_model": "claude-sonnet-5",
+      "attempt": 2,
+      "duration_ms": 6423,
+      "envelope_valid_after_parser_correction": true,
+      "error_class": null,
+      "permission_denial_count": 0,
+      "process_exit_code": 0,
+      "result_exact": true,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "52d005fca0b9e3ab493aac7f65de90a6d97314e5938550e12165e92e4c9cb950",
+      "terminal_reason": "completed",
+      "timeout": false,
+      "web_fetch_requests": 0,
+      "web_search_requests": 0
+    },
+    {
+      "actual_model": "claude-sonnet-5",
+      "attempt": 3,
+      "duration_ms": 3602,
+      "envelope_valid": true,
+      "error_class": "output_parser",
+      "permission_denial_count": 0,
+      "process_exit_code": 0,
+      "result_exact": false,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_sha256": "5f0e3e34739f372ffb6fc4971a39f960ae3dc39d2f8c9381ccd84e0fd9732491",
+      "terminal_reason": "noncanonical_plan_mode_preamble",
+      "timeout": false,
+      "web_fetch_requests": 0,
+      "web_search_requests": 0
+    }
+  ],
+  "cli_help_artifact": "generated/claude-cli-options-2.1.205.json",
+  "cli_help_sha256": "05207b52bfc601e9c3dda7b3fa0793366adbaeca0d094d5b66e9b293ed0182fe",
+  "cli_version": "2.1.205 (Claude Code)",
+  "diagnostic_contract": "RP001-CLAUDE-TRANSPORT-DIAGNOSTIC.v1",
+  "formal_audit_input_changed": false,
+  "raw_auth_material_persisted": false,
+  "raw_transport_artifacts_location": "private_outside_repository",
+  "selected_canary": 2,
+  "selected_canary_status": "PASS_POST_PARSER_CORRECTION",
+  "transport_corrections": [
+    "empty_mcp_shape_mcpServers_record",
+    "closed_claude_code_2_1_205_result_envelope_parser",
+    "session_and_uuid_redaction"
+  ]
+}

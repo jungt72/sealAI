@@ -102,7 +102,7 @@
   "capabilities": {
     "material_constraints": {
       "status": "in_build_default_off",
-      "implementation_status": "mat_evid_ai_review_v1_inert_foundation_with_rp001_ai_draft_two_transports_review_incomplete_default_off_sampling_zero",
+      "implementation_status": "mat_evid_ai_review_v1_inert_foundation_with_rp001_ai_draft_invalid_formal_report_no_verdict_default_off_sampling_zero",
       "contract_version": "MAT-RULES-01.v1",
       "ai_review_contract_version": "MAT-EVID-AI-REVIEW.v1",
       "activation_gate": "G8",

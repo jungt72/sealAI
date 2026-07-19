@@ -246,6 +246,46 @@ def test_package_manifest_binds_draft_and_review_incomplete_evidence() -> None:
         == retry_incomplete["audit_input_file_sha256"]
     )
 
+    diagnostic = json.loads(
+        (PACKAGE / "generated/transport-diagnostic-20260719.json").read_bytes()
+    )
+    assert diagnostic["auth"] == {
+        "auth_method_present": True,
+        "logged_in": True,
+        "pii_persisted": False,
+        "subscription_type_present": True,
+    }
+    assert diagnostic["selected_canary"] == 2
+    assert diagnostic["selected_canary_status"] == "PASS_POST_PARSER_CORRECTION"
+    assert len(diagnostic["canary_attempts"]) == 3
+    assert diagnostic["canary_attempts"][1]["actual_model"] == "claude-sonnet-5"
+    assert diagnostic["canary_attempts"][1]["web_search_requests"] == 0
+    assert diagnostic["canary_attempts"][1]["web_fetch_requests"] == 0
+    assert diagnostic["canary_attempts"][1]["permission_denial_count"] == 0
+    assert diagnostic["canary_attempts"][1]["result_exact"] is True
+
+    formal_incomplete = json.loads(
+        (
+            PACKAGE / "generated/formal-review-incomplete-20260719T052301Z.json"
+        ).read_bytes()
+    )
+    assert formal_incomplete["envelope_status"] == "valid_complete"
+    assert formal_incomplete["actual_model"] == "claude-sonnet-5"
+    assert formal_incomplete["formal_result_status"] == ("INVALID_REPORT_NO_VERDICT")
+    assert formal_incomplete["report_strict_json"] is False
+    assert formal_incomplete["report_contains_json_object"] is False
+    assert formal_incomplete["challenge_rows_persisted"] == 0
+    assert formal_incomplete["adjudication_rows_persisted"] == 0
+    assert formal_incomplete["fourth_formal_attempt_allowed"] is False
+    assert formal_incomplete["web_search_requests"] == 0
+    assert formal_incomplete["web_fetch_requests"] == 0
+    assert formal_incomplete["permission_denial_count"] == 0
+    assert formal_incomplete["audit_input_sha256"] == incomplete["audit_input_sha256"]
+    assert (
+        formal_incomplete["audit_input_file_sha256"]
+        == incomplete["audit_input_file_sha256"]
+    )
+
 
 def test_frozen_audit_corpus_is_safe_complete_and_excludes_private_context() -> None:
     artifacts = _build()

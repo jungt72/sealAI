@@ -81,24 +81,58 @@ report_override = __REPORT_OVERRIDE__
 if report_override is not None:
     report = json.loads(report_override)
 envelope = {
+    'api_error_status': None,
+    'duration_api_ms': 10,
+    'duration_ms': 12,
+    'fast_mode_state': 'off',
     'type': 'result',
+    'subtype': 'success',
     'is_error': bool(sensitive),
     'result': json.dumps(report, separators=(',', ':'), sort_keys=True),
     'session_id': 'sensitive-session-id-never-persist-raw',
-    'modelUsage': {'claude-sonnet-5': {'inputTokens': 10, 'outputTokens': 10}},
+    'uuid': 'sensitive-uuid-never-persist-raw',
+    'modelUsage': {'claude-sonnet-5': {
+        'cacheCreationInputTokens': 0,
+        'cacheReadInputTokens': 0,
+        'contextWindow': 1000000,
+        'costUSD': 0.01,
+        'inputTokens': 10,
+        'maxOutputTokens': 64000,
+        'outputTokens': 10,
+        'webSearchRequests': __WEB_SEARCH_REQUESTS__,
+    }},
+    'num_turns': 1,
     'permission_denials': [],
-    'web_search_requests': 0,
-    'web_fetch_requests': 0,
+    'stop_reason': 'end_turn',
+    'terminal_reason': 'completed',
+    'time_to_request_ms': 1,
+    'total_cost_usd': 0.01,
+    'ttft_ms': 2,
+    'ttft_stream_ms': 1,
+    'usage': {
+        'cache_creation': {
+            'ephemeral_1h_input_tokens': 0,
+            'ephemeral_5m_input_tokens': 0,
+        },
+        'cache_creation_input_tokens': 0,
+        'cache_read_input_tokens': 0,
+        'inference_geo': 'not_available',
+        'input_tokens': 10,
+        'iterations': [],
+        'output_tokens': 10,
+        'server_tool_use': {
+            'web_fetch_requests': __WEB_FETCH_REQUESTS__,
+            'web_search_requests': __WEB_SEARCH_REQUESTS__,
+        },
+        'service_tier': 'standard',
+        'speed': 'standard',
+    },
 }
 print(json.dumps(envelope))
 """
     body = body.replace("__REPORT_OVERRIDE__", repr(report_override))
-    body = body.replace(
-        "'web_search_requests': 0", f"'web_search_requests': {web_search_requests}"
-    )
-    body = body.replace(
-        "'web_fetch_requests': 0", f"'web_fetch_requests': {web_fetch_requests}"
-    )
+    body = body.replace("__WEB_SEARCH_REQUESTS__", str(web_search_requests))
+    body = body.replace("__WEB_FETCH_REQUESTS__", str(web_fetch_requests))
     if invalid_transport:
         body = body.replace(
             "'permission_denials': [],", "'permission_denials': ['unexpected'],"
@@ -174,7 +208,9 @@ def test_runner_uses_one_shot_safe_mode_and_hashes_sensitive_run_id(tmp_path) ->
     assert Path(receipt.cli_result_path).stat().st_mode & 0o777 == 0o600
     stored_result = Path(receipt.cli_result_path).read_text(encoding="utf-8")
     assert "sensitive-session-id-never-persist-raw" not in stored_result
+    assert "sensitive-uuid-never-persist-raw" not in stored_result
     assert json.loads(stored_result)["session_id"] == "<redacted>"
+    assert json.loads(stored_result)["uuid"] == "<redacted>"
     args = json.loads((output / "args.json").read_text(encoding="utf-8"))
     for value in (
         "--allowedTools",
@@ -185,6 +221,9 @@ def test_runner_uses_one_shot_safe_mode_and_hashes_sensitive_run_id(tmp_path) ->
     ):
         assert value in args
     assert args[args.index("--allowedTools") + 1] == ""
+    assert (output / "empty-mcp.json").read_text(encoding="utf-8") == (
+        '{"mcpServers":{}}\n'
+    )
     assert not (output / ".claude-executable-stage").exists()
 
     with pytest.raises(TypeError, match="one-shot runner"):
