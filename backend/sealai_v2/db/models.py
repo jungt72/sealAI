@@ -1696,6 +1696,432 @@ class V2MaterialEvidenceReviewAuditEventV2(Base):
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
 
 
+class V2MaterialEvidenceAIReviewBatch(Base):
+    """Tenant-scoped, non-production family for one AI review batch."""
+
+    __tablename__ = "v2_material_evidence_ai_review_batches"
+    __table_args__ = (
+        CheckConstraint(
+            "length(batch_id) = 36 AND batch_id LIKE 'mai_%'",
+            name="ck_v2_mat_evid_ai_batch_id",
+        ),
+        CheckConstraint(
+            "environment IN ('development','test','dark_staging')",
+            name="ck_v2_mat_evid_ai_batch_nonprod",
+        ),
+        CheckConstraint(
+            "creator_identity_kind = 'ai_agent' AND creator_provider = 'openai'",
+            name="ck_v2_mat_evid_ai_batch_creator",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "environment",
+            "ruleset_snapshot_id",
+            "evidence_snapshot_id",
+            "creator_run_id",
+            name="uq_v2_mat_evid_ai_batch_run",
+        ),
+    )
+
+    batch_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    domain_pack_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    ruleset_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    evidence_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_snapshots_v2.snapshot_id", ondelete="RESTRICT"
+        ),
+        nullable=False,
+        index=True,
+    )
+    creator_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    creator_provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    creator_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    creator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    creator_run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAIReviewSnapshot(Base):
+    """Immutable non-authoritative AI review input snapshot."""
+
+    __tablename__ = "v2_material_evidence_ai_review_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "length(review_snapshot_id) = 68 AND review_snapshot_id LIKE 'mas_%'",
+            name="ck_v2_mat_evid_ai_snapshot_id",
+        ),
+        CheckConstraint(
+            "ai_review_schema_version = 1 AND canonicalization_version = 1 AND "
+            "ai_review_contract_version = 'MAT-EVID-AI-REVIEW.v1'",
+            name="ck_v2_mat_evid_ai_snapshot_contract",
+        ),
+        CheckConstraint(
+            "length(content_sha256) = 64 AND "
+            "length(ruleset_content_sha256) = 64 AND "
+            "length(evidence_content_sha256) = 64 AND "
+            "length(creator_input_sha256) = 64 AND "
+            "length(creator_output_sha256) = 64",
+            name="ck_v2_mat_evid_ai_snapshot_hashes",
+        ),
+        CheckConstraint(
+            "authority = 'AI_CROSS_REVIEW_NON_AUTHORITATIVE' AND "
+            "positive_statement_allowed IS FALSE",
+            name="ck_v2_mat_evid_ai_snapshot_no_authority",
+        ),
+        UniqueConstraint(
+            "batch_id",
+            "content_sha256",
+            name="uq_v2_mat_evid_ai_snapshot_content",
+        ),
+    )
+
+    review_snapshot_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey(
+            "v2_material_evidence_ai_review_batches.batch_id", ondelete="RESTRICT"
+        ),
+        nullable=False,
+        index=True,
+    )
+    ruleset_snapshot_id: Mapped[str] = mapped_column(String(68), nullable=False)
+    ruleset_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    evidence_snapshot_id: Mapped[str] = mapped_column(String(68), nullable=False)
+    evidence_content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    ai_review_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonicalization_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    ai_review_contract_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    canonical_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    authority: Mapped[str] = mapped_column(String(48), nullable=False)
+    positive_statement_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    creator_input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    creator_output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAIChallenge(Base):
+    """Immutable Claude Sonnet 5 challenge result and execution receipt."""
+
+    __tablename__ = "v2_material_evidence_ai_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "length(challenge_id) = 68 AND challenge_id LIKE 'mac_%'",
+            name="ck_v2_mat_evid_ai_challenge_id",
+        ),
+        CheckConstraint(
+            "challenger_identity_kind = 'ai_agent' AND "
+            "challenger_provider = 'anthropic' AND "
+            "challenger_model = 'claude-sonnet-5'",
+            name="ck_v2_mat_evid_ai_challenger",
+        ),
+        CheckConstraint(
+            "tools_enabled IS FALSE AND mcp_enabled IS FALSE AND "
+            "hooks_enabled IS FALSE AND session_persistence_enabled IS FALSE AND "
+            "web_search_requests = 0 AND web_fetch_requests = 0",
+            name="ck_v2_mat_evid_ai_challenge_isolation",
+        ),
+        CheckConstraint(
+            "length(challenger_prompt_sha256) = 64 AND "
+            "length(audit_input_sha256) = 64 AND "
+            "length(audit_input_file_sha256) = 64 AND "
+            "length(audit_output_sha256) = 64 AND "
+            "length(cli_result_file_sha256) = 64 AND "
+            "length(claude_executable_sha256) = 64 AND "
+            "length(claude_executable_attestation_sha256) = 64 AND "
+            "length(report_sha256) = 64 AND "
+            "length(session_id_sha256) = 64 AND "
+            "length(runner_receipt_sha256) = 64 AND process_returncode = 0",
+            name="ck_v2_mat_evid_ai_challenge_hashes",
+        ),
+        UniqueConstraint(
+            "review_snapshot_id",
+            "challenger_run_id",
+            name="uq_v2_mat_evid_ai_challenge_run",
+        ),
+    )
+
+    challenge_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_ai_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    challenger_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    challenger_provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    challenger_model: Mapped[str] = mapped_column(String(64), nullable=False)
+    challenger_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    challenger_run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    challenger_prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    challenger_prompt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    audit_input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    audit_input_file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_audit_input_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    audit_output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    cli_result_file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_cli_receipt_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    claude_executable_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    canonical_executable_attestation_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    claude_executable_attestation_sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    report_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    process_returncode: Mapped[int] = mapped_column(Integer, nullable=False)
+    session_id_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    runner_receipt_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    tools_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    mcp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    hooks_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    session_persistence_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    web_search_requests: Mapped[int] = mapped_column(Integer, nullable=False)
+    web_fetch_requests: Mapped[int] = mapped_column(Integer, nullable=False)
+    canonical_report_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAIAdjudication(Base):
+    """Immutable Codex adjudication, separated from creator and challenger runs."""
+
+    __tablename__ = "v2_material_evidence_ai_adjudications"
+    __table_args__ = (
+        CheckConstraint(
+            "length(adjudication_id) = 68 AND adjudication_id LIKE 'maa_%'",
+            name="ck_v2_mat_evid_ai_adjudication_id",
+        ),
+        CheckConstraint(
+            "adjudicator_identity_kind = 'ai_agent' AND "
+            "adjudicator_provider = 'openai'",
+            name="ck_v2_mat_evid_ai_adjudicator",
+        ),
+        CheckConstraint(
+            "outcome IN ('ai_cross_reviewed_non_authoritative',"
+            "'changes_required','quarantined')",
+            name="ck_v2_mat_evid_ai_adjudication_outcome",
+        ),
+        CheckConstraint(
+            "((replacement_ruleset_snapshot_id IS NULL AND "
+            "replacement_evidence_snapshot_id IS NULL) OR "
+            "(replacement_ruleset_snapshot_id IS NOT NULL AND "
+            "replacement_evidence_snapshot_id IS NOT NULL)) AND "
+            "(outcome = 'changes_required' OR "
+            "(replacement_ruleset_snapshot_id IS NULL AND "
+            "replacement_evidence_snapshot_id IS NULL))",
+            name="ck_v2_mat_evid_ai_adjudication_replacements",
+        ),
+        CheckConstraint(
+            "length(input_sha256) = 64 AND length(output_sha256) = 64",
+            name="ck_v2_mat_evid_ai_adjudication_hashes",
+        ),
+        UniqueConstraint(
+            "review_snapshot_id",
+            "challenge_id",
+            "adjudicator_run_id",
+            name="uq_v2_mat_evid_ai_adjudication_run",
+        ),
+    )
+
+    adjudication_id: Mapped[str] = mapped_column(String(68), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_ai_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    challenge_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_ai_challenges.challenge_id", ondelete="RESTRICT"
+        ),
+        nullable=False,
+        index=True,
+    )
+    adjudicator_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    adjudicator_provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    adjudicator_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    adjudicator_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    adjudicator_run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(48), nullable=False)
+    replacement_ruleset_snapshot_id: Mapped[str | None] = mapped_column(
+        String(68),
+        ForeignKey("v2_material_ruleset_snapshots.snapshot_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    replacement_evidence_snapshot_id: Mapped[str | None] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_snapshots_v2.snapshot_id", ondelete="RESTRICT"
+        ),
+        nullable=True,
+    )
+    canonical_adjudication_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAIValidationEvent(Base):
+    __tablename__ = "v2_material_evidence_ai_validation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mav_%'",
+            name="ck_v2_mat_evid_ai_validation_id",
+        ),
+        CheckConstraint(
+            "validation_state = 'valid' AND error_code = 'none'",
+            name="ck_v2_mat_evid_ai_validation_state",
+        ),
+        CheckConstraint(
+            "length(validation_sha256) = 64",
+            name="ck_v2_mat_evid_ai_validation_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_ai_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    validator_contract_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    validation_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAILifecycleEvent(Base):
+    __tablename__ = "v2_material_evidence_ai_lifecycle_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 36 AND event_id LIKE 'mal_%'",
+            name="ck_v2_mat_evid_ai_lifecycle_id",
+        ),
+        CheckConstraint(
+            "event_type IN ('challenged','cross_reviewed_non_authoritative',"
+            "'changes_required','quarantined','revoked')",
+            name="ck_v2_mat_evid_ai_lifecycle_type",
+        ),
+        CheckConstraint(
+            "state IN ('ai_draft','ai_challenged',"
+            "'ai_cross_reviewed_non_authoritative','changes_required',"
+            "'quarantined','revoked')",
+            name="ck_v2_mat_evid_ai_lifecycle_state",
+        ),
+        CheckConstraint(
+            "actor_identity_kind = 'ai_agent' AND "
+            "actor_provider IN ('openai','anthropic')",
+            name="ck_v2_mat_evid_ai_lifecycle_actor",
+        ),
+        CheckConstraint(
+            "sequence_no > 0 AND length(previous_event_sha256) = 64 AND "
+            "length(event_sha256) = 64",
+            name="ck_v2_mat_evid_ai_lifecycle_hashes",
+        ),
+        UniqueConstraint(
+            "review_snapshot_id",
+            "sequence_no",
+            name="uq_v2_mat_evid_ai_lifecycle_sequence",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_ai_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    sequence_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    state: Mapped[str] = mapped_column(String(48), nullable=False)
+    actor_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    artifact_ref: Mapped[str] = mapped_column(String(68), nullable=False)
+    previous_event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
+class V2MaterialEvidenceAIAuditEvent(Base):
+    __tablename__ = "v2_material_evidence_ai_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "length(event_id) = 38 AND event_id LIKE 'maaev_%'",
+            name="ck_v2_mat_evid_ai_audit_id",
+        ),
+        CheckConstraint(
+            "event_type IN ('review_snapshot_created','challenge_recorded',"
+            "'adjudication_recorded','quarantine_recorded','revocation_recorded')",
+            name="ck_v2_mat_evid_ai_audit_type",
+        ),
+        CheckConstraint(
+            "actor_identity_kind = 'ai_agent' AND "
+            "actor_provider IN ('openai','anthropic')",
+            name="ck_v2_mat_evid_ai_audit_actor",
+        ),
+        CheckConstraint(
+            "length(event_sha256) = 64",
+            name="ck_v2_mat_evid_ai_audit_hash",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(38), primary_key=True)
+    review_snapshot_id: Mapped[str] = mapped_column(
+        String(68),
+        ForeignKey(
+            "v2_material_evidence_ai_review_snapshots.review_snapshot_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_identity_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    actor_run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_payload_json: Mapped[dict] = mapped_column(
+        _MATERIAL_RULESET_JSON, nullable=False
+    )
+    event_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 class V2MaterialShadowBinding(Base):
     """Immutable pointerless binding to one exact MAT-GOV-03A snapshot."""
 

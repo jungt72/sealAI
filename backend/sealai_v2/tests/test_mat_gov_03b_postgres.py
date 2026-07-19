@@ -132,7 +132,7 @@ def test_real_postgres_16_serializes_overlap_and_session_sequence() -> None:
     _clear_database(engine)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0019", "20260718_0019")
 
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)

@@ -428,3 +428,56 @@ fail-closed v1/v2 MED-NORM review router. Existing v1 histories remain
 unchanged. The implementation is empty and default-off: it creates no source,
 claim, review, catalog entry, material rule, activation, production migration,
 or deployment authority.
+
+## ODR-MAT-EVID-AI-REVIEW-20260718-06
+
+### Decision
+
+`MAT_EVID_AI_REVIEW_V1_PLAN_AND_IMPLEMENTATION_GO` is ratified as a separate,
+fully transparent, non-human cross-review track. The existing MAT-EVID-01C path
+with distinct verified-human creator, reviewer and owner-approver remains
+unchanged. Codex may create exact source-derived disqualifying candidates and
+adjudicate findings; the only independent challenger is exact
+`claude-sonnet-5` in Safe Mode with tools, MCP, hooks, web and session
+persistence disabled.
+
+The AI lifecycle is closed to `ai_draft`, `ai_challenged`,
+`ai_cross_reviewed_non_authoritative`, `changes_required`, `quarantined` and
+`revoked`. It contains no human-review or approval state and no verified-human
+subject field. Every agent run carries provider/model/version/prompt/run and
+input/output hashes. A transport failure is not a verdict. Every rule medium is
+bound to an exact, separately source-derived v2 `media_identity` Evidence
+snapshot and assertion hash without entering the verified-human MED-NORM
+catalog. A factual correction creates new immutable ruleset and/or identity
+Evidence plus review snapshots and requires a new Claude input and run.
+The frozen Claude corpus includes every media-identity preimage and a bound
+secret/direct-identifier scan receipt. `origin_ref` binds only the exact
+Evidence source identity and never claims organizational independence; the
+challenger must return a closed independence assessment. Source quality uses a
+closed primary-source set, rule/claim bindings are exact, CLI web counters must
+be zero, and persistence accepts only a revalidated one-shot runner receipt
+whose Claude executable is selected from the repository-hash-pinned exact
+platform/path/version/digest trust manifest. Caller `PATH` is never a selection
+input; only captured digest-verified bytes are executed from an inode-bound
+private stage, and the canonical executable/staging attestation is persisted
+before re-deriving every challenge and adjudication. The local OS subject and
+runner process remain an explicit trusted boundary rather than a security
+sandbox.
+
+### Consequence
+
+AI cross-review is never factual approval. Its authority is exactly
+`AI_CROSS_REVIEW_NON_AUTHORITATIVE`, it accepts only `unvertraeglich` or opaque
+`bedingt`, and `positive_statement_allowed` remains false. Missing locator,
+unclear rights, scope/hash/reference drift, unresolved conflict and unsupported
+single-source risk fail closed. CRITICAL/HIGH/MEDIUM findings require correction
+in new snapshots or quarantine.
+
+Migration `20260718_0019` is additive and initially empty and is not authorized
+for production. This decision authorizes repository implementation, automated
+non-production testing, source research and one-shot cross-review of RP-001
+candidates. It authorizes no human review, approval, active pointer, sampling,
+public API/frontend output, production migration, activation or deployment.
+All material flags remain false and sampling remains zero. MAT-GOV-03C and dark
+staging remain separate gates until at least one complete immutable
+AI-cross-reviewed non-authoritative disqualify-only pack exists.

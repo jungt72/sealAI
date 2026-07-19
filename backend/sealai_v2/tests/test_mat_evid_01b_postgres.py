@@ -41,7 +41,7 @@ def test_real_postgres_01b_fingerprint_atomicity_immutability_and_downgrade() ->
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0019", "20260718_0019")
     assert TABLES <= set(inspect(engine).get_table_names())
 
     factory = make_sessionmaker(engine)
@@ -104,4 +104,4 @@ def test_real_postgres_01b_fingerprint_atomicity_immutability_and_downgrade() ->
     with pytest.raises(RuntimeError, match="contain data"):
         with engine.begin() as connection:
             command.downgrade(_config(connection=connection), "20260718_0014")
-    assert migration_status(engine)[0] == "20260718_0018"
+    assert migration_status(engine)[0] == "20260718_0019"

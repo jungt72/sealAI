@@ -117,6 +117,7 @@ def test_runtime_evidence_schema_is_exact_and_has_no_activation_lifecycle() -> N
         for name in schema
         if name.startswith("v2_material_evidence_")
         and not name.startswith("v2_material_evidence_review_")
+        and not name.startswith("v2_material_evidence_ai_")
     } == EVIDENCE_TABLES
     forbidden = ("active_pointer", "approval", "deployment", "cohort", "reviewed")
     assert not any(token in name for name in EXPECTED for token in forbidden)

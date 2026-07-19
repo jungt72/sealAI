@@ -1,0 +1,14 @@
+{
+  "contract_version": "MAT-EVID-AI-CLAUDE-EXECUTABLE-TRUST.v1",
+  "installations": [
+    {
+      "entrypoint": "/opt/homebrew/bin/claude",
+      "executable_sha256": "33e28624c5ae84f2bd7d2d8761e5d2e77997ba965cb11b6448de6b6e2c566f9c",
+      "machine": "arm64",
+      "platform": "darwin",
+      "resolved_path": "/opt/homebrew/Caskroom/claude-code/2.1.205/claude",
+      "version": "2.1.205 (Claude Code)"
+    }
+  ],
+  "schema_version": 1
+}

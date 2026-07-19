@@ -555,7 +555,7 @@ def test_v2_empty_downgrade_only_and_partial_adoption_fail_closed(tmp_path) -> N
     with empty.begin() as connection:
         command.downgrade(_config(connection=connection), "20260718_0017")
     assert not V2_TABLES & set(inspect(empty).get_table_names())
-    assert migration_status(empty) == ("20260718_0017", "20260718_0018")
+    assert migration_status(empty) == ("20260718_0017", "20260718_0019")
 
     populated, _factory, ruleset, evidence, _reviews = _repositories(
         tmp_path, "populated-downgrade.db"

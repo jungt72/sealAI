@@ -50,7 +50,7 @@ def test_real_postgres_v2_fingerprint_roundtrip_lifecycle_and_immutability() -> 
     engine = make_engine(POSTGRES_URL)
     assert inspect(engine).get_table_names() == []
     _upgrade_engine(engine)
-    assert migration_status(engine) == ("20260718_0018", "20260718_0018")
+    assert migration_status(engine) == ("20260718_0019", "20260718_0019")
     assert V2_TABLES <= set(inspect(engine).get_table_names())
     factory = make_sessionmaker(engine)
     rulesets = MaterialRulesetRepository(factory)
