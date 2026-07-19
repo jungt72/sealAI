@@ -24,6 +24,8 @@ _UNDERSTAND_TEMPLATE_NAME = "understand.jinja"
 # see pipeline/routing.py's route-to-prompt matrix (inactive) and config.settings for the
 # activation flags these are gated behind once a later phase wires them in.
 _SMALLTALK_NAVIGATION_TEMPLATE_NAME = "smalltalk_navigation.jinja"
+# 2026-07-19 (case-intake fix): see CaseIntakeNavigationPromptAssembler below.
+_CASE_INTAKE_NAVIGATION_TEMPLATE_NAME = "case_intake_navigation.jinja"
 _GENERAL_SEALING_KNOWLEDGE_TEMPLATE_NAME = "general_sealing_knowledge.jinja"
 _MATERIAL_KNOWLEDGE_TEMPLATE_NAME = "material_knowledge.jinja"
 
@@ -212,6 +214,22 @@ class SmalltalkNavigationPromptAssembler:
     def __init__(self, template_dir: Path | None = None) -> None:
         self._template = _env(template_dir).get_template(
             _SMALLTALK_NAVIGATION_TEMPLATE_NAME
+        )
+
+    def system_prompt(self) -> str:
+        return self._template.render()
+
+
+class CaseIntakeNavigationPromptAssembler:
+    """Renders ``case_intake_navigation.jinja`` — a short, non-technical, content-free invitation
+    for a first-turn message that expresses discussion/help INTENT with zero technical content
+    (``RouteName.CASE_INTAKE_INVITE``, 2026-07-19 case-intake fix). Mirrors
+    ``SmalltalkNavigationPromptAssembler`` deliberately: same fully-static, variable-free template
+    shape, so it stays compatible with the same static-prompt-hash cache-key scheme."""
+
+    def __init__(self, template_dir: Path | None = None) -> None:
+        self._template = _env(template_dir).get_template(
+            _CASE_INTAKE_NAVIGATION_TEMPLATE_NAME
         )
 
     def system_prompt(self) -> str:

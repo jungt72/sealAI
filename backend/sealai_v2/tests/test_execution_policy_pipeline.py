@@ -11,7 +11,7 @@ from sealai_v2.core.contracts import (
     RetrievalResult,
     SessionContext,
 )
-from sealai_v2.core.case_state import CaseStateV2
+from sealai_v2.core.case_state import CaseField, CaseFieldStatus, CaseStateV2
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.pipeline.pipeline import Pipeline
@@ -81,8 +81,25 @@ class _TrapOnlyRetriever:
 
 
 class _RequiredMissingMemory:
+    # Every RWDR-required field EXCEPT betriebstemperatur is already confirmed, so
+    # pipeline.py's stage-2 wiring (core/interview/policy.py::compute_required_missing)
+    # derives required_missing=("Betriebstemperatur",) itself on this turn -- this is no
+    # longer a hand-fed placeholder, it exercises the real production computation.
+    _known_values = {
+        "dichtungstyp": "rwdr",
+        "anwendungsziel": "new_design",
+        "medium": "Hydrauliköl HLP 46",
+        "druck": "0,2 bar",
+        "wellendurchmesser": "50 mm",
+        "drehzahl": "1500 U/min",
+    }
     state = CaseStateV2(
-        case_id="case-1", revision=3, required_missing=("temperature_c",)
+        case_id="case-1",
+        revision=3,
+        fields=tuple(
+            CaseField(key=key, value=value, status=CaseFieldStatus.CONFIRMED)
+            for key, value in _known_values.items()
+        ),
     )
 
     def recall(self, **kwargs):
@@ -425,7 +442,12 @@ def test_known_required_field_stops_before_retrieval_and_models():
     assert retriever.calls == 0
     assert helper.calls == standard.calls == frontier.calls == []
     assert result.turn_state.execution_class == "D1"
-    assert "temperature_c" in result.answer.text
+    assert result.turn_state.model_tier == "none"
+    assert "Betriebstemperatur" in result.answer.text
+    assert (
+        "Für die technische Einordnung fehlen noch: Betriebstemperatur."
+        in result.answer.text
+    )
 
 
 def test_second_identical_low_risk_turn_is_tenant_scoped_d0_cache_hit():

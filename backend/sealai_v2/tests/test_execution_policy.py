@@ -138,6 +138,19 @@ def test_simple_knowledge_uses_standard_once_without_llm_verifier():
     assert decision.verification_mode is VerificationMode.DETERMINISTIC
 
 
+def test_case_intake_invite_uses_standard_without_llm_verifier():
+    # 2026-07-19 (case-intake fix): same lightweight treatment as smalltalk_navigation --
+    # ModelTier.STANDARD (not NONE, so pipeline.py's case_intake_generator branch is actually
+    # reached instead of a canned deterministic_response) and no LLM-based L3 verification.
+    decision = decide_execution(
+        ExecutionFeatures(route=_route(RouteName.CASE_INTAKE_INVITE))
+    )
+    assert decision.execution_class is ExecutionClass.S0
+    assert decision.model_tier is ModelTier.STANDARD
+    assert decision.verification_mode is VerificationMode.DETERMINISTIC
+    assert decision.streaming_mode is StreamingMode.ATOMIC
+
+
 def test_ungrounded_knowledge_is_a_deterministic_evidence_gap():
     decision = decide_execution(
         ExecutionFeatures(route=_route(RouteName.MATERIAL_KNOWLEDGE))

@@ -361,6 +361,78 @@ def completeness_metrics(
     )
 
 
+def _short_label(field_key: str) -> str:
+    """Derive a short German field label from a pack field key.
+
+    The RWDR pack's field keys are themselves plain German nouns (``medium``,
+    ``betriebstemperatur``, ``wellendurchmesser`` ...), not English-style internal ids --
+    ``QuestionDefinition`` only carries a full-sentence ``canonical_text_de``, no separate
+    short label. Title-casing the key (and turning an underscore into a space, e.g.
+    ``druck_max`` -> "Druck Max") is a legitimate derivation of a compact label from that
+    vocabulary, not a raw identifier dump.
+    """
+
+    return " ".join(part.capitalize() for part in field_key.replace("_", " ").split())
+
+
+def compute_required_missing(
+    case_state: CaseStateV2, pack: DomainPack
+) -> tuple[str, ...]:
+    """Pure projection of the still-open, user-askable REQUIRED needs as short German labels.
+
+    Feeds ``CaseStateV2.required_missing``, which in turn drives the execution-policy D1
+    gate (``orchestration/execution_policy.py``) and its ``deterministic_response`` text --
+    "Für die technische Einordnung fehlen noch: {fields}.". This reuses the same evaluation
+    core (``classify_scope`` / ``resolve_need_states``) the adaptive-interview shadow
+    service (``pipeline/adaptive_interview.py``) is built on, but stays read-only end to
+    end: it is always evaluated against a FRESH ``InterviewRuntimeState()`` -- the exact
+    "nothing persisted yet" default both ``InProcessInterviewRepository.load`` and
+    ``PostgresInterviewRepository.load`` already fall back to (see ``db/interview.py``) --
+    so it never loads or writes adaptive-interview persistence and is independent of
+    whatever pending-question/conflict state a shadow evaluation may have recorded.
+
+    Scope handling mirrors ``AdaptiveInterviewService.evaluate``: an ``unknown`` scope (no
+    seal type and no RWDR signal field stated yet -- e.g. a bare case-intake opener) and an
+    ``unsupported`` scope (an explicitly out-of-pack seal type) both return an empty tuple
+    rather than a missing-fields list, so a non-RWDR or not-yet-started case can never be
+    misflagged as blocked on RWDR-specific fields.
+
+    Only needs that are ``.required``, ``.active``, and carry a ``question_id`` are
+    considered "missing": a required need that is satisfied purely via a kernel
+    calculation (``derived_calc_id`` set, ``question_id`` None -- e.g.
+    ``rwdr.circumferential_speed``, derived from shaft diameter + rotation speed) is not
+    something the user can directly "ergänzen", so listing it would surface a nonsensical
+    field name. No derived facts are passed to ``resolve_need_states`` here (this runs
+    before the calc kernel executes for the turn), so such a need would otherwise always
+    look open; excluding non-askable needs sidesteps that rather than special-casing it.
+    """
+
+    scope = classify_scope(case_state, pack)
+    if scope in (_UNKNOWN_SCOPE, _UNSUPPORTED_SCOPE):
+        return ()
+
+    states = resolve_need_states(case_state, pack, InterviewRuntimeState())
+    askable_required = sorted(
+        (
+            need
+            for need in pack.needs
+            if need.active and need.required and need.question_id and need.field_keys
+        ),
+        key=lambda need: (need.curated_order, need.need_id),
+    )
+    missing: list[str] = []
+    seen: set[str] = set()
+    for need in askable_required:
+        if states[need.need_id].is_completion_satisfying:
+            continue
+        label = _short_label(need.field_keys[0])
+        if label in seen:
+            continue
+        seen.add(label)
+        missing.append(label)
+    return tuple(missing)
+
+
 def _dependency_snapshot(
     question_id: str, pack: DomainPack, states: dict[str, NeedState]
 ) -> dict[str, str]:

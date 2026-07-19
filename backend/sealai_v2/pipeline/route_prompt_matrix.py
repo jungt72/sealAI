@@ -46,7 +46,7 @@ class RoutePromptPlan:
     show_rfq_sections: bool = True  # RFQ-manufacturer-brief-specific sections
 
 
-# The 8 routes classify_route() can produce, each mapped to its intended target treatment. Every
+# The 9 routes classify_route() can produce, each mapped to its intended target treatment. Every
 # entry's `activation_status` is "inactive" in Phase 2C — this table documents INTENT, it does not
 # grant it. Engineering/leakage/comparison/RFQ keep the exact current full-pipeline treatment
 # (rag=kernel=l3=True, streaming=False — no unverified engineering content ever streams) even in
@@ -73,6 +73,26 @@ ROUTE_PROMPT_MATRIX: tuple[RoutePromptPlan, ...] = (
         show_rfq_sections=False,
     ),
     RoutePromptPlan(
+        # 2026-07-19 (case-intake fix): a first-turn discussion/help-INTENT opener with zero
+        # technical content — treated the same as smalltalk_navigation on purpose (fully static,
+        # content-free output template; no domain claim is ever made, so there is nothing for L3
+        # to verify). See pipeline/routing.py's RouteName.CASE_INTAKE_INVITE docstring.
+        route=RouteName.CASE_INTAKE_INVITE,
+        prompt_family="CaseIntakeNavigationPromptAssembler",
+        model_class="cheapest",
+        rag=False,
+        kernel=False,
+        l3=False,
+        streaming=False,
+        cache_strategy="static-hash (build_prompt_cache_key)",
+        activation_status="inactive",
+        # same rationale as smalltalk_navigation: no technical UI sections.
+        show_technical_preassessment=False,
+        show_evidence=False,
+        show_calculations=False,
+        show_rfq_sections=False,
+    ),
+    RoutePromptPlan(
         route=RouteName.GENERAL_SEALING_KNOWLEDGE,
         prompt_family="GeneralKnowledgePromptAssembler",
         model_class="mid",
@@ -81,7 +101,8 @@ ROUTE_PROMPT_MATRIX: tuple[RoutePromptPlan, ...] = (
         # L3 stays True here even in the DOCUMENTED target plan: Phase 2B's own stress-test
         # finding (real eval questions under-detected by keyword signals, incl. injection
         # fixtures) is why this route does not yet get an L3 exemption anywhere, on paper or in
-        # code — see pipeline/pipeline.py's skip_l3_for_route (smalltalk_navigation-only).
+        # code — see pipeline/pipeline.py's skip_l3_for_route (smalltalk_navigation and, since
+        # 2026-07-19, case_intake_invite — both fully static/content-free output templates).
         l3=True,
         streaming=False,
         cache_strategy="static-hash (build_prompt_cache_key)",
