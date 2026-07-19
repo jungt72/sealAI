@@ -205,14 +205,21 @@ class TestRoutePromptMatrixIsInactiveAndComplete:
         for plan in ROUTE_PROMPT_MATRIX:
             assert plan.activation_status == "inactive"
 
-    def test_only_smalltalk_navigation_has_l3_false_in_the_documented_plan(
+    def test_only_smalltalk_and_case_intake_have_l3_false_in_the_documented_plan(
         self,
     ) -> None:
         """The matrix's own documented intent must match the code's actual safety restriction
-        from Phase 2B (L3-bypass is smalltalk_navigation-only) — the plan is not allowed to
-        silently diverge from what the code actually enforces."""
+        from Phase 2B (L3-bypass is smalltalk_navigation-only), WIDENED on 2026-07-19 to also
+        cover case_intake_invite — the plan is not allowed to silently diverge from what the code
+        actually enforces (pipeline/pipeline.py's skip_l3_for_route,
+        orchestration/execution_policy.py's decide_execution). case_intake_invite qualifies for
+        the SAME rationale as smalltalk_navigation: a fully static, content-free output template
+        that never makes a domain claim, so there is nothing for L3 to verify — NOT a general
+        widening of the bypass to any route that merely has zero Stage-1 signals (see
+        general_sealing_knowledge/material_knowledge below, which stay l3=True on purpose)."""
+        _l3_false_routes = {RouteName.SMALLTALK_NAVIGATION, RouteName.CASE_INTAKE_INVITE}
         for plan in ROUTE_PROMPT_MATRIX:
-            if plan.route is RouteName.SMALLTALK_NAVIGATION:
+            if plan.route in _l3_false_routes:
                 assert plan.l3 is False
             else:
                 assert plan.l3 is True

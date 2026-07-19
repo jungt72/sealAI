@@ -26,6 +26,7 @@ from sealai_v2.pipeline.routing import RouteName
 # (technical_preassessment, evidence, calculations, rfq_sections)
 EXPECTED_FLAGS: dict[RouteName, tuple[bool, bool, bool, bool]] = {
     RouteName.SMALLTALK_NAVIGATION: (False, False, False, False),
+    RouteName.CASE_INTAKE_INVITE: (False, False, False, False),
     RouteName.GENERAL_SEALING_KNOWLEDGE: (False, True, False, False),
     RouteName.MATERIAL_KNOWLEDGE: (False, True, False, False),
     RouteName.MATERIAL_COMPARISON: (False, True, False, False),

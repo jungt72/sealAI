@@ -49,6 +49,13 @@ from sealai_v2.pipeline.stages import is_alternativen_request
 
 class RouteName(str, Enum):
     SMALLTALK_NAVIGATION = "smalltalk_navigation"
+    # 2026-07-19 (case-intake fix): a first-turn message that expresses discussion/help INTENT
+    # ("ich möchte eine Dichtungslösung besprechen") but carries ZERO technical content and zero
+    # deterministic engineering signals. Distinct from smalltalk (no social/greeting shape) and
+    # from general_sealing_knowledge (no actual knowledge REQUEST — see _KNOWLEDGE_REQUEST_RE).
+    # Intentionally treated as a CHEAP route with the same narrow, content-free-output rationale
+    # as smalltalk_navigation — see CHEAP_ROUTES below.
+    CASE_INTAKE_INVITE = "case_intake_invite"
     GENERAL_SEALING_KNOWLEDGE = "general_sealing_knowledge"
     MATERIAL_KNOWLEDGE = "material_knowledge"
     MATERIAL_COMPARISON = "material_comparison"
@@ -64,6 +71,7 @@ class RouteName(str, Enum):
 CHEAP_ROUTES: frozenset[RouteName] = frozenset(
     {
         RouteName.SMALLTALK_NAVIGATION,
+        RouteName.CASE_INTAKE_INVITE,
         RouteName.GENERAL_SEALING_KNOWLEDGE,
         RouteName.MATERIAL_KNOWLEDGE,
     }
@@ -275,6 +283,47 @@ _KNOWLEDGE_REQUEST_RE = re.compile(
     r"details|informationen|[uü]berblick|eigenschaften|wie\s+funktioniert)\b",
     re.IGNORECASE,
 )
+
+# 2026-07-19 (case-intake fix): a pure discussion/help-INTENT opener — "ich möchte eine
+# Dichtungslösung besprechen", "ich brauche Hilfe bei ...", "können wir über ... sprechen", "ich
+# habe eine (Dichtungs-)Frage", "ich habe ein Dichtungsproblem". Deliberately narrow: only phrasing
+# that expresses INTENT to discuss/get help, never a phrasing that itself asks a question or states
+# a fact (that stays on _KNOWLEDGE_REQUEST_RE / the deterministic engineering signals, both checked
+# independently at the call site — this regex alone never decides a route).
+_CASE_OPENING_RE = re.compile(
+    r"\b(?:"
+    r"ich\s+m[oö]chte\s+(?:[\wäöüß/-]+\s+){0,6}(?:besprechen|bereden|reden|sprechen)|"
+    r"ich\s+(?:brauche|ben[oö]tige)\s+hilfe\s+(?:bei|mit)|"
+    r"k[oö]nnen\s+wir\s+(?:[\wäöüß/-]+\s+){0,6}(?:reden|sprechen)|"
+    r"ich\s+habe\s+eine[ns]?\s+(?:dichtungs)?frage|"
+    r"ich\s+habe\s+ein\s+dichtungsproblem"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# CASE_INTAKE_INVITE feeds the matched question straight to an L3-bypassed LLM call (see
+# pipeline.py's case_intake_prompt_active/skip_l3_for_route) because its OUTPUT is a fully static,
+# content-free invitation — but that reasoning only holds if the INPUT is genuinely just the
+# opening phrase. _CASE_OPENING_RE.search() alone would also match inside an arbitrarily long
+# message, letting unrelated (and unverified, since L3 is skipped) trailing content ride along
+# under the guise of a harmless opener. Mirror _is_smalltalk_shape's discipline: cap the overall
+# length and require the matched phrase to cover all but a short lead-in/trail-off of the message,
+# so there is no room to smuggle a second instruction next to the trigger phrase. Anything wider
+# falls through to the existing, more conservative branches below (domain-knowledge or
+# ambiguous/full-pipeline) exactly as before this change.
+_CASE_OPENING_MAX_LEN = 140
+_CASE_OPENING_SURROUNDING_MAX_LEN = 40
+
+
+def _is_case_opening_shape(question: str) -> bool:
+    text = (question or "").strip()
+    if not text or len(text) > _CASE_OPENING_MAX_LEN:
+        return False
+    match = _CASE_OPENING_RE.search(text)
+    if not match:
+        return False
+    surrounding = len(text[: match.start()]) + len(text[match.end() :])
+    return surrounding <= _CASE_OPENING_SURROUNDING_MAX_LEN
 
 # A possessive/deictic reference makes even an explanation-shaped question case-bound: "Erklaere
 # meine Auslegung" is not the same route as "Erklaere die Auslegung". Numeric operating values,
@@ -619,6 +668,26 @@ def classify_route(
             forced_full_pipeline=False,
             deterministic_signal_count=0,
         )
+    # 2026-07-19 (case-intake fix): zero Stage-1 signals, no existing case, no material topic, a
+    # narrow discussion/help-INTENT opener shape, and NOT itself a knowledge request ("was ist...").
+    # Additive and strictly narrower than the domain-knowledge branch below: a message that ALSO
+    # looks like a knowledge request (_KNOWLEDGE_REQUEST_RE) still falls through to
+    # general_sealing_knowledge/material_knowledge exactly as before this change. Uses
+    # _is_case_opening_shape (not a bare .search()) so a long message cannot ride an L3-bypassed
+    # route just by containing the trigger phrase somewhere in it -- see that function's docstring.
+    if (
+        not case_state_nonempty
+        and not signals
+        and _is_case_opening_shape(question)
+        and not _KNOWLEDGE_REQUEST_RE.search(question)
+    ):
+        return RouteDecision(
+            route=RouteName.CASE_INTAKE_INVITE,
+            reason="case_opening_zero_signal",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
     if _DOMAIN_KNOWLEDGE_RE.search(question) and (
         not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
     ):
@@ -717,6 +786,20 @@ def classify_route_deterministic(
         return RouteDecision(
             route=RouteName.MATERIAL_KNOWLEDGE,
             reason="deterministic_material_topic",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    # 2026-07-19 (case-intake fix): see the identical block + rationale in classify_route() above.
+    if (
+        not case_state_nonempty
+        and not signals
+        and _is_case_opening_shape(question)
+        and not _KNOWLEDGE_REQUEST_RE.search(question)
+    ):
+        return RouteDecision(
+            route=RouteName.CASE_INTAKE_INVITE,
+            reason="deterministic_case_opening_zero_signal",
             confidence=1.0,
             forced_full_pipeline=False,
             deterministic_signal_count=0,

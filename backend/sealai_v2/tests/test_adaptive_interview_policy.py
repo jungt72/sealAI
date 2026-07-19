@@ -21,6 +21,7 @@ from sealai_v2.core.interview.contracts import (
 from sealai_v2.core.interview.policy import InterviewContractError
 from sealai_v2.core.interview.policy import (
     apply_state_patches,
+    compute_required_missing,
     decide_next_interview_step,
     reconcile_runtime_facts,
     resolve_need_states,
@@ -413,3 +414,89 @@ def test_pressure_boundary_fact_stays_documented_without_invented_material_limit
 
 def _need_id_for_field(field: str) -> str:
     return next(need.need_id for need in PACK.needs if field in need.field_keys)
+
+
+# -- compute_required_missing (case-intake fix, stage 2) --------------------------------
+#
+# Feeds CaseStateV2.required_missing, which the execution policy (orchestration/
+# execution_policy.py) reads to decide ExecutionClass.D1/ModelTier.NONE and to render
+# deterministic_response's "Für die technische Einordnung fehlen noch: {fields}." text.
+
+
+def test_compute_required_missing_is_empty_for_unknown_scope() -> None:
+    # No dichtungstyp/seal_type and no RWDR signal field at all -- classify_scope returns
+    # "unknown". A blank/near-blank opener must never be reported as "missing fields": that
+    # is exactly the case Stage 1's case_intake_invite route already handles separately.
+    state = CaseStateV2(case_id="knowledge-only", revision=0)
+    assert compute_required_missing(state, PACK) == ()
+
+
+def test_compute_required_missing_is_empty_for_unsupported_scope() -> None:
+    # An explicit, out-of-pack seal type (classify_scope == "unsupported") must not be
+    # blocked on RWDR-specific required fields that do not even apply to it.
+    state = CaseStateV2(
+        case_id="glrd-case",
+        revision=1,
+        fields=(_field("dichtungstyp", "gleitringdichtung"),),
+    )
+    assert compute_required_missing(state, PACK) == ()
+
+
+def test_compute_required_missing_is_empty_for_a_fully_specified_case() -> None:
+    # _required_values() fills every askable required field. No derived_facts are (or ever
+    # are) passed to compute_required_missing, so the kernel-derived, non-askable
+    # rwdr.circumferential_speed need stays unresolved (BLOCKED) underneath -- proving that
+    # exclusion of non-askable needs (no question_id) is load-bearing, not cosmetic: without
+    # it, this fully-specified case would incorrectly still report something "missing".
+    state = _state(_required_values())
+    assert compute_required_missing(state, PACK) == ()
+
+
+def test_compute_required_missing_lists_short_german_labels_in_curated_order() -> None:
+    # Only medium + temperature are known (plus the implicit dichtungstyp="rwdr" the _state
+    # fixture always injects) -- the rest of the required fields are open.
+    state = _state({"medium": "Hydrauliköl HLP 46", "betriebstemperatur": "80 °C"})
+    assert compute_required_missing(state, PACK) == (
+        "Anwendungsziel",
+        "Druck",
+        "Wellendurchmesser",
+        "Drehzahl",
+    )
+
+
+def test_compute_required_missing_drops_a_field_once_it_is_answered() -> None:
+    values = _required_values()
+    values.pop("wellendurchmesser")
+    state = _state(values)
+    assert compute_required_missing(state, PACK) == ("Wellendurchmesser",)
+    completed = _state(_required_values())
+    assert compute_required_missing(completed, PACK) == ()
+
+
+def test_compute_required_missing_feeds_the_deterministic_d1_response_text() -> None:
+    from sealai_v2.orchestration.execution_policy import (
+        ExecutionClass,
+        ExecutionDecision,
+        ModelTier,
+        StreamingMode,
+        VerificationMode,
+        deterministic_response,
+    )
+
+    state = _state({"medium": "Hydrauliköl HLP 46", "betriebstemperatur": "80 °C"})
+    missing = compute_required_missing(state, PACK)
+    decision = ExecutionDecision(
+        ExecutionClass.D1,
+        ModelTier.NONE,
+        None,
+        VerificationMode.DETERMINISTIC,
+        StreamingMode.ATOMIC,
+        False,
+        "deterministic_contract_clarification",
+    )
+    text = deterministic_response(decision, missing_fields=missing)
+    assert text == (
+        "Für die technische Einordnung fehlen noch: Anwendungsziel, Druck, "
+        "Wellendurchmesser, Drehzahl. Bitte ergänze diese Angaben; vorher wäre jede "
+        "fallbezogene Aussage spekulativ."
+    )

@@ -237,6 +237,25 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "deterministic_smalltalk_route",
         )
 
+    # 2026-07-19 (case-intake fix): a first-turn message that expresses discussion/help intent
+    # with zero technical content (RouteName.CASE_INTAKE_INVITE) gets the SAME lightweight
+    # treatment as smalltalk_navigation above -- ModelTier.STANDARD (not NONE, so the turn still
+    # reaches pipeline.py's case_intake_generator branch instead of a canned deterministic_response
+    # string) and VerificationMode.DETERMINISTIC (no LLM-based L3 claim verification, since the
+    # fully static case_intake_navigation.jinja output never makes a domain claim to verify). Atomic,
+    # not FINAL streaming -- case_intake_invite has no token-streaming path (see pipeline.py's
+    # case_intake_prompt_active, which is intentionally excluded from stream_tokens_active).
+    if route is RouteName.CASE_INTAKE_INVITE:
+        return ExecutionDecision(
+            ExecutionClass.S0,
+            ModelTier.STANDARD,
+            "none",
+            VerificationMode.DETERMINISTIC,
+            StreamingMode.ATOMIC,
+            False,
+            "deterministic_case_intake_route",
+        )
+
     return ExecutionDecision(
         ExecutionClass.S1,
         ModelTier.STANDARD,

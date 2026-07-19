@@ -13,6 +13,12 @@ precondition is produced by whichever router ``Pipeline.run()`` is using for the
 engineering signals and classified the route as ``smalltalk_navigation``; when it is False,
 ``pipeline.routing.classify_route`` finding zero deterministic engineering signals AND a
 ``gespraech`` intent (from ``understand()``) plays the same role instead.
+
+2026-07-19 (case-intake fix): also reused, unmodified, for ``RouteName.CASE_INTAKE_INVITE`` — a
+second ``SmalltalkGenerator`` instance is constructed in ``build_pipeline()`` with
+``CaseIntakeNavigationPromptAssembler`` instead. The class stays generic on purpose: it only
+requires an assembler with a static, zero-argument ``system_prompt()`` and a bare ``question``, the
+exact same precondition either route's prompt family relies on.
 """
 
 from __future__ import annotations
@@ -22,7 +28,10 @@ from dataclasses import dataclass
 
 from sealai_v2.core.contracts import Answer, LlmClient, ModelConfig
 from sealai_v2.core.sourcing_guard import strip_sourcing
-from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
+from sealai_v2.prompts.assembler import (
+    CaseIntakeNavigationPromptAssembler,
+    SmalltalkNavigationPromptAssembler,
+)
 
 
 @dataclass(frozen=True)
@@ -42,7 +51,9 @@ class SmalltalkStreamEvent:
 @dataclass
 class SmalltalkGenerator:
     client: LlmClient
-    assembler: SmalltalkNavigationPromptAssembler
+    # 2026-07-19: widened to also accept CaseIntakeNavigationPromptAssembler — see the module
+    # docstring. Both assemblers expose the identical zero-argument system_prompt() shape.
+    assembler: "SmalltalkNavigationPromptAssembler | CaseIntakeNavigationPromptAssembler"
     model_config: ModelConfig
 
     async def generate(self, question: str) -> Answer:

@@ -24,6 +24,8 @@ _EXPECTED_TEMPLATE_VARS = {
     "general_sealing_knowledge.jinja": set(),
     "material_knowledge.jinja": set(),
     "smalltalk_navigation.jinja": set(),
+    # 2026-07-19 (case-intake fix): same fully-static, zero-variable shape.
+    "case_intake_navigation.jinja": set(),
     "system_l1.jinja": {
         "anrede",
         "archetype_context",

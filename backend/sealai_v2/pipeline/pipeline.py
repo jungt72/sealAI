@@ -13,7 +13,7 @@ import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from sealai_v2.config.settings import Settings
@@ -49,7 +49,10 @@ from sealai_v2.pipeline.adaptive_interview import (
     AdaptiveInterviewEvaluation,
     AdaptiveInterviewService,
 )
-from sealai_v2.prompts.assembler import SmalltalkNavigationPromptAssembler
+from sealai_v2.prompts.assembler import (
+    CaseIntakeNavigationPromptAssembler,
+    SmalltalkNavigationPromptAssembler,
+)
 from sealai_v2.pipeline.route_telemetry import (
     LoggingRouteTelemetrySink,
     RouteTelemetry,
@@ -64,6 +67,7 @@ from sealai_v2.core.calc.inline_extract import (
 from sealai_v2.core.calc.derived import DerivedComputation, recompute_derived
 from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.case_state import CaseStateV2
+from sealai_v2.core.interview.policy import compute_required_missing
 from sealai_v2.core.contracts import (
     Answer,
     CalcEngine,
@@ -98,6 +102,7 @@ from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContex
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
 from sealai_v2.knowledge.archetypes import load_archetypes
+from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
 from sealai_v2.knowledge.versagensmodi import InProcessVersagensmodiStore
@@ -647,6 +652,14 @@ class Pipeline:
     # constructed in build_pipeline() when settings.route_prompt_families_enabled is True.
     route_prompt_families_enabled: bool = False
     smalltalk_generator: "SmalltalkGenerator | None" = None
+    # 2026-07-19 (case-intake fix): the sibling of smalltalk_generator for RouteName.
+    # CASE_INTAKE_INVITE — SAME SmalltalkGenerator class (it only ever needs an assembler with a
+    # zero-argument system_prompt() and a bare question), just constructed with
+    # CaseIntakeNavigationPromptAssembler instead. None (default) -> nothing to branch to, so
+    # route_prompt_families_enabled being True with no generator wired is still a safe no-op (the
+    # pipeline falls through to the unchanged full L1 generator, see run()). Only constructed in
+    # build_pipeline() when settings.route_prompt_families_enabled is True.
+    case_intake_generator: "SmalltalkGenerator | None" = None
     # Phase 3A (live token streaming): flag-gate for streaming the compact smalltalk answer
     # token-by-token. False (default) -> the streaming branch in run() is unreachable and the
     # smalltalk turn takes the UNCHANGED non-streaming generate() -- byte-identical to Phase 2D.
@@ -755,6 +768,21 @@ class Pipeline:
             revision=0,
             facts=mem.case_state,
         )
+        # Case-intake fix, stage 2: `required_missing` is read below (case_active, the D1
+        # execution-policy gate, deterministic_response's field list) but was never populated in
+        # production, so that already-wired deterministic-clarification machinery never fired.
+        # Recomputed fresh EVERY turn from the current (already fact-merged) case state via a pure
+        # projection — never persisted, never touching the adaptive-interview shadow repository/
+        # AdaptiveInterviewService (see core/interview/policy.py::compute_required_missing for why
+        # a stateless re-derivation is safe here). Gated on execution_policy_enabled because that is
+        # the only flag any consumer of required_missing actually checks.
+        if self.execution_policy_enabled:
+            case_state_v2 = replace(
+                case_state_v2,
+                required_missing=compute_required_missing(
+                    case_state_v2, load_rwdr_v1_pack()
+                ),
+            )
         # This-session case-state (L2) and cross-session durable facts (L4) are kept SEPARATE: the
         # durable facts surface under their own honest "aus früheren Gesprächen — bei Bedarf
         # bestätigen" frame and (below) do NOT feed the deterministic calc binder — a remembered
@@ -1184,6 +1212,9 @@ class Pipeline:
             # the audit's own required-condition list), AND a smalltalk_generator is actually
             # wired (build_pipeline() only constructs one when the flag is on).
             smalltalk_prompt_active = False
+            # 2026-07-19 (case-intake fix): the case_intake_invite sibling of
+            # smalltalk_prompt_active -- see its computation below for the full rationale.
+            case_intake_prompt_active = False
             stream_tokens_active = False
             # Phase 3B (draft-token streaming): whether THIS turn's self.generator.generate() calls
             # (the full L1 engineering generator, used by every route below the smalltalk if/elif
@@ -1219,15 +1250,20 @@ class Pipeline:
                 # language phrasing no finite keyword list fully covers (chemical-resistance
                 # claims, application descriptions without an explicit question form, etc.).
                 # Rather than chase an ever-expanding regex list, the L3-bypass itself is
-                # restricted to smalltalk_navigation ONLY -- the one route whose false-negative
-                # surface is structurally small (a message that is genuinely just smalltalk
-                # essentially never hides an engineering claim, since it doesn't reference the
-                # domain at all). general_sealing_knowledge/material_knowledge are still computed
-                # and labeled for telemetry, but never skip L3 in this phase -- see the Phase 2B
-                # report for the full analysis and the recommended Phase 2C (a stronger content-
-                # level guard, not more regexes) before extending this further.
+                # restricted to smalltalk_navigation -- and, since 2026-07-19, case_intake_invite
+                # -- ONLY: the two routes whose false-negative surface is structurally small (a
+                # message that is genuinely just smalltalk essentially never hides an engineering
+                # claim, since it doesn't reference the domain at all; a case_intake_invite turn's
+                # OUTPUT is a fully static, content-free invitation that never makes a domain claim
+                # either, regardless of what the input mentioned -- see
+                # prompts/case_intake_navigation.jinja). general_sealing_knowledge/
+                # material_knowledge are still computed and labeled for telemetry, but never skip
+                # L3 in this phase -- see the Phase 2B report for the full analysis and the
+                # recommended Phase 2C (a stronger content-level guard, not more regexes) before
+                # extending this further.
                 skip_l3_for_route = (
-                    route_decision.route is RouteName.SMALLTALK_NAVIGATION
+                    route_decision.route
+                    in (RouteName.SMALLTALK_NAVIGATION, RouteName.CASE_INTAKE_INVITE)
                     and not route_decision.forced_full_pipeline
                 )
                 # Phase 2D: the compact prompt is strictly NARROWER than the L3-bypass condition
@@ -1238,6 +1274,18 @@ class Pipeline:
                     self.route_prompt_families_enabled
                     and self.smalltalk_generator is not None
                     and skip_l3_for_route
+                    and route_decision.route is RouteName.SMALLTALK_NAVIGATION
+                    and route_decision.deterministic_signal_count == 0
+                )
+                # 2026-07-19 (case-intake fix): the case_intake_invite sibling of
+                # smalltalk_prompt_active above -- deliberately a SEPARATE flag (not a route check
+                # widened in place) so every existing smalltalk_prompt_active consumer keeps its
+                # exact prior meaning (still true ONLY for smalltalk_navigation).
+                case_intake_prompt_active = (
+                    self.route_prompt_families_enabled
+                    and self.case_intake_generator is not None
+                    and skip_l3_for_route
+                    and route_decision.route is RouteName.CASE_INTAKE_INVITE
                     and route_decision.deterministic_signal_count == 0
                 )
                 # Phase 3A: whether THIS turn will actually STREAM tokens. Strictly NARROWER than
@@ -1245,7 +1293,8 @@ class Pipeline:
                 # requires the streaming flag AND a token sink actually wired by the transport. Any
                 # one being false -> no token ever fires; the gated `result` answer is unchanged
                 # either way. Reuses smalltalk_prompt_active verbatim -- never recomputes route
-                # eligibility.
+                # eligibility. case_intake_invite has no streaming path (case_intake_prompt_active
+                # is intentionally NOT part of this condition) -- it always answers atomically.
                 stream_tokens_active = (
                     smalltalk_prompt_active
                     and self.smalltalk_token_streaming_enabled
@@ -1265,7 +1314,11 @@ class Pipeline:
                                 prompt_family=(
                                     "smalltalk_navigation"
                                     if smalltalk_prompt_active
-                                    else None
+                                    else (
+                                        "case_intake_navigation"
+                                        if case_intake_prompt_active
+                                        else None
+                                    )
                                 ),
                                 l3_bypassed=skip_l3_for_route,
                             )
@@ -1454,7 +1507,8 @@ class Pipeline:
                 knowledge_answer_plan = _kap.to_dict() if _kap is not None else None
             require_evidence_for_all_claims = bool(
                 route_decision is not None
-                and route_decision.route is not RouteName.SMALLTALK_NAVIGATION
+                and route_decision.route
+                not in (RouteName.SMALLTALK_NAVIGATION, RouteName.CASE_INTAKE_INVITE)
                 and l1_grounding
                 and knowledge_answer_plan is None
             )
@@ -1485,10 +1539,11 @@ class Pipeline:
                 material_params = material_parameters_for(knowledge_question) or None
             with _staged(timer, progress, "generate_ms", "generate"):
                 # Phase 2D: the ONLY branch point where the compact smalltalk_navigation prompt
-                # can ever answer a turn. self.generator (L1Generator, the full engineering
-                # prompt) is completely untouched below -- every route except a fully-qualified
-                # smalltalk turn (see smalltalk_prompt_active's computation above) takes the
-                # EXACT same call it always has.
+                # (and, since 2026-07-19, the case_intake_navigation prompt) can ever answer a
+                # turn. self.generator (L1Generator, the full engineering prompt) is completely
+                # untouched below -- every route except a fully-qualified smalltalk/case_intake
+                # turn (see smalltalk_prompt_active/case_intake_prompt_active's computation above)
+                # takes the EXACT same call it always has.
                 if context_clarification:
                     answer = Answer(
                         text=context_clarification,
@@ -1529,6 +1584,14 @@ class Pipeline:
                         answer = await self.smalltalk_generator.generate(question)
                 elif smalltalk_prompt_active and self.smalltalk_generator is not None:
                     answer = await self.smalltalk_generator.generate(question)
+                elif (
+                    case_intake_prompt_active
+                    and self.case_intake_generator is not None
+                ):
+                    # 2026-07-19 (case-intake fix): the compact, content-free case_intake_invite
+                    # answer -- same shape as the smalltalk branch above, different assembler/
+                    # template (see prompts/case_intake_navigation.jinja). No streaming variant.
+                    answer = await self.case_intake_generator.generate(question)
                 else:
                     # Phase 3B: every non-smalltalk route lands here. ``_l1_generate`` is
                     # byte-identical to the plain ``self.generator.generate(...)`` call it replaces
@@ -2646,6 +2709,42 @@ def build_pipeline(
             ),
         )
 
+    # 2026-07-19 (case-intake fix): construct the compact case_intake_navigation generator ONLY
+    # when the flag is on -- mirrors smalltalk_generator's construction above exactly (same
+    # client/model/temperature selection, same static-prompt-hash cache-key scheme), just with
+    # CaseIntakeNavigationPromptAssembler instead. None otherwise, so run()'s
+    # `self.case_intake_generator is not None` check is a genuine no-op when this is unset.
+    case_intake_generator: SmalltalkGenerator | None = None
+    if settings.route_prompt_families_enabled:
+        _case_intake_assembler = CaseIntakeNavigationPromptAssembler()
+        _case_intake_static_prompt = _case_intake_assembler.system_prompt()
+        _case_intake_client = standard_client or helper_client
+        _case_intake_model = (
+            settings.standard_model
+            if settings.execution_policy_enabled
+            else settings.helper_model
+        )
+        _case_intake_temperature = (
+            settings.standard_temperature
+            if settings.execution_policy_enabled
+            else settings.helper_temperature
+        )
+        case_intake_generator = SmalltalkGenerator(
+            client=_case_intake_client,
+            assembler=_case_intake_assembler,
+            model_config=ModelConfig(
+                model=_case_intake_model,
+                temperature=_case_intake_temperature,
+                cache_key=build_prompt_cache_key(
+                    "case_intake_navigation",
+                    _case_intake_model,
+                    _case_intake_static_prompt,
+                ),
+                stage="case_intake_navigation",
+                reasoning_effort="none",
+            ),
+        )
+
     return Pipeline(
         generator=generator,
         client=helper_client,  # used by the understand helper stage
@@ -2708,6 +2807,7 @@ def build_pipeline(
         ),
         route_prompt_families_enabled=settings.route_prompt_families_enabled,
         smalltalk_generator=smalltalk_generator,
+        case_intake_generator=case_intake_generator,
         smalltalk_token_streaming_enabled=settings.smalltalk_token_streaming_enabled,
         draft_token_streaming_enabled=settings.draft_token_streaming_enabled,
         suppress_calc_for_non_kernel_routes_enabled=settings.suppress_calc_for_non_kernel_routes_enabled,
