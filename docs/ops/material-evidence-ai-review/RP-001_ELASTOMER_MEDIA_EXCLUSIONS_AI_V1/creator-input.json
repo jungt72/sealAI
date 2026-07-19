@@ -1,0 +1,188 @@
+{
+  "authorization_ref": "ODR-MAT-EVID-AI-REVIEW-20260718-06:rp001-nonproduction",
+  "candidate_register_file_sha256": "9ebfe36235b170fa04f22aa164121e21a7808e33412c81c2ba6f9da0694eab5c",
+  "created_at": "2026-07-18T22:00:00Z",
+  "creator": {
+    "agent_model": "gpt-5.6-sol",
+    "agent_version": "codex-desktop-2026-07-18",
+    "prompt_version": "rp001-ai-claim-builder.v1",
+    "run_id": "codex-rp001-creator-20260718-01"
+  },
+  "domain_pack_id": "rp001.elastomer.media.exclusions.ai.v1",
+  "environment": "test",
+  "media_identities": [
+    {
+      "canonical_name": "Diesel fuel",
+      "claim_text": "Trelleborg: ‘Diesel fuel’; Parker: ‘hydrocarbon based fuels’. These exact source labels are bound to this AI-only diesel-fuel candidate.",
+      "identity_kind": "fluid_class",
+      "key": "diesel-fuel",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ]
+    },
+    {
+      "canonical_name": "Glycol-ether-based brake fluid",
+      "claim_text": "Trelleborg: ‘Brake fluids (based on glycol ether)’; Parker: ‘glycol based brake fluid’. These exact source labels are bound to this AI-only medium candidate.",
+      "identity_kind": "fluid_class",
+      "key": "glycol-brake-fluid",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ]
+    },
+    {
+      "canonical_name": "Water steam",
+      "claim_text": "Trelleborg: ‘Water steam’; Parker: ‘Superheated water steam’. These exact source labels are bound to this AI-only water-steam candidate.",
+      "identity_kind": "process_medium",
+      "key": "water-steam",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ]
+    }
+  ],
+  "package_contract_version": "RP-001-AI-PACK.v1",
+  "package_id": "RP-001_ELASTOMER_MEDIA_EXCLUSIONS_AI_V1",
+  "rules": [
+    {
+      "application_scope": "General source-level material-family exclusion screening only; not compound or component approval.",
+      "claim_text": "ACM is unsuitable for glycol-ether-based brake fluid in general material-family screening.",
+      "condition": "source-defined family screening; compound and application verification required",
+      "conditions_and_exclusions": "No compound, formulation, crosslink, product, dynamic duty or application release is inferred; verify the actual compound and application.",
+      "material": "ACM",
+      "material_candidate_id": "material:acm",
+      "media_key": "glycol-brake-fluid",
+      "rule_ref": "MR-RP001-AI-ACM-GLYCOL-BRAKE-FLUID",
+      "seal_type_scope": "O-ring and elastomer sealing applications described by both cited guides; no component release.",
+      "service_candidate_id": "service:glycol-brake-fluid",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ],
+      "temperature_scope": "No temperature extension beyond the cited source statements; application temperature remains an open input."
+    },
+    {
+      "application_scope": "General source-level material-family exclusion screening only; not compound or component approval.",
+      "claim_text": "ACM is unsuitable for water steam above 150 °C in general material-family screening.",
+      "condition": "water steam above 150 °C; compound and application verification required",
+      "conditions_and_exclusions": "No lower-temperature steam conclusion, compound, formulation, product, dynamic duty or application release is inferred.",
+      "material": "ACM",
+      "material_candidate_id": "material:acm",
+      "media_key": "water-steam",
+      "rule_ref": "MR-RP001-AI-ACM-STEAM-GT150C",
+      "seal_type_scope": "O-ring and elastomer sealing applications described by both cited guides; no component release.",
+      "service_candidate_id": "service:steam",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ],
+      "temperature_scope": "Water steam strictly above 150 °C; no statement at or below 150 °C."
+    },
+    {
+      "application_scope": "General source-level material-family exclusion screening only; not compound or component approval.",
+      "claim_text": "NBR is unsuitable for glycol-ether-based brake fluid in general material-family screening.",
+      "condition": "source-defined family screening; compound and application verification required",
+      "conditions_and_exclusions": "No compound, acrylonitrile content, formulation, product, dynamic duty or application release is inferred.",
+      "material": "NBR",
+      "material_candidate_id": "material:nbr",
+      "media_key": "glycol-brake-fluid",
+      "rule_ref": "MR-RP001-AI-NBR-GLYCOL-BRAKE-FLUID",
+      "seal_type_scope": "O-ring and elastomer sealing applications described by both cited guides; no component release.",
+      "service_candidate_id": "service:glycol-brake-fluid",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ],
+      "temperature_scope": "No temperature extension beyond the cited source statements; application temperature remains an open input."
+    },
+    {
+      "application_scope": "General source-level material-family exclusion screening only; not compound or component approval.",
+      "claim_text": "NBR is unsuitable for water steam above 150 °C in general material-family screening.",
+      "condition": "water steam above 150 °C; compound and application verification required",
+      "conditions_and_exclusions": "Trelleborg rates the row U; Parker supplies the family heat boundary, not a separate steam-compatibility rating; no lower-temperature or compound conclusion is inferred.",
+      "material": "NBR",
+      "material_candidate_id": "material:nbr",
+      "media_key": "water-steam",
+      "rule_ref": "MR-RP001-AI-NBR-STEAM-GT150C",
+      "seal_type_scope": "O-ring and elastomer sealing applications described by both cited guides; no component release.",
+      "service_candidate_id": "service:steam",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ],
+      "temperature_scope": "Water steam strictly above 150 °C; Parker states NBR heat resistance to 100 °C with shorter life at 121 °C."
+    },
+    {
+      "application_scope": "General source-level material-family exclusion screening only; not compound or component approval.",
+      "claim_text": "VMQ is unsuitable for diesel fuel in general material-family screening.",
+      "condition": "source-defined family screening; compound and application verification required",
+      "conditions_and_exclusions": "The rule is limited to diesel fuel within the broader Parker hydrocarbon-fuel exclusion; no fuel-mixture, compound or application extrapolation is inferred.",
+      "material": "VMQ",
+      "material_candidate_id": "material:vmq",
+      "media_key": "diesel-fuel",
+      "rule_ref": "MR-RP001-AI-VMQ-DIESEL-FUEL",
+      "seal_type_scope": "O-ring and elastomer sealing applications described by both cited guides; no component release.",
+      "service_candidate_id": "service:fuels",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ],
+      "temperature_scope": "No temperature extension beyond the cited source statements; application temperature remains an open input."
+    },
+    {
+      "application_scope": "General source-level material-family exclusion screening only; not compound or component approval.",
+      "claim_text": "VMQ is unsuitable for water steam above 150 °C in general material-family screening.",
+      "condition": "water steam above 150 °C; compound and application verification required",
+      "conditions_and_exclusions": "No lower-temperature steam conclusion, compound, formulation, product, dynamic duty or application release is inferred.",
+      "material": "VMQ",
+      "material_candidate_id": "material:vmq",
+      "media_key": "water-steam",
+      "rule_ref": "MR-RP001-AI-VMQ-STEAM-GT150C",
+      "seal_type_scope": "O-ring and elastomer sealing applications described by both cited guides; no component release.",
+      "service_candidate_id": "service:steam",
+      "source_keys": [
+        "parker",
+        "trelleborg"
+      ],
+      "temperature_scope": "Water steam strictly above 150 °C; no statement at or below 150 °C."
+    }
+  ],
+  "schema_version": 1,
+  "source_coverage_sha256": "39306790bfcab244f4ba77c2a189bd4cc44c45f4d91328a635b5ea824258ba5c",
+  "sources": [
+    {
+      "content_sha256": "9572aeef454600cb788d5385ae0666405012bd49a03aa14116b5ad56e839582c",
+      "document_id": "PARKER-ORD-5700",
+      "document_revision": "ORD-5700-2018",
+      "document_title": "parker o-ring handbook",
+      "document_type": "technical_report",
+      "filename": "Parker-ORD-5700.pdf",
+      "key": "parker",
+      "locator": "Sections 2.2.1, 2.2.11 and 2.2.13; printed pages 2-3, 2-4 and 2-6; PDF pages 15, 16 and 18.",
+      "publication_edition": "50th anniversary edition, 2018",
+      "publisher": "Parker Hannifin Corporation",
+      "retrieval_url": "https://www.marcorubber.com/downloads/Parker_O-Ring_Handbook_ORD_5700.pdf",
+      "rights_basis": "lawful short quotation under UrhG section 51 for source-critical technical review; attribution and exact locator retained; no source reproduction right claimed",
+      "rights_state": "permitted",
+      "source_excerpt": "NBR: “Brake fluid with glycol base”; heat “Up to 100°C … shorter life @ 121°C”. ACM: “Glycol based brake fluid (Dot 3 and 4)” and “Hot water, steam”. VMQ: “Superheated water steam over 121°C” and “Hydrocarbon based fuels”."
+    },
+    {
+      "content_sha256": "d29a89d3188e520d232235c1a3de5f783317f3a557d269669ff1be572d74a52b",
+      "document_id": "TRELLEBORG-MATERIALS-CHEMICAL-COMPATIBILITY-GUIDE",
+      "document_revision": "no-revision-identifier-stated",
+      "document_title": "Materials chemical compatibility guide",
+      "document_type": "technical_report",
+      "filename": "Trelleborg-Chemical-Compatibility-Guide.pdf",
+      "key": "trelleborg",
+      "locator": "rating code U on printed page 8/PDF 10; rows on printed pages 10, 11, 16 and 34/PDF pages 12, 13, 18 and 36.",
+      "publication_edition": "edition august 2012",
+      "publisher": "Trelleborg Sealing Solutions",
+      "retrieval_url": "https://www.trelleborg.com/-/media/tss-media-repository/tss_website/pdf-and-other-literature/brochures/mat_chem_comp_gb_en.pdf",
+      "rights_basis": "lawful short quotation under UrhG section 51 for source-critical technical review; attribution and exact locator retained; no source reproduction right claimed",
+      "rights_state": "permitted",
+      "source_excerpt": "Rating code “U”: “The elastomer is unsuitable for application in this media.” Rows: “Brake fluids (based on glycol ether)” ACM=U, NBR=U; “Diesel fuel” VMQ=U; “Water steam > +150 °C / +302 °F” ACM=U, NBR=U, VMQ=U."
+    }
+  ],
+  "tenant_id": "tenant-rp001-ai-nonprod"
+}
