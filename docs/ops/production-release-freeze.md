@@ -16,6 +16,46 @@ path. Until that implementation is reviewed and tested,
 `freeze_lift_implemented` remains `false` and no GATE-10 document set can
 authorize a release.
 
+## P1 status (2026-07-20)
+
+Of the seven `required_manifest_hashes`, two are now bound to the real artifact instead
+of format-checked only: `served_tree_sha256` and `database_migration_sha256`. `evaluate()`
+recomputes both from the actual checked-out tree immediately after
+`_assert_two_commit_binding` proves HEAD is the exact, clean control commit
+(`ops/production_release_gate.py::_verify_source_derived_artifact_hashes`), and rejects a
+manifest whose value does not match, exactly like every other value in this file is
+independently re-derived rather than trusted. This closes source- and migration-substitution
+forgery. It does **not** lift the freeze by itself — `GATE10_LIFT_IMPLEMENTED` stays `false`.
+
+The other five fields remain format-checked only: `backend_image_digest` /
+`frontend_image_digest` (need Docker+network+Sigstore/Rekor verification the gate has never
+done — `ops/verify-image-attestations.sh` already does this, but only inside
+`ops/release-backend-v2.sh`, not inside this gate), `dashboard_artifact_sha256` (no "gated
+publisher" exists yet at all, see `frontend-v2/README.md`), and `rollback_plan_sha256` /
+`evidence_manifest_sha256` (no owner-document schema/path convention decided yet). Neither
+`runtime_profile_hash` nor a dataset/authority-epoch hash exist as manifest fields at all —
+adding them needs a schema change plus, for `runtime_profile_hash` specifically, resolving
+the tension between the gate's fail-closed empty-environment invocation and that value only
+being computable inside a running container.
+
+Owner-facing note for filling out a future manifest's source-derived hashes by hand — must
+match exactly what the gate itself recomputes:
+
+```bash
+printf '%s' "$(ops/tree-hash.sh)" | sha256sum | cut -d' ' -f1   # served_tree_sha256
+```
+
+`database_migration_sha256` uses the identical throwaway-index recipe, scoped to
+`backend/sealai_v2/db/migrations` only (`DATABASE_MIGRATION_PATHSPECS` in
+`ops/production_release_gate.py`) — no standalone shell script exists for it yet, so compute
+it via the same function the gate itself calls:
+
+```bash
+/usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C \
+  /usr/bin/python3 -I -c \
+  "import sys; sys.path.insert(0, 'ops'); from production_release_gate import _database_migration_sha256; print(_database_migration_sha256())"
+```
+
 ## Fail-closed invocation and remote deployment boundary
 
 Every production shell entrypoint invokes the gate through
