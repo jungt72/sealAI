@@ -346,10 +346,15 @@ PY
 /usr/bin/chown root:root "${STAGED_BOOTSTRAP}"
 /usr/bin/chmod 0700 "${STAGED_BOOTSTRAP}"
 /usr/bin/env -i HOME=/root PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C \
-  "${STAGED_BOOTSTRAP}" \
+  /usr/bin/python3 -I "${STAGED_BOOTSTRAP}" \
   --source-repository "${SOURCE_REPOSITORY}" --apply
 ROOT_LOADER
 ```
+
+The staged copy is invoked as an explicit `/usr/bin/python3 -I` argument rather
+than executed directly, because `LOADER_STAGE` lives under `/run`, which is
+typically mounted `noexec` and would otherwise refuse to run the staged file
+even though it is root-owned and mode `0700`.
 
 The verified bootstrap uses only fixed system tools. It clones the local source
 with `git clone --no-local --no-checkout` into a root-owned mode-`0700` temporary
