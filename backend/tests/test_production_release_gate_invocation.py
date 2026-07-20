@@ -71,11 +71,11 @@ def _write_fake_gate(
 
 
 def _run_helper(
-    gate: Path, expected_source: str = SOURCE_SHA
+    gate: Path, expected_source: str = SOURCE_SHA, *, operation: str = "deploy"
 ) -> subprocess.CompletedProcess[str]:
     command = (
         'set -euo pipefail; source "$1"; '
-        'production_release_gate_check "$2" deploy "$3"; '
+        f'production_release_gate_check "$2" {operation} "$3"; '
         'printf "%s" "$PRODUCTION_RELEASE_APPROVED_SOURCE_SHA"'
     )
     poisoned = gate.parent / "poisoned-bin"
@@ -203,6 +203,54 @@ def test_gate_invocation_rejects_oversized_success_output(tmp_path: Path) -> Non
 
     assert result.returncode == 78
     assert "oversized_success_decision" in result.stderr
+
+
+def _staging_build_decision(**overrides: object) -> dict[str, object]:
+    value: dict[str, object] = {
+        "allowed": True,
+        "operation": "staging-build",
+        "reason": "gate12_scoped_staging_build_corridor",
+        "state_id": "freeze-test",
+        "required_gate": "GATE-12",
+        "source_git_sha": SOURCE_SHA,
+        "approval_id": "gate12-test-001",
+        "base_git_sha": "b" * 40,
+    }
+    value.update(overrides)
+    return value
+
+
+def test_gate_invocation_accepts_valid_staging_build_decision(tmp_path: Path) -> None:
+    gate = tmp_path / "fake_gate.py"
+    marker = tmp_path / "gate-environment.json"
+    _write_fake_gate(
+        gate,
+        marker,
+        decision=_staging_build_decision(),
+        expected_operation="staging-build",
+    )
+
+    result = _run_helper(gate, operation="staging-build")
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == SOURCE_SHA
+
+
+def test_gate_invocation_rejects_staging_build_decision_missing_gate12_fields(
+    tmp_path: Path,
+) -> None:
+    gate = tmp_path / "fake_gate.py"
+    marker = tmp_path / "gate-environment.json"
+    decision = _staging_build_decision()
+    del decision["base_git_sha"]
+    _write_fake_gate(
+        gate, marker, decision=decision, expected_operation="staging-build"
+    )
+
+    result = _run_helper(gate, operation="staging-build")
+
+    assert result.returncode == 78
+    assert "invalid_success_decision" in result.stderr
 
 
 def test_gate_invocation_rejects_argument_injection_before_gate_execution(

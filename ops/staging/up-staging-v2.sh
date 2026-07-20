@@ -12,12 +12,14 @@ readonly STORAGE_LEASE=/usr/local/libexec/sealai/production-storage-lease.sh
   exit 64
 }
 
-# The active production freeze intentionally denies this operation on the VPS.
-# No storage lease, Docker build, or compose up is attempted after a denial.
+# GATE-12 (scoped staging-build corridor): a narrow, owner-approved exception to the
+# production freeze that authorizes ONLY this staging rebuild, never production
+# build/pull/deploy/migration/dashboard-publish. No storage lease, Docker build, or
+# compose up is attempted after a denial. See docs/ops/gate-12-staging-build-corridor.md.
 # shellcheck source=../production-release-gate-check.sh
 source "${REPO_ROOT}/ops/production-release-gate-check.sh"
 production_release_gate_check \
-  "${REPO_ROOT}/ops/production_release_gate.py" build
+  "${REPO_ROOT}/ops/production_release_gate.py" staging-build
 
 if [[ -L "${STORAGE_LEASE}" ]] || \
    [[ "$(/usr/bin/stat -Lc '%F:%a:%U:%G' -- "${STORAGE_LEASE}" 2>/dev/null || true)" != \

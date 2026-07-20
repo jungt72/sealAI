@@ -24,7 +24,7 @@ production_release_gate_check() {
   PRODUCTION_RELEASE_APPROVED_SOURCE_SHA=""
 
   case "${operation}" in
-    build|pull|deploy|migration|dashboard-publish|recovery-start-existing|remediation-control-install|operational-control-install|low-risk-emergency-deploy) ;;
+    build|pull|deploy|migration|dashboard-publish|recovery-start-existing|remediation-control-install|operational-control-install|low-risk-emergency-deploy|staging-build) ;;
     *)
       printf '%s\n' \
         '{"component":"sealai-production-release-gate-invocation","allowed":false,"reason":"invalid_operation"}' >&2
@@ -106,6 +106,10 @@ elif operation == "low-risk-emergency-deploy":
     expected_keys = base | {"source_git_sha", "approval_id", "base_git_sha"}
     expected_reason = "gate11_scoped_low_risk_emergency_corridor"
     expected_gate = "GATE-11"
+elif operation == "staging-build":
+    expected_keys = base | {"source_git_sha", "approval_id", "base_git_sha"}
+    expected_reason = "gate12_scoped_staging_build_corridor"
+    expected_gate = "GATE-12"
 else:
     expected_keys = base | {
         "source_git_sha",
@@ -133,12 +137,13 @@ if operation in mutating or operation in {
     "remediation-control-install",
     "operational-control-install",
     "low-risk-emergency-deploy",
+    "staging-build",
 }:
     if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", source):
         raise SystemExit(78)
     if expected_source and not hmac.compare_digest(source, expected_source):
         raise SystemExit(78)
-if operation == "low-risk-emergency-deploy":
+if operation in {"low-risk-emergency-deploy", "staging-build"}:
     approval_id = value.get("approval_id")
     base_sha = value.get("base_git_sha")
     if (
