@@ -353,7 +353,9 @@ def test_permission_manifest_rejects_symlink_and_inode_replacement(tmp_path):
 
 
 class FakeSystemd:
-    def __init__(self, *, fail_disable: bool = False):
+    def __init__(
+        self, *, fail_disable: bool = False, service_active_state: str = "failed"
+    ):
         self.calls: list[list[str]] = []
         self.fail_disable = fail_disable
         self.states = {
@@ -365,7 +367,7 @@ class FakeSystemd:
             },
             legacy.LEGACY_SERVICE: {
                 "LoadState": "loaded",
-                "ActiveState": "failed",
+                "ActiveState": service_active_state,
                 "UnitFileState": "static",
                 "FragmentPath": str(legacy.EXPECTED_FRAGMENTS[legacy.LEGACY_SERVICE]),
             },
@@ -387,7 +389,9 @@ class FakeSystemd:
         return "".join(f"{key}={value}\n" for key, value in self.states[unit].items())
 
 
-def _legacy_manifest(timer: Path, service: Path) -> dict[str, object]:
+def _legacy_manifest(
+    timer: Path, service: Path, *, service_active_state: str = "failed"
+) -> dict[str, object]:
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     return {
         "schema_version": 1,
@@ -409,7 +413,7 @@ def _legacy_manifest(timer: Path, service: Path) -> dict[str, object]:
             {
                 "unit_name": legacy.LEGACY_SERVICE,
                 "load_state": "loaded",
-                "active_state": "failed",
+                "active_state": service_active_state,
                 "unit_file_state": "static",
                 "fragment_path": str(service),
                 "fragment_sha256": hashlib.sha256(service.read_bytes()).hexdigest(),
@@ -418,7 +422,7 @@ def _legacy_manifest(timer: Path, service: Path) -> dict[str, object]:
     }
 
 
-def _prepare_legacy(monkeypatch, tmp_path):
+def _prepare_legacy(monkeypatch, tmp_path, *, service_active_state: str = "failed"):
     timer = tmp_path / legacy.LEGACY_TIMER
     service = tmp_path / legacy.LEGACY_SERVICE
     timer.write_text("[Timer]\nOnCalendar=hourly\n", encoding="utf-8")
@@ -430,12 +434,19 @@ def _prepare_legacy(monkeypatch, tmp_path):
         "EXPECTED_FRAGMENTS",
         {legacy.LEGACY_TIMER: timer, legacy.LEGACY_SERVICE: service},
     )
-    return _legacy_manifest(timer, service)
+    return _legacy_manifest(timer, service, service_active_state=service_active_state)
 
 
-def test_gate08_dry_run_and_apply_are_exact(monkeypatch, tmp_path):
-    manifest = _prepare_legacy(monkeypatch, tmp_path)
-    systemd = FakeSystemd()
+@pytest.mark.parametrize(
+    "service_active_state", sorted(legacy.SAFE_LEGACY_SERVICE_ACTIVE_STATES)
+)
+def test_gate08_dry_run_and_apply_are_exact(
+    monkeypatch, tmp_path, service_active_state
+):
+    manifest = _prepare_legacy(
+        monkeypatch, tmp_path, service_active_state=service_active_state
+    )
+    systemd = FakeSystemd(service_active_state=service_active_state)
     dry = legacy.execute(
         manifest,
         apply=False,
@@ -496,6 +507,26 @@ def test_gate08_rejects_any_unit_or_fragment_hash_drift(monkeypatch, tmp_path):
     manifest = _prepare_legacy(monkeypatch, tmp_path)
     manifest["units"][0]["fragment_sha256"] = "0" * 64
     with pytest.raises(legacy.LegacyUnitError, match="hash drift"):
+        legacy.validate_manifest(
+            manifest,
+            now=dt.datetime.now(dt.timezone.utc),
+            runner=systemd,
+            required_uid=os.geteuid(),
+        )
+
+
+@pytest.mark.parametrize(
+    "service_active_state",
+    ["active", "activating", "deactivating", "reloading", "bogus"],
+)
+def test_gate08_rejects_legacy_service_in_active_or_transitional_state(
+    monkeypatch, tmp_path, service_active_state
+):
+    manifest = _prepare_legacy(
+        monkeypatch, tmp_path, service_active_state=service_active_state
+    )
+    systemd = FakeSystemd(service_active_state=service_active_state)
+    with pytest.raises(legacy.LegacyUnitError, match="safe-to-retire state"):
         legacy.validate_manifest(
             manifest,
             now=dt.datetime.now(dt.timezone.utc),

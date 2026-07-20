@@ -209,19 +209,26 @@ crontab -u "${LEGACY_CRON_USER}" -l >"${CRON_BEFORE}" 2>/dev/null || {
   exit 79
 }
 LEGACY_COUNT="$(awk -v exact="${LEGACY_CRON_LINE}" '$0 == exact { count++ } END { print count+0 }' "${CRON_BEFORE}")"
-[[ "${LEGACY_COUNT}" == 1 ]] || {
-  printf 'disk-guard installer: legacy cron fingerprint drift\n' >&2
-  exit 79
-}
+case "${LEGACY_COUNT}" in
+  0|1) ;;
+  *)
+    printf 'disk-guard installer: legacy cron fingerprint drift\n' >&2
+    exit 79
+    ;;
+esac
 awk -v exact="${LEGACY_CRON_LINE}" '$0 != exact { print }' \
   "${CRON_BEFORE}" >"${CRON_AFTER}"
 
-# Neutralize the old automatic prune before installing the replacement. A
-# failed later step intentionally does not restore destructive automation.
-crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"
-if crontab -u "${LEGACY_CRON_USER}" -l | grep -Fqx "${LEGACY_CRON_LINE}"; then
-  printf 'disk-guard installer: legacy cron retirement failed\n' >&2
-  exit 79
+if [[ "${LEGACY_COUNT}" == 1 ]]; then
+  # Neutralize the old automatic prune before installing the replacement. A
+  # failed later step intentionally does not restore destructive automation.
+  crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"
+  if crontab -u "${LEGACY_CRON_USER}" -l | grep -Fqx "${LEGACY_CRON_LINE}"; then
+    printf 'disk-guard installer: legacy cron retirement failed\n' >&2
+    exit 79
+  fi
+else
+  printf 'disk-guard installer: legacy cron entry already retired, skipping removal\n'
 fi
 if pgrep -f '[/]home/thorsten/sealai/ops/disk_safeguard[.]sh' >/dev/null; then
   printf 'disk-guard installer: legacy cleanup process still running\n' >&2

@@ -23,6 +23,7 @@ EXPECTED_FRAGMENTS = {
     LEGACY_TIMER: Path("/etc/systemd/system/sealai-docker-disk-guard.timer"),
     LEGACY_SERVICE: Path("/etc/systemd/system/sealai-docker-disk-guard.service"),
 }
+SAFE_LEGACY_SERVICE_ACTIVE_STATES = frozenset({"failed", "inactive"})
 DEFAULT_MANIFEST = Path("/etc/sealai/approvals/gate-08-legacy-units.json")
 DEFAULT_EVIDENCE_ROOT = Path("/var/lib/sealai-disk-guard/legacy-unit-evidence")
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -204,9 +205,10 @@ def validate_manifest(
         _fail("legacy timer approval does not match the known active/enabled state")
     if (
         by_name[LEGACY_SERVICE].get("load_state") != "loaded"
-        or by_name[LEGACY_SERVICE].get("active_state") != "failed"
+        or by_name[LEGACY_SERVICE].get("active_state")
+        not in SAFE_LEGACY_SERVICE_ACTIVE_STATES
     ):
-        _fail("legacy service approval does not match the known failed state")
+        _fail("legacy service approval is not in a known safe-to-retire state")
     actual_values: list[dict[str, Any]] = []
     for unit in LEGACY_UNITS:
         expected = by_name[unit]
