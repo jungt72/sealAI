@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -160,9 +161,10 @@ def test_isolated_git_clone_flags_do_not_run_candidate_checkout_hook(tmp_path: P
         "-c",
         "protocol.file.allow=always",
     ]
+    clone_prefix = [*git_prefix, "-c", f"safe.directory={source}"]
     subprocess.run(
         [
-            *git_prefix,
+            *clone_prefix,
             "clone",
             "--no-local",
             "--no-checkout",
@@ -208,6 +210,56 @@ def test_isolated_git_clone_flags_do_not_run_candidate_checkout_hook(tmp_path: P
         ).stdout.strip()
         == approved_sha
     )
+
+
+def test_git_helper_threads_extra_config_ahead_of_the_checkout_flag(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(root_bootstrap.subprocess, "run", fake_run)
+
+    root_bootstrap._git(
+        Path("/tmp/hooks"),
+        ("status",),
+        checkout=Path("/tmp/checkout"),
+        extra_config=("safe.directory=/tmp/source",),
+    )
+
+    assert captured["command"] == [
+        "/usr/bin/git",
+        "-c",
+        "core.hooksPath=/tmp/hooks",
+        "-c",
+        "core.alternateRefsCommand=/bin/false",
+        "-c",
+        "protocol.file.allow=always",
+        "-c",
+        "safe.directory=/tmp/source",
+        "-C",
+        "/tmp/checkout",
+        "status",
+    ]
+
+
+def test_git_helper_omits_extra_config_flag_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(root_bootstrap.subprocess, "run", fake_run)
+
+    root_bootstrap._git(Path("/tmp/hooks"), ("status",))
+
+    assert "safe.directory" not in " ".join(captured["command"])
 
 
 def test_documented_loader_copies_as_data_then_hashes_before_execution():

@@ -186,7 +186,11 @@ def _validate_receipt(receipt: dict[str, Any]) -> tuple[str, dict[str, str]]:
 
 
 def _git(
-    hooks: Path, arguments: Sequence[str], *, checkout: Path | None = None
+    hooks: Path,
+    arguments: Sequence[str],
+    *,
+    checkout: Path | None = None,
+    extra_config: Sequence[str] = (),
 ) -> subprocess.CompletedProcess[str]:
     command = [
         "/usr/bin/git",
@@ -197,6 +201,8 @@ def _git(
         "-c",
         "protocol.file.allow=always",
     ]
+    for entry in extra_config:
+        command.extend(("-c", entry))
     if checkout is not None:
         command.extend(("-C", str(checkout)))
     result = subprocess.run(
@@ -227,6 +233,13 @@ def _verify_git_tree(git_directory: Path) -> None:
 def _prepare_checkout(
     source: Path, checkout: Path, hooks: Path, source_sha: str
 ) -> None:
+    # Git >=2.35.2 (CVE-2022-24765 mitigation) refuses to operate on a repository not
+    # owned by the running UID -- the candidate source is expected to be user-writable
+    # (root never executes its code, only reads committed blobs after the receipt-bound
+    # hash check below), so root cloning it trips "detected dubious ownership" without
+    # this explicit, narrowly-scoped exception. Passed on the command line for this one
+    # clone invocation only -- GIT_CONFIG_NOSYSTEM/GIT_CONFIG_GLOBAL=/dev/null still
+    # block any persistent or ambient safe.directory config from affecting this process.
     _git(
         hooks,
         (
@@ -241,6 +254,7 @@ def _prepare_checkout(
             str(source),
             str(checkout),
         ),
+        extra_config=(f"safe.directory={source}",),
     )
     if (
         _git(hooks, ("rev-parse", "HEAD"), checkout=checkout).stdout.strip()
