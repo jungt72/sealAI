@@ -190,7 +190,7 @@ def _git(
     arguments: Sequence[str],
     *,
     checkout: Path | None = None,
-    extra_config: Sequence[str] = (),
+    config_global: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         "/usr/bin/git",
@@ -201,13 +201,16 @@ def _git(
         "-c",
         "protocol.file.allow=always",
     ]
-    for entry in extra_config:
-        command.extend(("-c", entry))
     if checkout is not None:
         command.extend(("-C", str(checkout)))
+    env = (
+        GIT_ENV
+        if config_global is None
+        else {**GIT_ENV, "GIT_CONFIG_GLOBAL": str(config_global)}
+    )
     result = subprocess.run(
         [*command, *arguments],
-        env=GIT_ENV,
+        env=env,
         capture_output=True,
         text=True,
         check=False,
@@ -237,25 +240,38 @@ def _prepare_checkout(
     # owned by the running UID -- the candidate source is expected to be user-writable
     # (root never executes its code, only reads committed blobs after the receipt-bound
     # hash check below), so root cloning it trips "detected dubious ownership" without
-    # this explicit, narrowly-scoped exception. Passed on the command line for this one
-    # clone invocation only -- GIT_CONFIG_NOSYSTEM/GIT_CONFIG_GLOBAL=/dev/null still
-    # block any persistent or ambient safe.directory config from affecting this process.
-    _git(
-        hooks,
-        (
-            "clone",
-            "--no-local",
-            "--no-checkout",
-            "--no-recurse-submodules",
-            "--depth=1",
-            "--single-branch",
-            "--no-tags",
-            "--",
-            str(source),
-            str(checkout),
-        ),
-        extra_config=(f"safe.directory={source}",),
+    # this explicit, narrowly-scoped exception. `clone --no-local` opens the source's
+    # .git directory through git's internal local-transport code path, which -- verified
+    # empirically against git 2.43 -- only honors safe.directory from a config *file*,
+    # never from `-c` on the command line, unlike every other config key here. The
+    # exception is therefore written to a throwaway, root-owned, mode-0600 config file
+    # inside the already root-owned checkout stage, pointed to via GIT_CONFIG_GLOBAL for
+    # this one clone call only, and removed immediately after.
+    safe_directory_config = checkout.parent / "safe-directory.gitconfig"
+    safe_directory_config.write_text(
+        f"[safe]\n\tdirectory = {source}\n\tdirectory = {source / '.git'}\n",
+        encoding="utf-8",
     )
+    safe_directory_config.chmod(0o600)
+    try:
+        _git(
+            hooks,
+            (
+                "clone",
+                "--no-local",
+                "--no-checkout",
+                "--no-recurse-submodules",
+                "--depth=1",
+                "--single-branch",
+                "--no-tags",
+                "--",
+                str(source),
+                str(checkout),
+            ),
+            config_global=safe_directory_config,
+        )
+    finally:
+        safe_directory_config.unlink(missing_ok=True)
     if (
         _git(hooks, ("rev-parse", "HEAD"), checkout=checkout).stdout.strip()
         != source_sha
