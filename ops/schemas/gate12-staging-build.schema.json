@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sealai.local/schemas/gate12-staging-build.schema.json",
+  "title": "GATE-12 scoped staging-build corridor approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gate_id", "decision", "scope", "approval_id", "approved_by", "approved_at", "expires_at", "base_git_sha", "source_git_sha", "owner_read_diff_confirmation"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "gate_id": {"const": "GATE-12"},
+    "decision": {"const": "APPROVED"},
+    "scope": {"const": "staging-build"},
+    "approval_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "approved_by": {"type": "string", "minLength": 1},
+    "approved_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "base_git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Ancestor commit the diff is measured against — typically origin/main's tip at approval time."
+    },
+    "source_git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The exact commit being built. Must equal HEAD at check time."
+    },
+    "owner_read_diff_confirmation": {
+      "const": true,
+      "description": "Must be literally true. Never set by an agent; only by the owner after personally reading the diff."
+    }
+  }
+}

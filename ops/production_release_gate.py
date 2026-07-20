@@ -36,6 +36,9 @@ OPERATIONAL_CONTROL_APPROVAL_PATH = Path(
 LOW_RISK_EMERGENCY_APPROVAL_PATH = Path(
     "/etc/sealai/approvals/gate-11-low-risk-emergency.json"
 )
+STAGING_BUILD_APPROVAL_PATH = Path(
+    "/etc/sealai/approvals/gate-12-staging-build.json"
+)
 LIVE_PRODUCTION_REPO = Path("/home/thorsten/sealai")
 GATE10_LIFT_IMPLEMENTED = False
 GATE_DOCUMENT_PATHS = frozenset(
@@ -59,11 +62,13 @@ RECOVERY_OPERATION = "recovery-start-existing"
 REMEDIATION_CONTROL_OPERATION = "remediation-control-install"
 OPERATIONAL_CONTROL_OPERATION = "operational-control-install"
 LOW_RISK_EMERGENCY_OPERATION = "low-risk-emergency-deploy"
+STAGING_BUILD_OPERATION = "staging-build"
 OPERATIONS = MUTATING_OPERATIONS | {
     RECOVERY_OPERATION,
     REMEDIATION_CONTROL_OPERATION,
     OPERATIONAL_CONTROL_OPERATION,
     LOW_RISK_EMERGENCY_OPERATION,
+    STAGING_BUILD_OPERATION,
 }
 
 # GATE-11 (scoped low-risk emergency corridor, owner decision 2026-07-18): a narrow,
@@ -946,6 +951,110 @@ def _validate_low_risk_emergency_approval(
     return approval_id, base_git_sha, source_git_sha
 
 
+def _validate_staging_build_approval(
+    approval_path: Path, *, require_versioned: bool
+) -> tuple[str, str, str]:
+    """GATE-12: a narrow, additive exception to the GATE-10 freeze, scoped to exactly
+    one operation -- rebuilding and restarting the local VPS staging stack
+    (``ops/staging/up-staging-v2.sh``). Structurally identical to GATE-11
+    (``_validate_low_risk_emergency_approval`` above): runs from the live checkout,
+    never trusts the approval's own claims about which paths changed, independently
+    diffs ``base_git_sha..source_git_sha`` and rejects the whole batch if any changed
+    path matches ``GATE11_EXCLUDED_PATH_PREFIXES`` -- deliberately the SAME excluded-
+    path list GATE-11 uses, not a separate one to independently maintain and review.
+    Since that list excludes ``ops/`` wholesale, this corridor can never approve a
+    change to itself, to ``ops/staging/*``, or to the release gate -- exactly GATE-11's
+    own self-widening prohibition. Unlike GATE-11, this never authorizes ``deploy``,
+    ``pull``, or ``migration`` for production -- only ``staging-build`` -- and does not
+    require ``test_evidence_sha256`` (it builds a non-production sandbox, not a
+    release)."""
+
+    if require_versioned:
+        _assert_trusted_path(approval_path, leaf_directory=False, root_only=True)
+    approval, _ = _load_private_json(approval_path)
+    _require_exact_keys(
+        approval,
+        {
+            "schema_version",
+            "gate_id",
+            "decision",
+            "scope",
+            "approval_id",
+            "approved_by",
+            "approved_at",
+            "expires_at",
+            "base_git_sha",
+            "source_git_sha",
+            "owner_read_diff_confirmation",
+        },
+        "GATE-12 staging build approval",
+    )
+    if (
+        approval.get("schema_version") != 1
+        or approval.get("gate_id") != "GATE-12"
+        or approval.get("decision") != "APPROVED"
+        or approval.get("scope") != "staging-build"
+    ):
+        raise GateConfigurationError(
+            "approval does not authorize the staging build corridor"
+        )
+    approval_id = _require_nonempty(approval.get("approval_id"), "approval_id")
+    _require_nonempty(approval.get("approved_by"), "approved_by")
+    if approval.get("owner_read_diff_confirmation") is not True:
+        raise GateConfigurationError(
+            "GATE-12 approval must confirm the owner read the diff"
+        )
+
+    approved_at = _parse_utc_timestamp(approval.get("approved_at"), "approved_at")
+    expires_at = _parse_utc_timestamp(approval.get("expires_at"), "expires_at")
+    now = dt.datetime.now(dt.timezone.utc)
+    if approved_at > now + dt.timedelta(minutes=5):
+        raise GateConfigurationError("GATE-12 approval is future-dated")
+    if expires_at <= now or expires_at > approved_at + dt.timedelta(hours=4):
+        raise GateConfigurationError("GATE-12 approval is expired or over-broad")
+
+    base_git_sha = str(approval.get("base_git_sha", ""))
+    source_git_sha = str(approval.get("source_git_sha", ""))
+    if not re.fullmatch(r"[0-9a-f]{40}", base_git_sha):
+        raise GateConfigurationError("GATE-12 approval base commit is invalid")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_git_sha):
+        raise GateConfigurationError("GATE-12 approval source commit is invalid")
+    if base_git_sha == source_git_sha:
+        raise GateConfigurationError("GATE-12 approval covers an empty commit range")
+    current_head = _git("rev-parse", "HEAD").strip()
+    if source_git_sha != current_head:
+        raise GateConfigurationError("GATE-12 approval is bound to another commit")
+    if not _git_is_ancestor(base_git_sha, source_git_sha):
+        raise GateConfigurationError(
+            "GATE-12 approval base commit is not an ancestor of the source commit"
+        )
+
+    changed_paths = [
+        line
+        for line in _git(
+            "diff",
+            "--name-only",
+            "--no-renames",
+            base_git_sha,
+            source_git_sha,
+            "--",
+        ).splitlines()
+        if line
+    ]
+    if not changed_paths:
+        raise GateConfigurationError("GATE-12 approval covers an empty diff")
+    excluded_hits = [
+        path for path in changed_paths if _path_excluded_from_low_risk_corridor(path)
+    ]
+    if excluded_hits:
+        raise GateConfigurationError(
+            "GATE-12 diff touches an excluded path: " + ", ".join(sorted(excluded_hits))
+        )
+    if require_versioned:
+        _assert_clean_checkout()
+    return approval_id, base_git_sha, source_git_sha
+
+
 def _assert_two_commit_binding(manifest: dict[str, Any]) -> str:
     lineage = _git("rev-list", "--parents", "-n", "1", "HEAD").strip().split()
     if len(lineage) != 2:
@@ -989,6 +1098,7 @@ def evaluate(
     remediation_approval_path: Path = REMEDIATION_APPROVAL_PATH,
     operational_approval_path: Path = OPERATIONAL_CONTROL_APPROVAL_PATH,
     low_risk_emergency_approval_path: Path = LOW_RISK_EMERGENCY_APPROVAL_PATH,
+    staging_build_approval_path: Path = STAGING_BUILD_APPROVAL_PATH,
     require_versioned: bool = True,
 ) -> GateDecision:
     if operation not in OPERATIONS:
@@ -1064,6 +1174,23 @@ def evaluate(
                 approval_id=approval_id,
                 base_git_sha=base_git_sha,
             )
+        if operation == STAGING_BUILD_OPERATION:
+            approval_id, base_git_sha, source_git_sha = (
+                _validate_staging_build_approval(
+                    staging_build_approval_path,
+                    require_versioned=require_versioned,
+                )
+            )
+            return GateDecision(
+                allowed=True,
+                operation=operation,
+                reason="gate12_scoped_staging_build_corridor",
+                state_id=state_id,
+                required_gate="GATE-12",
+                source_git_sha=source_git_sha,
+                approval_id=approval_id,
+                base_git_sha=base_git_sha,
+            )
         raise GateDenied("production release freeze is active")
 
     approval, _ = _load_json(approval_path)
@@ -1108,6 +1235,7 @@ def _status_document() -> dict[str, object]:
         "freeze_remediation_operation": REMEDIATION_CONTROL_OPERATION,
         "freeze_operational_control_operation": OPERATIONAL_CONTROL_OPERATION,
         "freeze_low_risk_emergency_operation": LOW_RISK_EMERGENCY_OPERATION,
+        "freeze_staging_build_operation": STAGING_BUILD_OPERATION,
     }
 
 
