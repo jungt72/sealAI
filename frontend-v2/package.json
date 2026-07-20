@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "jspdf": "^4.2.1",
-    "katex": "0.16.45",
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "react-markdown": "9.1.0",
+    "katex": "0.18.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-markdown": "10.1.0",
     "rehype-katex": "7.0.1",
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0"
@@ -27,13 +27,13 @@
   "devDependencies": {
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
-    "@types/node": "^26.0.1",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "@vitejs/plugin-react": "6.0.1",
-    "jsdom": "29.0.1",
-    "typescript": "5.9.3",
-    "vite": "8.1.4",
-    "vitest": "4.1.2"
+    "@types/node": "^26.1.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "6.0.3",
+    "jsdom": "29.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
   }
 }
