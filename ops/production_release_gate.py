@@ -15,12 +15,14 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,9 +38,7 @@ OPERATIONAL_CONTROL_APPROVAL_PATH = Path(
 LOW_RISK_EMERGENCY_APPROVAL_PATH = Path(
     "/etc/sealai/approvals/gate-11-low-risk-emergency.json"
 )
-STAGING_BUILD_APPROVAL_PATH = Path(
-    "/etc/sealai/approvals/gate-12-staging-build.json"
-)
+STAGING_BUILD_APPROVAL_PATH = Path("/etc/sealai/approvals/gate-12-staging-build.json")
 LIVE_PRODUCTION_REPO = Path("/home/thorsten/sealai")
 GATE10_LIFT_IMPLEMENTED = False
 GATE_DOCUMENT_PATHS = frozenset(
@@ -635,6 +635,101 @@ def _artifact_sha256(relative_path: str) -> str:
     return digest.hexdigest()
 
 
+# GATE-10 P1 phase 1 (source-derived hashes, owner decision 2026-07-20): the two
+# required_manifest_hashes fields verifiable with zero new trust surface -- no Docker, no
+# network, no owner document, just the committed tree. This is the exact recipe
+# ops/tree-hash.sh already uses and tests (backend/tests/test_tree_hash.py), reimplemented
+# in-process so it can run inside the gate's fail-closed, empty-environment invocation
+# instead of shelling out to a second script. Extending SERVED_TREE_PATHSPECS or adding a
+# new pathspec set here must stay in lockstep with ops/tree-hash.sh -- see
+# test_served_tree_hash_matches_tree_hash_script, which cross-checks the two by golden
+# comparison so they can never silently drift apart.
+SERVED_TREE_PATHSPECS: tuple[str, ...] = (
+    "backend/sealai_v2",
+    ":(exclude)backend/sealai_v2/eval",
+    ":(exclude)backend/sealai_v2/tests",
+    "backend/requirements-v2.txt",
+    "backend/.dockerignore",
+    "backend/Dockerfile.v2",
+    "backend/docker-entrypoint-v2.sh",
+)
+DATABASE_MIGRATION_PATHSPECS: tuple[str, ...] = ("backend/sealai_v2/db/migrations",)
+
+
+def _git_write_tree(pathspecs: tuple[str, ...]) -> str:
+    """The ops/tree-hash.sh throwaway-index recipe, in-process: a private
+    GIT_INDEX_FILE in a fresh 0700 temp directory, `git add -A` the fixed pathspecs into
+    it, `git write-tree`. Never touches the real index or working tree. Returns the raw
+    git tree-object id (40 hex chars in this repo -- it is a SHA-1 repository, verified
+    via `git rev-parse --show-object-format` -- NOT a SHA-256; callers that need a
+    SHA256_RE-shaped value must wrap the result, see _served_tree_sha256)."""
+
+    stage = tempfile.mkdtemp(prefix="sealai-gate10-index-")
+    try:
+        env = {**GIT_ENV, "GIT_INDEX_FILE": os.path.join(stage, "index")}
+        add = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO_ROOT), "add", "-A", "--", *pathspecs],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            check=False,
+        )
+        if add.returncode != 0:
+            raise GateConfigurationError(
+                "cannot stage the real release artifact for hashing"
+            )
+        tree = subprocess.run(
+            ["/usr/bin/git", "-C", str(REPO_ROOT), "write-tree"],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        tree_id = tree.stdout.strip()
+        if tree.returncode != 0 or not GIT_SHA_RE.fullmatch(tree_id):
+            raise GateConfigurationError(
+                "cannot compute the real release artifact tree hash"
+            )
+        return tree_id
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
+def _served_tree_sha256() -> str:
+    return hashlib.sha256(
+        _git_write_tree(SERVED_TREE_PATHSPECS).encode("ascii")
+    ).hexdigest()
+
+
+def _database_migration_sha256() -> str:
+    return hashlib.sha256(
+        _git_write_tree(DATABASE_MIGRATION_PATHSPECS).encode("ascii")
+    ).hexdigest()
+
+
+# Registry, not a hardcoded if/elif chain -- naturally extensible for later phases (e.g. an
+# _IMAGE_ATTESTATION_HASH_VERIFIERS registry once Docker/network verification is added).
+# Named for what each entry does now; "phase" is planning vocabulary, not domain language.
+_SOURCE_DERIVED_HASH_VERIFIERS: dict[str, Callable[[], str]] = {
+    "served_tree_sha256": _served_tree_sha256,
+    "database_migration_sha256": _database_migration_sha256,
+}
+
+
+def _verify_source_derived_artifact_hashes(hashes: dict[str, Any]) -> None:
+    """Recompute each source-derived manifest hash from the real checked-out tree and
+    compare -- never trust the manifest's own claim. Must only be called after
+    _assert_two_commit_binding has already proven HEAD is the exact control commit over a
+    clean checkout (see its call site in evaluate()); hashing an unproven checkout would
+    let a dirty or manipulated tree be hashed instead of the real released one."""
+
+    for name, verifier in _SOURCE_DERIVED_HASH_VERIFIERS.items():
+        if verifier() != hashes.get(name):
+            raise GateConfigurationError(
+                f"release manifest hash does not match the real artifact: {name}"
+            )
+
+
 def _validate_remediation_control_approval(
     approval_path: Path, *, require_versioned: bool
 ) -> tuple[str, str, dict[str, str]]:
@@ -1208,6 +1303,7 @@ def evaluate(
     source_git_sha = str(manifest["source_git_sha"])
     if require_versioned:
         source_git_sha = _assert_two_commit_binding(manifest)
+        _verify_source_derived_artifact_hashes(manifest["hashes"])
     if not GATE10_LIFT_IMPLEMENTED:
         raise GateConfigurationError(
             "GATE-10 lift remains disabled pending exact artifact binding"

@@ -61,7 +61,19 @@ def _manifest(
     *,
     readiness: dict[str, bool] | None = None,
     source_git_sha: str = "a" * 40,
+    hash_overrides: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    hashes = {
+        "served_tree_sha256": "1" * 64,
+        "backend_image_digest": "sha256:" + "2" * 64,
+        "frontend_image_digest": "sha256:" + "3" * 64,
+        "dashboard_artifact_sha256": "4" * 64,
+        "database_migration_sha256": "5" * 64,
+        "rollback_plan_sha256": "6" * 64,
+        "evidence_manifest_sha256": "7" * 64,
+    }
+    if hash_overrides:
+        hashes.update(hash_overrides)
     return {
         "schema_version": 1,
         "manifest_id": "release-manifest-test-001",
@@ -74,15 +86,7 @@ def _manifest(
             "P0_REDIS_STABLE": True,
             "RELEASE_GATE_FAIL_CLOSED": True,
         },
-        "hashes": {
-            "served_tree_sha256": "1" * 64,
-            "backend_image_digest": "sha256:" + "2" * 64,
-            "frontend_image_digest": "sha256:" + "3" * 64,
-            "dashboard_artifact_sha256": "4" * 64,
-            "database_migration_sha256": "5" * 64,
-            "rollback_plan_sha256": "6" * 64,
-            "evidence_manifest_sha256": "7" * 64,
-        },
+        "hashes": hashes,
     }
 
 
@@ -92,12 +96,15 @@ def _write_unfreeze_documents(
     manifest: dict[str, object] | None = None,
     approval_hash: str | None = None,
     source_git_sha: str = "a" * 40,
+    hash_overrides: dict[str, str] | None = None,
 ) -> tuple[Path, Path, Path]:
     state_path = tmp_path / "production-release-state.json"
     approval_path = tmp_path / "production-release-gate10-approval.json"
     manifest_path = tmp_path / "production-release-manifest.json"
     state_path.write_text(json.dumps(_state(active=False)) + "\n", encoding="utf-8")
-    manifest_value = manifest or _manifest(source_git_sha=source_git_sha)
+    manifest_value = manifest or _manifest(
+        source_git_sha=source_git_sha, hash_overrides=hash_overrides
+    )
     manifest_raw = (json.dumps(manifest_value, sort_keys=True) + "\n").encode()
     manifest_path.write_bytes(manifest_raw)
     approval = {
@@ -129,13 +136,32 @@ def _git(repo: Path, *args: str) -> str:
 
 def _make_gate_control_repo(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     *,
     source_override: str | None = None,
     extra_control_path: bool = False,
 ) -> tuple[Path, Path, Path, Path, str]:
+    """Builds a source commit that also carries minimal, real stub inputs for every
+    SERVED_TREE_PATHSPECS/DATABASE_MIGRATION_PATHSPECS entry, patches gate.REPO_ROOT to
+    this repo, then computes the REAL served_tree_sha256/database_migration_sha256 (the
+    same oracle pattern _write_remediation_control_approval already uses via
+    gate._artifact_sha256) so the two-commit tests exercise the actual Phase-1 hash
+    verification instead of bypassing it with dummy hex."""
+
     repo = tmp_path / "control-repo"
     ops = repo / "ops"
     ops.mkdir(parents=True)
+    backend = repo / "backend"
+    migrations = backend / "sealai_v2" / "db" / "migrations" / "versions"
+    migrations.mkdir(parents=True)
+    (backend / "sealai_v2" / "__init__.py").write_text("", encoding="utf-8")
+    (migrations / "20260101_0000_stub.py").write_text(
+        "# stub migration\n", encoding="utf-8"
+    )
+    (backend / "requirements-v2.txt").write_text("stub==1.0\n", encoding="utf-8")
+    (backend / ".dockerignore").write_text("__pycache__\n", encoding="utf-8")
+    (backend / "Dockerfile.v2").write_text("FROM scratch\n", encoding="utf-8")
+    (backend / "docker-entrypoint-v2.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Gate Test")
     _git(repo, "config", "user.email", "gate-test@example.invalid")
@@ -147,8 +173,16 @@ def _make_gate_control_repo(
     _git(repo, "commit", "-m", "source commit")
     source_sha = _git(repo, "rev-parse", "HEAD")
 
+    monkeypatch.setattr(gate, "REPO_ROOT", repo)
+    real_hashes = {
+        "served_tree_sha256": gate._served_tree_sha256(),
+        "database_migration_sha256": gate._database_migration_sha256(),
+    }
+
     state_path, approval_path, manifest_path = _write_unfreeze_documents(
-        ops, source_git_sha=source_override or source_sha
+        ops,
+        source_git_sha=source_override or source_sha,
+        hash_overrides=real_hashes,
     )
     if extra_control_path:
         (repo / "unrelated.txt").write_text("not gate control\n", encoding="utf-8")
@@ -378,9 +412,8 @@ def test_versioned_two_commit_unfreeze_binds_exact_source_parent(
     tmp_path: Path, monkeypatch
 ):
     repo, state_path, approval_path, manifest_path, source_sha = (
-        _make_gate_control_repo(tmp_path)
+        _make_gate_control_repo(tmp_path, monkeypatch)
     )
-    monkeypatch.setattr(gate, "REPO_ROOT", repo)
 
     with pytest.raises(
         gate.GateConfigurationError,
@@ -400,9 +433,8 @@ def test_two_commit_unfreeze_rejects_source_parent_mismatch(
     tmp_path: Path, monkeypatch
 ):
     repo, state_path, approval_path, manifest_path, _ = _make_gate_control_repo(
-        tmp_path, source_override="b" * 40
+        tmp_path, monkeypatch, source_override="b" * 40
     )
-    monkeypatch.setattr(gate, "REPO_ROOT", repo)
 
     with pytest.raises(gate.GateConfigurationError, match="different source parent"):
         gate.evaluate(
@@ -417,9 +449,8 @@ def test_two_commit_unfreeze_rejects_any_other_changed_path(
     tmp_path: Path, monkeypatch
 ):
     repo, state_path, approval_path, manifest_path, _ = _make_gate_control_repo(
-        tmp_path, extra_control_path=True
+        tmp_path, monkeypatch, extra_control_path=True
     )
-    monkeypatch.setattr(gate, "REPO_ROOT", repo)
 
     with pytest.raises(gate.GateConfigurationError, match="exactly the three"):
         gate.evaluate(
@@ -432,7 +463,7 @@ def test_two_commit_unfreeze_rejects_any_other_changed_path(
 
 def test_two_commit_unfreeze_rejects_merge_control_head(tmp_path: Path, monkeypatch):
     repo, state_path, approval_path, manifest_path, source_sha = (
-        _make_gate_control_repo(tmp_path)
+        _make_gate_control_repo(tmp_path, monkeypatch)
     )
     _git(repo, "branch", "side", source_sha)
     _git(repo, "checkout", "side")
@@ -441,7 +472,6 @@ def test_two_commit_unfreeze_rejects_merge_control_head(tmp_path: Path, monkeypa
     _git(repo, "commit", "-m", "side commit")
     _git(repo, "checkout", "main")
     _git(repo, "merge", "--no-ff", "side", "-m", "merge control head")
-    monkeypatch.setattr(gate, "REPO_ROOT", repo)
 
     with pytest.raises(gate.GateConfigurationError, match="exactly one parent"):
         gate.evaluate(
