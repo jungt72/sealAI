@@ -16,46 +16,46 @@
 # =============================================================================
 # Web Framework / Runtime
 # =============================================================================
-fastapi==0.135.3
-starlette==0.50.0
-uvicorn[standard]==0.43.0
-websockets==16.0
+fastapi==0.139.2
+starlette==1.3.1
+uvicorn[standard]==0.51.0
+websockets==16.1.1
 
 httpx==0.28.1
 httpcore==1.0.9
-anyio==4.13.0
+anyio==4.14.2
 
-orjson==3.11.8
+orjson==3.11.9
 python-dotenv==1.2.2
 PyYAML==6.0.3
 
-pydantic==2.12.5
-pydantic-core==2.41.5
-pydantic-settings==2.13.1
-typing-extensions==4.15.0
+pydantic==2.13.4
+pydantic-core==2.47.0
+pydantic-settings==2.14.2
+typing-extensions==4.16.0
 tenacity==9.1.4
 
 # =============================================================================
 # OpenAI / Tokenization
 # =============================================================================
-openai==2.30.0
-tiktoken==0.12.0
+openai==2.46.0
+tiktoken==0.13.0
 
 # =============================================================================
 # LangChain / LangGraph (v2)
 # =============================================================================
-langchain==1.2.15
-langchain-core==1.2.26
-langchain-community==0.4.1
-langchain-openai==1.1.12
-langchain-text-splitters==1.1.1
+langchain==1.3.14
+langchain-core==1.4.9
+langchain-community==0.4.2
+langchain-openai==1.3.5
+langchain-text-splitters==1.1.2
 langchain-qdrant==1.1.0
-langsmith==0.7.25
+langsmith==0.10.6
 
 # LangGraph v2 Core
-langgraph==1.1.6
-langgraph-checkpoint==4.0.1
-langgraph-checkpoint-redis==0.4.0
+langgraph==1.2.9
+langgraph-checkpoint==4.1.1
+langgraph-checkpoint-redis==0.5.1
 langgraph-supervisor==0.0.31
 
 # Optional – nur aktivieren, wenn explizit importiert
@@ -65,42 +65,42 @@ langgraph-supervisor==0.0.31
 # =============================================================================
 # Vector DB / Retrieval
 # =============================================================================
-qdrant-client==1.17.1
-redis==7.4.0
+qdrant-client==1.18.0
+redis==8.0.1
 
 # Lokale Embeddings (RAG Ingest & Query)
 fastembed==0.8.0
-onnxruntime==1.24.4
-numpy==2.4.4
+onnxruntime==1.27.0
+numpy==2.5.1
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.11.0+cpu
-sentence-transformers==5.3.0
+torch==2.13.0+cpu
+sentence-transformers==5.6.0
 
 # =============================================================================
 # Datenbanken
 # =============================================================================
-SQLAlchemy==2.0.49
-alembic==1.18.4
+SQLAlchemy==2.0.51
+alembic==1.18.5
 
 # Async Runtime DB Driver (App)
 asyncpg==0.31.0
 
 # Sync DB Driver (Alembic / Migrations ONLY)
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.12
 
 # =============================================================================
 # Auth / Security
 # =============================================================================
 python-keycloak==7.1.1
 python-jose[cryptography]==3.5.0
-cryptography==46.0.6
+cryptography==49.0.0
 
 # =============================================================================
 # Logging / Observability
 # =============================================================================
-structlog==25.5.0
-prometheus-client==0.24.1
-prometheus-fastapi-instrumentator==7.1.0
+structlog==26.1.0
+prometheus-client==0.25.0
+prometheus-fastapi-instrumentator==8.0.2
 
 # =============================================================================
 # Prompting / Templates
@@ -110,10 +110,10 @@ Jinja2==3.1.6
 # =============================================================================
 # File Parsing / RAG Ingestion
 # =============================================================================
-python-multipart==0.0.22
+python-multipart==0.0.32
 docx2txt==0.9
 python-docx==1.2.0
-pypdf==6.9.2
+pypdf==6.14.2
 
 ###############################################################################
 # Hinweise:
@@ -121,5 +121,5 @@ pypdf==6.9.2
 # - Runtime nutzt DATABASE_URL (asyncpg)
 ###############################################################################
 nest_asyncio==1.6.0
-psycopg-pool==3.3.0
-psycopg[binary]==3.3.3
+psycopg-pool==3.3.1
+psycopg[binary]==3.3.4
