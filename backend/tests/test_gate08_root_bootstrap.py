@@ -245,7 +245,10 @@ def test_git_helper_overrides_config_global_env_only_when_given(
         "/tmp/checkout",
         "status",
     ]
-    assert captured["env"]["GIT_CONFIG_GLOBAL"] == "/tmp/root-stage/safe-directory.gitconfig"
+    assert (
+        captured["env"]["GIT_CONFIG_GLOBAL"]
+        == "/tmp/root-stage/safe-directory.gitconfig"
+    )
 
 
 def test_git_helper_keeps_dev_null_config_global_by_default(
