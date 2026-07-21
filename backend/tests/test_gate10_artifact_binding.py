@@ -301,6 +301,14 @@ def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
     state_path, approval_path, manifest_path = _write_control_commit(
         repo, source_sha=source_sha, hashes=real_hashes
     )
+    # backend_image_digest attestation needs real Docker+network+Sigstore -- out of
+    # scope for this source-derived-hash test (see
+    # test_gate_backend_image_attestation.py for that).
+    monkeypatch.setattr(
+        gate,
+        "_IMAGE_ATTESTATION_HASH_VERIFIERS",
+        {"backend_image_digest": lambda digest, source_git_sha: None},
+    )
 
     with pytest.raises(
         gate.GateConfigurationError,

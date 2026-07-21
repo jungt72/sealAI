@@ -111,3 +111,37 @@ unabhaengig, dass 2/7 Manifest-Hashes gebunden sind und aktuell kein Freigabepfa
 Kontext-Sammlung, Fail-closed ohne OPENAI_API_KEY, und die exakte Request-Form (ein Call,
 max_completion_tokens, kein Approval-Schreibzugriff) ab -- lokal gruen, ruff format/check sauber.
 Noch nicht in einen Freigabe-Workflow verdrahtet; reine Lese-/Beratungs-Hilfe.
+
+2026-07-21 (Nachtrag) | Claude Code | GATE-10 P1 Phase 2 (backend_image_digest) | Auf
+Owner-Wunsch, schrittweise nach GATE-10-Challenger-Piloten: dritte von sieben
+required_manifest_hashes real gebunden. ops/production_release_gate.py::
+_verify_backend_image_attestation ruft das bereits existierende
+ops/verify-image-attestations.sh (Sigstore/Rekor Build-Provenance + SBOM, dieselbe Pruefung
+die ops/release-backend-v2.sh schon vor jeder Image-Promotion faehrt) und lehnt eine
+manifest-behauptete Digest ab, die nicht wirklich von build-and-push.yml aus dem
+freigegebenen source_git_sha gebaut wurde. Erstes Feld in dieser Datei, das Docker+Netzwerk
+braucht -- bewusst, eine Signaturpruefung laesst sich nicht lokal nachrechnen.
+frontend_image_digest bleibt bewusst aussen vor: es existiert noch gar keine attestierte
+Build-Pipeline fuer das Frontend-Image (build-and-push.yml baut nur backend-v2) -- das ist
+ein groesserer, separater Vorlauf (neue CI-Pipeline), keine reine Gate-Verdrahtung wie hier.
+GATE10_LIFT_IMPLEMENTED bleibt unveraendert false; es fehlen weiterhin frontend_image_digest,
+dashboard_artifact_sha256 (kein Publisher existiert) und rollback_plan_sha256/
+evidence_manifest_sha256 (keine Schema-Entscheidung getroffen -- Produktentscheidung, keine
+reine Technik).
+
+Beim Verdrahten einen selbst verursachten Bug in derselben Aenderung gefunden und sofort
+korrigiert, bevor committed wurde: eine textbasierte Ersetzung hatte den Funktionskoerper von
+_verify_source_derived_artifact_hashes versehentlich geloescht (Phase-1-Pruefung waere damit
+wirkungslos gewesen). Ursache war ein zu kurzer Match-Anker beim automatisierten Patchen: durch
+sorgfaeltigen Diff-Review vor dem Commit gefunden, nicht durch Tests (die haetten es aber auch
+gefangen -- siehe unten). Zwei bestehende Tests (test_gate10_artifact_binding.py::
+test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag,
+test_production_release_gate.py::test_versioned_two_commit_unfreeze_binds_exact_source_parent)
+mussten angepasst werden (Attestation-Registry gemockt), weil sie mit Dummy-Digests bis zum
+GATE10_LIFT_IMPLEMENTED-Check durchlaufen sollten und nun vorher am echten
+Attestation-Call scheiterten. Neue backend/tests/test_gate_backend_image_attestation.py
+(6 Tests) deckt Format-Ablehnung, exakte Skript-Argumente, Fail-closed bei Script-Fehler,
+Erfolgspfad, und die Ein-Feld-Grenze der Registry ab. Alle betroffenen Gate-Tests lokal gruen
+(104 Tests); ein unabhaengiges, vorbestehendes venv-Problem
+(prometheus_fastapi_instrumentator fehlt, auch auf unveraendertem main reproduzierbar)
+verhinderte den vollen ops/gate.sh-Lauf lokal, betrifft aber nicht CI (frische Installation).

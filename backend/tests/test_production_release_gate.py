@@ -414,6 +414,14 @@ def test_versioned_two_commit_unfreeze_binds_exact_source_parent(
     repo, state_path, approval_path, manifest_path, source_sha = (
         _make_gate_control_repo(tmp_path, monkeypatch)
     )
+    # backend_image_digest attestation needs real Docker+network+Sigstore -- out of
+    # scope for this test, which is about the two-commit binding, not image
+    # provenance (see test_gate_backend_image_attestation.py for that).
+    monkeypatch.setattr(
+        gate,
+        "_IMAGE_ATTESTATION_HASH_VERIFIERS",
+        {"backend_image_digest": lambda digest, source_git_sha: None},
+    )
 
     with pytest.raises(
         gate.GateConfigurationError,

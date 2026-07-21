@@ -730,6 +730,71 @@ def _verify_source_derived_artifact_hashes(hashes: dict[str, Any]) -> None:
             )
 
 
+# GATE-10 P1 phase 2 (backend image attestation, owner decision 2026-07-21): binds
+# backend_image_digest to a real GitHub Actions build-provenance + SBOM attestation,
+# verified through Sigstore/Rekor by the existing ops/verify-image-attestations.sh +
+# ops/verify_attestation_payload.py pipeline -- the same one ops/release-backend-v2.sh
+# already runs before a candidate image is promoted. Unlike the phase 1 source-derived
+# hashes, this genuinely needs Docker and network: verifying a supply-chain signature
+# means reaching the transparency log, there is no local recomputation that proves
+# provenance. frontend_image_digest stays format-checked only -- no attested build
+# workflow exists for the frontend image at all yet (build-and-push.yml only builds
+# backend-v2), so there is nothing here to verify against until that pipeline exists.
+_BACKEND_IMAGE_NAME = "ghcr.io/jungt72/sealai-backend-v2"
+_BACKEND_IMAGE_WORKFLOW = ".github/workflows/build-and-push.yml"
+_VERIFY_IMAGE_ATTESTATIONS_SCRIPT = (
+    Path(__file__).resolve().parent / "verify-image-attestations.sh"
+)
+
+
+def _verify_backend_image_attestation(digest: str, source_git_sha: str) -> None:
+    if not DIGEST_RE.fullmatch(str(digest)):
+        raise GateConfigurationError(
+            "release manifest hash is not a valid digest: backend_image_digest"
+        )
+    image_ref = f"{_BACKEND_IMAGE_NAME}@{digest}"
+    result = subprocess.run(
+        [
+            "/bin/bash",
+            "-p",
+            str(_VERIFY_IMAGE_ATTESTATIONS_SCRIPT),
+            image_ref,
+            source_git_sha,
+            _BACKEND_IMAGE_WORKFLOW,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()[-2000:]
+        raise GateConfigurationError(
+            "backend_image_digest failed provenance/SBOM attestation verification"
+            + (f": {detail}" if detail else "")
+        )
+
+
+# Registry, matching _SOURCE_DERIVED_HASH_VERIFIERS's shape but keyed to verifiers that
+# take the claimed value plus the already-proven source_git_sha -- attestation
+# verification checks *provenance* of a claimed digest rather than recomputing it.
+_IMAGE_ATTESTATION_HASH_VERIFIERS: dict[str, Callable[[str, str], None]] = {
+    "backend_image_digest": _verify_backend_image_attestation,
+}
+
+
+def _verify_image_attestation_hashes(
+    hashes: dict[str, Any], source_git_sha: str
+) -> None:
+    """Verify each attestation-backed manifest hash's provenance. Must only be called
+    after _assert_two_commit_binding has already proven source_git_sha is the exact,
+    clean control commit -- same precondition as _verify_source_derived_artifact_hashes,
+    for the same reason: an unproven source_git_sha would let a forged commit stand in
+    for the real one during attestation verification."""
+
+    for name, verifier in _IMAGE_ATTESTATION_HASH_VERIFIERS.items():
+        verifier(hashes[name], source_git_sha)
+
+
 def _validate_remediation_control_approval(
     approval_path: Path, *, require_versioned: bool
 ) -> tuple[str, str, dict[str, str]]:
@@ -1304,6 +1369,7 @@ def evaluate(
     if require_versioned:
         source_git_sha = _assert_two_commit_binding(manifest)
         _verify_source_derived_artifact_hashes(manifest["hashes"])
+        _verify_image_attestation_hashes(manifest["hashes"], source_git_sha)
     if not GATE10_LIFT_IMPLEMENTED:
         raise GateConfigurationError(
             "GATE-10 lift remains disabled pending exact artifact binding"
