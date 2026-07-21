@@ -1267,10 +1267,24 @@ def _validate_staging_build_approval(
     practice blocked nearly every real rebuild once ops/-touching work (which is most
     of this repo's release-engineering activity) landed on main -- staging had gone
     stale for well over a week as a direct result. Production (GATE-10, GATE-11) is
-    completely unaffected by this change."""
+    completely unaffected by this change.
+
+    Owner-observed, 2026-07-21 (first live end-to-end run): unlike GATE-08/10/11,
+    this corridor's own approval check runs as whichever unprivileged host user
+    invokes ``up-staging-v2.sh`` (no sudo anywhere in that script, by design -- see
+    the corridor doc). ``_load_private_json`` already accepts a receipt owned by
+    the calling process's own uid, not just root. Passing ``root_only=True`` here
+    forced the leaf file to be root-owned regardless, which is impossible to
+    satisfy at the same time as ``_load_private_json``'s own-uid check for a
+    non-root caller -- copied from GATE-08/11's call without re-deriving it for
+    GATE-12's actually-different (non-root) execution context. The directory
+    chain above the leaf file is unaffected: every ancestor is still required to
+    be root-owned (``{0, os.geteuid()}`` always contains 0), so this only relaxes
+    the ownership check for the leaf receipt itself, matching what
+    ``_load_private_json`` already independently enforces two lines below."""
 
     if require_versioned:
-        _assert_trusted_path(approval_path, leaf_directory=False, root_only=True)
+        _assert_trusted_path(approval_path, leaf_directory=False, root_only=False)
     approval, _ = _load_private_json(approval_path)
     _require_exact_keys(
         approval,
