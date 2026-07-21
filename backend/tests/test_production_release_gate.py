@@ -170,6 +170,11 @@ def _make_gate_control_repo(
     (docs_ops / "GATE-10-EVIDENCE-MANIFEST.md").write_text(
         "stub evidence manifest\n", encoding="utf-8"
     )
+    dashboard_candidate = repo.joinpath(*gate.DASHBOARD_CANDIDATE_RELPATH)
+    dashboard_candidate.mkdir(parents=True)
+    (dashboard_candidate / "index.html").write_text(
+        "<html>stub dashboard candidate</html>\n", encoding="utf-8"
+    )
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Gate Test")
     _git(repo, "config", "user.email", "gate-test@example.invalid")
@@ -187,6 +192,7 @@ def _make_gate_control_repo(
         "database_migration_sha256": gate._database_migration_sha256(),
         "rollback_plan_sha256": gate._rollback_plan_sha256(),
         "evidence_manifest_sha256": gate._evidence_manifest_sha256(),
+        "dashboard_artifact_sha256": gate._dashboard_artifact_sha256(),
     }
 
     state_path, approval_path, manifest_path = _write_unfreeze_documents(

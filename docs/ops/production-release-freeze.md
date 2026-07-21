@@ -18,11 +18,14 @@ authorize a release.
 
 ## P1 status (2026-07-21)
 
-Of the seven `required_manifest_hashes`, six are now bound to the real artifact instead
-of format-checked only: `served_tree_sha256`, `database_migration_sha256`,
-`rollback_plan_sha256`, `evidence_manifest_sha256` (all four source-derived — see below),
-`backend_image_digest`, and `frontend_image_digest` (both attestation-verified — see below).
-`evaluate()` recomputes the four source-derived hashes from the actual checked-out tree
+All seven `required_manifest_hashes` are now bound to the real artifact instead of
+format-checked only: `served_tree_sha256`, `database_migration_sha256`,
+`rollback_plan_sha256`, `evidence_manifest_sha256`, `dashboard_artifact_sha256` (all five
+source-derived — see below), `backend_image_digest`, and `frontend_image_digest` (both
+attestation-verified — see below). **This does not mean GATE-10 can be lifted** — see the
+"what 7/7 does and does not mean" note below before reading this as "done."
+`evaluate()` recomputes the five source-derived hashes from the actual checked-out tree
+(or, for `dashboard_artifact_sha256` only, from a local build directory — see below)
 immediately after `_assert_two_commit_binding` proves HEAD is the exact, clean control
 commit (`ops/production_release_gate.py::_verify_source_derived_artifact_hashes`), and
 rejects a manifest whose value does not match.
@@ -58,14 +61,34 @@ teaching it to optionally pull and verify a CI-built image (the way
 later step, not bundled into the gate-verification work here. None of this lifts the freeze
 by itself — `GATE10_LIFT_IMPLEMENTED` stays `false`.
 
-The one remaining field is `dashboard_artifact_sha256`, still format-checked only: no
-"gated publisher" exists yet at all for frontend-v2 (see `frontend-v2/README.md`). Neither
-`runtime_profile_hash` nor a dataset/authority-epoch hash exist as manifest fields at all —
-adding them needs a schema change plus, for `runtime_profile_hash` specifically, resolving
-the tension between the gate's fail-closed empty-environment invocation and that value only
-being computable inside a running container. And even once every field binds to something
-real, `GATE10_LIFT_IMPLEMENTED` itself is a separate, deliberate decision — lifting the
-freeze needs its own explicit review, not an automatic flip once the last hash lands.
+`dashboard_artifact_sha256` (P1 phase 4, owner decision 2026-07-21) is different in kind
+from the other six: it is NOT git-tracked content. `frontend-v2/vite.config.ts` already
+fixes the build output to `frontend-v2/.build/dashboard-candidate/` (gitignored) and its
+own `sealai-deny-live-dashboard-build` plugin refuses any other `outDir`, any symlinked
+path component, and any alias to the live `dist/` bind mount by inode comparison — that
+part was already built and tested before this PR. `_dashboard_artifact_sha256()` only
+content-addresses whatever is already sitting in that candidate directory (deterministic:
+every regular file's path-relative-to-root plus its bytes, sorted, symlinks rejected) — it
+does not build anything (no `npm` invocation in the gate, same as every other verifier
+here: the gate verifies pre-built artifacts, it never produces them).
+
+### What 7/7 does and does not mean
+
+Binding the hash only proves a *claimed* `dashboard_artifact_sha256` matches what is
+actually sitting in `frontend-v2/.build/dashboard-candidate/` at verification time. It does
+**not** mean there is a way to get verified candidate bytes into the live `dist/` bind
+mount — that promotion step (the actual "gated publisher") still does not exist.
+`docs/ops/RUNBOOK_V2_CUTOVER.md` explicitly frames that promotion as an owner, low-traffic-
+window action, not an automated script, and it is deliberately out of scope for this hash-
+binding work. Read that runbook before building it.
+
+Neither `runtime_profile_hash` nor a dataset/authority-epoch hash exist as manifest fields
+at all — adding them needs a schema change plus, for `runtime_profile_hash` specifically,
+resolving the tension between the gate's fail-closed empty-environment invocation and that
+value only being computable inside a running container. And even with every
+`required_manifest_hashes` field bound to something real, `GATE10_LIFT_IMPLEMENTED` itself
+is a separate, deliberate decision — lifting the freeze needs its own explicit review, not
+an automatic flip once the last hash lands.
 
 Owner-facing note for filling out a future manifest's source-derived hashes by hand — must
 match exactly what the gate itself recomputes:
@@ -88,6 +111,15 @@ yet, so compute each via the same function the gate itself calls:
 
 (Swap `_database_migration_sha256` for `_rollback_plan_sha256` or `_evidence_manifest_sha256`
 to compute the other two the same way.)
+
+`dashboard_artifact_sha256` does not fit that recipe (it is not git-tracked) -- compute it
+after a real `npm run build` in `frontend-v2/` with:
+
+```bash
+cd frontend-v2 && npm run build && cd ..
+/usr/bin/python3 -I -c \
+  "import sys; sys.path.insert(0, 'ops'); from production_release_gate import _dashboard_artifact_sha256; print(_dashboard_artifact_sha256())"
+```
 
 ## Fail-closed invocation and remote deployment boundary
 

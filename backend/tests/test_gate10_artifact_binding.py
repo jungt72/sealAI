@@ -221,6 +221,11 @@ def _make_minimal_source_commit(repo: Path) -> str:
     (docs_ops / "GATE-10-EVIDENCE-MANIFEST.md").write_text(
         "stub evidence manifest\n", encoding="utf-8"
     )
+    dashboard_candidate = repo.joinpath(*gate.DASHBOARD_CANDIDATE_RELPATH)
+    dashboard_candidate.mkdir(parents=True)
+    (dashboard_candidate / "index.html").write_text(
+        "<html>stub dashboard candidate</html>\n", encoding="utf-8"
+    )
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Gate Test")
     _git(repo, "config", "user.email", "gate-test@example.invalid")
@@ -385,6 +390,34 @@ def test_unfreeze_rejects_forged_evidence_manifest_hash(tmp_path: Path, monkeypa
         )
 
 
+def test_unfreeze_rejects_forged_dashboard_artifact_hash(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    source_sha = _make_minimal_source_commit(repo)
+    monkeypatch.setattr(gate, "REPO_ROOT", repo)
+    real_hashes = _dummy_hashes(
+        served_tree_sha256=gate._served_tree_sha256(),
+        database_migration_sha256=gate._database_migration_sha256(),
+        rollback_plan_sha256=gate._rollback_plan_sha256(),
+        evidence_manifest_sha256=gate._evidence_manifest_sha256(),
+        dashboard_artifact_sha256=gate._dashboard_artifact_sha256(),
+    )
+    forged = dict(real_hashes, dashboard_artifact_sha256="a" * 64)
+    state_path, approval_path, manifest_path = _write_control_commit(
+        repo, source_sha=source_sha, hashes=forged
+    )
+
+    with pytest.raises(
+        gate.GateConfigurationError,
+        match="does not match the real artifact: dashboard_artifact_sha256",
+    ):
+        gate.evaluate(
+            "deploy",
+            state_path=state_path,
+            approval_path=approval_path,
+            manifest_path=manifest_path,
+        )
+
+
 def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
     tmp_path: Path, monkeypatch
 ):
@@ -401,6 +434,7 @@ def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
         database_migration_sha256=gate._database_migration_sha256(),
         rollback_plan_sha256=gate._rollback_plan_sha256(),
         evidence_manifest_sha256=gate._evidence_manifest_sha256(),
+        dashboard_artifact_sha256=gate._dashboard_artifact_sha256(),
     )
     state_path, approval_path, manifest_path = _write_control_commit(
         repo, source_sha=source_sha, hashes=real_hashes
@@ -465,6 +499,7 @@ def test_status_document_lists_source_derived_verifiers_as_registered():
         "database_migration_sha256",
         "rollback_plan_sha256",
         "evidence_manifest_sha256",
+        "dashboard_artifact_sha256",
     }
 
 
