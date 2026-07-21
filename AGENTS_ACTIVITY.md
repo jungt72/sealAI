@@ -209,3 +209,38 @@ fuer die zwei neuen Pfade erweitert werden, sonst waeren die bestehenden "up to 
 fehlgeschlagen statt das zu pruefen, was sie eigentlich pruefen sollen. 6 neue Tests
 (Perturbation + Neutralitaet + Forgery-Rejection fuer beide Felder), 2 bestehende Grenz-/
 Positivpfad-Tests angepasst. Alle betroffenen Gate-Tests lokal gruen.
+
+2026-07-21 (Nachtrag 4) | Claude Code | GATE-10 P1 Phase 4 (dashboard_artifact_sha256) --
+alle 7/7 Hashes real | Letztes der sieben required_manifest_hashes gebunden. Bewusst eng
+gescoped nach Owner-Vorgabe: NUR Content-Hashing gebaut, NICHT den eigentlichen Live-Promote-
+Schritt (Kopieren verifizierter Bytes ins live dist/-Bind-Mount) -- docs/ops/
+RUNBOOK_V2_CUTOVER.md nennt das explizit eine "OWNER, low-traffic window"-Aktion, kein
+Automatismus, und warnt: "This P1 contract is not implemented yet; a local npm run verify
+is evidence for candidate bytes only and cannot make them production-eligible."
+
+Wichtiger Fund unterwegs: /dashboard ist bereits live (nginx bindet snippets/v2_dashboard.conf
+schon ein, dist/ hat echten Inhalt vom 14.7.) -- der Cutover geschah ueber einen manuellen,
+owner-gesteuerten Prozess, nicht ueber den im Runbook vorgesehenen gated Weg. frontend-v2/
+vite.config.ts hatte den candidate-seitigen Teil bereits fertig und gehaertet gebaut (fixer
+outDir .build/dashboard-candidate, sealai-deny-live-dashboard-build-Plugin verweigert jeden
+anderen outDir, jede Symlink-Komponente, jeden Inode-Alias auf dist/) -- nur das Hashing/
+Binden ans Gate fehlte.
+
+Neue _directory_sha256()-Funktion in ops/production_release_gate.py: deterministischer
+Hash ueber Pfad+Inhalt jeder Datei (sortiert, Symlinks abgelehnt) -- fundamental anders als
+alle bisherigen Felder, weil .build/dashboard-candidate/ NICHT git-getrackt ist (gitignored
+Build-Output). Live gegen einen echten npm run build getestet (echte 40+ Dateien, KaTeX-Fonts,
+JS-Bundles) -- deterministisch bestaetigt.
+
+backend/tests/test_gate_dashboard_artifact.py (neu, 8 Tests): fail-closed bei fehlendem/leeren
+Verzeichnis, Symlink-Ablehnung, Determinismus unabhaengig von Erstellungsreihenfolge,
+Hash-Aenderung bei Inhalts- UND Pfaenderung (Rename mit identischen Bytes bewegt den Hash --
+bindet den Pfad, nicht nur die Bytes). Beide Synthetic-Repo-Fixtures um einen Stub-
+dashboard-candidate erweitert (gleiches Muster wie schon bei rollback_plan/evidence_manifest
+noetig). 1 neuer Forgery-Test, 2 Grenz-Tests angepasst. Alle betroffenen Gate-Tests lokal
+gruen.
+
+docs/ops/production-release-freeze.md auf 7/7 aktualisiert -- mit explizitem Abschnitt "was
+7/7 bedeutet und was nicht": kein Weg, verifizierte Bytes tatsaechlich zu promoten, existiert
+noch; GATE10_LIFT_IMPLEMENTED bleibt eine eigene, bewusste Entscheidung, kein Automatismus
+beim letzten Hash.

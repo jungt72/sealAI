@@ -730,6 +730,61 @@ def _evidence_manifest_sha256() -> str:
     ).hexdigest()
 
 
+# GATE-10 P1 phase 4 (dashboard artifact hash, owner decision 2026-07-21): the last of
+# the seven required_manifest_hashes. Unlike every other source-derived field, this one
+# is NOT git-tracked content -- frontend-v2/vite.config.ts already fixes the build
+# output to frontend-v2/.build/dashboard-candidate/ (gitignored) and its own
+# `sealai-deny-live-dashboard-build` plugin refuses any other outDir, any symlinked path
+# component, and any alias to the live `dist/` bind mount by inode comparison. This
+# function only content-addresses whatever is already sitting in that candidate
+# directory -- it does NOT build (no npm invocation here, matching every other verifier
+# in this file: the gate verifies pre-built artifacts, it never produces them) and it
+# does NOT promote candidate bytes into the live bind mount. That promotion step is the
+# actual "gated publisher" docs/ops/RUNBOOK_V2_CUTOVER.md calls an owner, low-traffic-
+# window action -- deliberately out of scope here; see that runbook before building it.
+DASHBOARD_CANDIDATE_RELPATH: tuple[str, ...] = (
+    "frontend-v2",
+    ".build",
+    "dashboard-candidate",
+)
+
+
+def _directory_sha256(root: Path) -> str:
+    """Deterministic content hash of every regular file under root, keyed by its path
+    relative to root -- independent of filesystem iteration order, mtimes, or
+    permissions. Symlinks are rejected outright: a candidate build must be real files,
+    not a redirect around what actually gets hashed (same spirit as vite.config.ts's own
+    symlink checks on the way INTO this directory)."""
+
+    if not root.is_dir():
+        raise GateConfigurationError(
+            f"dashboard candidate directory does not exist: {root} -- "
+            "run `npm run build` in frontend-v2 first"
+        )
+    files: list[Path] = []
+    for candidate in root.rglob("*"):
+        if candidate.is_symlink():
+            raise GateConfigurationError(
+                f"dashboard candidate contains a symlink, refusing: {candidate}"
+            )
+        if candidate.is_file():
+            files.append(candidate)
+    if not files:
+        raise GateConfigurationError(f"dashboard candidate directory is empty: {root}")
+
+    digest = hashlib.sha256()
+    for candidate in sorted(files, key=lambda p: p.relative_to(root).as_posix()):
+        digest.update(candidate.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(candidate.read_bytes())
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+def _dashboard_artifact_sha256() -> str:
+    return _directory_sha256(REPO_ROOT.joinpath(*DASHBOARD_CANDIDATE_RELPATH))
+
+
 # Registry, not a hardcoded if/elif chain -- naturally extensible for later phases (e.g. an
 # _IMAGE_ATTESTATION_HASH_VERIFIERS registry once Docker/network verification is added).
 # Named for what each entry does now; "phase" is planning vocabulary, not domain language.
@@ -738,6 +793,7 @@ _SOURCE_DERIVED_HASH_VERIFIERS: dict[str, Callable[[], str]] = {
     "database_migration_sha256": _database_migration_sha256,
     "rollback_plan_sha256": _rollback_plan_sha256,
     "evidence_manifest_sha256": _evidence_manifest_sha256,
+    "dashboard_artifact_sha256": _dashboard_artifact_sha256,
 }
 
 
