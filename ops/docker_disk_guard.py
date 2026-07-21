@@ -320,8 +320,16 @@ def _open_checked_directory(
         mode = stat.S_IMODE(metadata.st_mode)
         if required_mode is not None and mode != required_mode:
             raise GuardError(permissions_reason, exit_code)
-        if reject_untrusted_writable and (
-            mode & 0o002 or (mode & 0o020 and metadata.st_gid != os.getegid())
+        # A world/group-writable directory is safe to share when the sticky bit
+        # is set: only a file's own owner (or root) may rename or delete it
+        # there, the standard mechanism that makes /tmp and /run/lock (both
+        # world-writable, 1777, on every Linux system) safe shared locations --
+        # without this exception, this check could never accept /run/lock, the
+        # canonical location for a lock file.
+        if (
+            reject_untrusted_writable
+            and not mode & stat.S_ISVTX
+            and (mode & 0o002 or (mode & 0o020 and metadata.st_gid != os.getegid()))
         ):
             raise GuardError(permissions_reason, exit_code)
     except GuardError:

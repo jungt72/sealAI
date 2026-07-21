@@ -389,6 +389,28 @@ def test_lock_directory_requires_the_effective_owner(
             pytest.fail("unsafe lock directory must never yield")
 
 
+def test_sticky_bit_lock_directory_is_accepted_but_plain_writable_is_not(
+    tmp_path: Path,
+) -> None:
+    # /run/lock is world-writable (1777) with the sticky bit set on every real
+    # system -- the standard mechanism (also used by /tmp) that makes a shared
+    # writable directory safe, since only a file's own owner may rename or
+    # delete it there. A world-writable directory *without* the sticky bit
+    # must still be rejected.
+    sticky_dir = tmp_path / "sticky-lock"
+    sticky_dir.mkdir(mode=0o1777)
+    os.chmod(sticky_dir, 0o1777)
+    with guard._exclusive_lock(sticky_dir / "guard.lock"):
+        pass
+
+    plain_writable_dir = tmp_path / "plain-writable-lock"
+    plain_writable_dir.mkdir(mode=0o777)
+    os.chmod(plain_writable_dir, 0o777)
+    with pytest.raises(guard.GuardError, match="lock_directory_unsafe"):
+        with guard._exclusive_lock(plain_writable_dir / "guard.lock"):
+            pytest.fail("plain world-writable lock directory must never yield")
+
+
 def test_threshold_override_and_lock_inside_spool_are_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
