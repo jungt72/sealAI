@@ -16,6 +16,8 @@ traffic, so GATE-11's production-self-widening protection doesn't apply here).
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -462,6 +464,43 @@ def test_status_document_lists_staging_build_operation():
 def test_staging_build_operation_in_operations_set():
     assert gate.STAGING_BUILD_OPERATION in gate.OPERATIONS
     assert gate.STAGING_BUILD_OPERATION not in gate.MUTATING_OPERATIONS
+
+
+def test_assert_trusted_path_root_only_false_accepts_self_owned_leaf(monkeypatch):
+    """2026-07-21 bugfix, found on the VPS's first real non-root end-to-end run:
+    ops/staging/up-staging-v2.sh runs with no sudo anywhere in it, by design (see
+    the corridor doc) -- so its GATE-12 approval receipt is written and read by
+    that same unprivileged host user, never root. _load_private_json already only
+    requires the file's owner match os.geteuid(); _validate_staging_build_approval
+    used to also call _assert_trusted_path(..., root_only=True), which demands the
+    leaf file be owned by uid 0 regardless of caller identity -- impossible to
+    satisfy at the same time as _load_private_json's own check for a non-root
+    caller. This proves the fix directly against the shared helper: root_only=False
+    (what GATE-12 now passes) accepts a leaf owned by the calling process's own
+    uid; root_only=True (still used by GATE-08/10/11's own call sites, unaffected)
+    keeps rejecting that same file. Stat metadata is mocked because every ancestor
+    of a real pytest tmp_path runs through /tmp itself, which is 1777
+    (world-writable) on this VPS and would trip the writable-component check
+    regardless of ownership, unrelated to what this test is isolating."""
+
+    fake_uid = 4242
+    monkeypatch.setattr(gate.os, "geteuid", lambda: fake_uid)
+
+    leaf = Path("/etc/sealai/approvals/gate-12-staging-build.json")
+    root_dir_stat = os.stat_result((stat.S_IFDIR | 0o700, 1, 1, 1, 0, 0, 4096, 0, 0, 0))
+    self_owned_leaf_stat = os.stat_result(
+        (stat.S_IFREG | 0o600, 2, 1, 1, fake_uid, fake_uid, 64, 0, 0, 0)
+    )
+
+    def fake_lstat(self):
+        return self_owned_leaf_stat if self == leaf else root_dir_stat
+
+    monkeypatch.setattr(Path, "lstat", fake_lstat)
+
+    gate._assert_trusted_path(leaf, leaf_directory=False, root_only=False)
+
+    with pytest.raises(gate.GateConfigurationError, match="unsafe"):
+        gate._assert_trusted_path(leaf, leaf_directory=False, root_only=True)
 
 
 def test_gate11_exclusion_list_is_unaffected_by_the_gate12_change():
