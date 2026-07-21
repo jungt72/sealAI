@@ -39,8 +39,20 @@ declare -F acquire_production_storage_lease >/dev/null || {
 acquire_production_storage_lease
 
 cd "${REPO_ROOT}"
-exec /usr/bin/docker compose \
-  --env-file .env.prod \
-  -f ops/staging/docker-compose.staging.yml \
-  --profile v2 \
-  up -d --build
+
+# backend/Dockerfile.v2 bakes a release-identity (GATE-10 P1 image attestation) that
+# requires these two build args -- same computation ops/release-backend-v2.sh and
+# ops/run_eval.sh already use for the real production and evaluation-harness images.
+# Staging never had this until now: Dockerfile.v2 only started requiring it today,
+# and this script predated that change.
+TREE_HASH="$(/bin/bash -p ops/tree-hash.sh)"
+GIT_SHA="$(git rev-parse HEAD)"
+COMPOSE=(/usr/bin/docker compose --env-file .env.prod \
+  -f ops/staging/docker-compose.staging.yml --profile v2)
+
+"${COMPOSE[@]}" build \
+  --build-arg "GATE_TREE_HASH=${TREE_HASH}" \
+  --build-arg "SOURCE_GIT_SHA=${GIT_SHA}" \
+  backend-v2-staging
+
+exec "${COMPOSE[@]}" up -d
