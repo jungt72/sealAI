@@ -24,9 +24,12 @@ production risk at all.
 
 1. **The owner has personally read the diff** — `owner_read_diff_confirmation` must be literally
    `true`. No agent ever sets this field to `true` on the owner's behalf.
-2. A short-lived (≤ 4 hours), root-owned approval receipt exists at
+2. A short-lived (≤ 4 hours) approval receipt exists at
    `/etc/sealai/approvals/gate-12-staging-build.json`, mode `0600`, matching
-   `ops/schemas/gate12-staging-build.schema.json`.
+   `ops/schemas/gate12-staging-build.schema.json`. **Owned by whichever host user runs
+   `ops/staging/up-staging-v2.sh` (never root)** — see the 2026-07-21 correction below; this
+   differs from GATE-08/10/11's own approval receipts, which really are root-owned because those
+   corridors really do run as root.
 3. `base_git_sha` is an ancestor of `source_git_sha`, `source_git_sha` equals the current
    checkout's `HEAD`, and the diff between them is non-empty. **The gate checks this itself** via
    `git diff`/`git merge-base` — it never trusts the approval document's own claim about what
@@ -54,6 +57,29 @@ function are completely unaffected.
 Unlike GATE-11, no `test_evidence_sha256` is required — this builds a non-production sandbox for
 manual inspection, not a release.
 
+### Owner-observed, 2026-07-21: the approval receipt is self-owned, not root-owned
+
+This corridor's first real non-root end-to-end run (after the path-exclusion relax above)
+surfaced two more gaps, both now fixed:
+
+- `_validate_staging_build_approval` called `_assert_trusted_path(..., root_only=True)`, requiring
+  the receipt be owned by uid 0. `up-staging-v2.sh` runs with no `sudo` anywhere in it, by design
+  (see "Why this exists" above) — so its receipt is written and read by that same unprivileged host
+  user, never root. That directly contradicted `_load_private_json`'s own check two lines later
+  (which already only requires the file's owner match the calling process's uid) and could never
+  both pass for a non-root caller. Fixed in `production_release_gate.py`
+  (`fix/gate12-non-root-approval-ownership`, merged): the leaf receipt now only needs to be owned
+  by uid 0 **or** the calling process's own uid; the directory chain above it is still required to
+  be root-owned, unchanged.
+- `backend/Dockerfile.v2` had, by then, grown a mandatory `GATE_TREE_HASH`/`SOURCE_GIT_SHA`
+  build-arg requirement (GATE-10 P1 image attestation) that `up-staging-v2.sh` never learned to
+  pass — fixed (`fix/staging-build-identity-args`, merged): the script now computes both via
+  `ops/tree-hash.sh` + `git rev-parse HEAD`, matching `ops/release-backend-v2.sh`/`ops/run_eval.sh`.
+
+Because the receipt is self-owned, the host user also needs plain traversal into
+`/etc/sealai/approvals/` — see the updated "Creating the approval" section below for the one-time
+setup this requires.
+
 ## What never qualifies, regardless of the diff
 
 Anything under the excluded-path list above — most importantly the release-gate code itself
@@ -65,15 +91,39 @@ own treatment of anything on its excluded list.
 
 ## Prerequisites this gate does not solve
 
-GATE-12 only removes the release-freeze blocker. Two other things independently block a working
-`./ops/staging/up-staging-v2.sh` run today, found while designing this gate:
+GATE-12 only removes the release-freeze blocker. As of 2026-07-21, a real end-to-end
+`./ops/staging/up-staging-v2.sh` run succeeded and produced two healthy containers
+(`backend-v2-staging`, `nginx-staging`); everything below reflects what that run actually needed,
+not just design-time guesses:
 
-- `/usr/local/libexec/sealai/production-storage-lease.sh` does not exist on the VPS yet — only
-  `docker_disk_guard.py` has been installed under `/usr/local/libexec/sealai/`. Installing it is
-  `ops/install-disk-guard.sh`, itself a separate GATE-08 root-run, non-live-checkout bootstrap
-  (see `docs/ops/production-release-freeze.md`'s GATE-08 section) — owner-run, not covered here.
-- The checked-in `ops/staging/conf/` output predates recent `nginx/default.conf` changes.
-  Re-run `ops/staging/gen-staging-conf.sh` before relying on it.
+- **`/usr/local/libexec/sealai/production-storage-lease.sh` must be installed** (via
+  `ops/install-disk-guard.sh`, a separate GATE-08 root-run bootstrap — owner-run, not covered here).
+  Resolved on this VPS as of the GATE-08 disk-guard install; the 2026-07-21 run acquired the lease
+  without incident.
+- **The checked-in `ops/staging/conf/` output** was still consistent with `ops/staging/
+  gen-staging-conf.sh`'s regeneration as of 2026-07-21 (`git status` showed no diff after
+  regenerating) — the "predates recent nginx changes" concern from 2026-07-20 no longer applied by
+  the time this corridor was actually exercised. Re-run the generator yourself if you've since
+  touched `nginx/default.conf` and want to be sure.
+- **One-time host setup for the self-owned receipt** (see the correction above): the invoking user
+  needs plain traversal into the approval directory, since it is root-owned:
+  ```bash
+  sudo chgrp sealai /etc/sealai /etc/sealai/approvals
+  sudo chmod 0710 /etc/sealai /etc/sealai/approvals   # execute-only for the group -- no listing
+  ```
+  This does not expose GATE-08's own two root-only (`0600`) receipts that live in the same
+  directory — only traversal changed, not their individual file permissions. Already done on this
+  VPS; a fresh host would need it once, before the first GATE-12 approval is ever written.
+- **`backend/Dockerfile.v2`'s `docker-entrypoint-v2.sh` must be mode `755`** in the live checkout
+  (git tracks it as `100755`, but this VPS's working-tree copy had drifted to `0700` at some point
+  — invisible to `git status`/`git diff`, since git only tracks the owner-executable bit, not
+  group/other permissions). A `0700` entrypoint gets baked into the image with `COPY` +
+  `chmod +x` still leaving group/other execute without read (`-rwx--x--x`), which
+  `appuser` (the image's non-root runtime user) cannot even open to interpret its shebang line --
+  `backend-v2-staging` then crash-loops with `cannot open ... Permission denied`. Fix:
+  `chmod 755 backend/docker-entrypoint-v2.sh`, then rebuild. Since this affects the shared
+  Dockerfile, it would equally break a real production `backend-v2` rebuild off the same checkout,
+  not just staging.
 
 ## Creating the approval (owner-run, never agent-run)
 
@@ -91,9 +141,10 @@ git merge-base --is-ancestor "$BASE_SHA" "$SOURCE_SHA" && echo "base is a real a
 # 3. Review the diff yourself. Do not skip this.
 git diff --stat "$BASE_SHA" "$SOURCE_SHA"
 
-# 4. Write the approval (root-owned, 0600, mode matches every other GATE receipt).
-sudo mkdir -p /etc/sealai/approvals
-sudo tee /etc/sealai/approvals/gate-12-staging-build.json > /dev/null <<JSON
+# 4. Write the approval -- owned by YOU (the user who runs up-staging-v2.sh), never root.
+#    First time on a fresh host: the one-time directory setup in "Prerequisites" above must
+#    already be done, or this tee will fail to reach the directory at all.
+tee /etc/sealai/approvals/gate-12-staging-build.json > /dev/null <<JSON
 {
   "schema_version": 1,
   "gate_id": "GATE-12",
@@ -108,8 +159,7 @@ sudo tee /etc/sealai/approvals/gate-12-staging-build.json > /dev/null <<JSON
   "owner_read_diff_confirmation": true
 }
 JSON
-sudo chown root:root /etc/sealai/approvals/gate-12-staging-build.json
-sudo chmod 0600 /etc/sealai/approvals/gate-12-staging-build.json
+chmod 0600 /etc/sealai/approvals/gate-12-staging-build.json
 
 # 5. Verify the gate actually accepts it (read-only check, no build yet):
 /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C \
@@ -119,11 +169,15 @@ sudo chmod 0600 /etc/sealai/approvals/gate-12-staging-build.json
 ./ops/staging/up-staging-v2.sh
 ```
 
+Every subsequent approval refresh is exactly this recipe again with a fresh `SOURCE_SHA` (whatever
+`HEAD` currently is) and a `BASE_SHA` of your choosing -- typically the previous approval's
+`SOURCE_SHA`, so the diff you review is exactly what changed since the last approved build.
+
 ## Rollback
 
-Delete the receipt: `sudo rm -f /etc/sealai/approvals/gate-12-staging-build.json`. No schema
-migration, no service restart, no other state to unwind — the gate falls back to denying
-`staging-build` exactly like every other mutating operation under GATE-10.
+Delete the receipt: `rm -f /etc/sealai/approvals/gate-12-staging-build.json` (no `sudo` needed --
+it's your own file). No schema migration, no service restart, no other state to unwind — the gate
+falls back to denying `staging-build` exactly like every other mutating operation under GATE-10.
 
 ## Deliberately not built in this pass
 
