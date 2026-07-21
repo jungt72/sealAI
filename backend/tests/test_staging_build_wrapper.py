@@ -16,13 +16,18 @@ def test_staging_build_wrapper_gates_and_leases_before_compose_up() -> None:
     lease_validation = content.index("installed_storage_lease_unsafe")
     lease_source = content.index('source "${STORAGE_LEASE}"')
     lease_acquisition = content.index("\nacquire_production_storage_lease\n")
-    compose_up = content.index("up -d --build")
+    tree_hash = content.index('TREE_HASH="$(/bin/bash -p ops/tree-hash.sh)"')
+    compose_build = content.index('"${COMPOSE[@]}" build')
+    build_arg_tree_hash = content.index('--build-arg "GATE_TREE_HASH=${TREE_HASH}"')
+    build_arg_git_sha = content.index('--build-arg "SOURCE_GIT_SHA=${GIT_SHA}"')
+    compose_up = content.index('exec "${COMPOSE[@]}" up -d')
 
     assert content.startswith("#!/bin/bash -p\n")
     assert wrapper.stat().st_mode & 0o111
     assert "readonly PATH=" in content
     assert "/usr/bin/docker compose" in content
     assert "eval " not in content
+    assert "up -d --build" not in content
     assert (
         installed_lease
         < helper
@@ -30,8 +35,13 @@ def test_staging_build_wrapper_gates_and_leases_before_compose_up() -> None:
         < lease_validation
         < lease_source
         < lease_acquisition
+        < tree_hash
+        < compose_build
+        < build_arg_tree_hash
         < compose_up
     )
+    assert build_arg_git_sha < compose_up
+    assert compose_build < build_arg_git_sha
 
 
 def test_staging_and_cutover_docs_do_not_recommend_raw_compose_build_up() -> None:
