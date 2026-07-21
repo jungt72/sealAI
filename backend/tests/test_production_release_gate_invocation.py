@@ -629,14 +629,22 @@ def test_legacy_deploy_sentinel_denies_every_supported_invocation_spelling(
 def test_installed_remote_boundary_holds_lease_and_stays_hard_denied() -> None:
     script = REMOTE.read_text(encoding="utf-8")
 
+    # Ordering: lease first, then the staged verifier gets hash-checked and
+    # invoked, then its success is reported, and only then the still-explicit
+    # not-yet-implemented denial (Phase 4 proves verification, not promotion).
     lease = script.index("acquire_production_storage_lease")
+    hash_check = script.index("VERIFIER_SHA256", lease)
+    verifier_invocation = script.index('STAGED_VERIFIER}" \\', hash_check)
     hard_denial = script.index("p1_exact_artifact_promotion_not_implemented")
-    assert lease < hard_denial
+    assert lease < hash_check < verifier_invocation < hard_denial
     assert "/usr/local/libexec/sealai/production-storage-lease.sh" in script
     assert "/usr/local/libexec/sealai/production-release-gate-check.sh" in script
-    assert "git fetch" not in script
-    assert "git checkout" not in script
+    # The entrypoint itself still never shells out to git or docker directly,
+    # and never invokes the live checkout's script without a hash check first --
+    # that logic lives only in the staged, hash-checked verifier module.
     assert "/usr/bin/git" not in script
-    assert "production_release_gate.py" not in script
+    assert "/usr/bin/docker" not in script
     assert "release-backend-v2.sh" not in script
-    assert "docker " not in script
+    assert '--control-sha "${CONTROL_SHA}"' in script
+    assert '--source-sha "${SOURCE_SHA}"' in script
+    assert '--backend-image "${BACKEND_IMAGE}"' in script
