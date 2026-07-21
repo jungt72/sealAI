@@ -244,3 +244,47 @@ docs/ops/production-release-freeze.md auf 7/7 aktualisiert -- mit explizitem Abs
 7/7 bedeutet und was nicht": kein Weg, verifizierte Bytes tatsaechlich zu promoten, existiert
 noch; GATE10_LIFT_IMPLEMENTED bleibt eine eigene, bewusste Entscheidung, kein Automatismus
 beim letzten Hash.
+
+2026-07-21 (Nachtrag 5) | Claude Code | Gated Dashboard-Publisher (ops/publish-dashboard.sh) |
+Auf ausdruecklichen Owner-Wunsch nach 7/7: der fehlende zweite Teil des GATE-10-P1-
+Dashboard-Vertrags -- docs/ops/RUNBOOK_V2_CUTOVER.md nennt das explizit den "gated
+publisher". Baut frontend-v2 (schreibt nur in .build/dashboard-candidate/, bereits durch
+vite.config.ts's sealai-deny-live-dashboard-build-Plugin gehaertet), hasht via
+_dashboard_artifact_sha256, prueft dann den Gate fuer die Operation "dashboard-publish"
+(exakt dasselbe production_release_gate_check-Kontrakt wie ops/v2-flip.sh), und promoted
+nur bei Freigabe per rsync --delete --checksum in das echte, live von nginx read-only
+gemountete frontend-v2/dist/ (docker-compose.deploy.yml: ./frontend-v2/dist:/usr/share/
+nginx/v2-client:ro). Vorher wird die aktuelle live-Version als frontend-v2/dist.rollback-
+<timestamp> gesichert.
+
+Wichtiger Fund vor dem Bauen: /dashboard ist bereits seit 12.06.2026 live (Cutover-Commit
+ba0fabc9), der aktive Freeze aber erst seit 14.07.2026 -- der urspruengliche Cutover lief
+also ausserhalb jedes gated Mechanismus, weil er zeitlich vor dem Freeze lag.
+"dashboard-publish" steht explizit in MUTATING_OPERATIONS und hat -- anders als
+low-risk-emergency-deploy (GATE-11) oder staging-build (GATE-12) -- KEINEN Notfall-
+Korridor. Ein echter, korrekt gebauter Publisher wird also bei aktivem Freeze zuverlaessig
+abgelehnt. Live getestet (zweimal, mit und ohne --check-only): baut echt, hasht echt
+(1f7502...), wird korrekt mit {"allowed":false,"reason":"production_release_freeze_active"}
+abgelehnt, ruehrt frontend-v2/dist/ nachweislich nicht an (mtime-Vergleich vor/nach
+identisch). Owner hat sich bewusst gegen einen neuen GATE-11/12-artigen Korridor fuer
+dashboard-publish entschieden und die Blockade als Beweis akzeptiert, dass keine Ausnahme
+vergessen wurde.
+
+Eigenen Bug beim isolierten Testen der Promotion-Logik gefunden und behoben, bevor er je
+scharf geschaltet wurde: rsync -a --delete (ohne --checksum) hat in einem Testverzeichnis
+eine Datei mit identischer Groesse UND Sekundenaufloesung-Mtime als "unveraendert"
+uebersprungen -- haette bei einem echten Deploy im schlimmsten Fall eine veraltete
+index.html live gelassen, obwohl der Rest des Builds neu war. Fix: --checksum ergaenzt
+(inhaltsbasierter Vergleich statt Groesse+Mtime-Quickcheck), erneut isoliert gegen
+Testverzeichnisse verifiziert -- korrekt.
+
+make dashboard-publish-check als Komfort-Target ergaenzt. docs/ops/RUNBOOK_V2_CUTOVER.md
+aktualisiert (die "not implemented yet"-Zeile zum Content-Addressing-Vertrag verweist jetzt
+auf die echte Implementierung + den Live-Testlauf). Kein pytest-Pendant fuer dieses Skript
+-- ops/v2-flip.sh und ops/release-frontend.sh haben ebenfalls keine dedizierten
+Python-Tests; Verifikation erfolgte wie bei diesen beiden Skripten manuell/isoliert, nicht
+per pytest-Suite.
+
+Weiterhin unveraendert: GATE10_LIFT_IMPLEMENTED bleibt false (Owner-Entscheidung, siehe
+vorherige Nachtraege) -- der Publisher kann also aktuell in der Praxis nichts promoten,
+das ist Absicht.
