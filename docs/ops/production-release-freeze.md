@@ -16,24 +16,31 @@ path. Until that implementation is reviewed and tested,
 `freeze_lift_implemented` remains `false` and no GATE-10 document set can
 authorize a release.
 
-## P1 status (2026-07-20)
+## P1 status (2026-07-21)
 
-Of the seven `required_manifest_hashes`, two are now bound to the real artifact instead
-of format-checked only: `served_tree_sha256` and `database_migration_sha256`. `evaluate()`
-recomputes both from the actual checked-out tree immediately after
-`_assert_two_commit_binding` proves HEAD is the exact, clean control commit
-(`ops/production_release_gate.py::_verify_source_derived_artifact_hashes`), and rejects a
-manifest whose value does not match, exactly like every other value in this file is
-independently re-derived rather than trusted. This closes source- and migration-substitution
-forgery. It does **not** lift the freeze by itself — `GATE10_LIFT_IMPLEMENTED` stays `false`.
+Of the seven `required_manifest_hashes`, three are now bound to the real artifact instead
+of format-checked only: `served_tree_sha256`, `database_migration_sha256`, and (as of P1
+phase 2) `backend_image_digest`. `evaluate()` recomputes the first two from the actual
+checked-out tree immediately after `_assert_two_commit_binding` proves HEAD is the exact,
+clean control commit (`ops/production_release_gate.py::_verify_source_derived_artifact_hashes`),
+and rejects a manifest whose value does not match. `backend_image_digest` cannot be
+recomputed the same way — instead `_verify_image_attestation_hashes` calls the existing
+`ops/verify-image-attestations.sh` (the same Sigstore/Rekor build-provenance + SBOM check
+`ops/release-backend-v2.sh` already runs before promoting a candidate image) to prove the
+claimed digest was actually built by `build-and-push.yml` from the approved
+`source_git_sha`, and rejects a manifest whose claim does not check out. This is the first
+field in this file to need Docker + network — unavoidable, since verifying a supply-chain
+signature means reaching the transparency log, not just re-hashing something local. None of
+this lifts the freeze by itself — `GATE10_LIFT_IMPLEMENTED` stays `false`.
 
-The other five fields remain format-checked only: `backend_image_digest` /
-`frontend_image_digest` (need Docker+network+Sigstore/Rekor verification the gate has never
-done — `ops/verify-image-attestations.sh` already does this, but only inside
-`ops/release-backend-v2.sh`, not inside this gate), `dashboard_artifact_sha256` (no "gated
-publisher" exists yet at all, see `frontend-v2/README.md`), and `rollback_plan_sha256` /
-`evidence_manifest_sha256` (no owner-document schema/path convention decided yet). Neither
-`runtime_profile_hash` nor a dataset/authority-epoch hash exist as manifest fields at all —
+The other four fields remain format-checked only: `frontend_image_digest` (no attested
+build workflow exists for the frontend image at all yet — `build-and-push.yml` only builds
+backend-v2, so there is nothing to verify against until a comparable frontend CI pipeline is
+built first, a separate and larger prerequisite than wiring the gate), `dashboard_artifact_sha256`
+(no "gated publisher" exists yet at all, see `frontend-v2/README.md`), and `rollback_plan_sha256` /
+`evidence_manifest_sha256` (no owner-document schema/path convention decided yet — a product
+decision, not purely technical). Neither `runtime_profile_hash` nor a dataset/authority-epoch
+hash exist as manifest fields at all —
 adding them needs a schema change plus, for `runtime_profile_hash` specifically, resolving
 the tension between the gate's fail-closed empty-environment invocation and that value only
 being computable inside a running container.
