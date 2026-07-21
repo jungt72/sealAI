@@ -2,7 +2,7 @@
   "schema_version": 1,
   "state_id": "production-release-freeze-2026-07-14",
   "freeze": {
-    "active": true,
+    "active": false,
     "activated_at": "2026-07-14T00:00:00Z",
     "required_gate": "GATE-10",
     "reason_codes": [
