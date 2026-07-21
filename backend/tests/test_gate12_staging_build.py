@@ -1,12 +1,16 @@
 """GATE-12 scoped staging-build corridor: additive, narrow, fail-closed.
 
-Structurally identical to GATE-11 (test_gate11_low_risk_emergency.py): every test
-proves the gate does NOT trust the approval document's own claims about which paths
-changed -- it independently diffs base_git_sha..source_git_sha and rejects the whole
-batch if any changed path matches the excluded-prefix list GATE-12 deliberately shares
-with GATE-11. Unlike GATE-11, GATE-12 never authorizes deploy/pull/migration for
-production -- only the single staging-build operation -- and its approval carries no
+Structurally identical to GATE-11 (test_gate11_low_risk_emergency.py) in most respects:
+every test proves the gate does NOT trust the approval document's own claims about
+which paths changed -- it independently diffs base_git_sha..source_git_sha via git
+itself. Unlike GATE-11, GATE-12 never authorizes deploy/pull/migration for production
+-- only the single staging-build operation -- and its approval carries no
 test_evidence_sha256 (it builds a non-production sandbox, not a release).
+
+Owner decision, 2026-07-21: unlike GATE-11, GATE-12 does NOT reject diffs touching
+GATE11_EXCLUDED_PATH_PREFIXES (ops/, .github/workflows/, etc.) -- see the docstring on
+gate._validate_staging_build_approval for why (staging carries zero production
+traffic, so GATE-11's production-self-widening protection doesn't apply here).
 """
 
 from __future__ import annotations
@@ -153,7 +157,7 @@ def test_staging_build_accepts_scoped_docs_and_code_diff(tmp_path: Path, monkeyp
 
 
 @pytest.mark.parametrize(
-    "excluded_path",
+    "formerly_excluded_path",
     [
         "ops/release-backend-v2.sh",
         "ops/staging/up-staging-v2.sh",
@@ -169,14 +173,20 @@ def test_staging_build_accepts_scoped_docs_and_code_diff(tmp_path: Path, monkeyp
         "keycloak/certs/key.pem",
     ],
 )
-def test_staging_build_rejects_any_excluded_path(
-    tmp_path: Path, monkeypatch, excluded_path: str
+def test_staging_build_accepts_paths_gate11_would_exclude(
+    tmp_path: Path, monkeypatch, formerly_excluded_path: str
 ):
+    """Owner decision, 2026-07-21: GATE-12 no longer applies
+    GATE11_EXCLUDED_PATH_PREFIXES (see the docstring on
+    gate._validate_staging_build_approval for the reasoning -- staging is not
+    production-facing, so GATE-11's self-widening protection doesn't apply here).
+    Every path that used to be rejected must now be accepted."""
+
     repo, base_sha, source_sha = _make_repo_with_diff(
         tmp_path,
         changed_files={
             "docs/example.md": "docs change\n",
-            excluded_path: "sensitive change\n",
+            formerly_excluded_path: "ordinary change\n",
         },
     )
     monkeypatch.setattr(gate, "REPO_ROOT", repo)
@@ -187,13 +197,14 @@ def test_staging_build_rejects_any_excluded_path(
         _approval(base_git_sha=base_sha, source_git_sha=source_sha),
     )
 
-    with pytest.raises(gate.GateConfigurationError, match="excluded path"):
-        gate.evaluate(
-            "staging-build",
-            state_path=state_path,
-            staging_build_approval_path=approval_path,
-            require_versioned=False,
-        )
+    decision = gate.evaluate(
+        "staging-build",
+        state_path=state_path,
+        staging_build_approval_path=approval_path,
+        require_versioned=False,
+    )
+
+    assert decision.allowed is True
 
 
 def test_staging_build_ignores_approvals_own_path_claim(tmp_path: Path, monkeypatch):
@@ -453,10 +464,12 @@ def test_staging_build_operation_in_operations_set():
     assert gate.STAGING_BUILD_OPERATION not in gate.MUTATING_OPERATIONS
 
 
-def test_staging_build_shares_gate11_excluded_path_prefixes():
-    """Deliberate design decision (see the plan): GATE-12 reuses GATE-11's excluded-
-    path list rather than defining a second one to independently review -- so a change
-    to the shared list protects both corridors identically, with no drift possible."""
+def test_gate11_exclusion_list_is_unaffected_by_the_gate12_change():
+    """The 2026-07-21 owner decision only touches GATE-12's own validation function --
+    GATE11_EXCLUDED_PATH_PREFIXES and _path_excluded_from_low_risk_corridor still exist
+    and still work exactly as before, because GATE-11 (a real production corridor)
+    still uses them. This is a regression guard that relaxing GATE-12 never touched the
+    shared constant/helper GATE-11 depends on."""
 
     assert "ops/" in gate.GATE11_EXCLUDED_PATH_PREFIXES
     assert gate._path_excluded_from_low_risk_corridor("ops/staging/up-staging-v2.sh")

@@ -22,19 +22,34 @@ production risk at all.
 
 ## What qualifies (all of the following, every time)
 
-1. The diff between `base_git_sha` and `source_git_sha` does **not** touch any path matching
-   `production_release_gate.py::GATE11_EXCLUDED_PATH_PREFIXES` — deliberately the same list GATE-11
-   uses (`ops/`, `.github/workflows/`, `.claude/`, any `docker-compose*` file,
-   `backend/sealai_v2/config/settings.py`, `backend/sealai_v2/security/`,
-   `backend/sealai_v2/core/output_guard.py`, `backend/sealai_v2/db/migrations/`, any Dockerfile,
-   `keycloak/`), not a separate list to independently maintain and review. **The gate checks this
-   itself** via `git diff --name-only` — it never trusts the approval document's own claim about
-   what changed.
-2. **The owner has personally read the diff** — `owner_read_diff_confirmation` must be literally
+1. **The owner has personally read the diff** — `owner_read_diff_confirmation` must be literally
    `true`. No agent ever sets this field to `true` on the owner's behalf.
-3. A short-lived (≤ 4 hours), root-owned approval receipt exists at
+2. A short-lived (≤ 4 hours), root-owned approval receipt exists at
    `/etc/sealai/approvals/gate-12-staging-build.json`, mode `0600`, matching
    `ops/schemas/gate12-staging-build.schema.json`.
+3. `base_git_sha` is an ancestor of `source_git_sha`, `source_git_sha` equals the current
+   checkout's `HEAD`, and the diff between them is non-empty. **The gate checks this itself** via
+   `git diff`/`git merge-base` — it never trusts the approval document's own claim about what
+   changed.
+
+### Owner decision, 2026-07-21: no more path exclusion
+
+Until 2026-07-21, requirement 1 above also required the diff to avoid
+`production_release_gate.py::GATE11_EXCLUDED_PATH_PREFIXES` (`ops/`, `.github/workflows/`, etc.) —
+the same list GATE-11 uses. In practice this meant almost no real rebuild could ever qualify:
+`ops/`-touching work is most of this repo's release-engineering activity, and staging went stale
+for well over a week as a direct result, with no way to see *any* accumulated work running
+anywhere, not even in a sandbox.
+
+GATE-11's exclusion exists because that corridor authorizes a real *production* deploy through a
+narrow path — letting it also approve changes to the gate itself would let a narrow exception
+silently widen its own authority. That risk does not apply here: GATE-12 authorizes nothing
+production-facing at all, the code it rebuilds already passed the normal branch/PR/CI/merge review
+to reach `main`, and staging (`backend-v2-staging`, `nginx-staging` on a separate port) carries
+zero production traffic. The exclusion was inherited from GATE-11 for free, never re-derived for
+GATE-12's actually much lower stakes. It has been removed from GATE-12's validation
+(`_validate_staging_build_approval`); GATE-11's own copy of the list and its own validation
+function are completely unaffected.
 
 Unlike GATE-11, no `test_evidence_sha256` is required — this builds a non-production sandbox for
 manual inspection, not a release.

@@ -336,3 +336,32 @@ Muster wie die erfolgreich getesteten Aenderungen folgend.
 
 docs/ops/production-release-freeze.md umfassend aktualisiert: neuer Abschnitt "What 7/7 and
 GATE10_LIFT_IMPLEMENTED=true do and do not mean", alle stale "stays false"-Stellen korrigiert.
+
+2026-07-21 (Nachtrag 7) | Owner (Thorsten) + Claude Code | GATE-12: ops/.github-Ausschluss
+entfernt | Ausgangslage: Owner konnte nach dem Freeze (aktiv seit 14.7.) eine Woche lang gar
+nichts vom eigenen Arbeitsstand live sehen -- auch Staging nicht, trotz GATE-12 extra dafuer
+gebaut. Ursache gefunden: GATE-12 hatte GATE-11s Ausschlussliste (ops/, .github/workflows/,
+etc. -- "self-widening"-Schutz fuer *Produktions*-Notfall-Deploys) 1:1 geerbt, obwohl GATE-12
+nichts Produktionsnahes autorisiert (nur lokalen Staging-Rebuild von bereits normal
+gemergtem Code). Da praktisch jeder echte Release-Engineering-Commit in diesem Repo ops/
+beruehrt, blockierte das jeden echten Rebuild -- Staging war seit 12+ Tagen nicht mehr
+gebaut worden.
+
+Owner-Entscheidung nach kurzer Ruecksprache: Ausschlussliste NUR aus GATE-12 entfernen,
+GATE-11 (echter Produktions-Notfall-Korridor) komplett unangetastet lassen -- die geteilte
+Konstante GATE11_EXCLUDED_PATH_PREFIXES und _path_excluded_from_low_risk_corridor()
+existieren unveraendert weiter, nur _validate_staging_build_approval() ruft sie nicht mehr
+auf. 12 Tests von "lehnt ab" auf "akzeptiert jetzt" umgestellt (ehemals
+test_staging_build_rejects_any_excluded_path -> test_staging_build_accepts_paths_gate11_would_exclude),
+1 Test umbenannt zur Regressionswache, dass GATE-11 selbst unveraendert bleibt
+(test_gate11_exclusion_list_is_unaffected_by_the_gate12_change).
+
+Separat, unabhaengig davon: der Owner hat ausserdem direkt auf dem VPS
+ops/production-release-state.json's freeze.active von true auf false gesetzt (noch
+uncommitted). Das ist NICHT Teil dieses Commits/PRs -- bewusst nicht mit angefasst, das ist
+eine eigene, separate Owner-Entscheidung mit eigenen Konsequenzen (siehe Chat-Verlauf: GATE-10
+selbst bleibt trotzdem blockiert, weil kein gueltiges Freigabedokument existiert; das aendert
+diese PR nicht). Acht Tests in test_production_release_gate.py schlagen deshalb lokal fehl
+(alle pruefen die ECHTE eingecheckte state.json auf freeze.active==true) -- das ist erwartetes
+Verhalten des uncommitted Standes, keine Regression durch diese PR. Alle GATE-10/11/12/
+Image-Attestation/Dashboard-Artifact-Tests bleiben gruen.
