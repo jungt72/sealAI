@@ -18,22 +18,39 @@ authorize a release.
 
 ## P1 status (2026-07-21)
 
-Of the seven `required_manifest_hashes`, four are now bound to the real artifact instead
+Of the seven `required_manifest_hashes`, six are now bound to the real artifact instead
 of format-checked only: `served_tree_sha256`, `database_migration_sha256`,
-`backend_image_digest`, and (as of P1 phase 2b) `frontend_image_digest`. `evaluate()`
-recomputes the first two from the actual checked-out tree immediately after
-`_assert_two_commit_binding` proves HEAD is the exact, clean control commit
-(`ops/production_release_gate.py::_verify_source_derived_artifact_hashes`), and rejects a
-manifest whose value does not match. The two image digests cannot be recomputed the same
-way — instead `_verify_image_attestation_hashes` calls the existing
-`ops/verify-image-attestations.sh` (the same Sigstore/Rekor build-provenance + SBOM check
-`ops/release-backend-v2.sh` already runs before promoting a candidate image) to prove each
-claimed digest was actually built by the matching workflow (`build-and-push.yml` for
-backend, the new `build-and-push-frontend.yml` for the V1 marketing frontend) from the
-approved `source_git_sha`, and rejects a manifest whose claim does not check out. Note:
-`frontend_image_digest` here is the V1 marketing frontend (`frontend/`,
-`ghcr.io/jungt72/sealai-frontend`) — NOT frontend-v2/the dashboard SPA, which has no
-Dockerfile at all and remains covered by `dashboard_artifact_sha256` below.
+`rollback_plan_sha256`, `evidence_manifest_sha256` (all four source-derived — see below),
+`backend_image_digest`, and `frontend_image_digest` (both attestation-verified — see below).
+`evaluate()` recomputes the four source-derived hashes from the actual checked-out tree
+immediately after `_assert_two_commit_binding` proves HEAD is the exact, clean control
+commit (`ops/production_release_gate.py::_verify_source_derived_artifact_hashes`), and
+rejects a manifest whose value does not match.
+
+`rollback_plan_sha256`/`evidence_manifest_sha256` (P1 phase 3, owner decision 2026-07-21)
+follow the same source-derived recipe as `served_tree_sha256`, just scoped to one fixed
+file each: `docs/ops/GATE-10-ROLLBACK-PLAN.md` and `docs/ops/GATE-10-EVIDENCE-MANIFEST.md`
+(`ROLLBACK_PLAN_PATHSPECS`/`EVIDENCE_MANIFEST_PATHSPECS`). This was Option A1/B1 from an
+owner-reviewed schema proposal — a fixed, single-owned file per field, chosen over binding
+to a governance-log text anchor for the same reason `DATABASE_MIGRATION_PATHSPECS` is a
+whole directory rather than a fragile line range: a full committed file is far less brittle
+to hash-bind than a marked excerpt of a shared, append-only log. Both documents are real,
+not stubs — `GATE-10-ROLLBACK-PLAN.md` consolidates the rollback mechanisms
+`ops/release-backend-v2.sh`/`ops/release-frontend.sh` already have; `GATE-10-EVIDENCE-MANIFEST.md`
+defines what real, verbatim evidence should back each of the four `required_readiness_claims`
+booleans (today the gate only checks those four keys are `true`, not what backs the claim —
+this document is a first step toward closing that gap, not a code change to the gate's
+readiness-claim check itself).
+
+The two image digests cannot be recomputed the same way — instead
+`_verify_image_attestation_hashes` calls the existing `ops/verify-image-attestations.sh`
+(the same Sigstore/Rekor build-provenance + SBOM check `ops/release-backend-v2.sh` already
+runs before promoting a candidate image) to prove each claimed digest was actually built by
+the matching workflow (`build-and-push.yml` for backend, `build-and-push-frontend.yml` for
+the V1 marketing frontend) from the approved `source_git_sha`, and rejects a manifest whose
+claim does not check out. Note: `frontend_image_digest` here is the V1 marketing frontend
+(`frontend/`, `ghcr.io/jungt72/sealai-frontend`) — NOT frontend-v2/the dashboard SPA, which
+has no Dockerfile at all and remains covered by `dashboard_artifact_sha256` below.
 `build-and-push-frontend.yml` gives the gate something real to verify against; the actual
 production deploy path (`ops/release-frontend.sh`) still only builds locally on the VPS —
 teaching it to optionally pull and verify a CI-built image (the way
@@ -41,14 +58,14 @@ teaching it to optionally pull and verify a CI-built image (the way
 later step, not bundled into the gate-verification work here. None of this lifts the freeze
 by itself — `GATE10_LIFT_IMPLEMENTED` stays `false`.
 
-The other three fields remain format-checked only: `dashboard_artifact_sha256`
-(no "gated publisher" exists yet at all, see `frontend-v2/README.md`), and `rollback_plan_sha256` /
-`evidence_manifest_sha256` (no owner-document schema/path convention decided yet — a product
-decision, not purely technical). Neither `runtime_profile_hash` nor a dataset/authority-epoch
-hash exist as manifest fields at all —
+The one remaining field is `dashboard_artifact_sha256`, still format-checked only: no
+"gated publisher" exists yet at all for frontend-v2 (see `frontend-v2/README.md`). Neither
+`runtime_profile_hash` nor a dataset/authority-epoch hash exist as manifest fields at all —
 adding them needs a schema change plus, for `runtime_profile_hash` specifically, resolving
 the tension between the gate's fail-closed empty-environment invocation and that value only
-being computable inside a running container.
+being computable inside a running container. And even once every field binds to something
+real, `GATE10_LIFT_IMPLEMENTED` itself is a separate, deliberate decision — lifting the
+freeze needs its own explicit review, not an automatic flip once the last hash lands.
 
 Owner-facing note for filling out a future manifest's source-derived hashes by hand — must
 match exactly what the gate itself recomputes:
@@ -57,16 +74,20 @@ match exactly what the gate itself recomputes:
 printf '%s' "$(ops/tree-hash.sh)" | sha256sum | cut -d' ' -f1   # served_tree_sha256
 ```
 
-`database_migration_sha256` uses the identical throwaway-index recipe, scoped to
-`backend/sealai_v2/db/migrations` only (`DATABASE_MIGRATION_PATHSPECS` in
-`ops/production_release_gate.py`) — no standalone shell script exists for it yet, so compute
-it via the same function the gate itself calls:
+`database_migration_sha256`, `rollback_plan_sha256`, and `evidence_manifest_sha256` all use
+the identical throwaway-index recipe, just scoped to a different pathspec
+(`DATABASE_MIGRATION_PATHSPECS`/`ROLLBACK_PLAN_PATHSPECS`/`EVIDENCE_MANIFEST_PATHSPECS` in
+`ops/production_release_gate.py`) — no standalone shell script exists for any of the three
+yet, so compute each via the same function the gate itself calls:
 
 ```bash
 /usr/bin/env -i HOME=/nonexistent PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C LC_ALL=C \
   /usr/bin/python3 -I -c \
   "import sys; sys.path.insert(0, 'ops'); from production_release_gate import _database_migration_sha256; print(_database_migration_sha256())"
 ```
+
+(Swap `_database_migration_sha256` for `_rollback_plan_sha256` or `_evidence_manifest_sha256`
+to compute the other two the same way.)
 
 ## Fail-closed invocation and remote deployment boundary
 

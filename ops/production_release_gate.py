@@ -654,6 +654,17 @@ SERVED_TREE_PATHSPECS: tuple[str, ...] = (
     "backend/docker-entrypoint-v2.sh",
 )
 DATABASE_MIGRATION_PATHSPECS: tuple[str, ...] = ("backend/sealai_v2/db/migrations",)
+# GATE-10 P1 phase 3 (owner decision 2026-07-21): rollback_plan_sha256 and
+# evidence_manifest_sha256 bind to two fixed, committed documents rather than an
+# attestation or a free-form path -- Option A1/B1 from the owner-reviewed schema
+# proposal, chosen for the same reason SERVED_TREE_PATHSPECS/DATABASE_MIGRATION_
+# PATHSPECS are single, clearly-owned pathspecs: one fixed file, one hash, nothing to
+# configure or misconfigure. Zero Docker/network needed -- same source-derived
+# recipe as phase 1.
+ROLLBACK_PLAN_PATHSPECS: tuple[str, ...] = ("docs/ops/GATE-10-ROLLBACK-PLAN.md",)
+EVIDENCE_MANIFEST_PATHSPECS: tuple[str, ...] = (
+    "docs/ops/GATE-10-EVIDENCE-MANIFEST.md",
+)
 
 
 def _git_write_tree(pathspecs: tuple[str, ...]) -> str:
@@ -707,12 +718,26 @@ def _database_migration_sha256() -> str:
     ).hexdigest()
 
 
+def _rollback_plan_sha256() -> str:
+    return hashlib.sha256(
+        _git_write_tree(ROLLBACK_PLAN_PATHSPECS).encode("ascii")
+    ).hexdigest()
+
+
+def _evidence_manifest_sha256() -> str:
+    return hashlib.sha256(
+        _git_write_tree(EVIDENCE_MANIFEST_PATHSPECS).encode("ascii")
+    ).hexdigest()
+
+
 # Registry, not a hardcoded if/elif chain -- naturally extensible for later phases (e.g. an
 # _IMAGE_ATTESTATION_HASH_VERIFIERS registry once Docker/network verification is added).
 # Named for what each entry does now; "phase" is planning vocabulary, not domain language.
 _SOURCE_DERIVED_HASH_VERIFIERS: dict[str, Callable[[], str]] = {
     "served_tree_sha256": _served_tree_sha256,
     "database_migration_sha256": _database_migration_sha256,
+    "rollback_plan_sha256": _rollback_plan_sha256,
+    "evidence_manifest_sha256": _evidence_manifest_sha256,
 }
 
 

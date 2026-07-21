@@ -117,6 +117,45 @@ def test_served_tree_hash_moves_with_migration_content_too():
         assert gate._served_tree_sha256() != base
 
 
+def test_rollback_plan_hash_moves_with_document_content():
+    status_before = _git_status()
+    base = gate._rollback_plan_sha256()
+    with _perturb("docs/ops/GATE-10-ROLLBACK-PLAN.md"):
+        assert gate._rollback_plan_sha256() != base
+    assert gate._rollback_plan_sha256() == base
+    assert _git_status() == status_before
+
+
+def test_rollback_plan_hash_is_neutral_outside_its_own_file():
+    base = gate._rollback_plan_sha256()
+    with _probe_file("backend/sealai_v2/knowledge/__gate10_probe__.py"):
+        assert gate._rollback_plan_sha256() == base
+
+
+def test_evidence_manifest_hash_moves_with_document_content():
+    status_before = _git_status()
+    base = gate._evidence_manifest_sha256()
+    with _perturb("docs/ops/GATE-10-EVIDENCE-MANIFEST.md"):
+        assert gate._evidence_manifest_sha256() != base
+    assert gate._evidence_manifest_sha256() == base
+    assert _git_status() == status_before
+
+
+def test_evidence_manifest_hash_is_neutral_outside_its_own_file():
+    base = gate._evidence_manifest_sha256()
+    with _probe_file("backend/sealai_v2/knowledge/__gate10_probe__.py"):
+        assert gate._evidence_manifest_sha256() == base
+
+
+def test_rollback_plan_and_evidence_manifest_hashes_are_independent():
+    """Perturbing one of the two new fixed-file hashes must not move the other --
+    each is its own single-file pathspec, not accidentally sharing scope."""
+
+    base_rollback = gate._rollback_plan_sha256()
+    with _perturb("docs/ops/GATE-10-EVIDENCE-MANIFEST.md"):
+        assert gate._rollback_plan_sha256() == base_rollback
+
+
 # ── synthetic-repo tests (mirrors test_gate11_low_risk_emergency.py /
 # test_gate12_staging_build.py style: throwaway git repo, monkeypatched REPO_ROOT, full
 # gate.evaluate() integration) ────────────────────────────────────────────────────────
@@ -156,15 +195,18 @@ def _dummy_hashes(**overrides: str) -> dict[str, str]:
 
 def _make_minimal_source_commit(repo: Path) -> str:
     """A source commit carrying real stub inputs for every SERVED_TREE_PATHSPECS /
-    DATABASE_MIGRATION_PATHSPECS entry -- same fixture shape as
-    test_production_release_gate.py's _make_gate_control_repo, kept independent here so
-    this file has no cross-file import dependency."""
+    DATABASE_MIGRATION_PATHSPECS / ROLLBACK_PLAN_PATHSPECS / EVIDENCE_MANIFEST_PATHSPECS
+    entry -- same fixture shape as test_production_release_gate.py's
+    _make_gate_control_repo, kept independent here so this file has no cross-file import
+    dependency."""
 
     ops = repo / "ops"
     ops.mkdir(parents=True)
     backend = repo / "backend"
     migrations = backend / "sealai_v2" / "db" / "migrations" / "versions"
     migrations.mkdir(parents=True)
+    docs_ops = repo / "docs" / "ops"
+    docs_ops.mkdir(parents=True)
     (backend / "sealai_v2" / "__init__.py").write_text("", encoding="utf-8")
     (migrations / "20260101_0000_stub.py").write_text(
         "# stub migration\n", encoding="utf-8"
@@ -173,6 +215,12 @@ def _make_minimal_source_commit(repo: Path) -> str:
     (backend / ".dockerignore").write_text("__pycache__\n", encoding="utf-8")
     (backend / "Dockerfile.v2").write_text("FROM scratch\n", encoding="utf-8")
     (backend / "docker-entrypoint-v2.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (docs_ops / "GATE-10-ROLLBACK-PLAN.md").write_text(
+        "stub rollback plan\n", encoding="utf-8"
+    )
+    (docs_ops / "GATE-10-EVIDENCE-MANIFEST.md").write_text(
+        "stub evidence manifest\n", encoding="utf-8"
+    )
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Gate Test")
     _git(repo, "config", "user.email", "gate-test@example.invalid")
@@ -283,6 +331,60 @@ def test_unfreeze_rejects_forged_database_migration_hash(tmp_path: Path, monkeyp
         )
 
 
+def test_unfreeze_rejects_forged_rollback_plan_hash(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    source_sha = _make_minimal_source_commit(repo)
+    monkeypatch.setattr(gate, "REPO_ROOT", repo)
+    real_hashes = _dummy_hashes(
+        served_tree_sha256=gate._served_tree_sha256(),
+        database_migration_sha256=gate._database_migration_sha256(),
+        rollback_plan_sha256=gate._rollback_plan_sha256(),
+        evidence_manifest_sha256=gate._evidence_manifest_sha256(),
+    )
+    forged = dict(real_hashes, rollback_plan_sha256="9" * 64)
+    state_path, approval_path, manifest_path = _write_control_commit(
+        repo, source_sha=source_sha, hashes=forged
+    )
+
+    with pytest.raises(
+        gate.GateConfigurationError,
+        match="does not match the real artifact: rollback_plan_sha256",
+    ):
+        gate.evaluate(
+            "deploy",
+            state_path=state_path,
+            approval_path=approval_path,
+            manifest_path=manifest_path,
+        )
+
+
+def test_unfreeze_rejects_forged_evidence_manifest_hash(tmp_path: Path, monkeypatch):
+    repo = tmp_path / "repo"
+    source_sha = _make_minimal_source_commit(repo)
+    monkeypatch.setattr(gate, "REPO_ROOT", repo)
+    real_hashes = _dummy_hashes(
+        served_tree_sha256=gate._served_tree_sha256(),
+        database_migration_sha256=gate._database_migration_sha256(),
+        rollback_plan_sha256=gate._rollback_plan_sha256(),
+        evidence_manifest_sha256=gate._evidence_manifest_sha256(),
+    )
+    forged = dict(real_hashes, evidence_manifest_sha256="0" * 64)
+    state_path, approval_path, manifest_path = _write_control_commit(
+        repo, source_sha=source_sha, hashes=forged
+    )
+
+    with pytest.raises(
+        gate.GateConfigurationError,
+        match="does not match the real artifact: evidence_manifest_sha256",
+    ):
+        gate.evaluate(
+            "deploy",
+            state_path=state_path,
+            approval_path=approval_path,
+            manifest_path=manifest_path,
+        )
+
+
 def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
     tmp_path: Path, monkeypatch
 ):
@@ -297,13 +399,15 @@ def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
     real_hashes = _dummy_hashes(
         served_tree_sha256=gate._served_tree_sha256(),
         database_migration_sha256=gate._database_migration_sha256(),
+        rollback_plan_sha256=gate._rollback_plan_sha256(),
+        evidence_manifest_sha256=gate._evidence_manifest_sha256(),
     )
     state_path, approval_path, manifest_path = _write_control_commit(
         repo, source_sha=source_sha, hashes=real_hashes
     )
-    # backend_image_digest attestation needs real Docker+network+Sigstore -- out of
-    # scope for this source-derived-hash test (see
-    # test_gate_backend_image_attestation.py for that).
+    # backend_image_digest/frontend_image_digest attestation needs real
+    # Docker+network+Sigstore -- out of scope for this source-derived-hash test (see
+    # test_gate_image_attestation.py for that).
     monkeypatch.setattr(
         gate,
         "_IMAGE_ATTESTATION_HASH_VERIFIERS",
@@ -355,10 +459,12 @@ def test_unfreeze_fails_closed_when_required_build_input_is_missing(
 
 def test_status_document_lists_source_derived_verifiers_as_registered():
     # Not a manifest field -- a targeted regression guard that the registry itself
-    # stays wired to exactly the two Phase-1 fields, no silent drift.
+    # stays wired to exactly these four fields, no silent drift.
     assert set(gate._SOURCE_DERIVED_HASH_VERIFIERS) == {
         "served_tree_sha256",
         "database_migration_sha256",
+        "rollback_plan_sha256",
+        "evidence_manifest_sha256",
     }
 
 

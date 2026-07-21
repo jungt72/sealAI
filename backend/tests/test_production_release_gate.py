@@ -154,6 +154,8 @@ def _make_gate_control_repo(
     backend = repo / "backend"
     migrations = backend / "sealai_v2" / "db" / "migrations" / "versions"
     migrations.mkdir(parents=True)
+    docs_ops = repo / "docs" / "ops"
+    docs_ops.mkdir(parents=True)
     (backend / "sealai_v2" / "__init__.py").write_text("", encoding="utf-8")
     (migrations / "20260101_0000_stub.py").write_text(
         "# stub migration\n", encoding="utf-8"
@@ -162,6 +164,12 @@ def _make_gate_control_repo(
     (backend / ".dockerignore").write_text("__pycache__\n", encoding="utf-8")
     (backend / "Dockerfile.v2").write_text("FROM scratch\n", encoding="utf-8")
     (backend / "docker-entrypoint-v2.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (docs_ops / "GATE-10-ROLLBACK-PLAN.md").write_text(
+        "stub rollback plan\n", encoding="utf-8"
+    )
+    (docs_ops / "GATE-10-EVIDENCE-MANIFEST.md").write_text(
+        "stub evidence manifest\n", encoding="utf-8"
+    )
     _git(repo, "init", "-b", "main")
     _git(repo, "config", "user.name", "Gate Test")
     _git(repo, "config", "user.email", "gate-test@example.invalid")
@@ -177,6 +185,8 @@ def _make_gate_control_repo(
     real_hashes = {
         "served_tree_sha256": gate._served_tree_sha256(),
         "database_migration_sha256": gate._database_migration_sha256(),
+        "rollback_plan_sha256": gate._rollback_plan_sha256(),
+        "evidence_manifest_sha256": gate._evidence_manifest_sha256(),
     }
 
     state_path, approval_path, manifest_path = _write_unfreeze_documents(
