@@ -196,9 +196,6 @@ PY
   apply \
   --manifest /etc/sealai/approvals/gate-08-legacy-units.json \
   --evidence-root /var/lib/sealai-disk-guard/legacy-unit-evidence
-systemd-analyze verify \
-  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.service" \
-  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.timer"
 
 # Capture and validate the exact destructive cron entry before any installed
 # control changes. Absence/duplication is fingerprint drift and stops the gate.

@@ -538,12 +538,17 @@ def test_gate08_rejects_legacy_service_in_active_or_transitional_state(
 def test_gate08_installer_orders_retirement_before_new_timer_activation():
     installer = (OPS / "install-disk-guard.sh").read_text(encoding="utf-8")
     retirement = installer.index("gate08_legacy_unit_retirement.py")
-    staged_verify = installer.index(
-        '"${STAGE_DIR}/ops/systemd/sealai-disk-guard.service"', retirement
+    # The only systemd-analyze verify call left checks the *installed* unit files
+    # (their ExecStart target must already exist on disk for verify to pass at
+    # all) -- a second, earlier call against the staged-but-not-yet-installed
+    # copy was removed because it could never succeed.
+    installed_verify = installer.index(
+        "/etc/systemd/system/sealai-disk-guard.service", retirement
     )
     daemon_reload = installer.index("systemctl daemon-reload")
     enable_new = installer.index("systemctl enable --now sealai-disk-guard.timer")
-    assert retirement < staged_verify < daemon_reload < enable_new
+    assert retirement < installed_verify < daemon_reload < enable_new
+    assert installer.count("systemd-analyze verify") == 1
     assert "systemctl start sealai-docker-disk-guard" not in installer
     assert "systemctl enable sealai-docker-disk-guard" not in installer
 
