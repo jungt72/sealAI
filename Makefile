@@ -119,6 +119,10 @@ verify-v2: lint-v2 architecture-v2 test-v2 frontend-v2 ## Gesamter lokale V2-Fre
 tree-hash: ## Kanonischen Backend-V2 Release-Hash ausgeben
 	/bin/bash -p ops/tree-hash.sh
 
+.PHONY: gate-challenge
+gate-challenge: ## OpenAI-Challenger-Bericht zu GATE-10 erzeugen (Cent-Betrag pro Lauf, siehe Ausgabe)
+	@OPENAI_API_KEY=$$(grep '^OPENAI_API_KEY=' .env.prod | cut -d= -f2-) python3 ops/gate_challenger.py
+
 test-v1-container: ## Legacy-V1-Pytest im laufenden Container
 	docker exec -t -w /app backend python -m pytest -q
 
