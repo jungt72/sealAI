@@ -100,3 +100,14 @@ sauber. 4 fehlende ops/deploy-ledger.jsonl-Zeilen an ihrer historisch korrekten 
 Position eingefuegt (nicht ans Ende angehaengt). #205 + #208 geschlossen als superseded durch #338.
 #187 (staging deploy script) bleibt bewusst unangetastet -- echte Merge-Konflikte, kein
 Empfehlungs-Fall wie bei 205/208, Owner-Entscheidung noetig.
+
+2026-07-21 | Claude Code | GATE-10 OpenAI-Challenger (ops/gate_challenger.py) | Auf Owner-Wunsch
+gebaut: ein einzelner gebundener gpt-5.4-mini-Call pro Aufruf, prueft GATE-10-P1-Stand gegen
+docs/ops/production-release-freeze.md + den P1-Diff (c32270fd), schreibt nur einen lesbaren Bericht
+nach ops/.gate-challenges/ (gitignored) -- ruehrt nie eine Approval-Datei an und importiert nie
+backend/sealai_v2/eval/ (den bezahlten Multi-Case-Judge). Live pilotiert (~13k Tokens): bestaetigte
+unabhaengig, dass 2/7 Manifest-Hashes gebunden sind und aktuell kein Freigabepfad existiert
+(freeze_lift_implemented weiterhin false). backend/tests/test_gate_challenger.py deckt
+Kontext-Sammlung, Fail-closed ohne OPENAI_API_KEY, und die exakte Request-Form (ein Call,
+max_completion_tokens, kein Approval-Schreibzugriff) ab -- lokal gruen, ruff format/check sauber.
+Noch nicht in einen Freigabe-Workflow verdrahtet; reine Lese-/Beratungs-Hilfe.

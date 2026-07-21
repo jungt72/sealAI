@@ -36,7 +36,7 @@ DEFAULT_MAX_COMPLETION_TOKENS = 1800
 GATE10_P1_COMMIT = "c32270fd"
 
 SYSTEM_PROMPT = (
-    "Du bist ein technischer Pruefer (\"Challenger\") fuer die Produktions-"
+    'Du bist ein technischer Pruefer ("Challenger") fuer die Produktions-'
     "Freigabe-Gates der Firma sealingAI. Der Eigentuemer ist fachlich kein "
     "Software-Entwickler und trifft die Entscheidung am Ende selbst -- du "
     "lieferst KEINE verbindliche Freigabe, sondern eine ehrliche, "
@@ -59,13 +59,26 @@ def _truncate(label: str, text: str, cap: int) -> str:
 
 
 def gather_gate10_p1_context() -> str:
-    freeze_doc = (REPO / "docs" / "ops" / "production-release-freeze.md").read_text(encoding="utf-8")
-    p1_diff = _run(["git", "show", GATE10_P1_COMMIT]) or f"(kein Diff gefunden fuer {GATE10_P1_COMMIT})"
-    recent_commits = _run(["git", "log", "--oneline", "-30", "-i", "--grep=gate-10", "--grep=gate10"])
+    freeze_doc = (REPO / "docs" / "ops" / "production-release-freeze.md").read_text(
+        encoding="utf-8"
+    )
+    p1_diff = (
+        _run(["git", "show", GATE10_P1_COMMIT])
+        or f"(kein Diff gefunden fuer {GATE10_P1_COMMIT})"
+    )
+    recent_commits = _run(
+        ["git", "log", "--oneline", "-30", "-i", "--grep=gate-10", "--grep=gate10"]
+    )
     return "\n\n".join(
         [
-            _truncate("docs/ops/production-release-freeze.md (Volltext)", freeze_doc, 45_000),
-            _truncate(f"git show {GATE10_P1_COMMIT} (P1-Phase-1-Implementierung)", p1_diff, 25_000),
+            _truncate(
+                "docs/ops/production-release-freeze.md (Volltext)", freeze_doc, 45_000
+            ),
+            _truncate(
+                f"git show {GATE10_P1_COMMIT} (P1-Phase-1-Implementierung)",
+                p1_diff,
+                25_000,
+            ),
             _truncate("Juengste GATE-10-bezogene Commits", recent_commits, 4_000),
         ]
     )
@@ -89,8 +102,7 @@ def call_openai(model: str, max_completion_tokens: int, context: str) -> dict:
         "2. Tabelle: Anforderung | Status (erledigt/offen) | was konkret fehlt\n"
         "3. Naechster sinnvoll bearbeitbare Einzelschritt\n"
         "4. Ausdruecklicher Hinweis: existiert aktuell UEBERHAUPT ein Weg, GATE-10 "
-        "freizugeben -- ja oder nein, und warum\n\n"
-        + context
+        "freizugeben -- ja oder nein, und warum\n\n" + context
     )
 
     payload = {
@@ -120,7 +132,11 @@ def call_openai(model: str, max_completion_tokens: int, context: str) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"OpenAI-Modell (Default: {DEFAULT_MODEL})")
+    parser.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        help=f"OpenAI-Modell (Default: {DEFAULT_MODEL})",
+    )
     parser.add_argument(
         "--max-completion-tokens",
         type=int,
