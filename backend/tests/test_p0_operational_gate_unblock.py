@@ -354,15 +354,20 @@ def test_permission_manifest_rejects_symlink_and_inode_replacement(tmp_path):
 
 class FakeSystemd:
     def __init__(
-        self, *, fail_disable: bool = False, service_active_state: str = "failed"
+        self,
+        *,
+        fail_disable: bool = False,
+        service_active_state: str = "failed",
+        timer_state: tuple[str, str] = ("active", "enabled"),
     ):
         self.calls: list[list[str]] = []
         self.fail_disable = fail_disable
+        timer_active_state, timer_unit_file_state = timer_state
         self.states = {
             legacy.LEGACY_TIMER: {
                 "LoadState": "loaded",
-                "ActiveState": "active",
-                "UnitFileState": "enabled",
+                "ActiveState": timer_active_state,
+                "UnitFileState": timer_unit_file_state,
                 "FragmentPath": str(legacy.EXPECTED_FRAGMENTS[legacy.LEGACY_TIMER]),
             },
             legacy.LEGACY_SERVICE: {
@@ -390,9 +395,14 @@ class FakeSystemd:
 
 
 def _legacy_manifest(
-    timer: Path, service: Path, *, service_active_state: str = "failed"
+    timer: Path,
+    service: Path,
+    *,
+    service_active_state: str = "failed",
+    timer_state: tuple[str, str] = ("active", "enabled"),
 ) -> dict[str, object]:
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    timer_active_state, timer_unit_file_state = timer_state
     return {
         "schema_version": 1,
         "gate_id": "GATE-08",
@@ -405,8 +415,8 @@ def _legacy_manifest(
             {
                 "unit_name": legacy.LEGACY_TIMER,
                 "load_state": "loaded",
-                "active_state": "active",
-                "unit_file_state": "enabled",
+                "active_state": timer_active_state,
+                "unit_file_state": timer_unit_file_state,
                 "fragment_path": str(timer),
                 "fragment_sha256": hashlib.sha256(timer.read_bytes()).hexdigest(),
             },
@@ -422,7 +432,13 @@ def _legacy_manifest(
     }
 
 
-def _prepare_legacy(monkeypatch, tmp_path, *, service_active_state: str = "failed"):
+def _prepare_legacy(
+    monkeypatch,
+    tmp_path,
+    *,
+    service_active_state: str = "failed",
+    timer_state: tuple[str, str] = ("active", "enabled"),
+):
     timer = tmp_path / legacy.LEGACY_TIMER
     service = tmp_path / legacy.LEGACY_SERVICE
     timer.write_text("[Timer]\nOnCalendar=hourly\n", encoding="utf-8")
@@ -434,19 +450,30 @@ def _prepare_legacy(monkeypatch, tmp_path, *, service_active_state: str = "faile
         "EXPECTED_FRAGMENTS",
         {legacy.LEGACY_TIMER: timer, legacy.LEGACY_SERVICE: service},
     )
-    return _legacy_manifest(timer, service, service_active_state=service_active_state)
+    return _legacy_manifest(
+        timer,
+        service,
+        service_active_state=service_active_state,
+        timer_state=timer_state,
+    )
 
 
 @pytest.mark.parametrize(
     "service_active_state", sorted(legacy.SAFE_LEGACY_SERVICE_ACTIVE_STATES)
 )
+@pytest.mark.parametrize("timer_state", sorted(legacy.SAFE_LEGACY_TIMER_STATES))
 def test_gate08_dry_run_and_apply_are_exact(
-    monkeypatch, tmp_path, service_active_state
+    monkeypatch, tmp_path, timer_state, service_active_state
 ):
     manifest = _prepare_legacy(
-        monkeypatch, tmp_path, service_active_state=service_active_state
+        monkeypatch,
+        tmp_path,
+        service_active_state=service_active_state,
+        timer_state=timer_state,
     )
-    systemd = FakeSystemd(service_active_state=service_active_state)
+    systemd = FakeSystemd(
+        service_active_state=service_active_state, timer_state=timer_state
+    )
     dry = legacy.execute(
         manifest,
         apply=False,
@@ -527,6 +554,29 @@ def test_gate08_rejects_legacy_service_in_active_or_transitional_state(
     )
     systemd = FakeSystemd(service_active_state=service_active_state)
     with pytest.raises(legacy.LegacyUnitError, match="safe-to-retire state"):
+        legacy.validate_manifest(
+            manifest,
+            now=dt.datetime.now(dt.timezone.utc),
+            runner=systemd,
+            required_uid=os.geteuid(),
+        )
+
+
+@pytest.mark.parametrize(
+    "timer_state",
+    [
+        ("activating", "enabled"),
+        ("active", "disabled"),
+        ("inactive", "enabled"),
+        ("failed", "static"),
+    ],
+)
+def test_gate08_rejects_legacy_timer_in_unknown_state(
+    monkeypatch, tmp_path, timer_state
+):
+    manifest = _prepare_legacy(monkeypatch, tmp_path, timer_state=timer_state)
+    systemd = FakeSystemd(timer_state=timer_state)
+    with pytest.raises(legacy.LegacyUnitError, match="known safe state"):
         legacy.validate_manifest(
             manifest,
             now=dt.datetime.now(dt.timezone.utc),
