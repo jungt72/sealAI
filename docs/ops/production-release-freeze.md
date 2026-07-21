@@ -7,14 +7,20 @@ operations are denied. Boot recovery is limited to starting containers which
 already exist; it cannot pull, build, create, recreate, remove, or migrate an
 artifact.
 
-The GATE-10 lift is deliberately hard-disabled in this P0 package, even when
-all current control documents are syntactically valid and committed in the
-documented two-commit shape. P1 must first bind the approval to the exact
-backend image digest, immutable dashboard bytes, runtime/retrieval profile,
-dataset and authority epochs, migrations, SBOM, and production verification
-path. Until that implementation is reviewed and tested,
-`freeze_lift_implemented` remains `false` and no GATE-10 document set can
-authorize a release.
+The GATE-10 lift was deliberately hard-disabled in this P0 package while all seven
+`required_manifest_hashes` were format-checked only. **Update, 2026-07-21:** all seven are
+now bound to the real artifact (P1 phases 1-4, see below), and the owner directed
+`GATE10_LIFT_IMPLEMENTED` to `true` directly — an explicit decision made over the
+implementer's own stated preference for independent review first, which the owner is
+entitled to make. **This does not mean a release can happen.** `freeze.active` in
+`ops/production-release-state.json` is a completely separate field and remains `true`, so
+`build`/`pull`/`deploy`/`migration`/`dashboard-publish` are still denied before
+`GATE10_LIFT_IMPLEMENTED` is ever consulted. Two more independent blockers are also
+untouched: the root-owned remote deploy entrypoint
+(`/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh`) still denies
+unconditionally, and no GATE-10 approval or release manifest document has ever been
+created — `owner_read_diff_confirmation` may never be set by an agent (see the GATE-11/12
+schemas' own field description), only by the owner after personally reading a diff.
 
 ## P1 status (2026-07-21)
 
@@ -22,8 +28,9 @@ All seven `required_manifest_hashes` are now bound to the real artifact instead 
 format-checked only: `served_tree_sha256`, `database_migration_sha256`,
 `rollback_plan_sha256`, `evidence_manifest_sha256`, `dashboard_artifact_sha256` (all five
 source-derived — see below), `backend_image_digest`, and `frontend_image_digest` (both
-attestation-verified — see below). **This does not mean GATE-10 can be lifted** — see the
-"what 7/7 does and does not mean" note below before reading this as "done."
+attestation-verified — see below). As of 2026-07-21 `GATE10_LIFT_IMPLEMENTED` is also
+`true` (owner decision) — see the "what this does and does not mean" note below before
+reading either of those facts as "a release can happen now." It cannot: see the same note.
 `evaluate()` recomputes the five source-derived hashes from the actual checked-out tree
 (or, for `dashboard_artifact_sha256` only, from a local build directory — see below)
 immediately after `_assert_two_commit_binding` proves HEAD is the exact, clean control
@@ -59,7 +66,7 @@ production deploy path (`ops/release-frontend.sh`) still only builds locally on 
 teaching it to optionally pull and verify a CI-built image (the way
 `ops/release-backend-v2.sh` already does via `BACKEND_V2_IMAGE`) is a deliberately separate,
 later step, not bundled into the gate-verification work here. None of this lifts the freeze
-by itself — `GATE10_LIFT_IMPLEMENTED` stays `false`.
+by itself — `freeze.active` is a separate field (see below).
 
 `dashboard_artifact_sha256` (P1 phase 4, owner decision 2026-07-21) is different in kind
 from the other six: it is NOT git-tracked content. `frontend-v2/vite.config.ts` already
@@ -72,23 +79,37 @@ every regular file's path-relative-to-root plus its bytes, sorted, symlinks reje
 does not build anything (no `npm` invocation in the gate, same as every other verifier
 here: the gate verifies pre-built artifacts, it never produces them).
 
-### What 7/7 does and does not mean
+### What 7/7 and GATE10_LIFT_IMPLEMENTED=true do and do not mean
 
 Binding the hash only proves a *claimed* `dashboard_artifact_sha256` matches what is
-actually sitting in `frontend-v2/.build/dashboard-candidate/` at verification time. It does
-**not** mean there is a way to get verified candidate bytes into the live `dist/` bind
-mount — that promotion step (the actual "gated publisher") still does not exist.
-`docs/ops/RUNBOOK_V2_CUTOVER.md` explicitly frames that promotion as an owner, low-traffic-
-window action, not an automated script, and it is deliberately out of scope for this hash-
-binding work. Read that runbook before building it.
+actually sitting in `frontend-v2/.build/dashboard-candidate/` at verification time.
+`ops/publish-dashboard.sh` (added 2026-07-21) is the gated publisher
+`docs/ops/RUNBOOK_V2_CUTOVER.md` calls for — it builds, hashes, gate-checks the
+`dashboard-publish` operation, and only promotes into live `dist/` if the gate allows.
+Live-verified: with the freeze active it is correctly denied before ever touching `dist/`.
+
+`GATE10_LIFT_IMPLEMENTED = true` (owner decision, 2026-07-21) does **not** mean a release
+can happen:
+
+- `freeze.active` in `ops/production-release-state.json` is a separate field and remains
+  `true` — every mutating operation is denied before this flag is ever reached.
+- The root-owned remote deploy entrypoint still denies unconditionally
+  (`p1_exact_artifact_promotion_not_implemented`).
+- No GATE-10 approval or release manifest document has ever existed in this repo. Creating
+  one requires `owner_read_diff_confirmation: true`, which by the GATE-11/12 schemas' own
+  documented rule may never be set by an agent — only by the owner, after personally
+  reading the diff.
+
+Setting this flag changes exactly one thing: IF the freeze is separately lifted (a distinct,
+two-commit-controlled edit to `production-release-state.json`) AND a valid, owner-signed
+approval + manifest is later created, this specific check will no longer be what blocks it.
+It was, until 2026-07-21, an absolute backstop regardless of anything else being correct;
+now the other two blockers above carry that weight instead.
 
 Neither `runtime_profile_hash` nor a dataset/authority-epoch hash exist as manifest fields
 at all — adding them needs a schema change plus, for `runtime_profile_hash` specifically,
 resolving the tension between the gate's fail-closed empty-environment invocation and that
-value only being computable inside a running container. And even with every
-`required_manifest_hashes` field bound to something real, `GATE10_LIFT_IMPLEMENTED` itself
-is a separate, deliberate decision — lifting the freeze needs its own explicit review, not
-an automatic flip once the last hash lands.
+value only being computable inside a running container.
 
 Owner-facing note for filling out a future manifest's source-derived hashes by hand — must
 match exactly what the gate itself recomputes:

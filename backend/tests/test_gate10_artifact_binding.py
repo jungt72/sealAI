@@ -418,13 +418,14 @@ def test_unfreeze_rejects_forged_dashboard_artifact_hash(tmp_path: Path, monkeyp
         )
 
 
-def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
+def test_unfreeze_succeeds_with_all_real_hashes_and_lift_implemented(
     tmp_path: Path, monkeypatch
 ):
-    """The positive path: with BOTH real hashes correctly bound, the gate must get all
-    the way to the (still hardcoded False) GATE10_LIFT_IMPLEMENTED check -- proving
-    Phase 1 does not accidentally block a genuinely correct manifest, and does not
-    accidentally lift the freeze either."""
+    """The full positive path (updated 2026-07-21 when the owner set
+    GATE10_LIFT_IMPLEMENTED = True): with every hash genuinely bound, evaluate() now
+    returns an ALLOWED decision instead of hitting the lift-flag backstop. This is the
+    end-to-end proof this whole test file was building toward -- a manifest with real,
+    independently-verified hashes for every field is actually approved."""
 
     repo = tmp_path / "repo"
     source_sha = _make_minimal_source_commit(repo)
@@ -445,19 +446,24 @@ def test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag(
     monkeypatch.setattr(
         gate,
         "_IMAGE_ATTESTATION_HASH_VERIFIERS",
-        {"backend_image_digest": lambda digest, source_git_sha: None},
+        {
+            "backend_image_digest": lambda digest, source_git_sha: None,
+            "frontend_image_digest": lambda digest, source_git_sha: None,
+        },
     )
 
-    with pytest.raises(
-        gate.GateConfigurationError,
-        match="GATE-10 lift remains disabled pending exact artifact binding",
-    ):
-        gate.evaluate(
-            "deploy",
-            state_path=state_path,
-            approval_path=approval_path,
-            manifest_path=manifest_path,
-        )
+    decision = gate.evaluate(
+        "deploy",
+        state_path=state_path,
+        approval_path=approval_path,
+        manifest_path=manifest_path,
+    )
+
+    assert decision.allowed is True
+    assert decision.operation == "deploy"
+    assert decision.reason == "gate10_approved_manifest_bound"
+    assert decision.required_gate == "GATE-10"
+    assert decision.source_git_sha == source_sha
 
 
 def test_unfreeze_fails_closed_when_required_build_input_is_missing(
@@ -503,5 +509,10 @@ def test_status_document_lists_source_derived_verifiers_as_registered():
     }
 
 
-def test_gate10_lift_implemented_is_still_false():
-    assert gate.GATE10_LIFT_IMPLEMENTED is False
+def test_gate10_lift_implemented_is_true_by_owner_decision():
+    # Flipped 2026-07-21 -- see the comment above GATE10_LIFT_IMPLEMENTED in
+    # production_release_gate.py for exactly what this does and does not unlock
+    # (freeze.active is a separate field and remains true; two other independent
+    # blockers -- the root-owned deploy entrypoint and the absence of any real
+    # GATE-10 approval/manifest document -- are untouched by this flag).
+    assert gate.GATE10_LIFT_IMPLEMENTED is True

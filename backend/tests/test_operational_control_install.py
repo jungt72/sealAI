@@ -84,7 +84,7 @@ def test_release_gate_allows_only_exact_operational_control_install(tmp_path: Pa
         target: {"state": "ABSENT"}
         for target in gate.OPERATIONAL_CONTROL_TARGETS.values()
     }
-    assert gate.GATE10_LIFT_IMPLEMENTED is False
+    assert gate.GATE10_LIFT_IMPLEMENTED is True  # owner decision, 2026-07-21
     assert "operational-control-install" not in gate.MUTATING_OPERATIONS
     for operation in sorted(gate.MUTATING_OPERATIONS):
         with pytest.raises(gate.GateDenied):

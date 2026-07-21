@@ -40,7 +40,23 @@ LOW_RISK_EMERGENCY_APPROVAL_PATH = Path(
 )
 STAGING_BUILD_APPROVAL_PATH = Path("/etc/sealai/approvals/gate-12-staging-build.json")
 LIVE_PRODUCTION_REPO = Path("/home/thorsten/sealai")
-GATE10_LIFT_IMPLEMENTED = False
+# Owner decision, 2026-07-21: all seven required_manifest_hashes are now bound
+# (P1 phases 1-4, see docs/ops/production-release-freeze.md). The owner set this
+# flag directly, over the implementer's own stated preference for independent
+# review first -- an explicit, informed choice the owner is entitled to make.
+#
+# This flag alone does not unfreeze anything: ops/production-release-state.json's
+# freeze.active is a SEPARATE field and remains true, so evaluate() still denies
+# build/pull/deploy/migration/dashboard-publish before this flag is ever consulted
+# (see the `if freeze["active"]:` branch below). Two more independent blockers also
+# remain untouched by this change: the root-owned remote deploy entrypoint
+# (/usr/local/libexec/sealai/production-deploy-remote-entrypoint.sh) still denies
+# unconditionally, and no GATE-10 approval/manifest document has ever been created
+# (owner_read_diff_confirmation may never be set by an agent -- see the GATE-11/12
+# schemas' own field description). Flipping this flag only means: IF the freeze is
+# separately lifted AND a valid, owner-signed approval+manifest is later created,
+# this specific check will no longer be the thing that blocks it.
+GATE10_LIFT_IMPLEMENTED = True
 GATE_DOCUMENT_PATHS = frozenset(
     {
         "ops/production-release-state.json",
