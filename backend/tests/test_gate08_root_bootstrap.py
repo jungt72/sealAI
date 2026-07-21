@@ -5,8 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -208,6 +210,99 @@ def test_isolated_git_clone_flags_do_not_run_candidate_checkout_hook(tmp_path: P
         ).stdout.strip()
         == approved_sha
     )
+
+
+def test_git_helper_overrides_config_global_env_only_when_given(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, Any] = {}
+
+    def fake_run(
+        command: list[str], *, env: dict[str, str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["env"] = env
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(root_bootstrap.subprocess, "run", fake_run)
+
+    root_bootstrap._git(
+        Path("/tmp/hooks"),
+        ("status",),
+        checkout=Path("/tmp/checkout"),
+        config_global=Path("/tmp/root-stage/safe-directory.gitconfig"),
+    )
+
+    assert captured["command"] == [
+        "/usr/bin/git",
+        "-c",
+        "core.hooksPath=/tmp/hooks",
+        "-c",
+        "core.alternateRefsCommand=/bin/false",
+        "-c",
+        "protocol.file.allow=always",
+        "-C",
+        "/tmp/checkout",
+        "status",
+    ]
+    assert (
+        captured["env"]["GIT_CONFIG_GLOBAL"]
+        == "/tmp/root-stage/safe-directory.gitconfig"
+    )
+
+
+def test_git_helper_keeps_dev_null_config_global_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, Any] = {}
+
+    def fake_run(
+        command: list[str], *, env: dict[str, str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        captured["env"] = env
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(root_bootstrap.subprocess, "run", fake_run)
+
+    root_bootstrap._git(Path("/tmp/hooks"), ("status",))
+
+    assert captured["env"]["GIT_CONFIG_GLOBAL"] == "/dev/null"
+
+
+def test_prepare_checkout_writes_and_removes_a_scoped_safe_directory_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    source = tmp_path / "source"
+    root_stage = tmp_path / "root-stage"
+    hooks = root_stage / "empty-hooks"
+    checkout = root_stage / "checkout"
+    hooks.mkdir(parents=True)
+    source.mkdir()
+
+    written_configs: list[str] = []
+
+    def spying_git(hooks_arg: Path, arguments: tuple[str, ...], **kwargs: Any) -> Any:
+        if kwargs.get("config_global") is not None:
+            written_configs.append(kwargs["config_global"].read_text(encoding="utf-8"))
+            assert kwargs["config_global"].parent == checkout.parent
+            assert stat.S_IMODE(kwargs["config_global"].stat().st_mode) == 0o600
+        # Stubbed success with empty stdout: the clone call itself is what this test
+        # exercises; the immediately-following rev-parse HEAD comparison in
+        # _prepare_checkout will then deny on the (deliberately mismatched) empty
+        # output, which is the expected, precise way this call sequence ends here.
+        return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(root_bootstrap, "_git", spying_git)
+
+    with pytest.raises(
+        root_bootstrap.BootstrapDenied, match="candidate HEAD does not match receipt"
+    ):
+        root_bootstrap._prepare_checkout(source, checkout, hooks, "0" * 40)
+
+    assert len(written_configs) == 1
+    assert f"directory = {source}\n" in written_configs[0]
+    assert f"directory = {source / '.git'}\n" in written_configs[0]
+    assert not (checkout.parent / "safe-directory.gitconfig").exists()
 
 
 def test_documented_loader_copies_as_data_then_hashes_before_execution():
