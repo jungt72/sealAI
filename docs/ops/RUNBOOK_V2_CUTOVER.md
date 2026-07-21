@@ -111,9 +111,16 @@ smoke. They no longer block the owner-only flip.)*
   At flip time the prod worktree state moves from that V1 ref to the flip ref — rollbacks
   check out FROM `$V1_ANCHOR`.
 - The immutable dashboard artifact must be built outside the live bind mount,
-  content-addressed, and bound to the exact GATE-10 manifest. This P1 contract
-  is not implemented yet; a local `npm run verify` is evidence for candidate
-  bytes only and cannot make them production-eligible.
+  content-addressed, and bound to the exact GATE-10 manifest. The content-addressing half of
+  this is implemented (2026-07-21): `ops/production_release_gate.py::_dashboard_artifact_sha256`
+  hashes `frontend-v2/.build/dashboard-candidate/`, and `ops/publish-dashboard.sh` is the
+  gated publisher this runbook calls for -- it builds, hashes, gate-checks the
+  `dashboard-publish` operation, and only promotes into live `frontend-v2/dist/` if the gate
+  allows. Verified live (2026-07-21): with the freeze active it correctly builds, hashes, and
+  is DENIED before ever touching `dist/` -- `{allowed:false,reason:production_release_freeze_active,...}`.
+  A local `npm run verify` alone is still evidence for candidate bytes only; production
+  eligibility runs through `ops/publish-dashboard.sh`, which itself still requires GATE-10 to
+  actually be unfrozen (a separate, later decision) before it can promote anything.
 - `docker exec nginx nginx -T | grep -cE '^\s*include snippets/v2_dashboard'` → 0, and the loaded
   config matches the worktree file.
 

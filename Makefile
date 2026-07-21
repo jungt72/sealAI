@@ -123,6 +123,10 @@ tree-hash: ## Kanonischen Backend-V2 Release-Hash ausgeben
 gate-challenge: ## OpenAI-Challenger-Bericht zu GATE-10 erzeugen (Cent-Betrag pro Lauf, siehe Ausgabe)
 	@OPENAI_API_KEY=$$(grep '^OPENAI_API_KEY=' .env.prod | cut -d= -f2-) python3 ops/gate_challenger.py
 
+.PHONY: dashboard-publish-check
+dashboard-publish-check: ## Dashboard bauen+hashen+Gate-Check testen (ruehrt live dist/ nie an)
+	/bin/bash -p ops/publish-dashboard.sh --check-only
+
 test-v1-container: ## Legacy-V1-Pytest im laufenden Container
 	docker exec -t -w /app backend python -m pytest -q
 
