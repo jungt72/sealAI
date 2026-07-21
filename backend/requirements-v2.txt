@@ -1,27 +1,27 @@
 # Runtime deps for the green-field sealai_v2 image (Dockerfile.v2) — the FULL /api/v2 app, nothing
 # from the V1 runtime. Pinned to the backend's versions (requirements.txt) where shared; PyJWT is
 # pinned to the version the offline suite runs against. The V1 image is untouched.
-fastapi==0.139.0
+fastapi==0.139.2
 starlette==1.3.1
-uvicorn[standard]==0.43.0
-pydantic==2.12.5
+uvicorn[standard]==0.51.0
+pydantic==2.13.4
 pydantic-settings==2.14.2
 Jinja2==3.1.6
 httpx==0.28.1
-openai==2.30.0
+openai==2.46.0
 PyJWT==2.13.0
-cryptography==48.0.1
+cryptography==49.0.0
 # Durable persistence (build-spec §3: Postgres = system-of-record). Sync SQLAlchemy adapter behind
 # the memory Protocols; psycopg2 is the sync driver (matches the V1 pins in requirements.txt).
-SQLAlchemy==2.0.49
-alembic==1.18.4
-psycopg2-binary==2.9.11
+SQLAlchemy==2.0.51
+alembic==1.18.5
+psycopg2-binary==2.9.12
 
 # L2 production retrieval (Phase-1): semantic search behind the Retriever Protocol. qdrant-client
 # talks to the running Qdrant; fastembed runs the local multilingual-e5-large dense model (no API).
 # Pinned to the V1 image versions (requirements.txt) for consistency.
-qdrant-client==1.17.1
+qdrant-client==1.18.0
 fastembed==0.8.0
-langsmith==0.8.18
-prometheus-client==0.24.1
+langsmith==0.10.6
+prometheus-client==0.25.0
 prometheus-fastapi-instrumentator==8.0.2
