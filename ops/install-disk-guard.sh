@@ -310,7 +310,7 @@ test -x /usr/local/libexec/sealai/hash-verified-python-loader.py
 /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py --help >/dev/null
 systemd-tmpfiles --create /etc/tmpfiles.d/sealai-storage-mutation.conf
 test "$(stat -Lc '%F:%a:%U:%G' /run/lock/sealai-storage-mutation.lock)" = \
-  'regular file:660:root:thorsten'
+  'regular empty file:660:root:thorsten'
 
 CONFIGURED_DOCKER_ROOT="$(/usr/bin/python3 -I - /etc/sealai/disk-guard.json <<'PY'
 import json

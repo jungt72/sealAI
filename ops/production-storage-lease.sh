@@ -82,6 +82,6 @@ acquire_production_storage_lease() {
     /run/lock/sealai-storage-mutation.lock \
     /usr/local/libexec/sealai/docker-disk-guard.sh \
     /etc/sealai/disk-guard.json \
-    'regular file:660:root:thorsten' \
+    'regular empty file:660:root:thorsten' \
     sudo
 }

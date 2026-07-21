@@ -558,7 +558,7 @@ def test_production_storage_lease_has_fixed_root_mediated_paths() -> None:
     assert "/run/lock/sealai-storage-mutation.lock" in content
     assert "/usr/local/libexec/sealai/docker-disk-guard.sh" in content
     assert "/etc/sealai/disk-guard.json" in content
-    assert "regular file:660:root:thorsten" in content
+    assert "regular empty file:660:root:thorsten" in content
     assert "/usr/bin/sudo -n --" in content
     assert "${DOCKER_DISK_GUARD" not in content
     assert wrapper.startswith("#!/bin/bash -p\n")
@@ -567,6 +567,34 @@ def test_production_storage_lease_has_fixed_root_mediated_paths() -> None:
         "exec /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py"
         in wrapper
     )
+
+
+def test_lock_file_stat_format_matches_a_genuinely_empty_file(tmp_path: Path) -> None:
+    # GNU stat's %F reports "regular empty file" (not "regular file") for any
+    # zero-byte regular file -- and the mutation lock is always zero bytes by
+    # design (it exists only as an flock target, never written to). The
+    # expected-state strings checked by install-disk-guard.sh and
+    # production-storage-lease.sh must account for this, or the check can
+    # never pass for a correctly-empty lock file.
+    lock_file = tmp_path / "sealai-storage-mutation.lock"
+    lock_file.touch()
+    os.chmod(lock_file, 0o660)
+    observed = subprocess.run(
+        ["stat", "-Lc", "%F:%a", "--", str(lock_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert observed == "regular empty file:660"
+
+    lock_file.write_bytes(b"x")
+    observed_nonempty = subprocess.run(
+        ["stat", "-Lc", "%F:%a", "--", str(lock_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert observed_nonempty == "regular file:660"
 
 
 def test_production_build_pull_paths_gate_storage_before_mutation() -> None:
