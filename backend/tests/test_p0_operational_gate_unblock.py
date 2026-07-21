@@ -353,19 +353,26 @@ def test_permission_manifest_rejects_symlink_and_inode_replacement(tmp_path):
 
 
 class FakeSystemd:
-    def __init__(self, *, fail_disable: bool = False):
+    def __init__(
+        self,
+        *,
+        fail_disable: bool = False,
+        service_active_state: str = "failed",
+        timer_state: tuple[str, str] = ("active", "enabled"),
+    ):
         self.calls: list[list[str]] = []
         self.fail_disable = fail_disable
+        timer_active_state, timer_unit_file_state = timer_state
         self.states = {
             legacy.LEGACY_TIMER: {
                 "LoadState": "loaded",
-                "ActiveState": "active",
-                "UnitFileState": "enabled",
+                "ActiveState": timer_active_state,
+                "UnitFileState": timer_unit_file_state,
                 "FragmentPath": str(legacy.EXPECTED_FRAGMENTS[legacy.LEGACY_TIMER]),
             },
             legacy.LEGACY_SERVICE: {
                 "LoadState": "loaded",
-                "ActiveState": "failed",
+                "ActiveState": service_active_state,
                 "UnitFileState": "static",
                 "FragmentPath": str(legacy.EXPECTED_FRAGMENTS[legacy.LEGACY_SERVICE]),
             },
@@ -387,8 +394,15 @@ class FakeSystemd:
         return "".join(f"{key}={value}\n" for key, value in self.states[unit].items())
 
 
-def _legacy_manifest(timer: Path, service: Path) -> dict[str, object]:
+def _legacy_manifest(
+    timer: Path,
+    service: Path,
+    *,
+    service_active_state: str = "failed",
+    timer_state: tuple[str, str] = ("active", "enabled"),
+) -> dict[str, object]:
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    timer_active_state, timer_unit_file_state = timer_state
     return {
         "schema_version": 1,
         "gate_id": "GATE-08",
@@ -401,15 +415,15 @@ def _legacy_manifest(timer: Path, service: Path) -> dict[str, object]:
             {
                 "unit_name": legacy.LEGACY_TIMER,
                 "load_state": "loaded",
-                "active_state": "active",
-                "unit_file_state": "enabled",
+                "active_state": timer_active_state,
+                "unit_file_state": timer_unit_file_state,
                 "fragment_path": str(timer),
                 "fragment_sha256": hashlib.sha256(timer.read_bytes()).hexdigest(),
             },
             {
                 "unit_name": legacy.LEGACY_SERVICE,
                 "load_state": "loaded",
-                "active_state": "failed",
+                "active_state": service_active_state,
                 "unit_file_state": "static",
                 "fragment_path": str(service),
                 "fragment_sha256": hashlib.sha256(service.read_bytes()).hexdigest(),
@@ -418,7 +432,13 @@ def _legacy_manifest(timer: Path, service: Path) -> dict[str, object]:
     }
 
 
-def _prepare_legacy(monkeypatch, tmp_path):
+def _prepare_legacy(
+    monkeypatch,
+    tmp_path,
+    *,
+    service_active_state: str = "failed",
+    timer_state: tuple[str, str] = ("active", "enabled"),
+):
     timer = tmp_path / legacy.LEGACY_TIMER
     service = tmp_path / legacy.LEGACY_SERVICE
     timer.write_text("[Timer]\nOnCalendar=hourly\n", encoding="utf-8")
@@ -430,12 +450,30 @@ def _prepare_legacy(monkeypatch, tmp_path):
         "EXPECTED_FRAGMENTS",
         {legacy.LEGACY_TIMER: timer, legacy.LEGACY_SERVICE: service},
     )
-    return _legacy_manifest(timer, service)
+    return _legacy_manifest(
+        timer,
+        service,
+        service_active_state=service_active_state,
+        timer_state=timer_state,
+    )
 
 
-def test_gate08_dry_run_and_apply_are_exact(monkeypatch, tmp_path):
-    manifest = _prepare_legacy(monkeypatch, tmp_path)
-    systemd = FakeSystemd()
+@pytest.mark.parametrize(
+    "service_active_state", sorted(legacy.SAFE_LEGACY_SERVICE_ACTIVE_STATES)
+)
+@pytest.mark.parametrize("timer_state", sorted(legacy.SAFE_LEGACY_TIMER_STATES))
+def test_gate08_dry_run_and_apply_are_exact(
+    monkeypatch, tmp_path, timer_state, service_active_state
+):
+    manifest = _prepare_legacy(
+        monkeypatch,
+        tmp_path,
+        service_active_state=service_active_state,
+        timer_state=timer_state,
+    )
+    systemd = FakeSystemd(
+        service_active_state=service_active_state, timer_state=timer_state
+    )
     dry = legacy.execute(
         manifest,
         apply=False,
@@ -504,15 +542,63 @@ def test_gate08_rejects_any_unit_or_fragment_hash_drift(monkeypatch, tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "service_active_state",
+    ["active", "activating", "deactivating", "reloading", "bogus"],
+)
+def test_gate08_rejects_legacy_service_in_active_or_transitional_state(
+    monkeypatch, tmp_path, service_active_state
+):
+    manifest = _prepare_legacy(
+        monkeypatch, tmp_path, service_active_state=service_active_state
+    )
+    systemd = FakeSystemd(service_active_state=service_active_state)
+    with pytest.raises(legacy.LegacyUnitError, match="safe-to-retire state"):
+        legacy.validate_manifest(
+            manifest,
+            now=dt.datetime.now(dt.timezone.utc),
+            runner=systemd,
+            required_uid=os.geteuid(),
+        )
+
+
+@pytest.mark.parametrize(
+    "timer_state",
+    [
+        ("activating", "enabled"),
+        ("active", "disabled"),
+        ("inactive", "enabled"),
+        ("failed", "static"),
+    ],
+)
+def test_gate08_rejects_legacy_timer_in_unknown_state(
+    monkeypatch, tmp_path, timer_state
+):
+    manifest = _prepare_legacy(monkeypatch, tmp_path, timer_state=timer_state)
+    systemd = FakeSystemd(timer_state=timer_state)
+    with pytest.raises(legacy.LegacyUnitError, match="known safe state"):
+        legacy.validate_manifest(
+            manifest,
+            now=dt.datetime.now(dt.timezone.utc),
+            runner=systemd,
+            required_uid=os.geteuid(),
+        )
+
+
 def test_gate08_installer_orders_retirement_before_new_timer_activation():
     installer = (OPS / "install-disk-guard.sh").read_text(encoding="utf-8")
     retirement = installer.index("gate08_legacy_unit_retirement.py")
-    staged_verify = installer.index(
-        '"${STAGE_DIR}/ops/systemd/sealai-disk-guard.service"', retirement
+    # The only systemd-analyze verify call left checks the *installed* unit files
+    # (their ExecStart target must already exist on disk for verify to pass at
+    # all) -- a second, earlier call against the staged-but-not-yet-installed
+    # copy was removed because it could never succeed.
+    installed_verify = installer.index(
+        "/etc/systemd/system/sealai-disk-guard.service", retirement
     )
     daemon_reload = installer.index("systemctl daemon-reload")
     enable_new = installer.index("systemctl enable --now sealai-disk-guard.timer")
-    assert retirement < staged_verify < daemon_reload < enable_new
+    assert retirement < installed_verify < daemon_reload < enable_new
+    assert installer.count("systemd-analyze verify") == 1
     assert "systemctl start sealai-docker-disk-guard" not in installer
     assert "systemctl enable sealai-docker-disk-guard" not in installer
 

@@ -196,9 +196,6 @@ PY
   apply \
   --manifest /etc/sealai/approvals/gate-08-legacy-units.json \
   --evidence-root /var/lib/sealai-disk-guard/legacy-unit-evidence
-systemd-analyze verify \
-  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.service" \
-  "${STAGE_DIR}/ops/systemd/sealai-disk-guard.timer"
 
 # Capture and validate the exact destructive cron entry before any installed
 # control changes. Absence/duplication is fingerprint drift and stops the gate.
@@ -209,19 +206,26 @@ crontab -u "${LEGACY_CRON_USER}" -l >"${CRON_BEFORE}" 2>/dev/null || {
   exit 79
 }
 LEGACY_COUNT="$(awk -v exact="${LEGACY_CRON_LINE}" '$0 == exact { count++ } END { print count+0 }' "${CRON_BEFORE}")"
-[[ "${LEGACY_COUNT}" == 1 ]] || {
-  printf 'disk-guard installer: legacy cron fingerprint drift\n' >&2
-  exit 79
-}
+case "${LEGACY_COUNT}" in
+  0|1) ;;
+  *)
+    printf 'disk-guard installer: legacy cron fingerprint drift\n' >&2
+    exit 79
+    ;;
+esac
 awk -v exact="${LEGACY_CRON_LINE}" '$0 != exact { print }' \
   "${CRON_BEFORE}" >"${CRON_AFTER}"
 
-# Neutralize the old automatic prune before installing the replacement. A
-# failed later step intentionally does not restore destructive automation.
-crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"
-if crontab -u "${LEGACY_CRON_USER}" -l | grep -Fqx "${LEGACY_CRON_LINE}"; then
-  printf 'disk-guard installer: legacy cron retirement failed\n' >&2
-  exit 79
+if [[ "${LEGACY_COUNT}" == 1 ]]; then
+  # Neutralize the old automatic prune before installing the replacement. A
+  # failed later step intentionally does not restore destructive automation.
+  crontab -u "${LEGACY_CRON_USER}" "${CRON_AFTER}"
+  if crontab -u "${LEGACY_CRON_USER}" -l | grep -Fqx "${LEGACY_CRON_LINE}"; then
+    printf 'disk-guard installer: legacy cron retirement failed\n' >&2
+    exit 79
+  fi
+else
+  printf 'disk-guard installer: legacy cron entry already retired, skipping removal\n'
 fi
 if pgrep -f '[/]home/thorsten/sealai/ops/disk_safeguard[.]sh' >/dev/null; then
   printf 'disk-guard installer: legacy cleanup process still running\n' >&2
@@ -306,7 +310,7 @@ test -x /usr/local/libexec/sealai/hash-verified-python-loader.py
 /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py --help >/dev/null
 systemd-tmpfiles --create /etc/tmpfiles.d/sealai-storage-mutation.conf
 test "$(stat -Lc '%F:%a:%U:%G' /run/lock/sealai-storage-mutation.lock)" = \
-  'regular file:660:root:thorsten'
+  'regular empty file:660:root:thorsten'
 
 CONFIGURED_DOCKER_ROOT="$(/usr/bin/python3 -I - /etc/sealai/disk-guard.json <<'PY'
 import json

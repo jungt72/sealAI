@@ -23,6 +23,12 @@ EXPECTED_FRAGMENTS = {
     LEGACY_TIMER: Path("/etc/systemd/system/sealai-docker-disk-guard.timer"),
     LEGACY_SERVICE: Path("/etc/systemd/system/sealai-docker-disk-guard.service"),
 }
+SAFE_LEGACY_SERVICE_ACTIVE_STATES = frozenset({"failed", "inactive"})
+# Not-yet-retired (active_state, unit_file_state) pair, and the exact pair this
+# script itself leaves the timer in after a successful prior retirement --
+# apply() is otherwise not idempotent, since re-running it after it already
+# succeeded would trip the pre-retirement precondition forever.
+SAFE_LEGACY_TIMER_STATES = frozenset({("active", "enabled"), ("inactive", "disabled")})
 DEFAULT_MANIFEST = Path("/etc/sealai/approvals/gate-08-legacy-units.json")
 DEFAULT_EVIDENCE_ROOT = Path("/var/lib/sealai-disk-guard/legacy-unit-evidence")
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -196,17 +202,17 @@ def validate_manifest(
         by_name[unit] = expected
     if set(by_name) != set(LEGACY_UNITS):
         _fail("legacy unit set is not exact")
-    if (
-        by_name[LEGACY_TIMER].get("load_state") != "loaded"
-        or by_name[LEGACY_TIMER].get("active_state") != "active"
-        or by_name[LEGACY_TIMER].get("unit_file_state") != "enabled"
-    ):
-        _fail("legacy timer approval does not match the known active/enabled state")
+    if by_name[LEGACY_TIMER].get("load_state") != "loaded" or (
+        by_name[LEGACY_TIMER].get("active_state"),
+        by_name[LEGACY_TIMER].get("unit_file_state"),
+    ) not in SAFE_LEGACY_TIMER_STATES:
+        _fail("legacy timer approval is not in a known safe state")
     if (
         by_name[LEGACY_SERVICE].get("load_state") != "loaded"
-        or by_name[LEGACY_SERVICE].get("active_state") != "failed"
+        or by_name[LEGACY_SERVICE].get("active_state")
+        not in SAFE_LEGACY_SERVICE_ACTIVE_STATES
     ):
-        _fail("legacy service approval does not match the known failed state")
+        _fail("legacy service approval is not in a known safe-to-retire state")
     actual_values: list[dict[str, Any]] = []
     for unit in LEGACY_UNITS:
         expected = by_name[unit]

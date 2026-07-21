@@ -1223,7 +1223,7 @@ def test_global_storage_lease_is_reentrant_and_installed_fail_closed() -> None:
     assert "install -m 0644" in installer
     assert "/usr/local/libexec/sealai/production-storage-lease.sh" in installer
     assert "/run/lock/sealai-storage-mutation.lock" in installer
-    assert "regular file:660:root:thorsten" in installer
+    assert "regular empty file:660:root:thorsten" in installer
 
 
 def test_qdrant_delete_is_after_local_verification_gate() -> None:

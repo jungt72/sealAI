@@ -389,6 +389,28 @@ def test_lock_directory_requires_the_effective_owner(
             pytest.fail("unsafe lock directory must never yield")
 
 
+def test_sticky_bit_lock_directory_is_accepted_but_plain_writable_is_not(
+    tmp_path: Path,
+) -> None:
+    # /run/lock is world-writable (1777) with the sticky bit set on every real
+    # system -- the standard mechanism (also used by /tmp) that makes a shared
+    # writable directory safe, since only a file's own owner may rename or
+    # delete it there. A world-writable directory *without* the sticky bit
+    # must still be rejected.
+    sticky_dir = tmp_path / "sticky-lock"
+    sticky_dir.mkdir(mode=0o1777)
+    os.chmod(sticky_dir, 0o1777)
+    with guard._exclusive_lock(sticky_dir / "guard.lock"):
+        pass
+
+    plain_writable_dir = tmp_path / "plain-writable-lock"
+    plain_writable_dir.mkdir(mode=0o777)
+    os.chmod(plain_writable_dir, 0o777)
+    with pytest.raises(guard.GuardError, match="lock_directory_unsafe"):
+        with guard._exclusive_lock(plain_writable_dir / "guard.lock"):
+            pytest.fail("plain world-writable lock directory must never yield")
+
+
 def test_threshold_override_and_lock_inside_spool_are_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -460,6 +482,96 @@ def test_shell_entrypoints_and_systemd_unit_are_non_destructive_and_executable()
     assert "external alert delivery remains BLOCKED_EXTERNAL" in installer
 
 
+def test_legacy_cron_retirement_handles_zero_one_and_duplicate_fingerprints(
+    tmp_path: Path,
+) -> None:
+    installer = (ROOT / "ops" / "install-disk-guard.sh").read_text(encoding="utf-8")
+    start_marker = "# Capture and validate the exact destructive cron entry"
+    end_marker = "install -d -m 0700 /var/lib/sealai-disk-guard"
+    start = installer.index(start_marker)
+    end = installer.index(end_marker, start)
+    snippet = installer[start:end]
+
+    legacy_line = "0 * * * * /home/thorsten/sealai/ops/disk_safeguard.sh"
+
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir()
+    fake_crontab = fake_bin / "crontab"
+    fake_crontab.write_text(
+        "#!/bin/bash\n"
+        "# usage: crontab -u USER -l   (read)\n"
+        "#        crontab -u USER FILE (write)\n"
+        'if [[ "$3" == "-l" ]]; then\n'
+        '  cat "$FAKE_CRONTAB_STORE"\n'
+        "else\n"
+        '  cp "$3" "$FAKE_CRONTAB_STORE"\n'
+        '  printf "write\\n" >> "$FAKE_CRONTAB_WRITES_LOG"\n'
+        "fi\n",
+        encoding="utf-8",
+    )
+    fake_crontab.chmod(0o755)
+
+    store = tmp_path / "crontab-store"
+    writes_log = tmp_path / "crontab-writes.log"
+
+    def run_case(fixture_lines: list[str]) -> subprocess.CompletedProcess[str]:
+        store.write_text("\n".join(fixture_lines) + ("\n" if fixture_lines else ""))
+        writes_log.write_text("")
+        stage_dir = tmp_path / "stage"
+        if stage_dir.exists():
+            for child in stage_dir.iterdir():
+                child.unlink()
+        else:
+            stage_dir.mkdir()
+        harness = (
+            "set -euo pipefail\n"
+            "readonly LEGACY_CRON_USER=thorsten\n"
+            f"readonly LEGACY_CRON_LINE={shlex.quote(legacy_line)}\n"
+            f"STAGE_DIR={shlex.quote(str(stage_dir))}\n" + snippet
+        )
+        # Written to a script file (not passed via `bash -c "<string>"`) so the running
+        # process's own command line doesn't itself contain the pgrep search pattern --
+        # `bash -c` would make the extracted snippet's pgrep line match itself.
+        harness_path = tmp_path / "harness.sh"
+        harness_path.write_text(harness, encoding="utf-8")
+        env = {
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_CRONTAB_STORE": str(store),
+            "FAKE_CRONTAB_WRITES_LOG": str(writes_log),
+        }
+        return subprocess.run(
+            ["bash", str(harness_path)], env=env, capture_output=True, text=True
+        )
+
+    # 0 occurrences: already retired, skip removal, no mutation.
+    result = run_case(["0 */6 * * * /home/thorsten/sealai/ops/check_guard_health.sh"])
+    assert result.returncode == 0, result.stderr
+    assert "already retired, skipping removal" in result.stdout
+    assert writes_log.read_text() == ""
+
+    # 1 occurrence: retire it.
+    result = run_case(
+        [legacy_line, "0 3 * * * /home/thorsten/sealai/ops/backup_run.sh"]
+    )
+    assert result.returncode == 0, result.stderr
+    assert writes_log.read_text().count("write") == 1
+    assert legacy_line not in store.read_text()
+
+    # 2 occurrences: fingerprint drift, hard fail, never mutate.
+    result = run_case([legacy_line, legacy_line])
+    assert result.returncode == 79
+    assert "legacy cron fingerprint drift" in result.stderr
+    assert writes_log.read_text() == ""
+
+    # Near-miss line (trailing whitespace) must never be counted or touched.
+    near_miss = legacy_line + " "
+    result = run_case([near_miss])
+    assert result.returncode == 0, result.stderr
+    assert "already retired, skipping removal" in result.stdout
+    assert writes_log.read_text() == ""
+
+
 def test_production_storage_lease_has_fixed_root_mediated_paths() -> None:
     lease_path = ROOT / "ops" / "production-storage-lease.sh"
     content = lease_path.read_text(encoding="utf-8")
@@ -468,7 +580,7 @@ def test_production_storage_lease_has_fixed_root_mediated_paths() -> None:
     assert "/run/lock/sealai-storage-mutation.lock" in content
     assert "/usr/local/libexec/sealai/docker-disk-guard.sh" in content
     assert "/etc/sealai/disk-guard.json" in content
-    assert "regular file:660:root:thorsten" in content
+    assert "regular empty file:660:root:thorsten" in content
     assert "/usr/bin/sudo -n --" in content
     assert "${DOCKER_DISK_GUARD" not in content
     assert wrapper.startswith("#!/bin/bash -p\n")
@@ -477,6 +589,34 @@ def test_production_storage_lease_has_fixed_root_mediated_paths() -> None:
         "exec /usr/bin/python3 -I /usr/local/libexec/sealai/docker_disk_guard.py"
         in wrapper
     )
+
+
+def test_lock_file_stat_format_matches_a_genuinely_empty_file(tmp_path: Path) -> None:
+    # GNU stat's %F reports "regular empty file" (not "regular file") for any
+    # zero-byte regular file -- and the mutation lock is always zero bytes by
+    # design (it exists only as an flock target, never written to). The
+    # expected-state strings checked by install-disk-guard.sh and
+    # production-storage-lease.sh must account for this, or the check can
+    # never pass for a correctly-empty lock file.
+    lock_file = tmp_path / "sealai-storage-mutation.lock"
+    lock_file.touch()
+    os.chmod(lock_file, 0o660)
+    observed = subprocess.run(
+        ["stat", "-Lc", "%F:%a", "--", str(lock_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert observed == "regular empty file:660"
+
+    lock_file.write_bytes(b"x")
+    observed_nonempty = subprocess.run(
+        ["stat", "-Lc", "%F:%a", "--", str(lock_file)],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert observed_nonempty == "regular file:660"
 
 
 def test_production_build_pull_paths_gate_storage_before_mutation() -> None:
