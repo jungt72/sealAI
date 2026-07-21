@@ -178,3 +178,34 @@ Grenz-Test test_registry_only_covers_backend_for_now angepasst (jetzt beide Feld
 -- dokumentiert die neue, bewusste Grenze statt die alte). 106 betroffene Gate-Tests lokal
 gruen. Neues Workflow-YAML manuell gegen build-and-push.yml diff-geprueft (kein actionlint
 auf dem VPS verfuegbar); via python yaml.safe_load syntaktisch verifiziert.
+
+2026-07-21 (Nachtrag 3) | Claude Code | GATE-10 P1 Phase 3 (rollback_plan/evidence_manifest) |
+Fuenfte und sechste von sieben required_manifest_hashes real gebunden -- 6/7 jetzt erledigt,
+nur noch dashboard_artifact_sha256 offen. Owner-Entscheidung vorausgegangen: OpenAI-Challenger
+hat auf Basis der echten GATE-11/12-Schemas und eines echten GOVERNANCE_LOG-Rollback-Eintrags
+zwei Wege vorgeschlagen (feste eigene Datei pro Feld vs. Governance-Log-verankert); Owner hat
+sich fuer feste Dateien entschieden. Neue docs/ops/GATE-10-ROLLBACK-PLAN.md konsolidiert die
+echten, bereits existierenden Rollback-Mechanismen aus ops/release-backend-v2.sh (Rollback-Hold/
+-Rung-Tags, gedruckter Rollback-Befehl bei rotem Smoke-Test) und ops/release-frontend.sh
+(automatisches .env.prod-Snapshot-Restore) an einem Ort -- kein neuer Mechanismus, nur
+konsolidierte, hash-gebundene Dokumentation. Neue docs/ops/GATE-10-EVIDENCE-MANIFEST.md
+definiert, welche echten Befehle/Ausgaben hinter jedem der vier required_readiness_claims
+(P0_SECRETS_CONTAINED/P0_STORAGE_STABLE/P0_REDIS_STABLE/RELEASE_GATE_FAIL_CLOSED) stehen
+sollten -- macht noch keinen Code-Unterschied im Gate selbst (das prueft weiterhin nur, dass die
+vier Keys "true" sind), aber legt fest, was als Beleg zaehlen soll, statt einer reinen
+Selbstauskunft.
+
+Beide Felder nutzen dieselbe Source-Derived-Recipe wie Phase 1 (_git_write_tree, kein
+Docker/Netzwerk noetig) -- ROLLBACK_PLAN_PATHSPECS/EVIDENCE_MANIFEST_PATHSPECS binden je eine
+einzelne feste Datei, genau wie DATABASE_MIGRATION_PATHSPECS einen festen Pfad bindet.
+
+Beim Testen einen echten git-Mechanismus gelernt, der die urspruengliche Testfixture-Annahme
+widerlegt hat: `git add -A -- <nicht-existierender-literaler-Pfad>` schlaegt fehl ("did not
+match any files"), staged NICHT stillschweigend nichts -- anders als angenommen. Beide
+Synthetic-Repo-Testfixtures (_make_minimal_source_commit in test_gate10_artifact_binding.py,
+_make_gate_control_repo in test_production_release_gate.py) mussten deshalb um Stub-Dateien
+fuer die zwei neuen Pfade erweitert werden, sonst waeren die bestehenden "up to lift flag"/
+"two-commit-binding" Tests mit "cannot stage the real release artifact for hashing"
+fehlgeschlagen statt das zu pruefen, was sie eigentlich pruefen sollen. 6 neue Tests
+(Perturbation + Neutralitaet + Forgery-Rejection fuer beide Felder), 2 bestehende Grenz-/
+Positivpfad-Tests angepasst. Alle betroffenen Gate-Tests lokal gruen.
