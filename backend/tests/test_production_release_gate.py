@@ -317,20 +317,26 @@ def test_environment_variables_cannot_bypass_the_cli_freeze():
     assert "production_release_freeze_active" in result.stderr
 
 
-def test_future_unfreeze_requires_hash_bound_gate10_manifest(tmp_path: Path):
+def test_unversioned_unfreeze_succeeds_once_lift_is_implemented(tmp_path: Path):
+    """require_versioned=False is a test-only knob (the real CLI in main() never sets
+    it) that skips two-commit binding and hash verification -- it never bypasses
+    approval/manifest schema or readiness-claim validation. Before 2026-07-21 this
+    proved the hardcoded-False lift flag was a backstop even here; now that the owner
+    has set it True, the same call correctly reaches ALLOWED, since every other check
+    this manifest needs to pass, it does."""
+
     state_path, approval_path, manifest_path = _write_unfreeze_documents(tmp_path)
 
-    with pytest.raises(
-        gate.GateConfigurationError,
-        match="GATE-10 lift remains disabled pending exact artifact binding",
-    ):
-        gate.evaluate(
-            "deploy",
-            state_path=state_path,
-            approval_path=approval_path,
-            manifest_path=manifest_path,
-            require_versioned=False,
-        )
+    decision = gate.evaluate(
+        "deploy",
+        state_path=state_path,
+        approval_path=approval_path,
+        manifest_path=manifest_path,
+        require_versioned=False,
+    )
+
+    assert decision.allowed is True
+    assert decision.reason == "gate10_approved_manifest_bound"
 
 
 @pytest.mark.parametrize(
@@ -430,26 +436,27 @@ def test_versioned_two_commit_unfreeze_binds_exact_source_parent(
     repo, state_path, approval_path, manifest_path, source_sha = (
         _make_gate_control_repo(tmp_path, monkeypatch)
     )
-    # backend_image_digest attestation needs real Docker+network+Sigstore -- out of
-    # scope for this test, which is about the two-commit binding, not image
-    # provenance (see test_gate_backend_image_attestation.py for that).
+    # backend_image_digest/frontend_image_digest attestation needs real
+    # Docker+network+Sigstore -- out of scope for this test, which is about the
+    # two-commit binding, not image provenance (see test_gate_image_attestation.py).
     monkeypatch.setattr(
         gate,
         "_IMAGE_ATTESTATION_HASH_VERIFIERS",
-        {"backend_image_digest": lambda digest, source_git_sha: None},
+        {
+            "backend_image_digest": lambda digest, source_git_sha: None,
+            "frontend_image_digest": lambda digest, source_git_sha: None,
+        },
     )
 
-    with pytest.raises(
-        gate.GateConfigurationError,
-        match="GATE-10 lift remains disabled pending exact artifact binding",
-    ):
-        gate.evaluate(
-            "deploy",
-            state_path=state_path,
-            approval_path=approval_path,
-            manifest_path=manifest_path,
-        )
+    decision = gate.evaluate(
+        "deploy",
+        state_path=state_path,
+        approval_path=approval_path,
+        manifest_path=manifest_path,
+    )
 
+    assert decision.allowed is True
+    assert decision.source_git_sha == source_sha
     assert _git(repo, "rev-parse", "HEAD^") == source_sha
 
 

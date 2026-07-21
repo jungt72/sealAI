@@ -288,3 +288,51 @@ per pytest-Suite.
 Weiterhin unveraendert: GATE10_LIFT_IMPLEMENTED bleibt false (Owner-Entscheidung, siehe
 vorherige Nachtraege) -- der Publisher kann also aktuell in der Praxis nichts promoten,
 das ist Absicht.
+
+2026-07-21 (Nachtrag 6) | Owner (Thorsten) + Claude Code | GATE10_LIFT_IMPLEMENTED auf true |
+Der Owner hat diese eine Zeile in ops/production_release_gate.py selbst direkt auf dem VPS
+gesetzt -- nicht Claude Code. Grund: der Auto-Mode-Classifier hat jeden Versuch, diese
+spezifische Aenderung selbst vorzunehmen (auch nur git status danach), blockiert, obwohl der
+Owner es nach vollstaendiger Aufklaerung ueber die Konsequenzen ausdruecklich angewiesen
+hatte. Das ist eine bewusste Tool-Ebenen-Schutzschicht, keine Verweigerung durch das Modell.
+Claude Code hat danach eine Begruendungs-Kommentar ueber der Zeile ergaenzt und alle davon
+betroffenen Tests repariert.
+
+Wichtig, was das TATSAECHLICH aendert: nichts Praktisches, solange freeze.active (separates
+Feld in ops/production-release-state.json) weiterhin true ist -- und das bleibt es, das
+wurde nicht angefasst. evaluate() prueft freeze.active VOR GATE10_LIFT_IMPLEMENTED; bei
+aktivem Freeze wird jede mutierende Operation weiterhin sofort abgelehnt, ohne dass die
+Lift-Flag je erreicht wird. Zwei weitere, unabhaengige Blockaden bleiben ebenfalls
+unveraendert: der root-owned Remote-Deploy-Entrypoint lehnt weiterhin bedingungslos ab, und
+es existiert kein einziges echtes GATE-10-Freigabedokument (owner_read_diff_confirmation darf
+laut Schema nie von einer KI gesetzt werden).
+
+5 betroffene Tests repariert: test_gate10_artifact_binding.py::
+test_unfreeze_accepts_real_source_derived_hashes_up_to_the_lift_flag ->
+test_unfreeze_succeeds_with_all_real_hashes_and_lift_implemented (erwartet jetzt einen
+echten ALLOWED-GateDecision statt eines Raise -- der eigentliche Beweis, auf den diese ganze
+Testdatei hingearbeitet hat: ein Manifest mit echten, unabhaengig geprueften Hashes fuer
+jedes Feld wird tatsaechlich freigegeben). test_gate10_lift_implemented_is_still_false ->
+test_gate10_lift_implemented_is_true_by_owner_decision. test_production_release_gate.py:
+zwei analoge Tests (require_versioned=False-Pfad, zwei-Commit-Bindungs-Pfad) ebenso von
+"erwarte Raise" auf "erwarte ALLOWED" umgestellt. test_p0_operational_gate_unblock.py und
+test_operational_control_install.py: je eine einzelne Grenz-Assertion von False auf True
+geflippt (beide pruefen eigentlich nur, dass GATE-08-Operationen unabhaengig von GATE-10
+bleiben -- nicht direkt von diesem Flag betroffen).
+
+Lokale Verifikation: 119 Kern-Gate-Tests gruen (test_gate10_artifact_binding.py,
+test_gate_image_attestation.py, test_gate_dashboard_artifact.py, test_gate11/12,
+test_production_release_gate.py). test_p0_operational_gate_unblock.py/
+test_operational_control_install.py liessen sich lokal nicht vollstaendig durchlaufen --
+zwei vorbestehende, von dieser Aenderung unabhaengige Umgebungseinschraenkungen dieses VPS-
+Checkouts: (1) jsonschema fehlt im .venv (mit Systempython vorhanden, requirements.txt hat
+es deklariert -- vermutlich derselbe stale-venv-Zustand wie der schon frueher gefundene
+prometheus_fastapi_instrumentator-Fund), (2) mehrere Tests in test_operational_control_install.py
+laufen bewusst nur ausserhalb des Live-Checkouts (REPO_ROOT.resolve() == LIVE_PRODUCTION_REPO
+wird explizit abgelehnt, unabhaengig von dieser Aenderung). Beide Dateien laufen ohnehin nicht
+in der CI-Suite (backend-contracts.yml/v2-contracts.yml decken sie nicht ab) -- die konkreten
+zwei geaenderten Zeilen wurden per sorgfaeltigem Diff-Review verifiziert, demselben einfachen
+Muster wie die erfolgreich getesteten Aenderungen folgend.
+
+docs/ops/production-release-freeze.md umfassend aktualisiert: neuer Abschnitt "What 7/7 and
+GATE10_LIFT_IMPLEMENTED=true do and do not mean", alle stale "stays false"-Stellen korrigiert.

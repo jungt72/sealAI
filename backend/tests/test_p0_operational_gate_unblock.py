@@ -646,10 +646,12 @@ def test_tls_d0_is_public_identifier_only_and_subgates_are_separate():
     assert gates["GATE-01D4"]["required_predecessors"] == ["GATE-01D0", "GATE-01D3"]
 
 
-def test_release_freeze_remains_active_and_not_implemented():
+def test_release_freeze_remains_active_credential_cutover_stays_out_of_scope():
+    # GATE10_LIFT_IMPLEMENTED flipped to True 2026-07-21 (owner decision) -- freeze.active
+    # is a SEPARATE field and is untouched by that, so it stays True here regardless.
     state = json.loads((OPS / "production-release-state.json").read_text())
     assert state["freeze"]["active"] is True
-    assert release_gate.GATE10_LIFT_IMPLEMENTED is False
+    assert release_gate.GATE10_LIFT_IMPLEMENTED is True
     assert "credential-cutover" not in release_gate.MUTATING_OPERATIONS
 
 
