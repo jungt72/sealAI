@@ -487,9 +487,7 @@ def test_assert_trusted_path_root_only_false_accepts_self_owned_leaf(monkeypatch
     monkeypatch.setattr(gate.os, "geteuid", lambda: fake_uid)
 
     leaf = Path("/etc/sealai/approvals/gate-12-staging-build.json")
-    root_dir_stat = os.stat_result(
-        (stat.S_IFDIR | 0o700, 1, 1, 1, 0, 0, 4096, 0, 0, 0)
-    )
+    root_dir_stat = os.stat_result((stat.S_IFDIR | 0o700, 1, 1, 1, 0, 0, 4096, 0, 0, 0))
     self_owned_leaf_stat = os.stat_result(
         (stat.S_IFREG | 0o600, 2, 1, 1, fake_uid, fake_uid, 64, 0, 0, 0)
     )
