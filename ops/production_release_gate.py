@@ -1247,18 +1247,27 @@ def _validate_staging_build_approval(
 ) -> tuple[str, str, str]:
     """GATE-12: a narrow, additive exception to the GATE-10 freeze, scoped to exactly
     one operation -- rebuilding and restarting the local VPS staging stack
-    (``ops/staging/up-staging-v2.sh``). Structurally identical to GATE-11
-    (``_validate_low_risk_emergency_approval`` above): runs from the live checkout,
-    never trusts the approval's own claims about which paths changed, independently
-    diffs ``base_git_sha..source_git_sha`` and rejects the whole batch if any changed
-    path matches ``GATE11_EXCLUDED_PATH_PREFIXES`` -- deliberately the SAME excluded-
-    path list GATE-11 uses, not a separate one to independently maintain and review.
-    Since that list excludes ``ops/`` wholesale, this corridor can never approve a
-    change to itself, to ``ops/staging/*``, or to the release gate -- exactly GATE-11's
-    own self-widening prohibition. Unlike GATE-11, this never authorizes ``deploy``,
-    ``pull``, or ``migration`` for production -- only ``staging-build`` -- and does not
-    require ``test_evidence_sha256`` (it builds a non-production sandbox, not a
-    release)."""
+    (``ops/staging/up-staging-v2.sh``). Runs from the live checkout, never trusts the
+    approval's own claims about which paths changed, independently diffs
+    ``base_git_sha..source_git_sha`` via git itself. Unlike GATE-11, this never
+    authorizes ``deploy``, ``pull``, or ``migration`` for production -- only
+    ``staging-build`` -- and does not require ``test_evidence_sha256`` (it builds a
+    non-production sandbox, not a release).
+
+    Owner decision, 2026-07-21: unlike GATE-11, this does NOT apply
+    GATE11_EXCLUDED_PATH_PREFIXES (no ops/, .github/workflows/, etc. self-widening
+    check). GATE-11's exclusion exists because that corridor authorizes a real
+    *production* deploy through a narrow path -- letting it also approve changes to
+    the gate itself would let a narrow exception silently widen its own authority.
+    GATE-12 authorizes nothing production-facing at all: the code it rebuilds already
+    passed the normal branch/PR/CI/merge review to reach main, and staging
+    (backend-v2-staging, nginx-staging on a separate port) carries zero production
+    traffic. Applying GATE-11's production-self-widening protection here was inherited
+    for free, never re-derived for GATE-12's actually much lower stakes, and in
+    practice blocked nearly every real rebuild once ops/-touching work (which is most
+    of this repo's release-engineering activity) landed on main -- staging had gone
+    stale for well over a week as a direct result. Production (GATE-10, GATE-11) is
+    completely unaffected by this change."""
 
     if require_versioned:
         _assert_trusted_path(approval_path, leaf_directory=False, root_only=True)
@@ -1334,13 +1343,8 @@ def _validate_staging_build_approval(
     ]
     if not changed_paths:
         raise GateConfigurationError("GATE-12 approval covers an empty diff")
-    excluded_hits = [
-        path for path in changed_paths if _path_excluded_from_low_risk_corridor(path)
-    ]
-    if excluded_hits:
-        raise GateConfigurationError(
-            "GATE-12 diff touches an excluded path: " + ", ".join(sorted(excluded_hits))
-        )
+    # Deliberately no excluded-path check here -- see the owner-decision note in this
+    # function's docstring for why GATE-12 does not inherit GATE11_EXCLUDED_PATH_PREFIXES.
     if require_versioned:
         _assert_clean_checkout()
     return approval_id, base_git_sha, source_git_sha
