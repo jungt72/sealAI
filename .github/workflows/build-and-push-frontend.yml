@@ -1,0 +1,171 @@
+name: Build and Push Frontend V1
+
+# GATE-10 P1 phase 2 (frontend image attestation, owner decision 2026-07-21): the V1
+# marketing frontend (frontend/, served at sealingai.com) was previously built and
+# pushed only by a local `docker build` on the VPS (ops/release-frontend.sh) -- no
+# GitHub-signed provenance, no SBOM, nothing for the gate to verify. This workflow
+# mirrors build-and-push.yml (backend-v2) so frontend_image_digest can be bound the
+# same way: attested here, verified by ops/verify-image-attestations.sh inside the
+# gate (see ops/production_release_gate.py::_verify_frontend_image_attestation).
+#
+# This is about the V1 frontend/ directory, NOT frontend-v2 (the dashboard SPA) --
+# frontend-v2 has no Dockerfile at all yet and is covered by the separate, still-open
+# dashboard_artifact_sha256 field instead.
+#
+# ops/release-frontend.sh keeps building locally by default; pulling this attested
+# image is opt-in via FRONTEND_V1_IMAGE, same pattern as BACKEND_V2_IMAGE already
+# uses for backend-v2 in ops/release-backend-v2.sh.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-and-push-frontend.yml"
+      - "frontend/**"
+      - "ops/release-frontend.sh"
+      - "ops/production-release-gate-check.sh"
+      - "ops/production_release_gate.py"
+      - "ops/production-release-state.json"
+      - "ops/verify-image-attestations.sh"
+      - "ops/verify_attestation_payload.py"
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Commit to build (defaults to the selected ref)"
+        required: false
+        type: string
+
+permissions:
+  attestations: write
+  contents: read
+  id-token: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_FRONTEND_V1: ${{ github.repository_owner }}/sealai-frontend
+
+jobs:
+  push:
+    name: Build and push immutable frontend (V1) image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source at the requested commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+
+      - name: Enforce release freeze before image build or publication
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          # shellcheck source=ops/production-release-gate-check.sh
+          source "$PWD/ops/production-release-gate-check.sh"
+          production_release_gate_check \
+            "$PWD/ops/production_release_gate.py" build
+
+      - name: Compute source identity
+        id: source
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${sha:0:8}" >> "$GITHUB_OUTPUT"
+
+      # Same fixed key set ops/release-frontend.sh's awk filter pulls from .env.prod
+      # today -- moved to GitHub Actions repository variables so the build no longer
+      # needs a checkout of the live .env.prod file. Every default below matches the
+      # current production value; override by setting the same-named repository
+      # variable (Settings -> Secrets and variables -> Actions -> Variables) if it
+      # ever needs to change. None of these are secret (NEXT_PUBLIC_* is compiled into
+      # the client bundle either way) -- SEALAI_BACKEND_ORIGIN/FRONTEND_BIND_HOST are
+      # VPS-internal networking values baked in unchanged from today's build, a known
+      # wart carried over as-is rather than redesigned here.
+      - name: Prepare frontend build env file
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          cat > frontend/.env.production.local <<EOF
+          NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL || 'https://sealingai.com' }}
+          NEXT_PUBLIC_ANALYTICS_ENABLED=${{ vars.NEXT_PUBLIC_ANALYTICS_ENABLED || 'false' }}
+          NEXT_PUBLIC_GTM_ID=${{ vars.NEXT_PUBLIC_GTM_ID || '' }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID=${{ vars.NEXT_PUBLIC_GA_MEASUREMENT_ID || '' }}
+          NEXT_PUBLIC_GOOGLE_CONSENT_DEFAULT=${{ vars.NEXT_PUBLIC_GOOGLE_CONSENT_DEFAULT || 'denied' }}
+          SITE_URL=${{ vars.SITE_URL || 'https://sealingai.com' }}
+          NEXT_PUBLIC_API_BASE=${{ vars.NEXT_PUBLIC_API_BASE || 'https://sealingai.com' }}
+          NEXTAUTH_URL=${{ vars.NEXTAUTH_URL || 'https://sealingai.com' }}
+          AUTH_URL=${{ vars.AUTH_URL || 'https://sealingai.com' }}
+          AUTH_TRUST_HOST=${{ vars.AUTH_TRUST_HOST || 'true' }}
+          KEYCLOAK_ISSUER=${{ vars.KEYCLOAK_ISSUER || 'https://sealingai.com/realms/sealAI' }}
+          SEALAI_BACKEND_ORIGIN=${{ vars.SEALAI_BACKEND_ORIGIN || 'http://127.0.0.1:8000' }}
+          FRONTEND_BIND_HOST=${{ vars.FRONTEND_BIND_HOST || '172.17.0.1' }}
+          EOF
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build and push frontend (V1)
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=frontend-v1
+          cache-to: type=gha,mode=max,scope=frontend-v1
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND_V1 }}:${{ steps.source.outputs.short_sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND_V1 }}:${{ steps.source.outputs.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Extract and validate pushed SPDX SBOM
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          image="${REGISTRY}/${IMAGE_FRONTEND_V1}@${IMAGE_DIGEST}"
+          docker buildx imagetools inspect "$image" \
+            --format '{{ json .SBOM.SPDX }}' > frontend-v1.spdx.json
+          jq -e \
+            '.spdxVersion and .documentNamespace and ((.packages // []) | length > 0)' \
+            frontend-v1.spdx.json >/dev/null
+
+      - name: Sign build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND_V1 }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Sign SPDX SBOM
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND_V1 }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: frontend-v1.spdx.json
+          push-to-registry: true
+
+      - name: Publish artifact coordinates
+        shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
+        run: |
+          {
+            echo "### frontend (V1) artifact"
+            echo "- commit: \`${{ steps.source.outputs.sha }}\`"
+            echo "- image tag: \`${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND_V1 }}:${{ steps.source.outputs.sha }}\`"
+            echo "- image digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- supply chain: BuildKit OCI provenance/SBOM plus GitHub-signed provenance and SPDX SBOM"
+          } >> "$GITHUB_STEP_SUMMARY"

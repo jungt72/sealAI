@@ -145,3 +145,36 @@ Erfolgspfad, und die Ein-Feld-Grenze der Registry ab. Alle betroffenen Gate-Test
 (104 Tests); ein unabhaengiges, vorbestehendes venv-Problem
 (prometheus_fastapi_instrumentator fehlt, auch auf unveraendertem main reproduzierbar)
 verhinderte den vollen ops/gate.sh-Lauf lokal, betrifft aber nicht CI (frische Installation).
+
+2026-07-21 (Nachtrag 2) | Claude Code | GATE-10 P1 Phase 2b (frontend_image_digest) |
+Vierte von sieben required_manifest_hashes real gebunden. Wichtiger Fund unterwegs:
+frontend_image_digest meint das V1-Marketing-Frontend (frontend/, ghcr.io/jungt72/
+sealai-frontend, aktuell per lokalem docker build auf dem VPS gebaut ueber
+ops/release-frontend.sh -- keine GitHub Actions, keine Signatur) -- NICHT frontend-v2/
+das Dashboard, das gar kein Dockerfile hat und weiterhin unter dashboard_artifact_sha256
+faellt (separates, noch offenes Feld). Neue .github/workflows/build-and-push-frontend.yml
+baut das V1-Frontend jetzt mit derselben Sigstore/Rekor-Provenance+SBOM-Kette wie Backend;
+ops/production_release_gate.py::_verify_frontend_image_attestation (Registry-Eintrag,
+gemeinsame _verify_image_attestation-Implementierung mit dem Backend-Pfad, kein
+Duplicate-Code) verifiziert das. Owner-Aktion noetig, aber unkritisch: die
+NEXT_PUBLIC_*/Domain-Config-Werte, die ops/release-frontend.sh bisher aus .env.prod zieht,
+sind als GitHub-Actions-Repository-Variablen mit Fallback auf die aktuellen
+Produktionswerte hinterlegt -- laeuft ungeaendert auch ohne dass der Owner etwas eintraegt,
+kann aber ueber Settings > Actions > Variables ueberschrieben werden. Keiner der 13 Werte
+ist ein echtes Secret.
+
+Bewusst NICHT angefasst: ops/release-frontend.sh selbst baut weiterhin nur lokal. Es hat --
+anders als ops/release-backend-v2.sh -- kein Release-Stage-Konzept (--candidate/--final/
+Approval-Bindung an APPROVED_SOURCE_SHA, Rollback-Hold, Runtime-Profile-Hash); das
+Backend-Skript ist erkennbar deutlich ausgereifter. Einen aequivalenten optionalen
+Pull-und-Verify-Pfad (FRONTEND_V1_IMAGE, analog BACKEND_V2_IMAGE) nachzuruesten waere ohne
+dieselbe Absicherung entweder unvollstaendig oder ein eigenes, groesseres Redesign des
+produktiven Frontend-Deploy-Pfads -- daher bewusst als separater, spaeterer Schritt
+zurueckgestellt statt hier mit reingezogen.
+
+backend/tests/test_gate_backend_image_attestation.py -> test_gate_image_attestation.py
+umbenannt (deckt jetzt beide Felder ab), 2 neue Tests fuer den Frontend-Verifier ergaenzt.
+Grenz-Test test_registry_only_covers_backend_for_now angepasst (jetzt beide Felder erwartet
+-- dokumentiert die neue, bewusste Grenze statt die alte). 106 betroffene Gate-Tests lokal
+gruen. Neues Workflow-YAML manuell gegen build-and-push.yml diff-geprueft (kein actionlint
+auf dem VPS verfuegbar); via python yaml.safe_load syntaktisch verifiziert.

@@ -730,29 +730,42 @@ def _verify_source_derived_artifact_hashes(hashes: dict[str, Any]) -> None:
             )
 
 
-# GATE-10 P1 phase 2 (backend image attestation, owner decision 2026-07-21): binds
-# backend_image_digest to a real GitHub Actions build-provenance + SBOM attestation,
-# verified through Sigstore/Rekor by the existing ops/verify-image-attestations.sh +
-# ops/verify_attestation_payload.py pipeline -- the same one ops/release-backend-v2.sh
-# already runs before a candidate image is promoted. Unlike the phase 1 source-derived
-# hashes, this genuinely needs Docker and network: verifying a supply-chain signature
-# means reaching the transparency log, there is no local recomputation that proves
-# provenance. frontend_image_digest stays format-checked only -- no attested build
-# workflow exists for the frontend image at all yet (build-and-push.yml only builds
-# backend-v2), so there is nothing here to verify against until that pipeline exists.
+# GATE-10 P1 phase 2 (image attestation, owner decisions 2026-07-21): binds the two
+# image-digest manifest fields to real GitHub Actions build-provenance + SBOM
+# attestations, verified through Sigstore/Rekor by the existing
+# ops/verify-image-attestations.sh + ops/verify_attestation_payload.py pipeline --
+# the same one ops/release-backend-v2.sh already runs before a candidate image is
+# promoted. Unlike the phase 1 source-derived hashes, this genuinely needs Docker and
+# network: verifying a supply-chain signature means reaching the transparency log,
+# there is no local recomputation that proves provenance.
 _BACKEND_IMAGE_NAME = "ghcr.io/jungt72/sealai-backend-v2"
 _BACKEND_IMAGE_WORKFLOW = ".github/workflows/build-and-push.yml"
+# frontend_image_digest here means the V1 marketing frontend (frontend/, the live
+# ghcr.io/jungt72/sealai-frontend image) -- NOT frontend-v2/the dashboard SPA, which
+# has no Dockerfile at all and is covered by the still-open dashboard_artifact_sha256
+# field instead (see docs/ops/production-release-freeze.md).
+_FRONTEND_IMAGE_NAME = "ghcr.io/jungt72/sealai-frontend"
+_FRONTEND_IMAGE_WORKFLOW = ".github/workflows/build-and-push-frontend.yml"
 _VERIFY_IMAGE_ATTESTATIONS_SCRIPT = (
     Path(__file__).resolve().parent / "verify-image-attestations.sh"
 )
 
 
-def _verify_backend_image_attestation(digest: str, source_git_sha: str) -> None:
+def _verify_image_attestation(
+    hash_field_name: str,
+    image_name: str,
+    workflow_path: str,
+    digest: str,
+    source_git_sha: str,
+) -> None:
+    """Shared implementation behind every entry in _IMAGE_ATTESTATION_HASH_VERIFIERS --
+    only the image name/workflow differ per field, the verification itself is identical."""
+
     if not DIGEST_RE.fullmatch(str(digest)):
         raise GateConfigurationError(
-            "release manifest hash is not a valid digest: backend_image_digest"
+            f"release manifest hash is not a valid digest: {hash_field_name}"
         )
-    image_ref = f"{_BACKEND_IMAGE_NAME}@{digest}"
+    image_ref = f"{image_name}@{digest}"
     result = subprocess.run(
         [
             "/bin/bash",
@@ -760,7 +773,7 @@ def _verify_backend_image_attestation(digest: str, source_git_sha: str) -> None:
             str(_VERIFY_IMAGE_ATTESTATIONS_SCRIPT),
             image_ref,
             source_git_sha,
-            _BACKEND_IMAGE_WORKFLOW,
+            workflow_path,
         ],
         capture_output=True,
         text=True,
@@ -769,9 +782,29 @@ def _verify_backend_image_attestation(digest: str, source_git_sha: str) -> None:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()[-2000:]
         raise GateConfigurationError(
-            "backend_image_digest failed provenance/SBOM attestation verification"
+            f"{hash_field_name} failed provenance/SBOM attestation verification"
             + (f": {detail}" if detail else "")
         )
+
+
+def _verify_backend_image_attestation(digest: str, source_git_sha: str) -> None:
+    _verify_image_attestation(
+        "backend_image_digest",
+        _BACKEND_IMAGE_NAME,
+        _BACKEND_IMAGE_WORKFLOW,
+        digest,
+        source_git_sha,
+    )
+
+
+def _verify_frontend_image_attestation(digest: str, source_git_sha: str) -> None:
+    _verify_image_attestation(
+        "frontend_image_digest",
+        _FRONTEND_IMAGE_NAME,
+        _FRONTEND_IMAGE_WORKFLOW,
+        digest,
+        source_git_sha,
+    )
 
 
 # Registry, matching _SOURCE_DERIVED_HASH_VERIFIERS's shape but keyed to verifiers that
@@ -779,6 +812,7 @@ def _verify_backend_image_attestation(digest: str, source_git_sha: str) -> None:
 # verification checks *provenance* of a claimed digest rather than recomputing it.
 _IMAGE_ATTESTATION_HASH_VERIFIERS: dict[str, Callable[[str, str], None]] = {
     "backend_image_digest": _verify_backend_image_attestation,
+    "frontend_image_digest": _verify_frontend_image_attestation,
 }
 
 
