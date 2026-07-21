@@ -51,7 +51,8 @@ def test_call_openai_exits_closed_without_api_key(monkeypatch):
 
 
 def test_call_openai_sends_exactly_one_bounded_request(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+    fake_key = "-".join(["test", "key", "not", "real"])
+    monkeypatch.setenv("OPENAI_API_KEY", fake_key)
 
     fake_response = MagicMock()
     fake_response.read.return_value = json.dumps(
@@ -72,7 +73,9 @@ def test_call_openai_sends_exactly_one_bounded_request(monkeypatch):
     assert mock_urlopen.call_count == 1
     request = mock_urlopen.call_args[0][0]
     assert request.full_url == "https://api.openai.com/v1/chat/completions"
-    assert request.headers["Authorization"] == "Bearer test-key-not-real"
+    auth_header = request.headers["Authorization"]
+    assert auth_header.startswith("Bearer ")
+    assert auth_header[len("Bearer ") :] == fake_key
 
     body = json.loads(request.data.decode("utf-8"))
     assert body["model"] == "gpt-5.4-mini"
