@@ -54,6 +54,7 @@ def test_guard_regenerates_once_on_block():
     assert len(client.calls) == 2  # generate + exactly ONE regenerate
     assert res.answer.text == _CLEAN  # the clean regeneration is what ships
     assert res.guard is not None and res.guard["action"] == "PASS"
+    assert res.guard["terminal_action"] == "PASS"
 
 
 def test_guard_fails_closed_when_regeneration_is_still_blocked():
@@ -64,6 +65,10 @@ def test_guard_fails_closed_when_regeneration_is_still_blocked():
     assert _LEAKY not in res.answer.text
     assert "FKM" in res.answer.text
     assert res.guard is not None and res.guard["action"] == "BLOCK"
+    assert res.guard["terminal_action"] == "PASS"
+    assert res.guard["hedged"] is True
+    assert res.guard["claim_mappings"] == []
+    assert res.guard["terminal_invalidated_by"] == "output_guard_fallback"
 
 
 def test_guard_passes_clean_first_time_no_regenerate():

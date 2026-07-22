@@ -14,6 +14,7 @@ from sealai_v2.core.contracts import (
     Answer,
     EvaluationState,
     Flags,
+    GroundingFact,
     InputResolutionState,
     MaterialConstraintMatch,
     MaterialConstraintResult,
@@ -41,7 +42,7 @@ def _result(
     )
 
 
-def _verified_result(verifier, *, verified=True):
+def _verified_result(verifier, *, verified=True, guard=None):
     return PipelineResult(
         question="Welche Härte für die O-Ring-Nut?",
         tenant_id="t1",
@@ -50,6 +51,7 @@ def _verified_result(verifier, *, verified=True):
         answer=Answer(text="…", model="fake"),
         verified=verified,
         verifier=verifier,
+        guard=guard,
     )
 
 
@@ -188,6 +190,17 @@ def test_blocked_hedge_verdict_is_not_verified_and_hedged():
     assert out["verification"]["ran"] is True
 
 
+def test_output_guard_hedge_is_not_reported_as_confidently_verified():
+    out = chat_response(
+        _verified_result(
+            VerifierVerdict(action=VerifierAction.PASS, parse_ok=True),
+            guard={"action": "PASS", "hedged": True},
+        )
+    )
+    assert out["verified"] is False
+    assert out["verification"]["hedged"] is True
+
+
 def test_parse_failure_is_not_verified():
     # Fail-open: L3 ran but its output did not parse → never report a confident "verified".
     out = chat_response(
@@ -215,3 +228,99 @@ def test_verification_values_are_json_safe():
     )
     assert isinstance(out["verification"]["action"], str)
     assert type(out["verification"]["action"]) is str
+
+
+def test_citations_are_bound_to_the_terminal_answer_claims():
+    used = GroundingFact(
+        text="FKM gegen Heißdampf: unverträglich.",
+        quelle="Matrix",
+        card_id="MX-USED",
+        kind="matrix",
+        sources=("Primärquelle A",),
+    )
+    unused = GroundingFact(
+        text="EPDM gegen Heißdampf: beständig.",
+        quelle="Matrix",
+        card_id="MX-UNUSED",
+        kind="matrix",
+    )
+    result = PipelineResult(
+        question="Passt FKM in Heißdampf?",
+        tenant_id="t1",
+        flags=Flags(),
+        understanding=None,
+        answer=Answer(text="FKM ist in Heißdampf unverträglich.", model="fake"),
+        grounding_facts=(used, unused),
+        guard={
+            "action": "PASS",
+            "hedged": False,
+            "citation_binding": "strict",
+            "claim_mappings": [{"sentence_index": 0, "claim_id": "MX-USED"}],
+        },
+    )
+    assert chat_response(result)["citations"] == [
+        {
+            "text": used.text,
+            "sources": ["Primärquelle A"],
+            "kind": "matrix",
+            "source_status": "primary",
+            "sentence_indexes": [0],
+        }
+    ]
+
+
+def test_strict_unmapped_or_hedged_answer_has_no_stale_citations():
+    fact = GroundingFact(
+        text="FKM gegen Heißdampf: unverträglich.",
+        quelle="Matrix",
+        card_id="MX-USED",
+        kind="matrix",
+    )
+    base = dict(
+        question="Passt FKM in Heißdampf?",
+        tenant_id="t1",
+        flags=Flags(),
+        understanding=None,
+        answer=Answer(text="Bitte beim Hersteller absichern.", model="guard"),
+        grounding_facts=(fact,),
+    )
+    unmapped = PipelineResult(
+        **base,
+        guard={
+            "action": "PASS",
+            "hedged": False,
+            "citation_binding": "strict",
+            "claim_mappings": [],
+        },
+    )
+    hedged = PipelineResult(
+        **base,
+        guard={
+            "action": "BLOCK",
+            "hedged": True,
+            "citation_binding": "strict",
+            "claim_mappings": [{"sentence_index": 0, "claim_id": "MX-USED"}],
+        },
+    )
+    assert chat_response(unmapped)["citations"] == []
+    assert chat_response(hedged)["citations"] == []
+
+
+def test_internal_matrix_citation_is_not_labeled_as_fachkarte():
+    fact = GroundingFact(
+        text="Interner Matrixbefund.",
+        quelle="Matrix",
+        card_id="MX-INTERNAL",
+        kind="matrix",
+    )
+    result = PipelineResult(
+        question="x",
+        tenant_id="t1",
+        flags=Flags(),
+        understanding=None,
+        answer=Answer(text="x", model="fake"),
+        grounding_facts=(fact,),
+    )
+    cite = chat_response(result)["citations"][0]
+    assert cite["sources"] == ["geprüfte Verträglichkeitsmatrix (intern)"]
+    assert cite["source_status"] == "reviewed_internal"

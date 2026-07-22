@@ -91,6 +91,7 @@ from sealai_v2.core.contracts import (
     TurnState,
     Understanding,
     UntrustedContent,
+    VerifierAction,
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
@@ -1644,6 +1645,8 @@ class Pipeline:
             # regeneration still never enters Renderer-Modus, only receives the correction_note.
             guard = None
             _effective_contract = contract if contract is not None else guard_contract
+            _guard_regenerated = False
+            _guard_hedged = False
             if (
                 self.response_contract_enabled
                 and _effective_contract is not None
@@ -1678,6 +1681,7 @@ class Pipeline:
                     check_sentence_coverage=_check_sentence_coverage,
                 )
                 if _gr.action == "BLOCK":
+                    _guard_regenerated = True
                     # Phase 3B: this ``_staged(..., "regenerate", "start")`` progress event ALREADY
                     # exists (pre-Phase-3B) and is reused verbatim as the frontend's signal to
                     # reset/clear its draft buffer before this second attempt's tokens arrive — no
@@ -1730,6 +1734,7 @@ class Pipeline:
                         [v.kind for v in _gr2.violations],
                     )
                     if _gr2.action == "BLOCK":
+                        _guard_hedged = True
                         answer = Answer(
                             text=_guard_fallback(
                                 _effective_contract, question=knowledge_question
@@ -1739,6 +1744,15 @@ class Pipeline:
                         )
                     _gr = _gr2
                 guard = _gr.to_dict()
+                guard.update(
+                    {
+                        "regenerated": _guard_regenerated,
+                        "hedged": _guard_hedged,
+                        "citation_binding": (
+                            "strict" if contract is not None else "legacy"
+                        ),
+                    }
+                )
 
             verdict: VerifierVerdict | None = None
             if (
@@ -1856,6 +1870,18 @@ class Pipeline:
                     known_materials=_final_km,
                     check_sentence_coverage=contract is not None,
                 )
+                _final_guard_dict = _final_guard.to_dict()
+                _final_guard_dict.update(
+                    {
+                        "terminal_action": _final_guard.action,
+                        "regenerated": _guard_regenerated,
+                        "hedged": _guard_hedged,
+                        "citation_binding": (
+                            "strict" if contract is not None else "legacy"
+                        ),
+                        "post_verify_revalidated": True,
+                    }
+                )
                 if _final_guard.action == "BLOCK":
                     _log.error(
                         "GOVERNANCE final_output_guard blocked post-verification answer: %s",
@@ -1868,9 +1894,32 @@ class Pipeline:
                         model="deterministic-final-output-guard",
                         grounding_facts=l1_grounding,
                     )
-                    guard = _final_guard.to_dict()
-                elif guard is None:
-                    guard = _final_guard.to_dict()
+                    _final_guard_dict["hedged"] = True
+                    _final_guard_dict["claim_mappings"] = []
+                    _final_guard_dict["terminal_invalidated_by"] = "final_output_guard"
+                elif _guard_hedged:
+                    # Preserve the established public meaning of action=BLOCK: the output guard
+                    # intervened. terminal_action records that the deterministic fallback itself is
+                    # guard-clean after the post-verification recheck.
+                    _final_guard_dict["ok"] = False
+                    _final_guard_dict["action"] = "BLOCK"
+                    _final_guard_dict["claim_mappings"] = []
+                    _final_guard_dict["terminal_invalidated_by"] = (
+                        "output_guard_fallback"
+                    )
+                if (
+                    verdict is not None
+                    and verdict.action is VerifierAction.BLOCKED_HEDGE
+                ):
+                    _final_guard_dict["hedged"] = True
+                    _final_guard_dict["claim_mappings"] = []
+                    _final_guard_dict["terminal_invalidated_by"] = "l3_hedge"
+                if _exfil_verdict.leaked:
+                    _final_guard_dict["hedged"] = True
+                    _final_guard_dict["claim_mappings"] = []
+                    _final_guard_dict["terminal_invalidated_by"] = "exfiltration_guard"
+                # Always replace the pre-L3 result: mappings must describe the exact terminal answer.
+                guard = _final_guard_dict
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged

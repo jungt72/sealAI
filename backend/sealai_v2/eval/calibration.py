@@ -100,6 +100,7 @@ _UNSUPPORTED_KINDS = {
     "forbidden_phrase",
     "invented_number",
     "invented_material",
+    "semantic_inversion",
     "unmapped_sentence",
 }
 

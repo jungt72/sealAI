@@ -64,6 +64,9 @@
     "vitest": "^4.1.2"
   },
   "overrides": {
-    "postcss": "$postcss"
+    "postcss": "$postcss",
+    "next": {
+      "sharp": "0.35.3"
+    }
   }
 }

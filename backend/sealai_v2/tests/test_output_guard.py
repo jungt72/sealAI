@@ -6,9 +6,11 @@ technical sentence) fail-closes; user-stated values + linguistic transitions + c
 pass. The guard is PURE/INERT — this tests the enforcement logic, not any prod behaviour.
 """
 
+import pytest
+
 from sealai_v2.core.coverage import coverage_for
 from sealai_v2.core.contracts import GroundingFact
-from sealai_v2.core.output_guard import evaluate_render
+from sealai_v2.core.output_guard import correction_note, evaluate_render
 from sealai_v2.core.response_contract import build_contract, build_guard_contract
 
 V_DISQ = {
@@ -89,6 +91,155 @@ def test_foreign_technical_sentence_blocks():
         " Für aggressive Laugen ist die Chemikalienbeständigkeit hier ausgezeichnet."
     )
     assert "unmapped_sentence" in _kinds(CLEAN + foreign)
+
+
+def test_allowed_material_name_alone_does_not_cover_an_unrelated_claim():
+    answer = (
+        "FKM ist in konzentrierter Salpetersäure dauerhaft beständig. "
+        "Die finale Compound-/Werkstofffreigabe trifft der Hersteller."
+    )
+    result = evaluate_render(answer_text=answer, contract=C_DISQ)
+    assert result.action == "BLOCK"
+    assert "unmapped_sentence" in {v.kind for v in result.violations}
+
+
+def test_clean_render_records_sentence_to_claim_bindings():
+    result = evaluate_render(answer_text=CLEAN, contract=C_DISQ)
+    assert result.to_dict()["claim_mappings"] == [
+        {"sentence_index": 0, "claim_id": "MX-FKM-DAMPF"},
+        {"sentence_index": 1, "claim_id": "MX-FKM-DAMPF"},
+    ]
+
+
+def _atomic_contract(claim_id: str, text: str, material: str) -> dict:
+    return {
+        "status": "COVERED_RECOMMENDATION",
+        "allowed_claims": [{"id": claim_id, "text": text}],
+        "required_clauses": [
+            "Die finale Compound-/Werkstofffreigabe trifft der Hersteller."
+        ],
+        "missing_fields": [],
+        "allowed_materials": [material],
+        "allowed_values": [],
+        "forbidden_phrases": [],
+    }
+
+
+_FKM_DAMPF_CONTRACT = _atomic_contract(
+    "MX-FKM-DAMPF",
+    "FKM hydrolysiert und versprödet in Sattdampf/Heißdampf — die hohe "
+    "Temperaturbeständigkeit in Öl überträgt sich nicht auf Dampf.",
+    "FKM",
+)
+_EPDM_DAMPF_CONTRACT = _atomic_contract(
+    "MX-EPDM-DAMPF",
+    "EPDM (peroxidvernetzt) ist gegen Dampf-/SIP-Anwendungen beständig "
+    "(der etablierte Dampf-/SIP-Standardwerkstoff).",
+    "EPDM",
+)
+_NBR_SYNTHETIKOEL_CONTRACT = _atomic_contract(
+    "MX-NBR-SYN",
+    "NBR gegen Synthetiköl: bedingt — abhängig vom Estergehalt; vor Einsatz prüfen.",
+    "NBR",
+)
+_FINAL_RELEASE = " Die finale Compound-/Werkstofffreigabe trifft der Hersteller."
+
+
+@pytest.mark.parametrize(
+    "answer",
+    (
+        "FKM hydrolysiert nicht in Heißdampf.",
+        "FKM ist in Heißdampf nicht unverträglich.",
+    ),
+)
+def test_negated_negative_predicate_cannot_bind_to_negative_claim(answer):
+    result = evaluate_render(
+        answer_text=answer + _FINAL_RELEASE,
+        contract=_FKM_DAMPF_CONTRACT,
+    )
+    assert result.action == "BLOCK"
+    assert result.claim_mappings == ()
+
+
+@pytest.mark.parametrize(
+    "answer",
+    (
+        "EPDM scheitert in Dampf-/SIP-Anwendungen.",
+        "EPDM ist gegen Dampf-/SIP-Anwendungen vollkommen wirkungslos.",
+        "EPDM ist ein untauglicher Dampf-/SIP-Standardwerkstoff.",
+        "EPDM ist kein Dampf-/SIP-Standardwerkstoff.",
+        "EPDM ist keinesfalls gegen Dampf-/SIP-Anwendungen beständig.",
+        "EPDM ist niemals gegen Dampf-/SIP-Anwendungen beständig.",
+        "EPDM ist nie gegen Dampf-/SIP-Anwendungen beständig.",
+        "EPDM ist auf keinen Fall gegen Dampf-/SIP-Anwendungen beständig.",
+        "EPDM ist unter keinen Umständen gegen Dampf-/SIP-Anwendungen beständig.",
+    ),
+)
+def test_negative_or_negated_standard_cannot_bind_to_positive_claim(answer):
+    result = evaluate_render(
+        answer_text=answer + _FINAL_RELEASE,
+        contract=_EPDM_DAMPF_CONTRACT,
+    )
+    assert result.action == "BLOCK"
+    assert result.claim_mappings == ()
+
+
+@pytest.mark.parametrize(
+    "answer",
+    (
+        "FKM hydrolysiert niemals in Heißdampf.",
+        "FKM hydrolysiert in Heißdampf keinesfalls.",
+    ),
+)
+def test_adverbially_negated_negative_predicate_is_positive_and_cannot_bind(answer):
+    result = evaluate_render(
+        answer_text=answer + _FINAL_RELEASE,
+        contract=_FKM_DAMPF_CONTRACT,
+    )
+    assert result.action == "BLOCK"
+    assert result.claim_mappings == ()
+
+
+def test_unlicensed_exclusivity_cannot_bind_to_nonexclusive_claim():
+    result = evaluate_render(
+        answer_text="EPDM ist der einzige Dampf-/SIP-Standardwerkstoff."
+        + _FINAL_RELEASE,
+        contract=_EPDM_DAMPF_CONTRACT,
+    )
+    assert result.action == "BLOCK"
+    assert result.claim_mappings == ()
+
+
+def test_atomic_positive_standard_paraphrase_still_binds():
+    result = evaluate_render(
+        answer_text=(
+            "EPDM ist für Dampf-/SIP-Anwendungen beständig und der etablierte Standardwerkstoff."
+            + _FINAL_RELEASE
+        ),
+        contract=_EPDM_DAMPF_CONTRACT,
+    )
+    assert result.action == "PASS", result.to_dict()
+    assert result.to_dict()["claim_mappings"] == [
+        {"sentence_index": 0, "claim_id": "MX-EPDM-DAMPF"}
+    ]
+
+
+def test_conditional_claim_cannot_be_promoted_to_unconditional():
+    conditional = evaluate_render(
+        answer_text=(
+            "NBR gegen Synthetiköl ist nur bedingt beständig — es hängt vom Estergehalt ab "
+            "und sollte vor dem Einsatz geprüft werden." + _FINAL_RELEASE
+        ),
+        contract=_NBR_SYNTHETIKOEL_CONTRACT,
+    )
+    assert conditional.action == "PASS", conditional.to_dict()
+
+    unconditional = evaluate_render(
+        answer_text="NBR ist gegen Synthetiköl beständig." + _FINAL_RELEASE,
+        contract=_NBR_SYNTHETIKOEL_CONTRACT,
+    )
+    assert unconditional.action == "BLOCK"
+    assert unconditional.claim_mappings == ()
 
 
 def test_linguistic_transition_passes():
@@ -196,6 +347,27 @@ def test_light_mode_does_not_block_in_depth_elaboration_beyond_the_literal_claim
         v.kind for v in full.violations
     }  # full mode: would block
     assert light.ok and light.action == "PASS"  # light mode: elaboration is allowed
+
+
+def test_light_mode_still_blocks_a_close_semantic_inversion():
+    result = evaluate_render(
+        answer_text="FKM ist gegenüber Öl nicht beständig.",
+        contract=C_GENERAL,
+        check_sentence_coverage=False,
+    )
+    assert result.action == "BLOCK"
+    assert "semantic_inversion" in {v.kind for v in result.violations}
+    assert "belegten Richtung" in correction_note(result)
+
+
+def test_light_mode_does_not_promote_a_conditional_claim_to_unconditional():
+    result = evaluate_render(
+        answer_text="NBR ist gegen Synthetiköl beständig.",
+        contract=_NBR_SYNTHETIKOEL_CONTRACT,
+        check_sentence_coverage=False,
+    )
+    assert result.action == "BLOCK"
+    assert "semantic_inversion" in {v.kind for v in result.violations}
 
 
 def test_light_mode_still_blocks_invented_number():
