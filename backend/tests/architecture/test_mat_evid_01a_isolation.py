@@ -105,13 +105,13 @@ UNCHANGED_PUBLIC = {
         "ab6a32cf9ef9deac402619cc1d0eaf67d30b39fa2c0c1d45fc2eb5782da4ed82"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "b630fd880d8cf42f70637eff8623adc26b0246900960950816348e705b5f6990"
+        "41a26160c1372f47b075317954972dbac337bd4a49df1d30c12ec8de2fe0f876"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
-        "cf042c0327fc7791fa22460a126783fb4c1d20383e169c6e4e7390d0a3872bde"
+        "40b36ef33d0e7ad0ff1a2b8119b1420a7cfbe4c918b0a312f7e5520407e9be67"
     ),
     "backend/sealai_v2/api/serializers.py": (
-        "1795c1b7f0160bc4e99a174817fbfc3ee5a7c12f55791f34f06572d5fba6bb9d"
+        "df2550c2734e00964dc4549ce140df0885d294949e8b57184117d3c8c74c5fd6"
     ),
     "docker-compose.deploy.yml": (
         "e1ebec302d4b101684ca8c9f47f9c79606595ac2ebef5768cfdd31bd97ac4e67"

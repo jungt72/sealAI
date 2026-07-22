@@ -153,6 +153,7 @@ _STOP = {
     "mit",
     "ohne",
     "bei",
+    "gegen",
     "auf",
     "aus",
     "von",
@@ -218,7 +219,7 @@ _STOP = {
 
 @dataclass(frozen=True)
 class Violation:
-    kind: str  # forbidden_phrase | invented_number | invented_material | missing_required_clause | unmapped_sentence
+    kind: str  # forbidden_phrase | invented_number | invented_material | missing_required_clause | semantic_inversion | unmapped_sentence
     detail: str
     sentence: str = ""
 
@@ -227,16 +228,29 @@ class Violation:
 
 
 @dataclass(frozen=True)
+class ClaimMapping:
+    """One rendered sentence deterministically mapped to one grounded contract claim."""
+
+    sentence_index: int
+    claim_id: str
+
+    def to_dict(self) -> dict:
+        return {"sentence_index": self.sentence_index, "claim_id": self.claim_id}
+
+
+@dataclass(frozen=True)
 class GuardResult:
     ok: bool
     action: str  # "PASS" | "BLOCK"
     violations: tuple[Violation, ...]
+    claim_mappings: tuple[ClaimMapping, ...] = ()
 
     def to_dict(self) -> dict:
         return {
             "ok": self.ok,
             "action": self.action,
             "violations": [v.to_dict() for v in self.violations],
+            "claim_mappings": [m.to_dict() for m in self.claim_mappings],
         }
 
 
@@ -297,6 +311,185 @@ def _matches_uncertainty(sent: str) -> bool:
     return any(p.search(sent) for p in _UNCERTAINTY)
 
 
+_POSITIVE_SUITABILITY_RE = re.compile(
+    r"\b(?:geeignet\w*|passt|beständig\w*|verträglich\w*|empfohlen\w*|empfehle|einsetzbar\w*|"
+    r"tauglich\w*|resistent\w*|freigegeben\w*|standard(?:werkstoff)?|"
+    r"\w*(?:eignung|beständigkeit|empfehlung|freigabe))\b",
+    re.IGNORECASE,
+)
+_NEGATIVE_SUITABILITY_RE = re.compile(
+    r"\b(?:ungeeignet\w*|unbeständig\w*|unverträglich\w*|qu(?:ill|ell)(?:t|en|ung\w*)|hydrolyse|"
+    r"hydrolysiert|versprödet|versprödung|angegriffen\w*|untauglich\w*|wirkungslos\w*|"
+    r"unwirksam\w*|scheitert)\b",
+    re.IGNORECASE,
+)
+_NEGATED_POSITIVE_RE = re.compile(
+    r"\b(?:"
+    r"(?:nicht|keinesfalls|niemals|nie|auf\s+keinen\s+fall|in\s+keinem\s+fall|"
+    r"unter\s+keinen\s+umständen)(?:\s+[\w'’/-]+){0,5}\s+"
+    r"(?:geeignet|beständig|verträglich|empfohlen|freigegeben|"
+    r"einsetzbar|tauglich|resistent)"
+    r"|kein(?:e|en|er|es)?\s+\w*(?:eignung|empfehlung|freigabe)"
+    r"|ohne\s+\w*(?:eignung|empfehlung|freigabe)"
+    r")\b",
+    re.IGNORECASE,
+)
+_NEGATED_NEGATIVE_RE = re.compile(
+    r"\b(?:"
+    r"(?:nicht|keineswegs|keinesfalls|niemals|nie|auf\s+keinen\s+fall|"
+    r"in\s+keinem\s+fall|unter\s+keinen\s+umständen)\s+"
+    r"(?:ungeeignet\w*|unbeständig\w*|unverträglich\w*|untauglich\w*|"
+    r"wirkungslos\w*|unwirksam\w*|angegriffen\w*|hydrolysiert|versprödet|quillt|scheitert)"
+    r"|(?:hydrolysiert|versprödet|quillt|scheitert)\s+(?:\w+[ -]?){0,3}"
+    r"(?:nicht|keineswegs|keinesfalls|niemals|nie)"
+    r")\b",
+    re.IGNORECASE,
+)
+_NEGATED_STANDARD_RE = re.compile(
+    r"\b(?:kein(?:e|en|er|es)?\s+[^.!?]{0,60}\bstandard(?:werkstoff)?|"
+    r"nicht\s+(?:der|die|das|ein(?:e|en|er|es)?)?\s*[^.!?]{0,40}\bstandard(?:werkstoff)?)\b",
+    re.IGNORECASE,
+)
+_CONDITIONAL_SUITABILITY_RE = re.compile(
+    r"\b(?:"
+    r"bedingt(?:e|en|er|es)?"
+    r"|(?:geeignet\w*|beständig\w*|verträglich\w*|einsetzbar\w*|tauglich\w*)"
+    r"\s+(?:nur\s+)?bedingt(?:e|en|er|es)?"
+    r")\b",
+    re.IGNORECASE,
+)
+_EXCLUSIVITY_RE = re.compile(
+    r"\b(?:einzig(?:e|en|er|es)?|alleinig(?:e|en|er|es)?|ausschließlich|alternativlos)\b",
+    re.IGNORECASE,
+)
+
+
+def _suitability_polarity(text: str) -> int:
+    """Return proposition direction, including conditionals and double negation."""
+    if _NEGATED_NEGATIVE_RE.search(text):
+        return 1
+    if _NEGATED_STANDARD_RE.search(text):
+        return -1
+    if _NEGATED_POSITIVE_RE.search(text) or _NEGATIVE_SUITABILITY_RE.search(text):
+        return -1
+    if _CONDITIONAL_SUITABILITY_RE.search(text):
+        return 2
+    if _POSITIVE_SUITABILITY_RE.search(text):
+        return 1
+    return 0
+
+
+def _claim_fragments(text: str) -> tuple[str, ...]:
+    """Split legacy multi-proposition facts before semantic comparison."""
+    parts = re.split(r";|(?<=[.!?])\s+", text or "")
+    return tuple(part.strip() for part in parts if part.strip())
+
+
+def _semantically_compatible(sentence: str, claim_fragment: str) -> bool:
+    sentence_polarity = _suitability_polarity(sentence)
+    claim_polarity = _suitability_polarity(claim_fragment)
+    if sentence_polarity != claim_polarity and (sentence_polarity or claim_polarity):
+        return False
+    if _EXCLUSIVITY_RE.search(sentence) and not _EXCLUSIVITY_RE.search(claim_fragment):
+        return False
+    return True
+
+
+def _word_matches(left: str, right: str) -> bool:
+    ls, rs = _stem(left), _stem(right)
+    return ls == rs or (
+        min(len(left), len(right)) >= 5 and (left in right or right in left)
+    )
+
+
+def _map_allowed_claim(
+    sentence: str,
+    allowed_claims: tuple[dict, ...] | list[dict],
+    *,
+    anchor_materials: set[str],
+) -> str | None:
+    """Map a sentence to one claim; a material name alone is never sufficient."""
+    sentence_words = _sig_words(sentence)
+    if not sentence_words:
+        return None
+    anchor_words = {_stem(m.lower()) for m in anchor_materials}
+    neutral_words = {_stem(w) for w in _BASE_WHITELIST}
+    best: tuple[float, int, str] | None = None
+    for claim in allowed_claims:
+        claim_id = str(claim.get("id") or "")
+        claim_text = str(claim.get("text") or "")
+        if not claim_id or not claim_text:
+            continue
+        for fragment in _claim_fragments(claim_text):
+            if not _semantically_compatible(sentence, fragment):
+                continue
+            claim_words = _sig_words(fragment)
+            matched = {
+                word
+                for word in sentence_words
+                if any(_word_matches(word, claim_word) for claim_word in claim_words)
+            }
+            substantive = {
+                word
+                for word in matched
+                if _stem(word) not in anchor_words and _stem(word) not in neutral_words
+            }
+            score = len(matched) / len(sentence_words)
+            if not substantive or score < _COVER_THRESH:
+                continue
+            candidate = (score, len(substantive), claim_id)
+            if best is None or candidate[:2] > best[:2]:
+                best = candidate
+    return best[2] if best is not None else None
+
+
+def _semantic_conflict_claim(
+    sentence: str,
+    allowed_claims: tuple[dict, ...] | list[dict],
+    *,
+    anchor_materials: set[str],
+) -> str | None:
+    """Return a closely restated claim whose direction the sentence contradicts."""
+    sentence_words = _sig_words(sentence)
+    if not sentence_words:
+        return None
+    anchor_words = {_stem(m.lower()) for m in anchor_materials}
+    neutral_words = {_stem(w) for w in _BASE_WHITELIST}
+    for claim in allowed_claims:
+        claim_id = str(claim.get("id") or "")
+        claim_text = str(claim.get("text") or "")
+        if not claim_id or not claim_text:
+            continue
+        for fragment in _claim_fragments(claim_text):
+            sentence_polarity = _suitability_polarity(sentence)
+            claim_polarity = _suitability_polarity(fragment)
+            direction_conflict = bool(
+                sentence_polarity
+                and claim_polarity
+                and sentence_polarity != claim_polarity
+            )
+            unlicensed_exclusivity = bool(
+                _EXCLUSIVITY_RE.search(sentence)
+                and not _EXCLUSIVITY_RE.search(fragment)
+            )
+            if not (direction_conflict or unlicensed_exclusivity):
+                continue
+            claim_words = _sig_words(fragment)
+            matched = {
+                word
+                for word in sentence_words
+                if any(_word_matches(word, claim_word) for claim_word in claim_words)
+            }
+            substantive = {
+                word
+                for word in matched
+                if _stem(word) not in anchor_words and _stem(word) not in neutral_words
+            }
+            if substantive and len(matched) / len(sentence_words) >= _COVER_THRESH:
+                return claim_id
+    return None
+
+
 def _clause_satisfied(clause: str, answer_words: set[str]) -> bool:
     """A required clause counts as present if MOST of its DISTINCTIVE content nouns (len>=7) appear —
     paraphrase-tolerant: a clause noun matches by stem OR by bidirectional substring, so "Freigabe" in
@@ -332,10 +525,11 @@ def evaluate_render(
     content (the Renderer-Modus prompt block) — false for a guard-only contract
     (``response_contract.build_guard_contract``), where L1 was never told to stay inside the contract
     at all. Pass False there: the 4 prefilters (forbidden_phrase / invented_number / invented_material
-    / missing_required_clause — the last a no-op on an empty required_clauses) stay active as
-    turn-agnostic safety nets; only the strict "every technical sentence must map to a claim" check is
-    skipped."""
+    / missing_required_clause — the last a no-op on an empty required_clauses) plus the narrow
+    semantic-inversion check stay active as turn-agnostic safety nets; only the strict "every technical
+    sentence must map to a claim" check is skipped."""
     violations: list[Violation] = []
+    mappings: list[ClaimMapping] = []
     text = answer_text or ""
     low = text.lower()
 
@@ -382,40 +576,49 @@ def evaluate_render(
         if not _clause_satisfied(clause, answer_words):
             violations.append(Violation("missing_required_clause", clause))
 
+    # A close lexical restatement may never invert the grounded proposition. This remains active in
+    # light mode, but does not require every technical sentence to map.
+    anchor_low = {a.lower() for a in allowed_materials} | {
+        m.lower() for m in known_materials
+    }
+    sentences = _sentences(text)
+    for sent in sentences:
+        if not _is_technical(sent, policy.material_vocab):
+            continue
+        if sent.rstrip().endswith("?") or _matches_uncertainty(sent):
+            continue
+        conflict = _semantic_conflict_claim(
+            sent, allowed_claims, anchor_materials=anchor_low
+        )
+        if conflict is not None:
+            violations.append(Violation("semantic_inversion", conflict, sent))
+
     # ── coverage: every TECHNICAL sentence must map to claim / clause / question / uncertainty ──
     if check_sentence_coverage:
-        contract_vocab = (
-            _sig_words(claim_blob_low)
-            | {a.lower() for a in allowed_materials}
-            | _BASE_WHITELIST
-        )
-        vocab_stems = {_stem(w) for w in contract_vocab}
-        anchor_low = {a.lower() for a in allowed_materials} | {
-            m.lower() for m in known_materials
-        }
-        for sent in _sentences(text):
+        for sentence_index, sent in enumerate(sentences):
             if not _is_technical(sent, policy.material_vocab):
                 continue  # (5) purely linguistic / non-technical transition
-            low_s = sent.lower()
-            if any(re.search(rf"\b{re.escape(m)}\b", low_s) for m in anchor_low):
-                continue  # (1) anchored to a contract/known material — elaboration is allowed; invented
-                #             numbers/materials/authority inside it are caught by the prefilters above
             if sent.rstrip().endswith("?") or _matches_uncertainty(sent):
                 continue  # (3) clarification question / (4) uncertainty-deferral
-            ssig = _sig_words(sent)
-            if not ssig:
+            if any(
+                _clause_satisfied(clause, _sig_words(sent))
+                for clause in required_clauses
+            ):
+                continue  # policy-owned safety/deference clause; no source citation
+            claim_id = _map_allowed_claim(
+                sent, allowed_claims, anchor_materials=anchor_low
+            )
+            if claim_id is not None:
+                mappings.append(ClaimMapping(sentence_index, claim_id))
                 continue
-            drawn = sum(1 for w in ssig if _stem(w) in vocab_stems) / len(ssig)
-            if (
-                drawn < _COVER_THRESH
-            ):  # foreign-SUBJECT technical sentence (no anchor, low overlap) -> fail-closed
-                violations.append(
-                    Violation("unmapped_sentence", f"drawn={drawn:.2f}", sent)
-                )
+            violations.append(Violation("unmapped_sentence", "no_single_claim", sent))
 
     ok = not violations
     return GuardResult(
-        ok=ok, action="PASS" if ok else "BLOCK", violations=tuple(violations)
+        ok=ok,
+        action="PASS" if ok else "BLOCK",
+        violations=tuple(violations),
+        claim_mappings=tuple(mappings),
     )
 
 
@@ -576,6 +779,7 @@ def correction_note(result: GuardResult) -> str:
             "invented_material",
             "forbidden_phrase",
             "missing_required_clause",
+            "semantic_inversion",
         )
     }
     has_unmapped = False
@@ -601,6 +805,11 @@ def correction_note(result: GuardResult) -> str:
         bits.append(
             "Übernimm die Pflichtklauseln des Vertrags sinngemäß: "
             + " | ".join(by["missing_required_clause"])
+        )
+    if by["semantic_inversion"]:
+        bits.append(
+            "Kehre die Aussage des belegenden Claims nicht um; formuliere nur in seiner "
+            "belegten Richtung."
         )
     if has_unmapped:
         bits.append(

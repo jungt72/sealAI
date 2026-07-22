@@ -14,6 +14,7 @@ from sealai_v2.core.contracts import (
     VerifierAction,
     VerifierVerdict,
 )
+from sealai_v2.core.diagnosis_policy import public_diagnose_payload
 from sealai_v2.pipeline.route_prompt_matrix import plan_for
 from sealai_v2.pipeline.routing import RouteName
 
@@ -37,21 +38,27 @@ def _verification(result: PipelineResult) -> dict:
                        client distinguish "ran but hedged/unparsed" from "never checked".
     """
     verdict: VerifierVerdict | None = result.verifier
+    guard_hedged = bool(result.guard and result.guard.get("hedged"))
     if verdict is None:
         return {
             "verified": False,
             "verification": {
                 "action": None,
                 "parse_ok": None,
-                "hedged": False,
+                "hedged": guard_hedged,
                 "ran": bool(result.verified),
             },
         }
-    hedged = verdict.action is VerifierAction.BLOCKED_HEDGE
-    verified = verdict.parse_ok and verdict.action in (
-        VerifierAction.PASS,
-        VerifierAction.FLAG,
-        VerifierAction.CORRECTED,
+    hedged = verdict.action is VerifierAction.BLOCKED_HEDGE or guard_hedged
+    verified = (
+        not hedged
+        and verdict.parse_ok
+        and verdict.action
+        in (
+            VerifierAction.PASS,
+            VerifierAction.FLAG,
+            VerifierAction.CORRECTED,
+        )
     )
     return {
         "verified": bool(verified),
@@ -128,16 +135,48 @@ def compute_response(comp) -> dict:
     }
 
 
-def citation(fact: GroundingFact) -> dict:
-    """User-facing citation: the claim text + its primary source(s). Never exposes the internal
-    card_id; falls back to a neutral 'reviewed' label when a (path-i owner-grounded) claim has no
-    external primary source."""
-    return {
+def citation(fact: GroundingFact, *, sentence_indexes: tuple[int, ...] = ()) -> dict:
+    """User-facing citation with an explicit provenance lane and source status."""
+    kind = fact.kind if fact.kind in {"card", "matrix"} else "other"
+    internal_label = {
+        "matrix": "geprüfte Verträglichkeitsmatrix (intern)",
+        "card": "geprüfte Fachkarte (intern)",
+        "other": "geprüfte interne Wissensquelle",
+    }[kind]
+    out = {
         "text": fact.text,
-        "sources": list(fact.sources)
-        if fact.sources
-        else ["geprüfte Fachkarte (intern)"],
+        "sources": list(fact.sources) if fact.sources else [internal_label],
+        "kind": kind,
+        "source_status": "primary" if fact.sources else "reviewed_internal",
     }
+    if sentence_indexes:
+        out["sentence_indexes"] = list(sentence_indexes)
+    return out
+
+
+def _citations(result: PipelineResult) -> list[dict]:
+    """Bind strict-contract citations to claims used by the exact terminal answer."""
+    guard = result.guard or {}
+    if guard.get("hedged") or (
+        result.verifier and result.verifier.action is VerifierAction.BLOCKED_HEDGE
+    ):
+        return []
+    raw_mappings = guard.get("claim_mappings") or []
+    if not raw_mappings:
+        if guard.get("citation_binding") == "strict":
+            return []
+        return [citation(fact) for fact in result.grounding_facts]
+    by_claim: dict[str, list[int]] = {}
+    for mapping in raw_mappings:
+        claim_id = str(mapping.get("claim_id") or "")
+        sentence_index = mapping.get("sentence_index")
+        if claim_id and isinstance(sentence_index, int):
+            by_claim.setdefault(claim_id, []).append(sentence_index)
+    return [
+        citation(fact, sentence_indexes=tuple(sorted(set(by_claim[fact.card_id]))))
+        for fact in result.grounding_facts
+        if fact.card_id in by_claim
+    ]
 
 
 def _medium_intelligence(mi) -> dict | None:
@@ -238,7 +277,7 @@ def chat_response(result: PipelineResult) -> dict:
         ),
         "grounded": result.grounded,
         "intent": (result.understanding.intent.value if result.understanding else None),
-        "citations": [citation(f) for f in result.grounding_facts],
+        "citations": _citations(result),
         # M8: surface the turn's in-band kern result so the panel can update without a 2nd
         # round-trip (the authoritative settled read is /compute). Empty when compute is off.
         "computed": [_computed_value(c) for c in result.computed_values],
@@ -252,7 +291,9 @@ def chat_response(result: PipelineResult) -> dict:
         "coverage": result.coverage,
         "contract": result.contract,
         "guard": result.guard,
-        "diagnose": result.diagnose,
+        # Draft failure modes are authoring-only. Strip legacy cause/fix fields defensively at the
+        # final API boundary even if a hand-built or older PipelineResult carries them.
+        "diagnose": public_diagnose_payload(result.diagnose),
         "decode": result.decode,
         "alternativen": result.alternativen,
         # Medium Intelligence (Phase 2): provisional researched medium properties + challenges for the

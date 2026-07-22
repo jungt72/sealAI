@@ -492,21 +492,27 @@ def gegencheck_from_case_state(
 def diagnose(versagensmodi, question: str, *, tenant_id: str) -> dict | None:
     """Stage - deterministic Diagnose (Modus D, Dim. 5): match the reported symptom against the
     Versagensmodi store -> the strongest symptom/ursache/fix. Fires ONLY when a symptom is recognised
-    (no match -> None -> byte-identical no-Diagnose turn). A DRAFT mode surfaces provisional=True
-    ("vorlaeufig - gegen Hersteller verifizieren"); a reviewed mode is grounded. Backend owns the
-    grounded(draft) cause/fix; never a final release (L4 stays with the manufacturer). No LLM, no
-    mutation, no invented number. versagensmodi is the InProcessVersagensmodiStore; None -> None."""
+    (no match -> None -> byte-identical no-Diagnose turn). A reviewed mode may surface cause/fix;
+    draft entries are quarantined and expose only a generic review-required state. Backend owns the
+    reviewed cause/fix; never a final release (L4 stays with the manufacturer). No LLM, no mutation,
+    no invented number. versagensmodi is the InProcessVersagensmodiStore; None -> None."""
     if versagensmodi is None:
         return None
     modes = versagensmodi.query(tenant_id=tenant_id, query_text=question)
     if not modes:
         return None
     m = modes[0]
+    if not m.reviewed:
+        from sealai_v2.core.diagnosis_policy import public_diagnose_payload
+
+        return public_diagnose_payload({"provisional": True, "review_state": "draft"})
     return {
         "ursache": m.ursache,
         "fix": m.fix,
         "source": m.quelle(),
-        "provisional": not m.reviewed,
+        "provisional": False,
+        "quarantined": False,
+        "review_state": "reviewed",
         "betrifft_archetypen": list(m.betrifft_archetypen),
     }
 
