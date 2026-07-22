@@ -233,6 +233,71 @@ class TestCaseIntakeInvite:
             assert decision.forced_full_pipeline is False
             assert decision.deterministic_signal_count == 0
 
+    def test_owner_reported_full_prompt_routes_by_task_not_domain_noun(self) -> None:
+        question = (
+            "Hallo und guten Morgen, ich möchte eine dichtungslösung entwickeln. "
+            "was benötigst du von mir?"
+        )
+        decision = classify_route_deterministic(question)
+        assert decision.route is RouteName.CASE_INTAKE_INVITE
+        assert decision.reason == "deterministic_case_opening_zero_signal"
+        assert decision.forced_full_pipeline is False
+
+    def test_natural_intake_paraphrase_corpus(self) -> None:
+        questions = (
+            "Ich möchte eine Dichtungslösung entwickeln. Was brauchst du von mir?",
+            "Ich würde gern eine Dichtungslösung planen. Welche Angaben benötigst du?",
+            "Ich will eine Dichtungslösung konzipieren. Wie gehen wir dabei vor?",
+            "Ich möchte eine Abdichtung erarbeiten – welche Daten brauchst du dafür?",
+            "Ich möchte eine neue Dichtungslösung erstellen. Wo fangen wir an?",
+            "Ich möchte eine Dichtung auswählen. Was benötigst du von mir?",
+            "Ich möchte eine Dichtung auslegen. Welche Angaben brauchst du?",
+            "Ich möchte eine passende Abdichtung finden. Wie starten wir damit?",
+            "Welche Angaben brauchst du von mir, um eine Dichtungslösung zu entwickeln?",
+            "Was brauchst du dafür, wenn wir eine Dichtungslösung planen?",
+            "Welche Daten benötigst du dazu für die Dichtungslösung?",
+            "Hi, ich möchte eine Dichtungslösung entwickeln – was brauchst du noch?",
+            "Guten Morgen, ich plane eine Abdichtung. Wie gehen wir vor?",
+            "Können wir über eine neue Dichtungslösung sprechen?",
+        )
+        for question in questions:
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.CASE_INTAKE_INVITE, (
+                question,
+                decision,
+            )
+            assert decision.deterministic_signal_count == 0
+
+    def test_intake_with_case_detail_never_uses_content_blind_invite(self) -> None:
+        for question in (
+            "Ich möchte eine PTFE-Dichtung entwickeln. Welche Informationen brauchst du?",
+            "Ich möchte für eine Pumpe eine Dichtungslösung entwickeln. Was brauchst du?",
+            "Ich möchte für -30 Grad Frost eine Dichtung auslegen. Was brauchst du?",
+        ):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.ENGINEERING_CASE, question
+            assert decision.forced_full_pipeline is True
+            assert decision.deterministic_signal_count >= 1
+
+    def test_domain_entity_without_information_speech_act_never_opens_rag(self) -> None:
+        for question in ("PTFE", "Dichtungslösung", "Gleitringdichtung"):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS, question
+            assert decision.forced_full_pipeline is True
+
+    def test_mixed_case_and_knowledge_turn_keeps_both_intents_on_full_path(
+        self,
+    ) -> None:
+        for question in (
+            "Ich möchte eine Dichtungslösung entwickeln. Erkläre mir zuerst die Dichtungsarten.",
+            "Welche Dichtungsarten gibt es und welche Angaben brauchst du für den Fall?",
+            "Was ist PTFE und was brauchst du von mir für die Auslegung?",
+        ):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.ENGINEERING_CASE, question
+            assert decision.forced_full_pipeline is True
+            assert decision.deterministic_signal_count == 1
+
     def test_help_request_variants_route_to_case_intake(self) -> None:
         for question in (
             "Ich brauche Hilfe bei meiner Dichtung.",

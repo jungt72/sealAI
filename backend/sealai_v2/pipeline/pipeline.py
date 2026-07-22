@@ -25,6 +25,7 @@ from sealai_v2.pipeline.routing import (
     classify_route,
     classify_route_deterministic,
     is_explicit_knowledge_overview,
+    requests_case_guidance,
     resolve_comparison_followup,
     requests_calculation,
 )
@@ -95,6 +96,11 @@ from sealai_v2.core.contracts import (
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.core.communication_plan import (
+    build_communication_plan,
+    enforce_communication,
+    evaluate_communication,
+)
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
@@ -653,13 +659,9 @@ class Pipeline:
     # constructed in build_pipeline() when settings.route_prompt_families_enabled is True.
     route_prompt_families_enabled: bool = False
     smalltalk_generator: "SmalltalkGenerator | None" = None
-    # 2026-07-19 (case-intake fix): the sibling of smalltalk_generator for RouteName.
-    # CASE_INTAKE_INVITE — SAME SmalltalkGenerator class (it only ever needs an assembler with a
-    # zero-argument system_prompt() and a bare question), just constructed with
-    # CaseIntakeNavigationPromptAssembler instead. None (default) -> nothing to branch to, so
-    # route_prompt_families_enabled being True with no generator wired is still a safe no-op (the
-    # pipeline falls through to the unchanged full L1 generator, see run()). Only constructed in
-    # build_pipeline() when settings.route_prompt_families_enabled is True.
+    # Legacy route-optimization sibling of smalltalk_generator. The execution-policy path renders
+    # CASE_INTAKE_INVITE deterministically and therefore never constructs or calls this model-backed
+    # generator; it exists only for replaying the older policy-disabled route family.
     case_intake_generator: "SmalltalkGenerator | None" = None
     # Phase 3A (live token streaming): flag-gate for streaming the compact smalltalk answer
     # token-by-token. False (default) -> the streaming branch in run() is unreachable and the
@@ -986,6 +988,8 @@ class Pipeline:
                         knowledge_question,
                         fallback=policy_route_decision,
                         case_active=case_active,
+                        case_fields=tuple(field.key for field in case_state_v2.fields),
+                        required_missing=case_state_v2.required_missing,
                     )
             # The semantic router can recognise comparison paraphrases that no
             # finite phrase list covers.  It still cannot authorize an answer:
@@ -1041,6 +1045,20 @@ class Pipeline:
             and activation_route_decision.route in _KNOWLEDGE_ROUTES
         ):
             raise ProductModeUnavailable("knowledge", "pilot_not_activated")
+        case_guidance_fallback_fields: tuple[str, ...] = ()
+        if (
+            case_active
+            and requests_case_guidance(question)
+            and not (context_clarification or case_state_v2.required_missing)
+        ):
+            known_field_keys = {field.key for field in case_state_v2.fields}
+            case_guidance_fallback_fields = (
+                (
+                    "Nächster Auswertungsschritt"
+                    if "dichtungstyp" in known_field_keys
+                    else "Dichtungstyp oder Dichtstelle"
+                ),
+            )
         early_clarification = bool(
             context_clarification
             or (
@@ -1048,6 +1066,9 @@ class Pipeline:
                 and policy_route_decision.forced_full_pipeline
                 and case_state_v2.required_missing
             )
+            or activation_route_decision.route
+            in {RouteName.SMALLTALK_NAVIGATION, RouteName.CASE_INTAKE_INVITE}
+            or case_guidance_fallback_fields
         )
         cache_key: str | None = None
         cached_answer: Answer | None = None
@@ -1423,7 +1444,9 @@ class Pipeline:
                 policy_missing_fields = (
                     ("zwei eindeutig benannte Vergleichsgegenstände",)
                     if context_clarification
-                    else case_state_v2.required_missing
+                    else (
+                        case_state_v2.required_missing or case_guidance_fallback_fields
+                    )
                 )
                 source_ids = {
                     source for fact in l1_grounding for source in fact.sources if source
@@ -1506,6 +1529,18 @@ class Pipeline:
                     ),
                 )
                 knowledge_answer_plan = _kap.to_dict() if _kap is not None else None
+            _communication_plan = build_communication_plan(
+                question=question,
+                route_name=(
+                    route_decision.route.value
+                    if route_decision is not None
+                    else RouteName.UNSUPPORTED_OR_AMBIGUOUS.value
+                ),
+                case_fields=tuple(field.key for field in case_state_v2.fields),
+                missing_fields=policy_missing_fields,
+                conflicts=policy_conflicts,
+            )
+            communication_plan = _communication_plan.to_dict()
             require_evidence_for_all_claims = bool(
                 route_decision is not None
                 and route_decision.route
@@ -1558,6 +1593,7 @@ class Pipeline:
                         text=context_clarification
                         or deterministic_response(
                             execution_decision,
+                            question=question,
                             missing_fields=policy_missing_fields,
                             conflicts=policy_conflicts,
                         ),
@@ -1620,6 +1656,7 @@ class Pipeline:
                         baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
                         material_params=material_params,  # None → byte-identical no-table
                         knowledge_answer_plan=knowledge_answer_plan,
+                        communication_plan=communication_plan,
                         require_evidence_for_all_claims=require_evidence_for_all_claims,
                         compact_technical_answer=compact_technical_answer,
                         work_solution_candidate=work_solution_candidate,
@@ -1707,6 +1744,7 @@ class Pipeline:
                             baseline_hardening=self.baseline_hardening_enabled,
                             material_params=material_params,
                             knowledge_answer_plan=knowledge_answer_plan,
+                            communication_plan=communication_plan,
                             require_evidence_for_all_claims=require_evidence_for_all_claims,
                             compact_technical_answer=compact_technical_answer,
                             work_solution_candidate=work_solution_candidate,
@@ -1923,6 +1961,36 @@ class Pipeline:
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
+
+            # Communication is a governed delivery contract just like claim/evidence boundaries.
+            # Static intake and D1 renderers are already fail-closed; model-generated routes are
+            # checked here after every answer mutation so violations describe the exact payload that
+            # will ship.  The check never weakens or rewrites technical content.
+            _communication_verdict = evaluate_communication(
+                answer.text, _communication_plan
+            )
+            if not _communication_verdict.passed:
+                _log.warning(
+                    "GOVERNANCE communication_guard_repair route=%s violations=%s",
+                    route_decision.route.value
+                    if route_decision is not None
+                    else "none",
+                    list(_communication_verdict.violations),
+                )
+                answer = replace(
+                    answer,
+                    text=enforce_communication(answer.text, _communication_plan),
+                )
+                _repaired_verdict = evaluate_communication(
+                    answer.text, _communication_plan
+                )
+                if (
+                    not _repaired_verdict.passed
+                ):  # defensive invariant of the pure repair
+                    raise RuntimeError(
+                        "communication repair failed: "
+                        + ",".join(_repaired_verdict.violations)
+                    )
 
             if (
                 cache_key is not None
@@ -2757,13 +2825,10 @@ def build_pipeline(
             ),
         )
 
-    # 2026-07-19 (case-intake fix): construct the compact case_intake_navigation generator ONLY
-    # when the flag is on -- mirrors smalltalk_generator's construction above exactly (same
-    # client/model/temperature selection, same static-prompt-hash cache-key scheme), just with
-    # CaseIntakeNavigationPromptAssembler instead. None otherwise, so run()'s
-    # `self.case_intake_generator is not None` check is a genuine no-op when this is unset.
+    # Legacy-only model-backed intake generator. With execution_policy_enabled the governed static
+    # CommunicationPlan renderer owns intake and this object stays absent by construction.
     case_intake_generator: SmalltalkGenerator | None = None
-    if settings.route_prompt_families_enabled:
+    if settings.route_prompt_families_enabled and not settings.execution_policy_enabled:
         _case_intake_assembler = CaseIntakeNavigationPromptAssembler()
         _case_intake_static_prompt = _case_intake_assembler.system_prompt()
         _case_intake_client = standard_client or helper_client

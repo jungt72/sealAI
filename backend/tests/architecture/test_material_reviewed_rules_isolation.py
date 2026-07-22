@@ -14,7 +14,7 @@ BASE_RUNTIME_HASHES = {
         "59606ffc63256519f7c25bc3154459acf8bf5a5d7e90d1663afc17a725d901df"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "41a26160c1372f47b075317954972dbac337bd4a49df1d30c12ec8de2fe0f876"
+        "ed5ba15a1e7d3388ba27166f21d4525d7be09e1512bb47488bc59235ca77bb4f"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
         "40b36ef33d0e7ad0ff1a2b8119b1420a7cfbe4c918b0a312f7e5520407e9be67"
@@ -23,7 +23,7 @@ BASE_RUNTIME_HASHES = {
         "df2550c2734e00964dc4549ce140df0885d294949e8b57184117d3c8c74c5fd6"
     ),
     "backend/sealai_v2/core/contracts.py": (
-        "ed8af58c5407cd0d65730abfa390d56464e9a1f43f36715f9f6236913054b7b3"
+        "90ff3b4e1ea3d93a4d14b8099534108d34c6a67b6ca9492f6f1a88c3f9b1a3d5"
     ),
     "backend/sealai_v2/core/material_constraints.py": (
         "cf8d9969c3730cd5eaa23c08e1dac81df1f3b20bb5eafd219dbc7b004e91de42"

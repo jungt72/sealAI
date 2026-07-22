@@ -100,7 +100,7 @@ def test_unknown_evidence_id_gets_exactly_one_semantic_repair():
         _generator(client).generate(
             "Was ist PTFE?",
             flags=Flags(),
-            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            grounding_facts=(GroundingFact("PTFE fact", "ledger", card_id="EV-1"),),
             case_revision=7,
         )
     )
@@ -115,14 +115,14 @@ def test_knowledge_answer_falls_back_without_a_second_paid_call():
         _generator(client).generate(
             "Was ist PTFE?",
             flags=Flags(),
-            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            grounding_facts=(GroundingFact("PTFE fact", "ledger", card_id="EV-1"),),
             knowledge_answer_plan=_knowledge_plan(),
             case_revision=7,
         )
     )
 
     assert "Weitere quellengebundene Einordnung" in answer.text
-    assert "- fact" in answer.text
+    assert "- PTFE fact" in answer.text
     assert "geprüft belegt" not in answer.text
     assert answer.finish_reason == "deterministic_engineering_fallback"
     assert len(client.calls) == 1
@@ -308,15 +308,15 @@ def test_knowledge_answer_hides_canonical_uuid_behind_short_alias():
     canonical_id = "7cf25557-4816-5ec1-b8f7-03cf5346e587"
     client = FakeLlmClient(_payload(evidence_ids=["E1"]))
     fact = GroundingFact(
-        "O-Ring definition",
+        "PTFE definition",
         "ledger",
-        card_id="FK-ORING-ENGINEERING-PROFILE",
+        card_id="FK-PTFE-ENGINEERING-PROFILE",
         claim_id=canonical_id,
     )
 
     answer = asyncio.run(
         _generator(client).generate(
-            "Erkläre einen O-Ring.",
+            "Erkläre PTFE.",
             flags=Flags(),
             grounding_facts=(fact,),
             knowledge_answer_plan=_knowledge_plan(),
