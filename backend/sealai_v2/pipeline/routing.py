@@ -114,7 +114,8 @@ class MaterialComparisonFollowup:
 # e.g. "Wellendurchmesser 45 mm" or "1500 U/min" stated alone.
 _ENGINEERING_VALUE_RE = re.compile(
     r"\b\d+(?:[.,]\d+)?\s*"
-    r"(?:mm|cm|m/s|rpm|u/min|1/min|bar|mbar|psi|kpa|mpa|°c|°f|k)\b"
+    r"(?:mm|cm|m/s|rpm|u/min|1/min|bar|mbar|psi|kpa|mpa|°c|°f|k|"
+    r"grad(?:\s+(?:celsius|fahrenheit))?)\b"
     r"|Ø\s*\d+"
     r"|\bpv[- ]?wert\b",
     re.IGNORECASE,
@@ -279,8 +280,47 @@ _DOMAIN_KNOWLEDGE_RE = re.compile(
 )
 
 _KNOWLEDGE_REQUEST_RE = re.compile(
-    r"\b(was\s+ist|was\s+sind|erkl(?:a|ä|ae)r\w*|definition|grundlagen|"
-    r"details|informationen|[uü]berblick|eigenschaften|wie\s+funktioniert)\b",
+    r"\b(?:"
+    r"was\s+(?:ist|sind|bedeutet)|"
+    r"erkl(?:a|ä|ae)r\w*|beschreib\w*|definier\w*|"
+    r"definition|grundlagen|details|infos?|informationen|[uü]berblick|eigenschaften|"
+    r"wie\s+(?:funktioniert|funktionieren|muss|müssen|muessen|sollte|sollten|"
+    r"l[aä]sst|laesst|wird|werden|kann|k[oö]nnen)|"
+    r"warum|weshalb|wodurch|wof[uü]r|wann\s+(?:wird|werden|verwendet|setzt)|"
+    r"welche\w*\s+(?:arten|typen|eigenschaften|vorteile|nachteile)\b|"
+    r"welche\w*\s+(?:[\wäöüß/-]+\s+){0,3}gibt\s+es\b|"
+    r"(?:gib|gebe)\s+mir\s+(?:bitte\s+)?(?:infos?|informationen|details|einen?\s+[uü]berblick)|"
+    r"(?:kannst|k[oö]nntest|w[uü]rdest)\s+du\s+(?:mir\s+)?(?:erkl(?:a|ä|ae)ren|sagen|zeigen)|"
+    r"ist\s+(?:ein\w*\s+)?[\wäöüß/-]+\s+ein\w*\b|"
+    r"ist\s+[\wäöüß/-]+\s+(?:gegen|in)\s+(?:[\wäöüß/-]+\s+){0,5}(?:best[aä]ndig|resistent)\b|"
+    r"(?:jetzt|nun)?\s*bitte\s+(?:[uü]ber|ueber)\s+"
+    r")",
+    re.IGNORECASE,
+)
+
+_CASE_GUIDANCE_REQUEST_RE = re.compile(
+    r"\b(?:was|welche\w*)\s+(?:angaben|daten|informationen)?\s*"
+    r"(?:brauchst|ben[oö]tigst)\s+du\b",
+    re.IGNORECASE,
+)
+
+_CASE_PROCESS_GUIDANCE_RE = re.compile(
+    r"\b(?:wie\s+(?:gehen\s+wir|sollen\s+wir|starte\s+ich|fange\s+ich)\s+"
+    r"(?:dabei|damit|vor|an)|wo\s+(?:fangen\s+wir|soll\s+ich)\s+(?:an|starten))\b",
+    re.IGNORECASE,
+)
+
+_CASE_APPLICATION_DETAIL_RE = re.compile(
+    r"\b(?:pumpe|r[uü]hrwerk|mischer|welle|geh[aä]use|motor|maschine|anlage|"
+    r"getriebe|ventil|zylinder|flansch|armatur|kompressor|turbine|spindel)\w*\b",
+    re.IGNORECASE,
+)
+
+_CASE_DEVELOPMENT_RE = re.compile(
+    r"\bich\s+(?:m[oö]chte|will|w[uü]rde\s+gern|plane)\s+"
+    r"(?:[\wäöüß/-]+\s+){0,8}"
+    r"(?:entwickeln|planen|konzipieren|erarbeiten|erstellen|ausw[aä]hlen|"
+    r"auswaehlen|auslegen|finden)\b",
     re.IGNORECASE,
 )
 
@@ -293,10 +333,18 @@ _KNOWLEDGE_REQUEST_RE = re.compile(
 _CASE_OPENING_RE = re.compile(
     r"\b(?:"
     r"ich\s+m[oö]chte\s+(?:[\wäöüß/-]+\s+){0,6}(?:besprechen|bereden|reden|sprechen)|"
+    r"ich\s+m[oö]chte\s+(?:[\wäöüß/-]+\s+){0,8}"
+    r"(?:entwickeln|planen|konzipieren|erarbeiten|erstellen|ausw[aä]hlen|auswaehlen|auslegen|finden)|"
+    r"ich\s+(?:will|w[uü]rde\s+gern|plane)\s+(?:[\wäöüß/-]+\s+){0,8}"
+    r"(?:entwickeln|planen|konzipieren|erarbeiten|erstellen|ausw[aä]hlen|auswaehlen|auslegen|finden)|"
     r"ich\s+(?:brauche|ben[oö]tige)\s+hilfe\s+(?:bei|mit)|"
     r"k[oö]nnen\s+wir\s+(?:[\wäöüß/-]+\s+){0,6}(?:reden|sprechen)|"
     r"ich\s+habe\s+eine[ns]?\s+(?:dichtungs)?frage|"
-    r"ich\s+habe\s+ein\s+dichtungsproblem"
+    r"ich\s+habe\s+ein\s+dichtungsproblem|"
+    r"(?:was|welche\w*)\s+(?:angaben|daten|informationen)?\s*"
+    r"(?:brauchst|ben[oö]tigst)\s+du\s+(?:von\s+mir|daf[uü]r|dazu|noch)?|"
+    r"wie\s+(?:gehen\s+wir|sollen\s+wir|starte\s+ich|fange\s+ich)\s+"
+    r"(?:dabei|damit|vor|an)"
     r")\b",
     re.IGNORECASE,
 )
@@ -311,8 +359,8 @@ _CASE_OPENING_RE = re.compile(
 # so there is no room to smuggle a second instruction next to the trigger phrase. Anything wider
 # falls through to the existing, more conservative branches below (domain-knowledge or
 # ambiguous/full-pipeline) exactly as before this change.
-_CASE_OPENING_MAX_LEN = 140
-_CASE_OPENING_SURROUNDING_MAX_LEN = 40
+_CASE_OPENING_MAX_LEN = 200
+_CASE_OPENING_SURROUNDING_MAX_LEN = 65
 
 
 def _is_case_opening_shape(question: str) -> bool:
@@ -324,6 +372,34 @@ def _is_case_opening_shape(question: str) -> bool:
         return False
     surrounding = len(text[: match.start()]) + len(text[match.end() :])
     return surrounding <= _CASE_OPENING_SURROUNDING_MAX_LEN
+
+
+def has_explicit_knowledge_request(question: str) -> bool:
+    """Return whether the utterance actually asks to learn or retrieve information.
+
+    A sealing-domain noun is an entity, not a speech act.  Keeping this predicate separate makes
+    that boundary auditable and reusable by deterministic routing, semantic-policy validation and
+    regression tests.  Guidance requests such as ``was brauchst du von mir?`` intentionally do not
+    match: they initiate/continue case work instead of requesting a Fachkarten answer.
+    """
+
+    text = question or ""
+    guidance = _CASE_GUIDANCE_REQUEST_RE.search(text)
+    if guidance:
+        # "Welche Informationen brauchst du?" contains the lexical noun ``Informationen`` but is
+        # not a knowledge request.  Remove only that guidance clause before testing the remainder,
+        # so a genuine mixed turn ("Erkläre PTFE; was brauchst du für den Fall?") retains both acts.
+        text = text[: guidance.start()] + text[guidance.end() :]
+    return bool(_KNOWLEDGE_REQUEST_RE.search(text))
+
+
+def requests_case_guidance(question: str) -> bool:
+    """Whether the user asks how to start/continue the governed case workflow."""
+
+    text = question or ""
+    return bool(
+        _CASE_GUIDANCE_REQUEST_RE.search(text) or _CASE_PROCESS_GUIDANCE_RE.search(text)
+    )
 
 
 # A possessive/deictic reference makes even an explanation-shaped question case-bound: "Erklaere
@@ -378,6 +454,19 @@ def _has_material_topic(question: str, material_terms: tuple[str, ...] = ()) -> 
     return False
 
 
+def _has_case_detail(question: str, material_terms: tuple[str, ...] = ()) -> bool:
+    """Whether an opener already contains a fact/candidate the intake reply must not ignore."""
+
+    text = question or ""
+    return bool(
+        _has_material_topic(text, material_terms)
+        or extract_medium_facts(text)
+        or detected_seal_subjects(text)
+        or _CASE_APPLICATION_DETAIL_RE.search(text)
+        or _ENGINEERING_VALUE_RE.search(text)
+    )
+
+
 def is_explicit_knowledge_overview(
     question: str, *, material_terms: tuple[str, ...] = ()
 ) -> bool:
@@ -390,7 +479,7 @@ def is_explicit_knowledge_overview(
     """
 
     text = question or ""
-    if not (_KNOWLEDGE_REQUEST_RE.search(text) or _COMPARISON_RE.search(text)):
+    if not (has_explicit_knowledge_request(text) or _COMPARISON_RE.search(text)):
         return False
     if not (
         _DOMAIN_KNOWLEDGE_RE.search(text) or _has_material_topic(text, material_terms)
@@ -579,7 +668,9 @@ def detect_engineering_signals(
     if _LEAKAGE_RE.search(question) and not explicit_knowledge_overview:
         signals.append("leakage_or_failure_language")
     if _CASE_LANGUAGE_RE.search(question) or (
-        _DESIGN_TOPIC_RE.search(question) and not explicit_knowledge_overview
+        _DESIGN_TOPIC_RE.search(question)
+        and not explicit_knowledge_overview
+        and not _is_case_opening_shape(question)
     ):
         signals.append("replacement_or_case_language")
     if _SUITABILITY_QUESTION_RE.search(question):
@@ -654,21 +745,30 @@ def classify_route(
             deterministic_signal_count=len(signals),
         )
 
-    # A technical subject in the current utterance outranks social language and the soft LLM intent.
-    # This is entity-first routing: "Guten Morgen, Details zu NBR" remains material knowledge even if
-    # the annotate-only helper guessed ``gespraech`` from the greeting.
-    if _has_material_topic(question, material_terms):
+    if has_explicit_knowledge_request(question) and (
+        _CASE_DEVELOPMENT_RE.search(question) or requests_case_guidance(question)
+    ):
         return RouteDecision(
-            route=RouteName.MATERIAL_KNOWLEDGE,
-            reason=(
-                f"intent={intent.value}"
-                if intent in (Intent.WISSENSFRAGE, Intent.FAKTFRAGE)
-                else "current_turn_material_topic"
-            ),
+            route=RouteName.ENGINEERING_CASE,
+            reason="mixed_case_and_knowledge_request",
             confidence=1.0,
-            forced_full_pipeline=False,
-            deterministic_signal_count=0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
         )
+
+    if (
+        not has_explicit_knowledge_request(question)
+        and _is_case_opening_shape(question)
+        and _has_case_detail(question, material_terms)
+    ):
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="case_opening_with_case_details",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
+        )
+
     # 2026-07-19 (case-intake fix): zero Stage-1 signals, no existing case, no material topic, a
     # narrow discussion/help-INTENT opener shape, and NOT itself a knowledge request ("was ist...").
     # Additive and strictly narrower than the domain-knowledge branch below: a message that ALSO
@@ -680,7 +780,7 @@ def classify_route(
         not case_state_nonempty
         and not signals
         and _is_case_opening_shape(question)
-        and not _KNOWLEDGE_REQUEST_RE.search(question)
+        and not has_explicit_knowledge_request(question)
     ):
         return RouteDecision(
             route=RouteName.CASE_INTAKE_INVITE,
@@ -689,12 +789,30 @@ def classify_route(
             forced_full_pipeline=False,
             deterministic_signal_count=0,
         )
-    if _DOMAIN_KNOWLEDGE_RE.search(question) and (
-        not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
+    # Entity detection never grants a knowledge route on its own.  The current utterance must also
+    # carry an explicit educational/factual speech act (or the soft intent below must classify it as
+    # one).  This prevents "Dichtungslösung entwickeln – was brauchst du?" from launching RAG merely
+    # because ``dichtungs\w*`` occurred in the sentence.
+    if _has_material_topic(question, material_terms) and has_explicit_knowledge_request(
+        question
+    ):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason=(
+                f"intent={intent.value}"
+                if intent in (Intent.WISSENSFRAGE, Intent.FAKTFRAGE)
+                else "explicit_material_knowledge_request"
+            ),
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question) and has_explicit_knowledge_request(
+        question
     ):
         return RouteDecision(
             route=RouteName.GENERAL_SEALING_KNOWLEDGE,
-            reason="current_turn_domain_topic",
+            reason="explicit_domain_knowledge_request",
             confidence=1.0,
             forced_full_pipeline=False,
             deterministic_signal_count=0,
@@ -783,20 +901,34 @@ def classify_route_deterministic(
             forced_full_pipeline=True,
             deterministic_signal_count=len(signals),
         )
-    if _has_material_topic(question, material_terms):
+    if has_explicit_knowledge_request(question) and (
+        _CASE_DEVELOPMENT_RE.search(question) or requests_case_guidance(question)
+    ):
         return RouteDecision(
-            route=RouteName.MATERIAL_KNOWLEDGE,
-            reason="deterministic_material_topic",
+            route=RouteName.ENGINEERING_CASE,
+            reason="deterministic_mixed_case_and_knowledge_request",
             confidence=1.0,
-            forced_full_pipeline=False,
-            deterministic_signal_count=0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
+        )
+    if (
+        not has_explicit_knowledge_request(question)
+        and _is_case_opening_shape(question)
+        and _has_case_detail(question, material_terms)
+    ):
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="deterministic_case_opening_with_case_details",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
         )
     # 2026-07-19 (case-intake fix): see the identical block + rationale in classify_route() above.
     if (
         not case_state_nonempty
         and not signals
         and _is_case_opening_shape(question)
-        and not _KNOWLEDGE_REQUEST_RE.search(question)
+        and not has_explicit_knowledge_request(question)
     ):
         return RouteDecision(
             route=RouteName.CASE_INTAKE_INVITE,
@@ -805,12 +937,22 @@ def classify_route_deterministic(
             forced_full_pipeline=False,
             deterministic_signal_count=0,
         )
-    if _DOMAIN_KNOWLEDGE_RE.search(question) and (
-        not case_state_nonempty or _KNOWLEDGE_REQUEST_RE.search(question)
+    if _has_material_topic(question, material_terms) and has_explicit_knowledge_request(
+        question
+    ):
+        return RouteDecision(
+            route=RouteName.MATERIAL_KNOWLEDGE,
+            reason="deterministic_explicit_material_knowledge_request",
+            confidence=1.0,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if _DOMAIN_KNOWLEDGE_RE.search(question) and has_explicit_knowledge_request(
+        question
     ):
         return RouteDecision(
             route=RouteName.GENERAL_SEALING_KNOWLEDGE,
-            reason="deterministic_domain_topic",
+            reason="deterministic_explicit_domain_knowledge_request",
             confidence=1.0,
             forced_full_pipeline=False,
             deterministic_signal_count=0,

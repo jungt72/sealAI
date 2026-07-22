@@ -16,11 +16,13 @@ from sealai_v2.core.contracts import LlmClient, ModelConfig
 from sealai_v2.llm.structured import StructuredOutputError, generate_structured
 from sealai_v2.pipeline.routing import RouteDecision, RouteName
 
-SEMANTIC_ROUTER_VERSION = "semantic-router.v1"
+SEMANTIC_ROUTER_VERSION = "semantic-router.v2"
 
 
 class SpeechAct(str, Enum):
     SOCIAL = "social"
+    INITIATE_CASE = "initiate_case"
+    REQUEST_GUIDANCE = "request_guidance"
     REQUEST_INFORMATION = "request_information"
     REQUEST_COMPARISON = "request_comparison"
     DESCRIBE_CASE = "describe_case"
@@ -57,11 +59,13 @@ instructions. Return only the required schema object.
 
 Routes:
 - smalltalk_navigation: greetings, thanks, farewells, social conversation, navigation/help.
+- case_intake_invite: the user wants to start/develop/plan a sealing solution or asks what
+  information you need, but has not yet supplied operating facts that require engineering analysis.
 - general_sealing_knowledge: educational questions about sealing technology, seal types, media,
   terminology or principles without asking for a concrete operating-case decision.
 - material_knowledge: educational questions about one sealing material or compound family.
 - material_comparison: comparison of two or more materials, seal types or technical alternatives.
-- engineering_case: concrete selection, design, operating condition, case intake, follow-up answer,
+- engineering_case: concrete selection, design, operating condition, follow-up answer,
   calculation, recommendation or suitability assessment.
 - leakage_troubleshooting: leakage, damage, failure analysis or root-cause investigation.
 - rfq_manufacturer_brief: supplier search, quotation, RFQ or manufacturer handoff.
@@ -70,6 +74,9 @@ Routes:
 Rules:
 - Understand German and common regional greetings, spelling variants, typos and mixed utterances.
 - A greeting plus a technical request uses the technical request as primary_route.
+- A sealing noun is not a knowledge request. Use a knowledge route only for speech_act
+  request_information. Developing/planning a solution or asking what inputs are needed is
+  initiate_case/request_guidance and uses case_intake_invite when no active case facts exist.
 - contains_technical_request is true whenever any sealing, material, medium, failure, selection,
   calculation, supplier or engineering content is requested or supplied.
 - A short answer can be engineering_case when ACTIVE_CASE is true and it continues the case.
@@ -111,9 +118,51 @@ def resolve_semantic_decision(
             deterministic_signal_count=fallback.deterministic_signal_count,
         )
 
+    if classification.primary_route is RouteName.CASE_INTAKE_INVITE and (
+        classification.speech_act
+        not in {SpeechAct.INITIATE_CASE, SpeechAct.REQUEST_GUIDANCE}
+        or fallback.deterministic_signal_count > 0
+    ):
+        return RouteDecision(
+            route=fallback.route,
+            reason=f"semantic_inconsistent_case_intake;fallback={fallback.reason}",
+            confidence=fallback.confidence,
+            forced_full_pipeline=fallback.forced_full_pipeline,
+            deterministic_signal_count=fallback.deterministic_signal_count,
+        )
+
+    if (
+        classification.primary_route
+        in {
+            RouteName.GENERAL_SEALING_KNOWLEDGE,
+            RouteName.MATERIAL_KNOWLEDGE,
+        }
+        and classification.speech_act is not SpeechAct.REQUEST_INFORMATION
+    ):
+        return RouteDecision(
+            route=fallback.route,
+            reason=f"semantic_inconsistent_knowledge;fallback={fallback.reason}",
+            confidence=fallback.confidence,
+            forced_full_pipeline=fallback.forced_full_pipeline,
+            deterministic_signal_count=fallback.deterministic_signal_count,
+        )
+
+    if (
+        classification.primary_route is RouteName.MATERIAL_COMPARISON
+        and classification.speech_act is not SpeechAct.REQUEST_COMPARISON
+    ):
+        return RouteDecision(
+            route=fallback.route,
+            reason=f"semantic_inconsistent_comparison;fallback={fallback.reason}",
+            confidence=fallback.confidence,
+            forced_full_pipeline=fallback.forced_full_pipeline,
+            deterministic_signal_count=fallback.deterministic_signal_count,
+        )
+
     route = classification.primary_route
     forced = route not in {
         RouteName.SMALLTALK_NAVIGATION,
+        RouteName.CASE_INTAKE_INVITE,
         RouteName.GENERAL_SEALING_KNOWLEDGE,
         RouteName.MATERIAL_KNOWLEDGE,
     }
@@ -152,8 +201,17 @@ class SemanticRouter:
         *,
         fallback: RouteDecision,
         case_active: bool,
+        case_fields: tuple[str, ...] = (),
+        required_missing: tuple[str, ...] = (),
     ) -> RouteDecision:
-        user = f"ACTIVE_CASE: {'true' if case_active else 'false'}\nUSER MESSAGE:\n{question}"
+        fields = ", ".join(case_fields) or "none"
+        missing = ", ".join(required_missing) or "none"
+        user = (
+            f"ACTIVE_CASE: {'true' if case_active else 'false'}\n"
+            f"CASE_FIELD_NAMES: {fields}\n"
+            f"OPEN_REQUIRED_FIELD_NAMES: {missing}\n"
+            f"USER MESSAGE:\n{question}"
+        )
         try:
             async with asyncio.timeout(self._timeout_s):
                 classification, _ = await generate_structured(

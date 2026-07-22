@@ -33,6 +33,7 @@ _EXPECTED_TEMPLATE_VARS = {
         "calc_notes",
         "case_context",
         "compliance_hint",
+        "communication_plan",
         "computed_values",
         "contract",
         "conversation_window",

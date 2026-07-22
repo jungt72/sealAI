@@ -107,6 +107,7 @@ def render_engineering_answer(
     *,
     knowledge_answer_plan: dict,
     material_params: list[dict] | None = None,
+    communication_plan: dict | None = None,
 ) -> str:
     sections = [answer.conclusion.strip()]
     parameter_table = _parameter_table(material_params)
@@ -127,5 +128,14 @@ def render_engineering_answer(
         sections.append(
             "**Für Auswahl oder Freigabe noch erforderlich**\n"
             + "\n".join(f"- {item}" for item in answer.missing_information)
+        )
+    plan = communication_plan or {}
+    planned_question = str(plan.get("next_question") or "").strip()
+    if planned_question:
+        reason = str(plan.get("question_reason") or "").strip()
+        sections.append(
+            "**Nächster Schritt**\n"
+            + planned_question
+            + (f" {reason}" if reason else "")
         )
     return "\n\n".join(section for section in sections if section)

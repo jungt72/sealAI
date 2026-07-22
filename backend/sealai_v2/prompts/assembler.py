@@ -69,6 +69,7 @@ class PromptAssembler:
         engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
+        communication_plan: dict | None = None,
         risk_flags: list[str] | None = None,
     ) -> str:
         flags = flags or Flags()
@@ -103,6 +104,7 @@ class PromptAssembler:
             engineering_flags=engineering_flags or [],
             material_params=material_params or None,
             knowledge_answer_plan=knowledge_answer_plan or None,
+            communication_plan=communication_plan or None,
             # Legal-by-Design Phase D: empty/None -> {% if risk_flags %} never renders ->
             # byte-identical prompt. Only non-empty when risk_flag_prompt_enabled is on (see
             # pipeline.py's generator.generate() call sites).

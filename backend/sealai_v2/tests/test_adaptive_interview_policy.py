@@ -494,9 +494,11 @@ def test_compute_required_missing_feeds_the_deterministic_d1_response_text() -> 
         False,
         "deterministic_contract_clarification",
     )
-    text = deterministic_response(decision, missing_fields=missing)
+    text = deterministic_response(
+        decision, question="Bitte den RWDR-Fall fortsetzen", missing_fields=missing
+    )
     assert text == (
-        "Für die technische Einordnung fehlen noch: Anwendungsziel, Druck, "
-        "Wellendurchmesser, Drehzahl. Bitte ergänze diese Angaben; vorher wäre jede "
-        "fallbezogene Aussage spekulativ."
+        "Danke, den bisherigen Fallkontext habe ich berücksichtigt. Geht es um eine "
+        "Neuauslegung, einen Austausch, eine Optimierung oder die Analyse eines Schadens? "
+        "Das Ziel bestimmt, ob wir Bestand, Einbauraum oder Fehlerursachen zuerst betrachten."
     )

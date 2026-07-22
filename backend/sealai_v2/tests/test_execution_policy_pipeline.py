@@ -109,6 +109,26 @@ class _RequiredMissingMemory:
         return None
 
 
+class _UnknownScopeMemory:
+    state = CaseStateV2(
+        case_id="case-unknown-scope",
+        revision=1,
+        fields=(
+            CaseField(
+                key="medium",
+                value="Hydrauliköl HLP 46",
+                status=CaseFieldStatus.CONFIRMED,
+            ),
+        ),
+    )
+
+    def recall(self, **kwargs):
+        return MemoryView(case_state_v2=self.state)
+
+    def record_turn(self, **kwargs):
+        return None
+
+
 def _generator(client: _RecordingClient, model: str) -> L1Generator:
     return L1Generator(client, PromptAssembler(), ModelConfig(model=model))
 
@@ -149,6 +169,29 @@ def test_low_risk_knowledge_is_one_standard_call_without_helper():
     assert result.turn_state.verification_mode == "deterministic"
     assert "# Fachantwort-Profil" in standard.systems[0]
     assert "Einordnung und Werkstoffstruktur" in standard.systems[0]
+
+
+def test_owner_reported_intake_is_case_aware_without_retrieval_or_model_call():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    question = (
+        "Hallo und guten Morgen, ich möchte eine dichtungslösung entwickeln. "
+        "was benötigst du von mir?"
+    )
+
+    result = asyncio.run(pipeline.run(question, tenant=TenantContext("tenant-1")))
+
+    assert result.route_name == "case_intake_invite"
+    assert result.turn_state.model_tier == "none"
+    assert pipeline.retriever.calls == 0
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.answer.grounding_facts == ()
+    assert result.answer.text == (
+        "Guten Morgen – gern, wir entwickeln die Dichtungslösung Schritt für Schritt. "
+        "Welche Anwendung und Dichtstelle möchtest du abdichten? Davon hängt ab, welche "
+        "Betriebs-, Geometrie- und Sicherheitsangaben ich als Nächstes gezielt von dir brauche."
+    )
+    assert result.answer.text.count("?") == 1
+    assert "Quelle" not in result.answer.text
 
 
 def test_unclassified_regional_greeting_uses_bounded_semantic_router():
@@ -443,11 +486,30 @@ def test_known_required_field_stops_before_retrieval_and_models():
     assert helper.calls == standard.calls == frontier.calls == []
     assert result.turn_state.execution_class == "D1"
     assert result.turn_state.model_tier == "none"
-    assert "Betriebstemperatur" in result.answer.text
-    assert (
-        "Für die technische Einordnung fehlen noch: Betriebstemperatur."
-        in result.answer.text
+    assert "Welche minimale, normale und maximale Temperatur" in result.answer.text
+    assert result.answer.text.count("?") == 1
+
+
+def test_active_unknown_scope_guidance_uses_case_without_rag_or_reasking_known_fact():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
+    pipeline.memory = _UnknownScopeMemory()
+
+    result = asyncio.run(
+        pipeline.run(
+            "Was brauchst du noch?",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("case-unknown-scope"),
+        )
     )
+
+    assert result.route_name == "engineering_case"
+    assert result.turn_state.execution_class == "D1"
+    assert pipeline.retriever.calls == 0
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert "Fallkontext" in result.answer.text
+    assert "Dichtungsart oder konkrete Dichtstelle" in result.answer.text
+    assert "Hydrauliköl" not in result.answer.text
+    assert result.answer.text.count("?") == 1
 
 
 def test_second_identical_low_risk_turn_is_tenant_scoped_d0_cache_hit():

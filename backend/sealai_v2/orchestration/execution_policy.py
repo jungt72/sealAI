@@ -237,19 +237,14 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "deterministic_smalltalk_route",
         )
 
-    # 2026-07-19 (case-intake fix): a first-turn message that expresses discussion/help intent
-    # with zero technical content (RouteName.CASE_INTAKE_INVITE) gets the SAME lightweight
-    # treatment as smalltalk_navigation above -- ModelTier.STANDARD (not NONE, so the turn still
-    # reaches pipeline.py's case_intake_generator branch instead of a canned deterministic_response
-    # string) and VerificationMode.DETERMINISTIC (no LLM-based L3 claim verification, since the
-    # fully static case_intake_navigation.jinja output never makes a domain claim to verify). Atomic,
-    # not FINAL streaming -- case_intake_invite has no token-streaming path (see pipeline.py's
-    # case_intake_prompt_active, which is intentionally excluded from stream_tokens_active).
+    # Intake is a governed conversation move, not an open-ended generation task.  It is rendered
+    # deterministically from the CommunicationPlan: this makes the one-question contract, the reason
+    # for that question and the absence of Fachkarten claims invariant across providers and retries.
     if route is RouteName.CASE_INTAKE_INVITE:
         return ExecutionDecision(
             ExecutionClass.S0,
-            ModelTier.STANDARD,
-            "none",
+            ModelTier.NONE,
+            None,
             VerificationMode.DETERMINISTIC,
             StreamingMode.ATOMIC,
             False,
@@ -270,9 +265,29 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
 def deterministic_response(
     decision: ExecutionDecision,
     *,
+    question: str = "",
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
 ) -> str:
+    if decision.reason == "deterministic_case_intake_route":
+        from sealai_v2.core.communication_plan import (
+            build_communication_plan,
+            evaluate_communication,
+            render_case_intake_response,
+        )
+
+        plan = build_communication_plan(
+            question=question,
+            route_name=RouteName.CASE_INTAKE_INVITE.value,
+        )
+        response = render_case_intake_response(question, plan)
+        verdict = evaluate_communication(response, plan)
+        if not verdict.passed:  # defensive invariant: this is a static renderer
+            raise RuntimeError(
+                "deterministic case-intake response violated its communication plan: "
+                + ",".join(verdict.violations)
+            )
+        return response
     if decision.reason == "ambiguous_no_domain_signal":
         return (
             "Ich kann die Eingabe noch keiner eindeutigen Aufgabe zuordnen. "
@@ -289,11 +304,18 @@ def deterministic_response(
             "Herstellerdatenblatt benötigt."
         )
     if decision.execution_class is ExecutionClass.D1:
-        fields = ", ".join(missing_fields) or "entscheidungsrelevante Angaben"
-        return (
-            f"Für die technische Einordnung fehlen noch: {fields}. "
-            "Bitte ergänze diese Angaben; vorher wäre jede fallbezogene Aussage spekulativ."
+        from sealai_v2.core.communication_plan import (
+            build_communication_plan,
+            render_case_clarification,
         )
+
+        plan = build_communication_plan(
+            question=question,
+            route_name=RouteName.ENGINEERING_CASE.value,
+            missing_fields=missing_fields,
+            conflicts=conflicts,
+        )
+        return render_case_clarification(plan)
     if decision.execution_class is ExecutionClass.H1:
         details = [*missing_fields, *conflicts]
         suffix = f" Offen sind: {', '.join(details)}." if details else ""

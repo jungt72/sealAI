@@ -28,6 +28,7 @@ from sealai_v2.core.engineering_answer import (
     EngineeringKnowledgeAnswer,
     validate_engineering_answer,
 )
+from sealai_v2.core.knowledge_answer import _fact_matches_subject
 from sealai_v2.core.technical_answer import (
     TechnicalAnswer,
     TechnicalClaim,
@@ -102,12 +103,12 @@ def _engineering_missing_information(plan: dict) -> list[str]:
 
 
 def _fact_subjects(fact: GroundingFact, subjects: tuple[str, ...]) -> frozenset[str]:
-    """Bind evidence to its primary comparison subject, preferring the stable card identity.
+    """Bind evidence only when its stable identity or reviewed text names the subject.
 
     Broad scope tags may mention alternatives, so they are unsuitable as primary-subject ownership.
-    Reviewed profile card IDs are the current authoritative discriminator.  A single-subject overview
-    may safely bind its retrieved evidence to that one subject; comparison evidence must identify its
-    side explicitly and otherwise remains unusable for a subject cell.
+    Card IDs are preferred, while the same boundary-aware alias matcher used by the knowledge planner
+    also supports reviewed claim text.  Retrieval rank alone never makes an unrelated fact evidence
+    for a single-subject answer.
     """
     card_tokens = {
         re.sub(r"[^a-z0-9]+", "", token.casefold())
@@ -121,9 +122,9 @@ def _fact_subjects(fact: GroundingFact, subjects: tuple[str, ...]) -> frozenset[
     }
     if matched:
         return frozenset(matched)
-    if len(subjects) == 1:
-        return frozenset(subjects)
-    return frozenset()
+    return frozenset(
+        subject for subject in subjects if _fact_matches_subject(fact, subject)
+    )
 
 
 def _fallback_engineering_answer(
@@ -135,13 +136,17 @@ def _fallback_engineering_answer(
 ) -> EngineeringKnowledgeAnswer:
     """Fail closed to exact reviewed statements, preserving subject and facet identity."""
     claims: list[EngineeringClaim] = []
-    subjects = tuple(plan.get("subjects", ())) or ("Dichtungstechnik",)
+    planned_subjects = tuple(plan.get("subjects", ()))
+    subjects = planned_subjects or ("Dichtungstechnik",)
     evidence_metadata = {
         evidence_id: (
             fact,
             tuple(fact.answer_facets) or ("properties",),
-            evidence_subjects.get(evidence_id)
-            or (frozenset(subjects) if len(subjects) == 1 else frozenset()),
+            (
+                evidence_subjects.get(evidence_id, frozenset())
+                if planned_subjects
+                else frozenset(subjects)
+            ),
         )
         for evidence_id, fact in evidence_facts.items()
     }
@@ -162,13 +167,16 @@ def _fallback_engineering_answer(
                 if subject in bound_subjects
                 and any(facet in facets for facet in section_facets)
             ]
+            # A missing facet is safer and more truthful than duplicating the same reviewed claim
+            # under a second heading.  The previous ``candidates[0]`` fallback produced apparently
+            # different sections with byte-identical content after a validation failure.
             selected = next(
                 (
                     candidate
                     for candidate in candidates
                     if (subject, candidate[0]) not in used
                 ),
-                candidates[0] if candidates else None,
+                None,
             )
             if selected is None:
                 continue
@@ -439,6 +447,7 @@ class L1Generator:
         baseline_hardening: bool,
         material_params: list | None,
         knowledge_answer_plan: dict | None,
+        communication_plan: dict | None,
         risk_flags: list[str] | None,
     ) -> str:
         """The SINGLE prompt-assembly path shared by ``generate`` and ``generate_stream`` so the two
@@ -466,6 +475,7 @@ class L1Generator:
             baseline_hardening=baseline_hardening,
             material_params=material_params,
             knowledge_answer_plan=knowledge_answer_plan,
+            communication_plan=communication_plan,
             risk_flags=risk_flags,
         )
 
@@ -489,6 +499,7 @@ class L1Generator:
         baseline_hardening: bool = False,
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
+        communication_plan: dict | None = None,
         require_evidence_for_all_claims: bool = False,
         compact_technical_answer: bool = False,
         work_solution_candidate: bool = False,
@@ -518,6 +529,7 @@ class L1Generator:
             baseline_hardening=baseline_hardening,
             material_params=material_params,
             knowledge_answer_plan=knowledge_answer_plan,
+            communication_plan=communication_plan,
             risk_flags=risk_flags,
         )
         if self._structured_output_enabled:
@@ -642,6 +654,7 @@ class L1Generator:
                             engineering,
                             knowledge_answer_plan=knowledge_answer_plan,
                             material_params=material_params,
+                            communication_plan=communication_plan,
                         )
                     ),
                     model=result.model,
@@ -872,7 +885,11 @@ class L1Generator:
                         system + structured_instruction + repair
                     )
             return Answer(
-                text=strip_sourcing(render_technical_answer(technical)),
+                text=strip_sourcing(
+                    render_technical_answer(
+                        technical, communication_plan=communication_plan
+                    )
+                ),
                 model=result.model,
                 grounding_facts=grounding_facts,
                 finish_reason=result.finish_reason,
@@ -915,6 +932,7 @@ class L1Generator:
         baseline_hardening: bool = False,
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
+        communication_plan: dict | None = None,
         require_evidence_for_all_claims: bool = False,
         compact_technical_answer: bool = False,
         work_solution_candidate: bool = False,
@@ -952,6 +970,7 @@ class L1Generator:
                     baseline_hardening=baseline_hardening,
                     material_params=material_params,
                     knowledge_answer_plan=knowledge_answer_plan,
+                    communication_plan=communication_plan,
                     require_evidence_for_all_claims=require_evidence_for_all_claims,
                     compact_technical_answer=compact_technical_answer,
                     work_solution_candidate=work_solution_candidate,
@@ -978,6 +997,7 @@ class L1Generator:
             baseline_hardening=baseline_hardening,
             material_params=material_params,
             knowledge_answer_plan=knowledge_answer_plan,
+            communication_plan=communication_plan,
             risk_flags=risk_flags,
         )
         async for event in self._client.generate_stream(

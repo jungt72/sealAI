@@ -66,7 +66,7 @@ def test_regional_greeting_can_route_to_smalltalk() -> None:
     assert decision.route is RouteName.SMALLTALK_NAVIGATION
     assert decision.forced_full_pipeline is False
     assert decision.confidence == 0.99
-    assert decision.reason.startswith("semantic:semantic-router.v1:social")
+    assert decision.reason.startswith("semantic:semantic-router.v2:social")
     assert client.calls[0]["model"] == "ministral-8b-2512"
     assert "ACTIVE_CASE: false" in client.calls[0]["user"]
 
@@ -83,6 +83,36 @@ def test_mixed_greeting_uses_technical_primary_route() -> None:
 
     assert decision.route is RouteName.MATERIAL_KNOWLEDGE
     assert decision.forced_full_pipeline is False
+
+
+def test_semantic_router_supports_case_intake_guidance_as_a_distinct_route() -> None:
+    decision, _ = _classify(
+        _response(
+            "case_intake_invite",
+            speech_act="request_guidance",
+            contains_technical_request=True,
+            confidence=0.98,
+        ),
+        "Ich möchte eine Dichtungslösung entwickeln – was brauchst du von mir?",
+    )
+
+    assert decision.route is RouteName.CASE_INTAKE_INVITE
+    assert decision.forced_full_pipeline is False
+    assert "request_guidance" in decision.reason
+
+
+def test_semantic_knowledge_route_requires_information_speech_act() -> None:
+    decision, _ = _classify(
+        _response(
+            "general_sealing_knowledge",
+            speech_act="request_guidance",
+            contains_technical_request=True,
+        ),
+        "Dichtungslösung – was brauchst du?",
+    )
+
+    assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+    assert decision.reason.startswith("semantic_inconsistent_knowledge")
 
 
 def test_case_and_failure_routes_remain_full_pipeline() -> None:
@@ -138,9 +168,17 @@ def test_prompt_marks_active_case_without_exposing_transcript() -> None:
     router = SemanticRouter(client, ModelConfig("ministral-8b-2512"))
 
     decision = asyncio.run(
-        router.classify("Servus", fallback=_fallback(), case_active=True)
+        router.classify(
+            "Servus",
+            fallback=_fallback(),
+            case_active=True,
+            case_fields=("medium", "druck"),
+            required_missing=("Betriebstemperatur",),
+        )
     )
 
     assert decision.route is RouteName.SMALLTALK_NAVIGATION
     assert "ACTIVE_CASE: true" in client.calls[0]["user"]
+    assert "CASE_FIELD_NAMES: medium, druck" in client.calls[0]["user"]
+    assert "OPEN_REQUIRED_FIELD_NAMES: Betriebstemperatur" in client.calls[0]["user"]
     assert "Servus" in client.calls[0]["user"]
