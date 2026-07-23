@@ -71,6 +71,29 @@ services:
       SEALAI_V2_EMBED_PROVIDER: ${SEALAI_V2_EMBED_PROVIDER:-openai}
       SEALAI_V2_EMBED_MODEL: ${SEALAI_V2_EMBED_MODEL:-text-embedding-3-small}
       SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-}
+      # Model/provider parity with prod: without these, every per-role provider/model falls back
+      # to settings.py's own code defaults (provider=openai, l1_model=gpt-5.5, ...) instead of the
+      # real prod combination (mistral). That mismatch is not just "a different model" -- it broke
+      # the very first pipeline stage outright: gpt-5.5's strict structured-output validation
+      # rejected the `sealingai_understanding` response schema (missing `intent` in `required`),
+      # a combination Mistral's structured-output implementation does not hit. Only vars whose
+      # .env.prod value actually differs from settings.py's code default are listed (standard_*
+      # and router_* already match the code default, so they're intentionally omitted here, same
+      # discipline as the knowledge/retrieval block above). SEALAI_V2_JUDGE_PROVIDER is included
+      # only to prevent it silently inheriting the new mistral default via its own None-fallback --
+      # the judge role itself is eval-harness-only and never runs on the live chat path.
+      # Fallback defaults below are copied 1:1 from docker-compose.deploy.yml's own passthrough
+      # lines for these same vars (not re-derived), so staging's no-env-file fallback behavior
+      # matches prod's exactly, not just the real .env.prod-sourced values.
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:?MISTRAL_API_KEY required for the V2 Mistral roles}
+      SEALAI_V2_PROVIDER: ${SEALAI_V2_PROVIDER:-mistral}
+      SEALAI_V2_L1_PROVIDER: ${SEALAI_V2_L1_PROVIDER:-openai}
+      SEALAI_V2_L1_MODEL: ${SEALAI_V2_L1_MODEL:-gpt-5.5}
+      SEALAI_V2_VERIFIER_PROVIDER: ${SEALAI_V2_VERIFIER_PROVIDER:-mistral}
+      SEALAI_V2_VERIFIER_MODEL: ${SEALAI_V2_VERIFIER_MODEL:-mistral-small-2603}
+      SEALAI_V2_HELPER_PROVIDER: ${SEALAI_V2_HELPER_PROVIDER:-mistral}
+      SEALAI_V2_HELPER_MODEL: ${SEALAI_V2_HELPER_MODEL:-mistral-small-2603}
+      SEALAI_V2_JUDGE_PROVIDER: ${SEALAI_V2_JUDGE_PROVIDER:-openai}
     # NO host port publish: this host's firewall drops host→container traffic on newly created
     # bridges (verified 2026-06-10: 172.18.x sealai_default reachable, fresh staging bridge not),
     # and docker-proxy targets the staging-net IP. Diagnose via
