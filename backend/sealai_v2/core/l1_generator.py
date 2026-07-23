@@ -912,7 +912,7 @@ def _deterministic_evidence_answer(
             conclusion = (
                 f"Die Kombination aus {case_text} passt zu mehreren gekoppelten "
                 "Versagenspfaden; sie rechtfertigt noch keinen einzelnen als dominante "
-                f"Ursache. Als erste Hypothesen sind {priority_text} zu prüfen. Ein "
+                f"Ursache. Die ersten Prüfungen sollten {priority_text} adressieren. Ein "
                 "isolierter Werkstoffwechsel wäre deshalb zu kurz gegriffen. Die belastbare "
                 "Arbeitsrichtung ist, zuerst die Dichtungsumgebung und den Schmierfilm zu "
                 "stabilisieren. Bestätigen Befund und konkretes Medium die Hypothesen, sollte "

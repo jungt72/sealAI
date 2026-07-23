@@ -1399,6 +1399,7 @@ def test_solution_oriented_glrd_diagnosis_preempts_unsafe_free_synthesis():
 
     assert client.calls == []
     assert "keinen einzelnen als dominante Ursache" in answer.text
+    assert "Die ersten Prüfungen sollten abrasiven Verschleiß" in answer.text
     assert "belastbare Arbeitsrichtung" in answer.text
     assert "Dichtungsumgebung und den Schmierfilm" in answer.text
     assert "Sperr-" in answer.text and "Kühlkonzept" in answer.text
