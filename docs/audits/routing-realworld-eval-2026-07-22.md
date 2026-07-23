@@ -98,8 +98,9 @@ deshalb nicht als fachliche Wahrheit oder Deployment-Autorität interpretiert we
 ## 5. Betriebsrisiken und offene Freigaben
 
 - **Human Oracle:** Die exakten Antworten müssen fachlich adjudiziert werden.
-- **Produktions-Retrieval:** Der Lauf verwendete `in_process`; Qdrant Recall, Facet Coverage und
-  Tenant-Isolation sind noch nicht produktionsnah freigegeben.
+- **Produktions-Retrieval:** Der Antwortlauf verwendete `in_process`. Der nachfolgende read-only
+  Qdrant-/Ledger-Lauf erreicht Recall@3 0,944 und Recall@5 1,000; fachliche Truth-/Facet-
+  Adjudikation und ein echter tenant-privater A/B-Fixture-Test bleiben offen.
 - **Latenz:** Deterministische Fälle liegen im Millisekundenbereich. Der Routing-Replay erreichte
   p95 24,125 s und maximal 42,068 s; separate generative Antwortpfade überschritten 100 s.
 - **Fallback-Telemetrie:** Fallback-Grund, Retrieval-Relevanz, Repair-Rate und p95/p99 müssen als
@@ -127,5 +128,6 @@ die oben aufgeführten Source-Checksummen maßgeblich.
 
 Der Kandidat ist implementiert, vollständig lokal getestet und auf einem isolierten
 Staging-Overlay replayed. Er ist **nicht** produktions-approved oder live deployed. Die richtige
-Reihenfolge bleibt: Human-Adjudikation, produktionsnaher Retrieval-/Latenz-Gate, frische
-SHA-gebundene Freigabe, regulärer Release-Pfad, anschließender Live-Smoke-Test.
+Reihenfolge bleibt: Human-Adjudikation, tenant-privater Isolationstest, Latenzannahme, frische
+SHA-gebundene Freigabe, regulärer Release-Pfad, anschließender Live-Smoke-Test. Der Retrieval-
+Deep-Dive ist unter `docs/audits/retrieval-realworld-eval-2026-07-23.md` dokumentiert.

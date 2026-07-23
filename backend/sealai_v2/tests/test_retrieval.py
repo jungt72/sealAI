@@ -113,6 +113,54 @@ def test_rwdr_case_keeps_seal_profile_when_nbr_is_also_named():
     }
 
 
+def test_focused_oring_failure_keeps_case_evidence_and_adds_profile():
+    res = asyncio.run(
+        _r().retrieve(
+            "NBR O-Ring ist der Witterung ausgesetzt und reißt. Was tun?",
+            tenant_id="t",
+            k=5,
+        )
+    )
+
+    card_ids = [fact.card_id for fact in res.grounding_facts]
+    assert "FK-NBR-OZON" in card_ids
+    assert "FK-ORING-ENGINEERING-PROFILE" in card_ids
+    assert card_ids.index("FK-NBR-OZON") < card_ids.index(
+        "FK-ORING-ENGINEERING-PROFILE"
+    )
+
+
+@pytest.mark.parametrize(
+    "query,expected_card",
+    [
+        (
+            "Der NBR-Ring draußen zeigt nach Sonne und Wetter feine Risse.",
+            "FK-NBR-OZON",
+        ),
+        (
+            "Kann ein Silikonring auf einer schnell rotierenden Welle laufen?",
+            "FK-VMQ-DYNAMISCH",
+        ),
+        (
+            "PTFE verliert nach langer Standzeit seine Vorspannung.",
+            "FK-PTFE-KALTFLUSS",
+        ),
+    ],
+)
+def test_controlled_engineering_concepts_generalize_beyond_eval_wording(
+    query, expected_card
+):
+    res = asyncio.run(_r().retrieve(query, tenant_id="t", k=5))
+    assert expected_card in {fact.card_id for fact in res.grounding_facts}
+
+
+def test_short_uv_abbreviation_does_not_match_inside_unrelated_suv_token():
+    res = asyncio.run(
+        _r().retrieve("O-Ring für ein SUV-Getriebe auswählen", tenant_id="t", k=5)
+    )
+    assert "FK-NBR-OZON" not in {fact.card_id for fact in res.grounding_facts}
+
+
 def test_schokolade_ruehrwerk_case_retrieves_food_and_seal_profiles():
     res = asyncio.run(
         _r().retrieve(

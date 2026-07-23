@@ -9,8 +9,9 @@ captured from temporary Git tree
 
 The engineering result is a **reviewable release candidate**. It is not production-approved:
 factual correctness and the human-final hard gates still require owner adjudication, the prior
-GATE-12 approval is expired and bound to older SHAs, and the production Qdrant retrieval path was
-not exercised by this isolated replay.
+GATE-12 approval is expired and bound to older SHAs. The production Qdrant retrieval path was not
+exercised by this isolated answer replay; it was subsequently measured read-only in the retrieval
+addendum below.
 
 ## Measured improvement
 
@@ -120,10 +121,22 @@ Before production promotion, the owner must:
 
 1. adjudicate factual correctness, walked-into-trap, invented-precision and confident-wrong fields
    in the exact human worksheet;
-2. run a production-like Qdrant retrieval evaluation with recall/facet coverage and tenant isolation;
+2. owner-ratify the draft retrieval truth mappings/facets and run a real cross-tenant fixture test;
 3. accept or close the observed long-tail generation/repair latency (routing p95 24.125 s and max
    42.068 s; separate answer paths exceeded 100 s);
 4. issue a fresh approval bound to the final committed source/tree and reviewed diff.
 
 Until those actions are complete, the correct status is **release candidate, not
 production-approved and not production-deployed**.
+
+## Retrieval closeout addendum — 2026-07-23
+
+The production-like read-only Qdrant + Postgres-ledger evaluation is complete. The original path
+measured Recall@1/3/5 = 0.389/0.556/0.556 and MRR 0.463. The hardened candidate measures
+0.667/0.944/1.000 and MRR 0.810, with zero misses at five, grounded-query rate 1.000 and retrieval
+p95 157.5 ms. Full evidence and source hashes are recorded in
+`docs/audits/retrieval-realworld-eval-2026-07-23.md`.
+
+This closes the ranking implementation gap, not the human release gate. The truth mapping is still
+draft, query-level facet truth is absent, and all 601 production Qdrant points are global (`sealai`),
+so a genuine tenant A/B private-card isolation test cannot be performed read-only on that collection.

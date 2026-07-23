@@ -108,8 +108,66 @@ def _quelle(card: Fachkarte, *, reviewed: bool) -> str:
     return f"Fachkarte {card.id} ({tag}; {', '.join(card.provenance)})"
 
 
-def _score(card: Fachkarte, query_lower: str) -> int:
-    return sum(1 for tok in card.scope_tokens() if tok in query_lower)
+_RETRIEVAL_CONCEPT_STEMS: dict[str, tuple[str, ...]] = {
+    "swelling": ("quell", "quill"),
+    "weather": (
+        "witter",
+        "wetter",
+        "sonne",
+        "uv",
+        "ozon",
+        "draussen",
+        "aussen",
+        "freiluft",
+    ),
+    "tear": ("reiss", "riss"),
+    "dynamic": ("drehzahl", "schnelldreh", "rotier", "dynam", "umlauf"),
+    "shaft_seal": (
+        "wellendicht",
+        "radialwellendicht",
+        "rwdr",
+        "dichtlippe",
+        "simmerring",
+    ),
+    "preload_loss": ("vorspann", "kaltfluss", "kriech"),
+}
+
+
+def _fold_retrieval_text(value: str) -> str:
+    return (
+        value.lower()
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+
+
+def _retrieval_concepts(value: str) -> frozenset[str]:
+    tokens = query_tokens(_fold_retrieval_text(value))
+
+    def token_matches_stem(token: str, stem: str) -> bool:
+        # Short engineering abbreviations such as UV must match a complete token. Treating them as
+        # arbitrary substrings creates unrelated hits (for example inside a longer product name).
+        if len(stem) <= 3:
+            return token == stem
+        return token == stem or token.startswith(stem) or stem in token
+
+    return frozenset(
+        concept
+        for concept, stems in _RETRIEVAL_CONCEPT_STEMS.items()
+        if any(token_matches_stem(token, stem) for token in tokens for stem in stems)
+    )
+
+
+def _score(card: Fachkarte, query: str) -> int:
+    query_lower = query.lower()
+    query_concepts = _retrieval_concepts(query)
+    return sum(
+        1
+        for tok in card.scope_tokens()
+        if tok in query_lower or bool(query_concepts & _retrieval_concepts(tok))
+    )
 
 
 def _ascii_fold(value: str) -> str:
@@ -241,7 +299,9 @@ def _is_material_overview(card: Fachkarte, query_lower: str) -> bool:
     )
 
 
-def _is_knowledge_overview(card: Fachkarte, query: str) -> bool:
+def _is_knowledge_overview(
+    card: Fachkarte, query: str, *, allow_case_subject_profile: bool = True
+) -> bool:
     """Single-subject overview recall for material, medium and seal-type cards.
 
     The old exception covered only a bare material ("Details zu PTFE"). A seal-type explanation
@@ -251,7 +311,7 @@ def _is_knowledge_overview(card: Fachkarte, query: str) -> bool:
     plan = build_knowledge_answer_plan(
         query,
         material_terms=tuple(card.scope.get("material", ())),
-        allow_case_subject_profile=True,
+        allow_case_subject_profile=allow_case_subject_profile,
     )
     if plan is None:
         return False
@@ -299,120 +359,10 @@ class InProcessRetriever:
     ) -> RetrievalResult:
         if not (tenant_id or "").strip():
             raise ValueError("tenant_id is mandatory (P0 repository-layer scope)")
-        q = (query or "").lower()
-        knowledge_turn = build_knowledge_answer_plan(
-            query,
-            material_terms=tuple(
-                dict.fromkeys(
-                    term
-                    for card in self._catalog.cards
-                    for term in card.scope.get("material", ())
-                )
-            ),
-            allow_case_subject_profile=True,
-        )
-        material_tokens = frozenset(
-            str(term).strip().lower()
-            for card in self._catalog.cards
-            for term in card.scope.get("material", ())
-            if str(term).strip()
-        )
-        candidates: list[tuple[int, int, bool, bool, Fachkarte]] = []
-        for card in self._catalog.cards:
-            scope_score = _score(card, q)
-            lexical_score = _reviewed_claim_overlap(
-                card, query, material_tokens=material_tokens
-            )
-            overview = _is_knowledge_overview(card, query)
-            specific_hit = bool(card.reviewed_claims()) and (
-                _specific_single_scope_hit(card, query)
-                or _is_medium_selection_method(card, query)
-            )
-            candidates.append(
-                (scope_score, lexical_score, overview, specific_hit, card)
-            )
-
-        # Relevance tiers are intentionally exclusive. Once an exact reviewed medium/application
-        # tag exists, weak prose overlap cannot add unrelated cards. Only when scope matching finds
-        # nothing do we use the strongest reviewed-claim overlap as a bounded fallback.
-        has_specific_hit = any(item[3] for item in candidates)
-        has_structural_hit = any(
-            (scope_score >= _MIN_SCOPE_HITS or overview)
-            and bool(card.reviewed_claims())
-            for scope_score, _lexical, overview, _specific, card in candidates
-        )
-        max_lexical = max((item[1] for item in candidates), default=0)
-        scored: list[tuple[int, Fachkarte]] = []
-        for scope_score, lexical_score, overview, specific_hit, card in candidates:
-            structural_hit = scope_score >= _MIN_SCOPE_HITS or overview
-            eligible = (
-                structural_hit
-                or (has_specific_hit and specific_hit)
-                or (
-                    has_specific_hit
-                    and card.subject_type == "medium"
-                    and max_lexical >= 2
-                    and lexical_score == max_lexical
-                    and bool(card.reviewed_claims())
-                )
-                or (
-                    not has_specific_hit
-                    and not has_structural_hit
-                    and max_lexical >= 2
-                    and lexical_score == max_lexical
-                    and bool(card.reviewed_claims())
-                )
-            )
-            if eligible:
-                scored.append((max(scope_score, lexical_score), card))
-        if (
-            knowledge_turn is not None
-            and knowledge_turn.subject_type == "material"
-            and knowledge_turn.subjects
-            and any(
-                _is_knowledge_overview(card, query) for _score_value, card in scored
-            )
-        ):
-            # Prefer cards whose identity names the requested material. Multi-material compatibility
-            # cards often list NBR/PTFE only as alternatives while their actual claim concerns EPDM
-            # or VMQ; card-level scope alone cannot prove which subject a claim predicates on.
-            subject_specific = [
-                item
-                for item in scored
-                if item[1].reviewed_claims()
-                and any(
-                    subject.lower() in item[1].id.lower()
-                    for subject in knowledge_turn.subjects
-                )
-            ]
-            covered_subjects = {
-                subject
-                for subject in knowledge_turn.subjects
-                if any(
-                    subject.lower() in card.id.lower()
-                    for _score_value, card in subject_specific
-                )
-            }
-            if covered_subjects == set(knowledge_turn.subjects):
-                scored = subject_specific
-        # On an explicit knowledge turn, reviewed subject profiles lead draft multi-subject cards;
-        # otherwise strongest scope match remains first. Ties are broken by claim severity, then id.
-        scored.sort(
-            key=lambda sc: (
-                -int(bool(sc[1].reviewed_claims())),
-                -int(
-                    knowledge_turn is not None
-                    and bool(sc[1].reviewed_claims())
-                    and _is_knowledge_overview(sc[1], query)
-                ),
-                -sc[0],
-                -_card_severity(sc[1]),
-                sc[1].id,
-            )
-        )
+        ranked_cards = ranked_lexical_cards(query, self._catalog)
         reviewed: list[GroundingFact] = []
         provisional: list[GroundingFact] = []
-        for _s, card in scored[: max(0, k)]:
+        for card in ranked_cards[: max(0, k)]:
             for claim_index, claim in enumerate(card.claims):
                 if claim.quarantined:
                     continue
@@ -430,3 +380,151 @@ class InProcessRetriever:
         return RetrievalResult(
             grounding_facts=tuple(reviewed), provisional=tuple(provisional)
         )
+
+
+def ranked_lexical_cards(
+    query: str, catalog: FachkartenCatalog | None = None
+) -> tuple[Fachkarte, ...]:
+    """Rank cards with reviewed scope/claim evidence, without returning unvalidated facts.
+
+    Qdrant uses only the resulting card identities as an additional candidate lane and still
+    revalidates every fetched claim through the Postgres ledger. Focused seal profiles are bounded
+    augmentation: they never create a structural hit that suppresses case-specific evidence.
+    """
+
+    source = catalog or load_fachkarten()
+    explicit_knowledge_turn = build_knowledge_answer_plan(
+        query,
+        material_terms=tuple(
+            dict.fromkeys(
+                term for card in source.cards for term in card.scope.get("material", ())
+            )
+        ),
+        allow_case_subject_profile=False,
+    )
+    case_profile_turn = None
+    if explicit_knowledge_turn is None:
+        case_profile_turn = build_knowledge_answer_plan(
+            query,
+            material_terms=tuple(
+                dict.fromkeys(
+                    term
+                    for card in source.cards
+                    for term in card.scope.get("material", ())
+                )
+            ),
+            allow_case_subject_profile=True,
+        )
+    material_tokens = frozenset(
+        str(term).strip().lower()
+        for card in source.cards
+        for term in card.scope.get("material", ())
+        if str(term).strip()
+    )
+    candidates: list[tuple[int, int, bool, bool, Fachkarte]] = []
+    for card in source.cards:
+        scope_score = _score(card, query)
+        lexical_score = _reviewed_claim_overlap(
+            card, query, material_tokens=material_tokens
+        )
+        overview = _is_knowledge_overview(card, query, allow_case_subject_profile=False)
+        specific_hit = bool(card.reviewed_claims()) and (
+            _specific_single_scope_hit(card, query)
+            or _is_medium_selection_method(card, query)
+        )
+        candidates.append((scope_score, lexical_score, overview, specific_hit, card))
+
+    # Relevance tiers are intentionally exclusive. Once an exact reviewed medium/application
+    # tag exists, weak prose overlap cannot add unrelated cards. Only when scope matching finds
+    # nothing do we use the strongest reviewed-claim overlap as a bounded fallback.
+    has_specific_hit = any(item[3] for item in candidates)
+    has_structural_hit = any(
+        (scope_score >= _MIN_SCOPE_HITS or overview) and bool(card.reviewed_claims())
+        for scope_score, _lexical, overview, _specific, card in candidates
+    )
+    max_lexical = max((item[1] for item in candidates), default=0)
+    scored: list[tuple[int, Fachkarte]] = []
+    for scope_score, lexical_score, overview, specific_hit, card in candidates:
+        structural_hit = scope_score >= _MIN_SCOPE_HITS or overview
+        eligible = (
+            structural_hit
+            or (has_specific_hit and specific_hit)
+            or (
+                has_specific_hit
+                and card.subject_type == "medium"
+                and max_lexical >= 2
+                and lexical_score == max_lexical
+                and bool(card.reviewed_claims())
+            )
+            or (
+                not has_specific_hit
+                and not has_structural_hit
+                and max_lexical >= 2
+                and lexical_score == max_lexical
+                and bool(card.reviewed_claims())
+            )
+        )
+        if eligible:
+            scored.append((max(scope_score, lexical_score), card))
+    if (
+        explicit_knowledge_turn is not None
+        and explicit_knowledge_turn.subject_type == "material"
+        and explicit_knowledge_turn.subjects
+        and any(
+            _is_knowledge_overview(card, query, allow_case_subject_profile=False)
+            for _score_value, card in scored
+        )
+    ):
+        # Prefer cards whose identity names the requested material. Multi-material compatibility
+        # cards often list NBR/PTFE only as alternatives while their actual claim concerns EPDM
+        # or VMQ; card-level scope alone cannot prove which subject a claim predicates on.
+        subject_specific = [
+            item
+            for item in scored
+            if item[1].reviewed_claims()
+            and any(
+                subject.lower() in item[1].id.lower()
+                for subject in explicit_knowledge_turn.subjects
+            )
+        ]
+        covered_subjects = {
+            subject
+            for subject in explicit_knowledge_turn.subjects
+            if any(
+                subject.lower() in card.id.lower()
+                for _score_value, card in subject_specific
+            )
+        }
+        if covered_subjects == set(explicit_knowledge_turn.subjects):
+            scored = subject_specific
+    # On an explicit knowledge turn, reviewed subject profiles lead draft multi-subject cards;
+    # otherwise strongest scope match remains first. Ties are broken by claim severity, then id.
+    scored.sort(
+        key=lambda sc: (
+            -int(bool(sc[1].reviewed_claims())),
+            -int(
+                explicit_knowledge_turn is not None
+                and bool(sc[1].reviewed_claims())
+                and _is_knowledge_overview(
+                    sc[1], query, allow_case_subject_profile=False
+                )
+            ),
+            -sc[0],
+            -_card_severity(sc[1]),
+            sc[1].id,
+        )
+    )
+    ranked = [card for _score_value, card in scored]
+    if case_profile_turn is not None and case_profile_turn.subject_type == "seal_type":
+        profiles = [
+            card
+            for card in source.cards
+            if card.reviewed_claims()
+            and card.subject_type == "seal_type"
+            and _is_knowledge_overview(card, query, allow_case_subject_profile=True)
+        ]
+        for profile in profiles[:1]:
+            if profile in ranked:
+                ranked.remove(profile)
+            ranked.insert(1 if ranked else 0, profile)
+    return tuple(ranked)

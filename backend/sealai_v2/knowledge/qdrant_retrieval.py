@@ -30,6 +30,7 @@ from sealai_v2.core.knowledge_answer import (
 )
 from sealai_v2.core.text_match import query_tokens, tag_matches
 from sealai_v2.knowledge.fachkarten import FachkartenCatalog, load_fachkarten
+from sealai_v2.knowledge.retrieval import ranked_lexical_cards
 
 if TYPE_CHECKING:
     from sealai_v2.config.settings import Settings
@@ -129,6 +130,65 @@ def _point_identity(point) -> tuple[str, str]:
         str(payload.get("card_id") or ""),
         str(payload.get("claim_text") or ""),
     )
+
+
+def _fuse_dense_and_lexical_points(
+    dense_points, lexical_points, lexical_card_ids: tuple[str, ...]
+):
+    """Fuse card ranks, then interleave claims so one verbose card cannot occupy the whole top-k.
+
+    The lexical lane contributes candidate identity/rank, never authoritative text. Its points are
+    fetched through the same tenant/global server-side filter as dense search and are revalidated by
+    the ledger after this function. RRF keeps the dense and lexical input scales separate and emits
+    one explicit RRF score scale for all fused candidates.
+    """
+
+    dense = list(dense_points)
+    lexical = list(lexical_points)
+    dense_card_ids: list[str] = []
+    for point in dense:
+        card_id = str(_payload(point).get("card_id") or "")
+        if card_id and card_id not in dense_card_ids:
+            dense_card_ids.append(card_id)
+    lexical_rank = {
+        card_id: index + 1 for index, card_id in enumerate(lexical_card_ids)
+    }
+    dense_rank = {card_id: index + 1 for index, card_id in enumerate(dense_card_ids)}
+    card_ids = tuple(dict.fromkeys((*lexical_card_ids, *dense_card_ids)))
+    if not card_ids:
+        return dense
+
+    def rrf(card_id: str) -> float:
+        return (1.0 / (60 + dense_rank[card_id]) if card_id in dense_rank else 0.0) + (
+            1.0 / (60 + lexical_rank[card_id]) if card_id in lexical_rank else 0.0
+        )
+
+    ordered_cards = sorted(
+        card_ids,
+        key=lambda card_id: (
+            -rrf(card_id),
+            dense_rank.get(card_id, 10**9),
+            lexical_rank.get(card_id, 10**9),
+            card_id,
+        ),
+    )
+    buckets: dict[str, list] = {card_id: [] for card_id in ordered_cards}
+    seen: set[tuple[str, str]] = set()
+    for point in (*dense, *lexical):
+        card_id = str(_payload(point).get("card_id") or "")
+        identity = _point_identity(point)
+        if card_id in buckets and identity not in seen:
+            buckets[card_id].append(point)
+            seen.add(identity)
+
+    fused = []
+    width = max((len(points) for points in buckets.values()), default=0)
+    for claim_rank in range(width):
+        for card_id in ordered_cards:
+            points = buckets[card_id]
+            if claim_rank < len(points):
+                fused.append(_ScoredPoint(_payload(points[claim_rank]), rrf(card_id)))
+    return fused
 
 
 def _scope_dim(point, dim: str) -> tuple[str, ...]:
@@ -623,6 +683,7 @@ class QdrantFachkartenRetriever:
         sparse_embedder=None,
         reranker=None,
         knowledge_ledger=None,
+        lexical_catalog: FachkartenCatalog | None = None,
     ) -> None:
         self._collection = settings.qdrant_collection
         self._client = client or _make_client(settings)
@@ -648,6 +709,7 @@ class QdrantFachkartenRetriever:
         # the pure Qdrant adapter as a hermetic retrieval-quality instrument, but
         # ``pipeline._build_retriever`` never enables Qdrant in production without it.
         self._knowledge_ledger = knowledge_ledger
+        self._lexical_catalog = lexical_catalog or load_fachkarten()
 
     async def retrieve(
         self, query: str, *, tenant_id: str, k: int = 5
@@ -715,6 +777,55 @@ class QdrantFachkartenRetriever:
             points = res.points
             min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE
 
+        lexical_card_ids = tuple(
+            card.id
+            for card in ranked_lexical_cards(query, self._lexical_catalog)[
+                : min(16, max(8, requested_limit))
+            ]
+        )
+        dense_card_ids = {str(_payload(point).get("card_id") or "") for point in points}
+        missing_lexical_ids = tuple(
+            card_id for card_id in lexical_card_ids if card_id not in dense_card_ids
+        )
+        lexical_points = []
+        lexical_fusion_ready = bool(lexical_card_ids)
+        if missing_lexical_ids:
+            try:
+                lexical_points, _next_offset = self._client.scroll(
+                    self._collection,
+                    scroll_filter=Filter(
+                        must=[
+                            FieldCondition(
+                                key="tenant_id",
+                                match=MatchAny(any=[tenant_id, GLOBAL_TENANT]),
+                            ),
+                            FieldCondition(
+                                key="card_id",
+                                match=MatchAny(any=list(missing_lexical_ids)),
+                            ),
+                        ]
+                    ),
+                    limit=256,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+            except Exception as exc:  # noqa: BLE001 — optional recall lane; dense path stays valid
+                lexical_fusion_ready = False
+                _log.warning(
+                    "qdrant lexical candidate augmentation failed (%s) → using dense/hybrid "
+                    "candidates for this turn",
+                    exc,
+                )
+        # Cross-lane agreement is itself rank evidence, even when every lexical card already exists
+        # in the dense pool. Therefore successful lexical ranking intentionally moves the complete
+        # candidate list onto one card-level RRF scale; only a failed augmentation keeps dense/hybrid
+        # ranking and its native threshold untouched.
+        if lexical_fusion_ready:
+            points = _fuse_dense_and_lexical_points(
+                points, lexical_points, lexical_card_ids
+            )
+            min_relative_score = _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID
+
         # Semantic ranking is intentionally broad, but a complete engineering overview must not lose
         # one required profile claim merely because that claim's wording is less similar to the short
         # user query. Augment explicit knowledge turns with the reviewed subject profile through exact
@@ -728,11 +839,19 @@ class QdrantFachkartenRetriever:
                 if value
             )
         )
-        overview_plan = build_knowledge_answer_plan(
+        explicit_overview_plan = build_knowledge_answer_plan(
             query,
             material_terms=material_terms,
-            allow_case_subject_profile=True,
+            allow_case_subject_profile=False,
         )
+        case_profile_plan = None
+        if explicit_overview_plan is None:
+            case_profile_plan = build_knowledge_answer_plan(
+                query,
+                material_terms=material_terms,
+                allow_case_subject_profile=True,
+            )
+        overview_plan = explicit_overview_plan or case_profile_plan
         profile_must = None
         if overview_plan is not None and overview_plan.subject_type in {
             "material",
@@ -765,18 +884,29 @@ class QdrantFachkartenRetriever:
                 profile_must = None
 
         if profile_must is not None:
-            profile_points, _next_offset = self._client.scroll(
-                self._collection,
-                scroll_filter=Filter(must=profile_must),
-                limit=128,
-                with_payload=True,
-                with_vectors=False,
-            )
+            try:
+                profile_points, _next_offset = self._client.scroll(
+                    self._collection,
+                    scroll_filter=Filter(must=profile_must),
+                    limit=128,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+            except Exception as exc:  # noqa: BLE001 — optional completeness augmentation
+                profile_points = []
+                _log.warning(
+                    "qdrant subject-profile augmentation failed (%s) → using ranked candidates "
+                    "for this turn",
+                    exc,
+                )
             seen = {_point_identity(point) for point in points}
             for point in profile_points:
                 identity = _point_identity(point)
                 if identity not in seen:
-                    points.append(point)
+                    # Profile scroll has no similarity score. Zero is explicit and safe on either
+                    # dense or RRF scale: profile completeness selection below is facet/subject based,
+                    # while ordinary score-bounded backfill must not treat it as a close-ranked hit.
+                    points.append(_ScoredPoint(_payload(point), 0.0))
                     seen.add(identity)
 
         if self._knowledge_ledger is not None:
@@ -799,11 +929,25 @@ class QdrantFachkartenRetriever:
         # slice, leaving the untouched tail on the old scale, so comparing a post-rerank top_score
         # against a pre-rerank tail score would silently mix two incompatible scales (same incident).
         overview_selected = _select_knowledge_overview(
-            points, k, query, allow_case_subject_profile=True
+            points, k, query, allow_case_subject_profile=False
         )
         selected = overview_selected or _select_points_with_reviewed_backfill(
             points, k, query, min_relative_score=min_relative_score
         )
+
+        if case_profile_plan is not None:
+            profile_selected = (
+                _select_knowledge_overview(
+                    points, min(2, max(0, k)), query, allow_case_subject_profile=True
+                )
+                or []
+            )
+            selected_identities = {_point_identity(point) for point in selected}
+            for point in profile_selected:
+                identity = _point_identity(point)
+                if identity not in selected_identities:
+                    selected.append(point)
+                    selected_identities.add(identity)
 
         # Rerank is a pure ORDERING refinement over the already-selected small set (top-k + backfill,
         # never more than k + _REVIEWED_BACKFILL_MAX_FACTS), not a pre-filter over the wide candidate
