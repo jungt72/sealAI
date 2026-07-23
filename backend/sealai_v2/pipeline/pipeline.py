@@ -22,11 +22,17 @@ from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projecti
 from sealai_v2.pipeline.routing import (
     RouteDecision,
     RouteName,
+    calculation_relevant_for_response,
     classify_route,
     classify_route_deterministic,
+    is_adjacent_out_of_scope_request,
     is_explicit_knowledge_overview,
+    requests_case_guidance,
     resolve_comparison_followup,
+    resolve_calculation_followup,
     requests_calculation,
+    requests_general_material_orientation,
+    requests_solution,
 )
 from sealai_v2.orchestration.execution_policy import (
     ExecutionClass,
@@ -95,6 +101,12 @@ from sealai_v2.core.contracts import (
     VerifierVerdict,
 )
 from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.core.communication_plan import (
+    build_communication_plan,
+    enforce_communication,
+    evaluate_communication,
+    render_case_clarification,
+)
 from sealai_v2.core.l3_verifier import L3Verifier, run_parametric_guard
 from sealai_v2.core.medium_extract import extract_medium_facts
 from sealai_v2.core.medium_research import MediumIntelligence, MediumResearcher
@@ -102,7 +114,11 @@ from sealai_v2.core.seal_type_extract import extract_seal_type_facts
 from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContextService
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
-from sealai_v2.knowledge.archetypes import load_archetypes
+from sealai_v2.knowledge.archetypes import (
+    exact_reviewed_archetype as _exact_reviewed_archetype,
+    load_archetypes,
+    reviewed_archetype_grounding_facts as _reviewed_archetype_grounding_facts,
+)
 from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
@@ -155,6 +171,192 @@ _KNOWLEDGE_ROUTES = frozenset(
         RouteName.MATERIAL_COMPARISON,
     }
 )
+
+
+def _reviewed_archetype_retrieval_query(
+    question: str, archetypes: object | None
+) -> str:
+    """Expand L2 recall from an exact reviewed application profile, never from model intent.
+
+    The reviewed profile's existing ``bauformen`` vocabulary is appended only to the retriever
+    query.  The user's question remains the generator input, and the expansion itself is not an
+    answer fact or a selection decision.
+    """
+
+    profile = _exact_reviewed_archetype(question, archetypes)
+    if profile is None or not requests_solution(question):
+        return question
+    additions = [
+        str(value).strip()
+        for value in profile.typische_eignungen.get("bauformen", ())
+        if str(value).strip()
+    ]
+    if not additions:
+        return question
+    return question + "\n" + " ".join(dict.fromkeys(additions))
+
+
+def _archetype_question_already_answered(
+    candidate: str,
+    *,
+    current_question: str,
+    case_state: CaseStateV2,
+) -> bool:
+    """Skip reviewed interview questions whose requested facts are already present."""
+
+    prompt = candidate.casefold()
+    known = " ".join(
+        [
+            current_question,
+            *(
+                f"{field.key} {field.value or ''}"
+                for field in case_state.fields
+                if field.value
+            ),
+        ]
+    ).casefold()
+    checks: list[bool] = []
+    if re.search(r"\b(?:prozessmedium|medium|[oö]l)\b", prompt):
+        checks.append(
+            bool(extract_medium_facts(known))
+            or bool(
+                re.search(
+                    r"\b(?:wasser|luft|gas|produkt|prozessfl[uü]ssigkeit)\b",
+                    known,
+                )
+            )
+        )
+    if "temperatur" in prompt:
+        checks.append(
+            bool(
+                re.search(r"\b-?\d+(?:[.,]\d+)?\s*°?\s*c\b", known)
+                or re.search(r"\btemperatur\s+\S+", known)
+            )
+        )
+    if re.search(r"\b(?:druck|vakuum)\b", prompt):
+        checks.append(
+            bool(
+                re.search(r"\b\d+(?:[.,]\d+)?\s*bar\b", known)
+                or re.search(r"\b(?:vakuum|unterdruck|drucklos)\b", known)
+            )
+        )
+    if re.search(r"\b(?:additiv|spezifikation)\w*\b", prompt):
+        checks.append(
+            bool(re.search(r"\b(?:additiv|ep/aw|spezifikation)\w*\b", known))
+        )
+    if "konzentration" in prompt:
+        checks.append(
+            bool(
+                re.search(r"\b\d+(?:[.,]\d+)?\s*%", known)
+                or re.search(r"\b(?:rein(?:es)?|wasser)\b", known)
+            )
+        )
+    return bool(checks) and all(checks)
+
+
+def _requested_calculation_missing_fields(
+    question: str, calc: CalcResult
+) -> tuple[str, ...]:
+    """Project kernel input names for the requested quantity onto user-facing case fields."""
+
+    normalized = (question or "").casefold()
+    target_ids: tuple[str, ...]
+    if "umfangsgeschwindigkeit" in normalized or "schnelldrehend" in normalized:
+        target_ids = ("umfangsgeschwindigkeit",)
+    elif re.search(r"\bpv(?:-wert| wert|-relevant| relevant)?\b", normalized):
+        target_ids = ("pv_wert",)
+    else:
+        target_ids = ()
+    input_fields = {
+        "d1_mm": "Wellendurchmesser",
+        "rpm": "Drehzahl",
+        "p_bar": "Druck",
+        "v_m_s": "Geschwindigkeit",
+    }
+    missing: list[str] = []
+    for item in calc.not_computed:
+        if target_ids and item.calc_id not in target_ids:
+            continue
+        for input_name, field_name in input_fields.items():
+            if re.search(
+                rf"(?<![a-z0-9_]){re.escape(input_name)}(?![a-z0-9_])", item.reason
+            ):
+                missing.append(field_name)
+    return tuple(dict.fromkeys(missing))
+
+
+def _qualify_missing_calculation_units(
+    fields: tuple[str, ...], case_facts: tuple[object, ...], question: str = ""
+) -> tuple[str, ...]:
+    """Ask for a missing unit instead of re-asking a numeric value already in case state."""
+
+    values = {
+        str(getattr(fact, "feld", "")): str(getattr(fact, "wert", ""))
+        for fact in case_facts
+        if str(getattr(fact, "feld", "")) and str(getattr(fact, "wert", ""))
+    }
+    qualified: list[str] = []
+    for field_label in fields:
+        if field_label == "Drehzahl":
+            value = values.get("drehzahl", "")
+            current_without_typed_values = re.sub(
+                r"(?<!\w)[+-]?\d+(?:[.,]\d+)?\s*"
+                r"(?:mm|cm|m|bar|mpa|pa|°\s*c|grad\s*c|u\s*/\s*min|rpm|1\s*/\s*min)\b",
+                "",
+                question,
+                flags=re.IGNORECASE,
+            )
+            has_unitless_candidate = bool(
+                re.search(r"\d", current_without_typed_values)
+            )
+            if (re.search(r"\d", value) or has_unitless_candidate) and not re.search(
+                r"\b(?:u\s*/\s*min|1\s*/\s*min|rpm|min\s*[-^]?1)\b",
+                value,
+                re.IGNORECASE,
+            ):
+                qualified.append("Einheit der Drehzahl")
+                continue
+        if field_label == "Wellendurchmesser":
+            value = values.get("wellendurchmesser", "")
+            if re.search(r"\d", value) and not re.search(
+                r"\b(?:mm|cm|m)\b", value, re.IGNORECASE
+            ):
+                qualified.append("Einheit des Wellendurchmessers")
+                continue
+        qualified.append(field_label)
+    return tuple(dict.fromkeys(qualified))
+
+
+def _case_bound_retrieval_query(question: str, case_facts: tuple[object, ...]) -> str:
+    """Bind solution retrieval to typed, user-authored case facts without raw transcript replay."""
+
+    allowed = {
+        "dichtungstyp",
+        "anwendungsziel",
+        "anwendung",
+        "medium",
+        "medium_kategorie",
+        "temperatur",
+        "betriebstemperatur",
+        "druck",
+        "wellendurchmesser",
+        "drehzahl",
+        "werkstoff",
+    }
+    context: list[str] = []
+    for fact in case_facts:
+        key = str(getattr(fact, "feld", "")).strip()
+        value = str(getattr(fact, "wert", "")).strip()
+        if key not in allowed or not value:
+            continue
+        context.append(f"{key}: {value[:160]}")
+    if not context:
+        return question
+    return (
+        question
+        + "\nVerbindlicher Fallkontext aus Nutzereingaben: "
+        + "; ".join(context)
+    )
 
 
 class ProductModeUnavailable(RuntimeError):
@@ -284,12 +486,30 @@ _EXFIL_REQUEST_REFUSAL_TEXT = (
     "Interne Systemanweisungen, Prompts und vertrauliche Wissensbasis-Inhalte gebe ich nicht aus. "
     "Bei einer konkreten Frage zur Dichtungstechnik helfe ich dir gern fachlich weiter."
 )
+_CROSS_TENANT_REQUEST_REFUSAL_TEXT = (
+    "Ich habe keinen Zugriff auf Fälle, Gespräche oder Werkstoffdaten anderer Nutzer oder "
+    "Mandanten und gebe solche Informationen nicht aus. Ich spekuliere darüber auch nicht. "
+    "Wenn du mir deinen eigenen Dichtungsfall beschreibst, helfe ich dir gern fachlich weiter."
+)
 _EXFIL_REQUEST_RE = re.compile(
     r"\b(?:system[- ]?prompt|systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|"
     r"wissensbasis)\b.*\b(?:aus(?:geben|gabe)|zeig(?:en|e)?|nenn(?:en|e)?|"
     r"w[oö]rtlich|vollst[aä]ndig|verrat(?:en|e)?|offenleg(?:en|e)?)\b|"
     r"\b(?:gib|zeige?|nenne?|verrate?|offenlege?)\b.*\b(?:system[- ]?prompt|"
     r"systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|wissensbasis)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_CROSS_TENANT_REQUEST_RE = re.compile(
+    # Direct ownership: "Fälle/Daten anderer Mandanten" (not: "was empfehlen andere Kunden?").
+    r"\b(?:f[aä]ll\w*|gespr[aä]ch\w*|daten\w*|frage\w*)\s+"
+    r"(?:anderer|fremder)\s+(?:nutzer|anwender|kunden|mandanten)\b|"
+    # Direct history question: "Was haben andere Nutzer heute gefragt/besprochen?"
+    r"\bwas\s+haben\s+(?:andere|fremde)\s+(?:nutzer|anwender|kunden|mandanten)\b"
+    r".{0,100}\b(?:gefragt|besprochen|angegeben)\b|"
+    # Referenced group followed by an explicit disclosure command: "andere Nutzer ... zeig deren Fälle".
+    r"\b(?:andere|fremde)\s+(?:nutzer|anwender|kunden|mandanten)\b.{0,220}"
+    r"\b(?:zeig\w*|gib\w*|nenn\w*|list\w*|offenleg\w*|verrat\w*)\b.{0,120}"
+    r"\b(?:deren|ihre|f[aä]ll\w*|gespr[aä]ch\w*|daten\w*|frage\w*|werkstoff\w*)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _DECODE_REQUEST_RE = re.compile(
@@ -433,6 +653,12 @@ def _explicit_exfil_request_guard(question: str, answer: Answer) -> Answer:
     The leak detector remains the final content-based backstop. This intent-shaped guard closes the
     UX gap where a model safely avoided disclosure but failed to state a clear refusal.
     """
+    if _CROSS_TENANT_REQUEST_RE.search(question or ""):
+        return Answer(
+            text=_CROSS_TENANT_REQUEST_REFUSAL_TEXT,
+            model=_EXFIL_REQUEST_GUARD_MODEL,
+            grounding_facts=answer.grounding_facts,
+        )
     if not _EXFIL_REQUEST_RE.search(question or ""):
         return answer
     return Answer(
@@ -653,13 +879,9 @@ class Pipeline:
     # constructed in build_pipeline() when settings.route_prompt_families_enabled is True.
     route_prompt_families_enabled: bool = False
     smalltalk_generator: "SmalltalkGenerator | None" = None
-    # 2026-07-19 (case-intake fix): the sibling of smalltalk_generator for RouteName.
-    # CASE_INTAKE_INVITE — SAME SmalltalkGenerator class (it only ever needs an assembler with a
-    # zero-argument system_prompt() and a bare question), just constructed with
-    # CaseIntakeNavigationPromptAssembler instead. None (default) -> nothing to branch to, so
-    # route_prompt_families_enabled being True with no generator wired is still a safe no-op (the
-    # pipeline falls through to the unchanged full L1 generator, see run()). Only constructed in
-    # build_pipeline() when settings.route_prompt_families_enabled is True.
+    # Legacy route-optimization sibling of smalltalk_generator. The execution-policy path renders
+    # CASE_INTAKE_INVITE deterministically and therefore never constructs or calls this model-backed
+    # generator; it exists only for replaying the older policy-disabled route family.
     case_intake_generator: "SmalltalkGenerator | None" = None
     # Phase 3A (live token streaming): flag-gate for streaming the compact smalltalk answer
     # token-by-token. False (default) -> the streaming branch in run() is unreachable and the
@@ -761,6 +983,9 @@ class Pipeline:
             and not comparison_followup.needs_clarification
             else question
         )
+        calculation_followup = resolve_calculation_followup(question, mem.window)
+        if comparison_followup is None and calculation_followup is not None:
+            knowledge_question = calculation_followup
         effective_case_id = (
             session.session_id if session is not None else f"turn-{timer.turn_id}"
         )
@@ -978,6 +1203,7 @@ class Pipeline:
                 and self.semantic_router is not None
                 and policy_route_decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
                 and policy_route_decision.deterministic_signal_count == 0
+                and not is_adjacent_out_of_scope_request(knowledge_question)
                 and not risk_flags
                 and not untrusted
             ):
@@ -986,6 +1212,9 @@ class Pipeline:
                         knowledge_question,
                         fallback=policy_route_decision,
                         case_active=case_active,
+                        case_fields=tuple(field.key for field in case_state_v2.fields),
+                        required_missing=case_state_v2.required_missing,
+                        material_terms=self.knowledge_material_terms,
                     )
             # The semantic router can recognise comparison paraphrases that no
             # finite phrase list covers.  It still cannot authorize an answer:
@@ -1041,13 +1270,52 @@ class Pipeline:
             and activation_route_decision.route in _KNOWLEDGE_ROUTES
         ):
             raise ProductModeUnavailable("knowledge", "pilot_not_activated")
+        calculation_requested = bool(
+            self.execution_policy_enabled and requests_calculation(knowledge_question)
+        )
+        solution_requested = bool(
+            self.execution_policy_enabled and requests_solution(question)
+        )
+        contextual_retrieval_question = (
+            _case_bound_retrieval_query(knowledge_question, mem.case_state)
+            if case_active
+            and activation_route_decision.route
+            in {RouteName.ENGINEERING_CASE, RouteName.LEAKAGE_TROUBLESHOOTING}
+            else knowledge_question
+        )
+        retrieval_question = (
+            _reviewed_archetype_retrieval_query(
+                contextual_retrieval_question, self.archetypes
+            )
+            if solution_requested
+            else contextual_retrieval_question
+        )
+        case_guidance_fallback_fields: tuple[str, ...] = ()
+        if (
+            case_active
+            and requests_case_guidance(question)
+            and not (context_clarification or case_state_v2.required_missing)
+        ):
+            known_field_keys = {field.key for field in case_state_v2.fields}
+            case_guidance_fallback_fields = (
+                (
+                    "Nächster Auswertungsschritt"
+                    if "dichtungstyp" in known_field_keys
+                    else "Dichtungstyp oder Dichtstelle"
+                ),
+            )
         early_clarification = bool(
             context_clarification
             or (
                 policy_route_decision is not None
                 and policy_route_decision.forced_full_pipeline
                 and case_state_v2.required_missing
+                and not calculation_requested
+                and not solution_requested
             )
+            or activation_route_decision.route
+            in {RouteName.SMALLTALK_NAVIGATION, RouteName.CASE_INTAKE_INVITE}
+            or case_guidance_fallback_fields
         )
         cache_key: str | None = None
         cached_answer: Answer | None = None
@@ -1122,13 +1390,13 @@ class Pipeline:
                 from sealai_v2.core.knowledge_answer import knowledge_retrieval_limit
 
                 retrieval_k = knowledge_retrieval_limit(
-                    knowledge_question, material_terms=self.knowledge_material_terms
+                    retrieval_question, material_terms=self.knowledge_material_terms
                 )
                 with _staged(timer, progress, "ground_ms", "ground"):
                     retrieval = await stages.ground(
                         self.retriever,
                         (self.matrix if governed_matrix_grounding_allowed else None),
-                        knowledge_question,
+                        retrieval_question,
                         tenant_id=scope.tenant_id,
                         case_facts=mem.case_state,
                         k=retrieval_k,
@@ -1142,16 +1410,26 @@ class Pipeline:
             # 503 boundary (pilot disabled).
             # Gap #2 (Step A): the §4 matrix verdicts join the Fachkarten as belegte Fakten for L1 only
             # (their own channel; L3 wiring is Step B). Empty → byte-identical no-matrix prompt.
-            trap_facts = retrieve_reviewed_trap_facts(self.catalog, knowledge_question)
+            trap_facts = retrieve_reviewed_trap_facts(self.catalog, retrieval_question)
             governed_matrix_facts = (
                 retrieval.matrix_facts if governed_matrix_grounding_allowed else ()
             )
-            l1_grounding = grounding_facts + governed_matrix_facts + trap_facts
+            reviewed_archetype_facts = (
+                _reviewed_archetype_grounding_facts(question, self.archetypes)
+                if self.execution_policy_enabled
+                else ()
+            )
+            l1_grounding = (
+                grounding_facts
+                + governed_matrix_facts
+                + trap_facts
+                + reviewed_archetype_facts
+            )
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
             inline_facts = extract_inline(question)
-            if self.baseline_hardening_enabled:
+            if self.baseline_hardening_enabled or self.execution_policy_enabled:
                 # INC-BASELINE-HARDENING: Welle = d1 bei RWDR — derive the shaft Ø from a bare
                 # designation ("RWDR 40x62x8") so the Umfangsgeschwindigkeit kern can fire even
                 # without an explicit "40 mm". A TYPED shaft Ø still wins over the derived one
@@ -1165,6 +1443,23 @@ class Pipeline:
             for key, value in (params or {}).items():
                 merged_params[key] = value
                 param_origins[key] = "Parameter (explizit übergeben)"
+            calculation_relevant = calculation_relevant_for_response(
+                knowledge_question,
+                has_kernel_inputs={"d1_mm", "rpm"}.issubset(merged_params),
+                material_terms=self.knowledge_material_terms,
+            )
+            if not calculation_relevant:
+                trap_facts = tuple(
+                    fact
+                    for fact in trap_facts
+                    if fact.card_id != "CALC-UMFANGSGESCHWINDIGKEIT"
+                )
+                l1_grounding = (
+                    grounding_facts
+                    + governed_matrix_facts
+                    + trap_facts
+                    + reviewed_archetype_facts
+                )
             # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
             # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
             if early_clarification or cached_answer is not None:
@@ -1192,7 +1487,10 @@ class Pipeline:
             # reviewed profile's interview questions + blind spots as advisory L1 context.
             if understand_task is not None:
                 understanding = await understand_task
-            archetype_context = self._archetype_context(understanding)
+            archetype_context = self._archetype_context(
+                understanding,
+                question=(question if self.execution_policy_enabled else None),
+            )
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
 
@@ -1333,18 +1631,12 @@ class Pipeline:
             # prompt has no business discussing kernel/calc topics — feeding it the real calc (esp. its
             # `not_computed` entries) is what caused the off-topic "Umfangsgeschwindigkeit nicht
             # berechenbar" tangent on a conceptual question. Suppress ONLY the L1 PROMPT input to an
-            # empty CalcResult() here; every OTHER consumer below keeps the real `calc` untouched —
-            # build_guard_contract(calc=calc), stages.verify(computed_values=calc.computed, ...), and
-            # the PipelineResult's computed/not_computed all still reflect the real calc for
-            # transparency/telemetry/L3. Flag OFF (default) or no route decision -> l1_calc IS calc
-            # -> byte-identical to today; and it can only ever REMOVE calc from a kernel=False route's
-            # prompt, never change any kernel=True route's prompt.
+            # empty CalcResult() here. Under the execution policy the same answer-relevance boundary
+            # also feeds the guard/verifier below; the full result remains on PipelineResult as
+            # telemetry, but an unsolicited number cannot become authorized merely because the
+            # kernel was able to compute it.
             l1_calc = calc
-            if (
-                self.execution_policy_enabled
-                and not calc.computed
-                and not requests_calculation(question)
-            ):
+            if self.execution_policy_enabled and not calculation_relevant:
                 l1_calc = CalcResult()
             if (
                 self.suppress_calc_for_non_kernel_routes_enabled
@@ -1402,7 +1694,9 @@ class Pipeline:
             ):
                 from sealai_v2.core.response_contract import build_guard_contract
 
-                _gc = build_guard_contract(grounding_facts=l1_grounding, calc=calc)
+                _gc = build_guard_contract(
+                    grounding_facts=l1_grounding, calc=l1_calc
+                )
                 guard_contract = _gc.to_dict() if _gc is not None else None
 
             execution_decision: ExecutionDecision | None = None
@@ -1420,11 +1714,38 @@ class Pipeline:
                 # Treating that generic list as intake requirements made valid grounded questions
                 # stop at D1 (for example, asking about FKM in steam requested shaft diameter and
                 # O-ring groove depth). Calculation transparency remains in ``calc.not_computed``.
-                policy_missing_fields = (
+                communication_missing_fields = (
                     ("zwei eindeutig benannte Vergleichsgegenstände",)
                     if context_clarification
-                    else case_state_v2.required_missing
+                    else (
+                        case_state_v2.required_missing or case_guidance_fallback_fields
+                    )
                 )
+                policy_missing_fields = communication_missing_fields
+                if solution_requested:
+                    # A direct solution request is answered to the grounded depth available now;
+                    # remaining case needs guide at most one follow-up instead of blocking the turn.
+                    policy_missing_fields = ()
+                    communication_missing_fields = tuple(
+                        field
+                        for field in communication_missing_fields
+                        if field != "Anwendungsziel"
+                    )
+                if calculation_requested:
+                    calculation_missing = _requested_calculation_missing_fields(
+                        knowledge_question, calc
+                    )
+                    calculation_missing = _qualify_missing_calculation_units(
+                        calculation_missing, mem.case_state, question
+                    )
+                    if calc.computed:
+                        policy_missing_fields = ()
+                        communication_missing_fields = ()
+                    else:
+                        policy_missing_fields = (
+                            calculation_missing or communication_missing_fields
+                        )
+                        communication_missing_fields = policy_missing_fields
                 source_ids = {
                     source for fact in l1_grounding for source in fact.sources if source
                 }
@@ -1439,7 +1760,7 @@ class Pipeline:
                         ),
                         provisional_evidence_count=len(retrieval.provisional),
                         document_count=len(source_ids),
-                        tool_step_count=len(calc.computed),
+                        tool_step_count=len(l1_calc.computed),
                         case_conflict_count=len(case_state_v2.open_conflicts),
                         required_missing=policy_missing_fields,
                         contract_status=(
@@ -1453,6 +1774,9 @@ class Pipeline:
                         reviewed_policy_fact_count=sum(
                             fact.kind == "trap" for fact in l1_grounding
                         ),
+                        calculation_requested=calculation_requested,
+                        calculation_computed_count=len(l1_calc.computed),
+                        solution_requested=solution_requested,
                     )
                 )
                 if execution_decision.model_tier is ModelTier.NONE:
@@ -1506,6 +1830,62 @@ class Pipeline:
                     ),
                 )
                 knowledge_answer_plan = _kap.to_dict() if _kap is not None else None
+            _communication_plan = build_communication_plan(
+                question=question,
+                route_name=(
+                    route_decision.route.value
+                    if route_decision is not None
+                    else RouteName.UNSUPPORTED_OR_AMBIGUOUS.value
+                ),
+                case_fields=tuple(field.key for field in case_state_v2.fields),
+                missing_fields=(
+                    communication_missing_fields
+                    if self.execution_policy_enabled
+                    else policy_missing_fields
+                ),
+                conflicts=policy_conflicts,
+                solution_requested=solution_requested,
+            )
+            communication_plan = _communication_plan.to_dict()
+            communication_plan["general_material_orientation"] = (
+                requests_general_material_orientation(knowledge_question)
+                and not calculation_requested
+            )
+            if archetype_context:
+                # An exact owner-reviewed application profile should lead the next question as
+                # well as the evidence.  Reusing its first reviewed interview question prevents a
+                # generic case-state field (often pressure) from displacing the machine-specific
+                # discriminator (for example process medium on a mixer or oil/additives on a
+                # gearbox).  This changes presentation only; the profile remains incapable of
+                # routing or authorising a claim.
+                archetype_questions = tuple(
+                    str(item).strip()
+                    for item in archetype_context.get("interview_fragen", ())
+                    if str(item).strip()
+                )
+                next_archetype_question = next(
+                    (
+                        candidate
+                        for candidate in archetype_questions
+                        if not _archetype_question_already_answered(
+                            candidate,
+                            current_question=question,
+                            case_state=case_state_v2,
+                        )
+                    ),
+                    "",
+                )
+                if next_archetype_question:
+                    communication_plan["next_question"] = next_archetype_question
+                    communication_plan["question_reason"] = (
+                        "Diese Angabe trennt im erkannten Anwendungstyp zuerst die technisch "
+                        "relevanten Lösungswege."
+                    )
+            if _communication_plan.goal == "clarify_under_specified_case":
+                # A bare application noun contains too little information for a sourced engineering
+                # answer.  Use the governed, one-question clarification verbatim: this avoids both
+                # an arbitrary seal-type guess and an LLM-generated catalogue of intake fields.
+                context_clarification = render_case_clarification(_communication_plan)
             require_evidence_for_all_claims = bool(
                 route_decision is not None
                 and route_decision.route
@@ -1516,14 +1896,24 @@ class Pipeline:
             compact_technical_answer = bool(
                 require_evidence_for_all_claims
                 and route_decision is not None
-                and route_decision.route is RouteName.ENGINEERING_CASE
-                and calc.computed
+                and (
+                    _communication_plan.goal == "orient_material_selection"
+                    or (
+                        route_decision.route is RouteName.ENGINEERING_CASE
+                        and l1_calc.computed
+                    )
+                    or route_decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
+                )
             )
             work_solution_candidate = bool(
                 require_evidence_for_all_claims
-                and "lösung" in question.lower()
+                and solution_requested
                 and any(
-                    fact.card_id == "FK-GLRD-ENGINEERING-PROFILE"
+                    fact.card_id
+                    in {
+                        "FK-GLRD-ENGINEERING-PROFILE",
+                        "FK-RWDR-ENGINEERING-PROFILE",
+                    }
                     for fact in l1_grounding
                 )
             )
@@ -1558,8 +1948,11 @@ class Pipeline:
                         text=context_clarification
                         or deterministic_response(
                             execution_decision,
+                            question=question,
                             missing_fields=policy_missing_fields,
                             conflicts=policy_conflicts,
+                            calc=l1_calc,
+                            case_active=case_active,
                         ),
                         model="deterministic-policy",
                         grounding_facts=l1_grounding,
@@ -1620,6 +2013,7 @@ class Pipeline:
                         baseline_hardening=self.baseline_hardening_enabled,  # False → byte-identical
                         material_params=material_params,  # None → byte-identical no-table
                         knowledge_answer_plan=knowledge_answer_plan,
+                        communication_plan=communication_plan,
                         require_evidence_for_all_claims=require_evidence_for_all_claims,
                         compact_technical_answer=compact_technical_answer,
                         work_solution_candidate=work_solution_candidate,
@@ -1627,6 +2021,11 @@ class Pipeline:
                             list(risk_flags) if self.risk_flag_prompt_enabled else None
                         ),  # None → byte-identical
                         case_revision=case_state_v2.revision,
+                        evidence_query=(
+                            contextual_retrieval_question
+                            if contextual_retrieval_question != knowledge_question
+                            else None
+                        ),
                     )
             draft = (
                 answer  # first-pass L1 draft, captured before L3 may correct/hedge it
@@ -1707,6 +2106,7 @@ class Pipeline:
                             baseline_hardening=self.baseline_hardening_enabled,
                             material_params=material_params,
                             knowledge_answer_plan=knowledge_answer_plan,
+                            communication_plan=communication_plan,
                             require_evidence_for_all_claims=require_evidence_for_all_claims,
                             compact_technical_answer=compact_technical_answer,
                             work_solution_candidate=work_solution_candidate,
@@ -1769,12 +2169,14 @@ class Pipeline:
                         knowledge_question,
                         answer,
                         flags=flags,
-                        grounding_facts=grounding_facts,
-                        computed_values=calc.computed,
-                        not_computed=calc.not_computed,
+                        grounding_facts=(
+                            grounding_facts + reviewed_archetype_facts
+                        ),
+                        computed_values=l1_calc.computed,
+                        not_computed=l1_calc.not_computed,
                         matrix_facts=governed_matrix_facts,
                         # OPTIMIZE_BACKLOG #5: full draft context → topic-scoped correction + non-degraded regen
-                        calc=calc,
+                        calc=l1_calc,
                         case_context=case_context or None,
                         durable_context=durable_context or None,
                         conversation_window=conversation_window or None,
@@ -1790,8 +2192,8 @@ class Pipeline:
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = run_parametric_guard(
                         answer,
-                        computed_values=calc.computed,
-                        not_computed=calc.not_computed,
+                        computed_values=l1_calc.computed,
+                        not_computed=l1_calc.not_computed,
                         comparison_context=bool(decode_result),
                     )
 
@@ -1923,6 +2325,36 @@ class Pipeline:
 
             with _staged(timer, progress, "cite_ms", "cite"):
                 answer = await stages.cite(answer)  # stub → unchanged
+
+            # Communication is a governed delivery contract just like claim/evidence boundaries.
+            # Static intake and D1 renderers are already fail-closed; model-generated routes are
+            # checked here after every answer mutation so violations describe the exact payload that
+            # will ship.  The check never weakens or rewrites technical content.
+            _communication_verdict = evaluate_communication(
+                answer.text, _communication_plan
+            )
+            if not _communication_verdict.passed:
+                _log.warning(
+                    "GOVERNANCE communication_guard_repair route=%s violations=%s",
+                    route_decision.route.value
+                    if route_decision is not None
+                    else "none",
+                    list(_communication_verdict.violations),
+                )
+                answer = replace(
+                    answer,
+                    text=enforce_communication(answer.text, _communication_plan),
+                )
+                _repaired_verdict = evaluate_communication(
+                    answer.text, _communication_plan
+                )
+                if (
+                    not _repaired_verdict.passed
+                ):  # defensive invariant of the pure repair
+                    raise RuntimeError(
+                        "communication repair failed: "
+                        + ",".join(_repaired_verdict.violations)
+                    )
 
             if (
                 cache_key is not None
@@ -2156,22 +2588,32 @@ class Pipeline:
             answer = await generator.generate(question, **kwargs)
         return answer
 
-    def _archetype_context(self, understanding: Understanding | None) -> dict | None:
-        """G4: map a recognised soft archetype to its reviewed profile's advisory L1 context
-        (interview questions + blind spots). None when there is no archetype / no store / no match —
-        so the no-archetype path stays byte-identical. Annotate-only; it never gates or routes."""
-        if understanding is None or self.archetypes is None:
+    def _archetype_context(
+        self, understanding: Understanding | None, *, question: str | None = None
+    ) -> dict | None:
+        """Map a reviewed archetype to advisory L1 context without affecting routing.
+
+        The legacy path accepts the bounded Understand annotation. Under execution policy, where
+        Understand is intentionally skipped, ``question`` enables exact reviewed-key resolution.
+        """
+        if self.archetypes is None:
             return None
-        key = getattr(understanding, "archetype", None)
-        if not key:
-            return None
-        profile = self.archetypes.by_archetype(key)
-        if profile is None:
+        profile = None
+        if understanding is not None:
+            key = getattr(understanding, "archetype", None)
+            if key:
+                profile = self.archetypes.by_archetype(key)
+        if profile is None and question:
+            profile = _exact_reviewed_archetype(question, self.archetypes)
+        if profile is None or not profile.reviewed:
             return None
         return {
             "archetyp": profile.key,
             "interview_fragen": list(profile.interview_fragen),
             "blinde_flecken": list(profile.blinde_flecken),
+            "dichtungsrelevante_besonderheiten": list(
+                profile.dichtungsrelevante_besonderheiten
+            ),
         }
 
     def _pack_suggestion_context(
@@ -2757,13 +3199,10 @@ def build_pipeline(
             ),
         )
 
-    # 2026-07-19 (case-intake fix): construct the compact case_intake_navigation generator ONLY
-    # when the flag is on -- mirrors smalltalk_generator's construction above exactly (same
-    # client/model/temperature selection, same static-prompt-hash cache-key scheme), just with
-    # CaseIntakeNavigationPromptAssembler instead. None otherwise, so run()'s
-    # `self.case_intake_generator is not None` check is a genuine no-op when this is unset.
+    # Legacy-only model-backed intake generator. With execution_policy_enabled the governed static
+    # CommunicationPlan renderer owns intake and this object stays absent by construction.
     case_intake_generator: SmalltalkGenerator | None = None
-    if settings.route_prompt_families_enabled:
+    if settings.route_prompt_families_enabled and not settings.execution_policy_enabled:
         _case_intake_assembler = CaseIntakeNavigationPromptAssembler()
         _case_intake_static_prompt = _case_intake_assembler.system_prompt()
         _case_intake_client = standard_client or helper_client

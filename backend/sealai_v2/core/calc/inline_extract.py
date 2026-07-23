@@ -3,8 +3,8 @@
 Reine Funktion: kein I/O, kein LLM, keine Mutation, keine Float-Literale.
 Verdrahtung in die Pipeline = INC-3b.
 
-Scan-Grammatik: _NUM aus binding.py (Zahl), danach mindestens ein Leerzeichen,
-danach ein Nicht-Leerzeichen-Token (Einheit). Trailing-Satzzeichen werden entfernt.
+Scan-Grammatik: _NUM aus binding.py (Zahl), danach optional Leerraum und ein mit
+einem Nicht-Ziffernzeichen beginnendes Einheit-Token. Trailing-Satzzeichen werden entfernt.
 Normalisierung über binding._normalize_unit (intra-package, kein Re-Implement).
 
 Multiplizitaets-Guard (owner-ratifiziert, fail-closed): hat ein Feld mehr als ein
@@ -27,9 +27,10 @@ from sealai_v2.core.calc.binding import (
 from sealai_v2.core.contracts import RememberedFact
 from sealai_v2.core.decode_extract import decode_designation
 
-# <Zahl> (mindestens ein Whitespace) <Einheit-Token>
+# <Zahl> (optionaler Whitespace) <Einheit-Token>; der Nicht-Ziffern-Anfang verhindert,
+# dass die Zahl zugunsten des Einheit-Tokens zurückgeteilt wird ("40mm" bleibt 40 + mm).
 # Lookbehind (?<!\d): Zahl beginnt nicht mitten in einer Ziffernfolge.
-_SCAN_RE = re.compile(rf"(?<!\d){_NUM}\s+(\S+)")
+_SCAN_RE = re.compile(rf"(?<!\d){_NUM}\s*([^\d\s]\S*)")
 
 _TRAIL_PUNCT = ".,;:!?)"
 

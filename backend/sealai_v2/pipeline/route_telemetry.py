@@ -18,6 +18,26 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 
+def configure_route_logging(logger_name: str = "sealai_v2.pipeline.routing") -> None:
+    """Make INFO route decisions visible in container logs (idempotent, no PII)."""
+
+    import logging
+    import sys
+
+    logger = logging.getLogger(logger_name)
+    for handler in logger.handlers:
+        if (
+            isinstance(handler, logging.StreamHandler)
+            and getattr(handler, "stream", None) is sys.stdout
+        ):
+            return
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
 @dataclass(frozen=True)
 class RouteTelemetry:
     route_name: str

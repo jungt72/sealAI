@@ -464,6 +464,12 @@ def test_compute_required_missing_lists_short_german_labels_in_curated_order() -
     )
 
 
+def test_compute_required_missing_accepts_legacy_distilled_temperature_key() -> None:
+    state = _state({"medium": "Heißwasser", "temperatur": "90 °C"})
+
+    assert "Betriebstemperatur" not in compute_required_missing(state, PACK)
+
+
 def test_compute_required_missing_drops_a_field_once_it_is_answered() -> None:
     values = _required_values()
     values.pop("wellendurchmesser")
@@ -494,9 +500,11 @@ def test_compute_required_missing_feeds_the_deterministic_d1_response_text() -> 
         False,
         "deterministic_contract_clarification",
     )
-    text = deterministic_response(decision, missing_fields=missing)
+    text = deterministic_response(
+        decision, question="Bitte den RWDR-Fall fortsetzen", missing_fields=missing
+    )
     assert text == (
-        "Für die technische Einordnung fehlen noch: Anwendungsziel, Druck, "
-        "Wellendurchmesser, Drehzahl. Bitte ergänze diese Angaben; vorher wäre jede "
-        "fallbezogene Aussage spekulativ."
+        "Danke, den bisherigen Fallkontext habe ich berücksichtigt. Geht es um eine "
+        "Neuauslegung, einen Austausch, eine Optimierung oder die Analyse eines Schadens? "
+        "Das Ziel bestimmt, ob wir Bestand, Einbauraum oder Fehlerursachen zuerst betrachten."
     )

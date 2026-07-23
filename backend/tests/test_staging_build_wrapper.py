@@ -62,6 +62,42 @@ def test_staging_and_cutover_docs_do_not_recommend_raw_compose_build_up() -> Non
     production_phase = runbook.split("## Phase 3", 1)[1]
     assert "$COMPOSE up" not in production_phase
     assert "docker stop backend-v2" not in production_phase
-    assert "frontend-v2/dist" not in production_phase
     assert "There is currently no sanctioned production entrypoint" in production_phase
     assert "do not recreate Nginx manually" in production_phase
+
+
+def test_staging_forwards_only_the_explicit_production_answer_profile() -> None:
+    staging_compose = (
+        ROOT / "ops" / "staging" / "docker-compose.staging.yml"
+    ).read_text(encoding="utf-8")
+    required = (
+        "MISTRAL_API_KEY",
+        "SEALAI_V2_PROVIDER",
+        "SEALAI_V2_L1_PROVIDER",
+        "SEALAI_V2_L1_MODEL",
+        "SEALAI_V2_STANDARD_PROVIDER",
+        "SEALAI_V2_STANDARD_MODEL",
+        "SEALAI_V2_VERIFIER_PROVIDER",
+        "SEALAI_V2_VERIFIER_MODEL",
+        "SEALAI_V2_HELPER_PROVIDER",
+        "SEALAI_V2_HELPER_MODEL",
+        "SEALAI_V2_ROUTER_PROVIDER",
+        "SEALAI_V2_ROUTER_MODEL",
+        "SEALAI_V2_ROUTER_CONFIDENCE_THRESHOLD",
+        "SEALAI_V2_ROUTER_MAX_OUTPUT_TOKENS",
+        "SEALAI_V2_ROUTER_TEMPERATURE",
+        "SEALAI_V2_ROUTER_TIMEOUT_S",
+        "SEALAI_V2_EXECUTION_POLICY_ENABLED",
+        "SEALAI_V2_ROUTE_OPTIMIZATION_ENABLED",
+        "SEALAI_V2_ROUTE_PROMPT_FAMILIES_ENABLED",
+        "SEALAI_V2_SEMANTIC_ROUTER_ENABLED",
+        "SEALAI_V2_STRUCTURED_ANSWER_ENABLED",
+        "SEALAI_V2_KNOWLEDGE_MODE_ENABLED",
+    )
+
+    for name in required:
+        assert f"{name}: ${{{name}:?" in staging_compose
+    assert "env_file:" not in staging_compose
+    assert "SEALAI_V2_DATABASE_URL:" not in staging_compose
+    assert "SEALAI_V2_REDIS_URL:" not in staging_compose
+    assert "SEALAI_V2_QDRANT_URL:" not in staging_compose

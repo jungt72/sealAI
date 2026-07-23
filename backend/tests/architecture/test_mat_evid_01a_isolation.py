@@ -105,7 +105,7 @@ UNCHANGED_PUBLIC = {
         "ab6a32cf9ef9deac402619cc1d0eaf67d30b39fa2c0c1d45fc2eb5782da4ed82"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "41a26160c1372f47b075317954972dbac337bd4a49df1d30c12ec8de2fe0f876"
+        "48c93f30cf98e2f1fe88f2bfffbd573beee9e4257945108e7d823d236eb05826"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
         "40b36ef33d0e7ad0ff1a2b8119b1420a7cfbe4c918b0a312f7e5520407e9be67"

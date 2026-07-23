@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from sealai_v2.pipeline.routing import RouteDecision, RouteName
+from sealai_v2.pipeline.routing import (
+    RouteDecision,
+    RouteName,
+    has_sealing_target,
+    is_ambiguous_drive_seal_anaphora,
+    is_adjacent_out_of_scope_request,
+)
 
 POLICY_VERSION = "execution-policy.v1"
 
@@ -53,6 +59,9 @@ class ExecutionFeatures:
     has_diagnosis: bool = False
     exact_cache_hit: bool = False
     reviewed_policy_fact_count: int = 0
+    calculation_requested: bool = False
+    calculation_computed_count: int = 0
+    solution_requested: bool = False
 
 
 @dataclass(frozen=True)
@@ -124,8 +133,28 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "ambiguous_no_domain_signal",
         )
 
-    if features.contract_status == "NEEDS_CLARIFICATION" or (
-        technical and features.required_missing
+    calculation_ready = bool(
+        features.calculation_requested and features.calculation_computed_count
+    )
+
+    # A reviewed deterministic kernel result is already an authoritative answer for the requested
+    # quantity.  Pack-wide intake gaps must not erase it.  If additional reviewed evidence is
+    # available, continue below so the model can address a coupled suitability question; otherwise
+    # render the calculation itself without asking an unrelated case question.
+    if calculation_ready and evidence_missing:
+        return ExecutionDecision(
+            ExecutionClass.D1,
+            ModelTier.NONE,
+            None,
+            VerificationMode.DETERMINISTIC,
+            StreamingMode.ATOMIC,
+            False,
+            "deterministic_calculation",
+        )
+
+    if not calculation_ready and (
+        features.contract_status == "NEEDS_CLARIFICATION"
+        or (technical and features.required_missing)
     ):
         return ExecutionDecision(
             ExecutionClass.D1,
@@ -186,6 +215,17 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "decision_relevant_risk_conflict_or_policy_fact",
         )
 
+    if technical and features.solution_requested:
+        return ExecutionDecision(
+            ExecutionClass.C1,
+            ModelTier.FRONTIER,
+            "high",
+            VerificationMode.CLAIM_LLM,
+            StreamingMode.ATOMIC,
+            False,
+            "grounded_solution_synthesis",
+        )
+
     # A broad knowledge answer can legitimately cite many primary sources without becoming a
     # complex reasoning case. Counting each citation URL as a "document" previously promoted a
     # well-grounded PTFE/RWDR overview to the frontier model at four sources, increasing cost while
@@ -237,19 +277,14 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
             "deterministic_smalltalk_route",
         )
 
-    # 2026-07-19 (case-intake fix): a first-turn message that expresses discussion/help intent
-    # with zero technical content (RouteName.CASE_INTAKE_INVITE) gets the SAME lightweight
-    # treatment as smalltalk_navigation above -- ModelTier.STANDARD (not NONE, so the turn still
-    # reaches pipeline.py's case_intake_generator branch instead of a canned deterministic_response
-    # string) and VerificationMode.DETERMINISTIC (no LLM-based L3 claim verification, since the
-    # fully static case_intake_navigation.jinja output never makes a domain claim to verify). Atomic,
-    # not FINAL streaming -- case_intake_invite has no token-streaming path (see pipeline.py's
-    # case_intake_prompt_active, which is intentionally excluded from stream_tokens_active).
+    # Intake is a governed conversation move, not an open-ended generation task.  It is rendered
+    # deterministically from the CommunicationPlan: this makes the one-question contract, the reason
+    # for that question and the absence of Fachkarten claims invariant across providers and retries.
     if route is RouteName.CASE_INTAKE_INVITE:
         return ExecutionDecision(
             ExecutionClass.S0,
-            ModelTier.STANDARD,
-            "none",
+            ModelTier.NONE,
+            None,
             VerificationMode.DETERMINISTIC,
             StreamingMode.ATOMIC,
             False,
@@ -270,10 +305,70 @@ def decide_execution(features: ExecutionFeatures) -> ExecutionDecision:
 def deterministic_response(
     decision: ExecutionDecision,
     *,
+    question: str = "",
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
+    calc=None,
+    case_active: bool = False,
 ) -> str:
+    if decision.reason == "deterministic_case_intake_route":
+        from sealai_v2.core.communication_plan import (
+            build_communication_plan,
+            evaluate_communication,
+            render_case_intake_response,
+        )
+
+        plan = build_communication_plan(
+            question=question,
+            route_name=RouteName.CASE_INTAKE_INVITE.value,
+            case_active=case_active,
+        )
+        response = render_case_intake_response(question, plan)
+        verdict = evaluate_communication(response, plan)
+        if not verdict.passed:  # defensive invariant: this is a static renderer
+            raise RuntimeError(
+                "deterministic case-intake response violated its communication plan: "
+                + ",".join(verdict.violations)
+            )
+        return response
     if decision.reason == "ambiguous_no_domain_signal":
+        if is_adjacent_out_of_scope_request(question):
+            if is_ambiguous_drive_seal_anaphora(question):
+                return (
+                    "Ich möchte den Bezug deines letzten Auswahl- oder Auslegungsauftrags nicht "
+                    "erraten: Im Satz stehen sowohl ein Antriebs- als auch ein Dichtungsobjekt "
+                    "als mögliche Referenz. Bezieht sich dein Auftrag auf Motor beziehungsweise "
+                    "Antrieb oder auf die genannte Dichtung beziehungsweise den Werkstoff? Die "
+                    "Motor- und Antriebsauslegung liegt außerhalb meiner Dichtungstechnik-"
+                    "Kompetenz; den Dichtungsteil bearbeite ich anschließend vollständig im Fall."
+                )
+            boundary = (
+                "Die Auswahl und Dimensionierung von Elektromotor oder Antrieb liegt außerhalb "
+                "meiner Dichtungstechnik-Kompetenz; deshalb nenne oder genehmige ich hier keinen "
+                "Motor."
+            )
+            if has_sealing_target(question):
+                from sealai_v2.core.communication_plan import build_communication_plan
+
+                governed_missing = missing_fields or ("Medium",)
+                plan = build_communication_plan(
+                    question=question,
+                    route_name=RouteName.ENGINEERING_CASE.value,
+                    missing_fields=governed_missing,
+                    conflicts=conflicts,
+                )
+                return (
+                    f"{boundary} Den Dichtungsteil deiner Anfrage bearbeite ich gern und lasse "
+                    "ihn nicht hinter der Domänengrenze fallen. "
+                    f"{plan.next_question} {plan.question_reason}"
+                ).strip()
+            return (
+                f"{boundary} Den dichtungsrelevanten Teil kann ich sauber beurteilen: Drehzahl, "
+                "Drehmoment- und Lastwechsel, Wellendurchmesser, Rundlauf und Wellenauslenkung "
+                "beeinflussen die Wellendichtung. Die Motorauslegung gehört zu einer Fachperson "
+                "für Antriebs- beziehungsweise Verfahrenstechnik; deren Betriebsdaten kann ich "
+                "anschließend gegen die Dichtstelle prüfen."
+            )
         return (
             "Ich kann die Eingabe noch keiner eindeutigen Aufgabe zuordnen. "
             "Möchtest du eine fachliche Frage zur Dichtungstechnik stellen oder "
@@ -288,12 +383,41 @@ def deterministic_response(
             "Temperaturprofil, Druck und Druckwechsel, Bewegungsart sowie das zu prüfende "
             "Herstellerdatenblatt benötigt."
         )
+    if decision.reason == "deterministic_calculation":
+        computed = tuple(calc.computed) if calc is not None else ()
+        if not computed:
+            raise ValueError(
+                "deterministic_calculation requires a computed kernel value"
+            )
+        rendered: list[str] = []
+        warnings: list[str] = []
+        origins: list[str] = []
+        for item in computed:
+            value = f"{item.value:g}".replace(".", ",")
+            rendered.append(f"{item.name} = {value} {item.unit} ({item.formula})")
+            warnings.extend(str(warning) for warning in item.warnings if str(warning))
+            origins.extend(str(origin) for origin in item.input_origins if str(origin))
+        response = "Deterministisch berechnet: " + "; ".join(rendered) + "."
+        if origins:
+            response += (
+                " Verwendete Eingaben: " + "; ".join(dict.fromkeys(origins)) + "."
+            )
+        if warnings:
+            response += " Hinweis: " + " ".join(dict.fromkeys(warnings))
+        return response
     if decision.execution_class is ExecutionClass.D1:
-        fields = ", ".join(missing_fields) or "entscheidungsrelevante Angaben"
-        return (
-            f"Für die technische Einordnung fehlen noch: {fields}. "
-            "Bitte ergänze diese Angaben; vorher wäre jede fallbezogene Aussage spekulativ."
+        from sealai_v2.core.communication_plan import (
+            build_communication_plan,
+            render_case_clarification,
         )
+
+        plan = build_communication_plan(
+            question=question,
+            route_name=RouteName.ENGINEERING_CASE.value,
+            missing_fields=missing_fields,
+            conflicts=conflicts,
+        )
+        return render_case_clarification(plan)
     if decision.execution_class is ExecutionClass.H1:
         details = [*missing_fields, *conflicts]
         suffix = f" Offen sind: {', '.join(details)}." if details else ""

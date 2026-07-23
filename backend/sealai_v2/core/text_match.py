@@ -27,6 +27,18 @@ def tag_matches(tag: str, q_tokens: set[str], q_norm: str) -> bool:
     tag = tag.strip().lower()
     if not tag:
         return False
+    if "/" in tag:
+        # Engineering units such as ``U/min`` and ``m/s`` are tokenised at the slash.  Match the
+        # complete, ordered token sequence instead of degrading them to the ambiguous individual
+        # tokens (``u`` or ``min``).  Punctuation/case variants remain equivalent while unrelated
+        # prose containing only one half cannot activate the tag.
+        tag_sequence = tuple(part for part in _TOKEN_RE.split(tag) if part)
+        query_sequence = tuple(part for part in _TOKEN_RE.split(q_norm) if part)
+        width = len(tag_sequence)
+        return bool(width) and any(
+            query_sequence[index : index + width] == tag_sequence
+            for index in range(len(query_sequence) - width + 1)
+        )
     if " " in tag or "-" in tag:
         return tag in q_norm
     if tag in q_tokens:

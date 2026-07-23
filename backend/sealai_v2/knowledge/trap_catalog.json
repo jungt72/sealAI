@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v5",
+  "version": "trap_catalog_v6",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -10,12 +10,20 @@
         "Temperaturbeständigkeit in Öl auf Dampf übertragen",
         "Hydrolyse nicht erwähnt"
       ],
-      "correct": "FKM hydrolysiert/versprödet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf. EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
+      "correct": "FKM hydrolysiert/versprödet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf. Auch NBR ist wegen seiner Temperatur- und Alterungsgrenze kein Standardwerkstoff für Heiß- oder überhitzten Dampf. EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
       "correct_general": "FKM hydrolysiert/versprödet in Sattdampf — die Temperaturbeständigkeit in Öl überträgt sich NICHT auf Dampf.",
       "correct_recommendation": "EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard; bei zusätzlicher Chemikalienlast AFLAS/FEPM erwägen.",
       "applies_to": ["dampf", "sattdampf", "heißdampf", "sip", "heißwasser"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:TRAP-01(must_catch)", "eval:SAFETY-02(must_catch)"],
+      "sources": [
+        "Parker Prädifa O-Ring Handbook PTD5705-EN, media-dependent elastomer selection and steam-temperature guidance (https://www.parker.com/content/dam/Parker-com/Literature/Praedifa/Catalogs/Catalog_O-Ring-Handbook_PTD5705-EN.pdf)",
+        "Trelleborg Sealing Solutions, CIP/SIP material test guidance: selected EPDM grades perform in steam while standard FKM steam exposure must be limited (https://www.trelleborg.com/en/seals/your-industry/food-and-beverage/cip-and-sip)",
+        "Trelleborg Medical Solutions, NBR is not the default for harsh cleaning regimes or superheated steam (https://www.trelleborg.com/en/medical/products-capabilities/materials/elastomers)"
+      ],
+      "retrieval_terms": ["Dampf", "Wasserdampf", "Sattdampf", "Heißdampf", "SIP", "Material", "Werkstoff", "empfehlen", "FKM", "EPDM"],
+      "retrieval_required_terms_any": ["Dampf", "Wasserdampf", "Sattdampf", "Heißdampf", "SIP"],
+      "retrieval_min_hits": 2,
       "tags": ["FKM", "Dampf"],
       "xrefs": []
     },
@@ -36,6 +44,48 @@
       "provenance": ["principles:§2", "eval:TRAP-02(must_catch)", "eval:COMBO-03(must_catch)", "divergence:m1-baseline"],
       "tags": ["EPDM", "Mineralöl", "Polarität"],
       "xrefs": ["TRAP-FOODGRADE-FETT"]
+    },
+    {
+      "id": "POLICY-EPDM-MINERALOEL-DIREKT",
+      "trigger": "Direkte Frage oder Diagnose zu EPDM in Mineral-, Hydrauliköl oder anderen Kohlenwasserstoffen",
+      "wrong": [
+        "eine direkte EPDM-Öl-Frage in ein allgemeines oder themenfremdes Retrieval-Fallback verlieren",
+        "die Quellung als Chargen-/Lagerfehler statt als grundsätzliche Werkstoff-Unverträglichkeit behandeln",
+        "erneut EPDM für Mineralöl empfehlen"
+      ],
+      "correct": "EPDM ist UNPOLAR und quillt grundsätzlich stark in Mineralölen/Kohlenwasserstoffen/Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler. Für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit); EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit. Vor der finalen Compound-Auswahl die genaue Hydraulikflüssigkeit, Additive und Temperatur gegen Herstellerdaten prüfen.",
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL", "eval:TRAP-02(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, EPDM compatibility and compound-selection guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
+      "retrieval_terms": ["EPDM", "Hydrauliköl", "Mineralöl", "Kohlenwasserstoff", "Öl", "Schmierfett"],
+      "retrieval_required_terms_any": ["EPDM"],
+      "retrieval_min_hits": 2,
+      "tags": ["EPDM", "Mineralöl", "Hydrauliköl", "Quellung"],
+      "xrefs": ["TRAP-EPDM-MINERALOEL"]
+    },
+    {
+      "id": "POLICY-EPDM-MINERALOEL-GEGENCHECK",
+      "trigger": "Gegencheck, ob eine EPDM-Eignungsbehauptung für Mineralöl bestätigt werden kann",
+      "wrong": [
+        "die Behauptung mit einem einleitenden Ja bestätigen",
+        "die geerdete Quellungs-Unverträglichkeit weichspülen",
+        "ohne anwendungsspezifische Freigabe einen Ersatzwerkstoff festlegen"
+      ],
+      "correct": "Nein: EPDM ist unpolar und quillt in Mineralölen und anderen unpolaren Kohlenwasserstoffen grundsätzlich stark; für diesen Medienkontakt ist die Werkstofffamilie auszuschließen. Die Auswahl eines Alternativ-Compounds bleibt von Additivpaket, Temperatur und Bauform abhängig und ist anhand konkreter Herstellerdaten final freizugeben.",
+      "gates": ["confident_wrong"],
+      "provenance": [
+        "eval:BUX-GEGENCHECK-NIE-PASST-01(must_catch,must_avoid)",
+        "trap-correct:TRAP-EPDM-MINERALOEL"
+      ],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, EPDM compatibility and compound-selection guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
+      "retrieval_terms": ["EPDM", "Mineralöl", "Hydrauliköl", "Kohlenwasserstoff", "bestätigen", "bestaetigen", "stimmt", "Kunde"],
+      "retrieval_min_hits": 3,
+      "tags": ["Gegencheck", "EPDM", "Mineralöl", "Quellung"],
+      "xrefs": ["TRAP-EPDM-MINERALOEL"]
     },
     {
       "id": "TRAP-NBR-OZON",
@@ -83,6 +133,9 @@
       "applies_to": ["amin", "amine", "lauge", "base", "keton", "ester", "kühlmittel", "inhibitor"],
       "gates": ["walked_into_trap", "confident_wrong"],
       "provenance": ["principles:§2", "eval:COMBO-01(must_catch)", "eval:DEFAULT-03(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, chemical-resistance and compound-selection guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
       "retrieval_terms": ["FKM", "Amin", "aminhaltig", "Lauge", "Natronlauge", "Kühlmittel", "Vorprojekt", "200 °C"],
       "retrieval_min_hits": 2,
       "tags": ["FKM", "Amin", "Lauge"],
@@ -122,6 +175,26 @@
       "xrefs": []
     },
     {
+      "id": "POLICY-NBR-HOCHTEMP-SYNTHETIKOEL",
+      "trigger": "NBR-Default bei erhöhter Dauertemperatur oder Synthetiköl wird konkret hinterfragt",
+      "wrong": [
+        "NBR nur wegen bisheriger Gewohnheit bestätigen",
+        "Temperaturalterung und Synthetiköl-/Additiv-Verträglichkeit voneinander entkoppeln",
+        "aus der Werkstofffamilie allein eine finale Compound-Freigabe ableiten"
+      ],
+      "correct": "NBR liegt bei ~100-120 °C an der Dauertemperaturgrenze; 130 °C dauerhaft führt typischerweise zu Verhärtung, Versprödung und verkürzter Lebensdauer. 'NBR wie immer' ist hier deshalb keine belastbare Richtung. HNBR oder FKM sind bei dieser Temperatur zu prüfende Kandidatenfamilien; zugleich muss die konkrete Synthetiköl-Basis samt Additivpaket gegen den jeweiligen Compound verifiziert werden, bevor eine Auswahl final bestätigt wird.",
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP", "eval:DEFAULT-01(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, NBR temperature limits and compound-selection guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
+      "retrieval_terms": ["NBR", "130 °C", "Dauertemperatur", "Synthetiköl", "wie immer", "dauerhaft"],
+      "retrieval_required_terms_any": ["NBR"],
+      "retrieval_min_hits": 2,
+      "tags": ["NBR", "Dauertemperatur", "Synthetiköl"],
+      "xrefs": ["TRAP-NBR-DAUERTEMP"]
+    },
+    {
       "id": "TRAP-FOODGRADE-FETT",
       "trigger": "'food-grade'/EPDM als pauschal lebensmittelecht bestätigt für fetthaltige Lebensmittel (z. B. Schokolade/Kakaobutter)",
       "wrong": [
@@ -149,10 +222,59 @@
       "correct": "Die Bezeichnung 'Synthetiköl' reicht für eine Werkstoffwahl nicht aus: PAO-, Ester-, PAG- oder Silikonbasis und das Additivpaket können Elastomere unterschiedlich angreifen. Solange die genaue Ölklasse und das Produktdatenblatt fehlen, bleiben Werkstofffamilie sowie Verträglichkeits- und Temperaturgrenze ausdrücklich OFFEN; keine Familie als passend bestätigen. Zuerst Öltyp/Basis und Additivpaket klären, dann Kandidaten gegen die konkrete Beständigkeitstabelle prüfen. Wellendaten oder eine genannte Gleitgeschwindigkeit lösen diese chemische Unklarheit nicht.",
       "gates": ["confident_wrong", "invented_precision"],
       "provenance": ["eval:LOES-UNKLARES-MEDIUM-KEIN-MATERIAL-01(must_catch,must_avoid)"],
-      "retrieval_terms": ["Synthetiköl", "Sorte", "weiß", "unbekannt", "unklar"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, section 2.3: base-polymer selection requires identified operating temperature and all media, including lubricants and cleaning fluids (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+        "Trelleborg Aerospace Sealing Systems engineering guide, material recommendations differ by petroleum, synthetic-hydrocarbon, phosphate-ester and synthetic-ester fluids (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/aerospace_gb_en.pdf)"
+      ],
+      "retrieval_terms": ["Synthetiköl", "Sorte", "weiß", "unbekannt", "unklar", "PAO", "Ester", "PAG", "Silikon", "Additiv"],
+      "retrieval_required_terms_any": ["Synthetiköl", "synthetisch"],
       "retrieval_min_hits": 2,
       "tags": ["Synthetiköl", "Medium unbekannt", "Werkstoff offen"],
       "xrefs": ["TRAP-NBR-DAUERTEMP"]
+    },
+    {
+      "id": "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG",
+      "trigger": "Eine chemisch breit beständige Werkstofffamilie wie FFKM wird pauschal für Trinkwasserkontakt gesetzt, ohne den konkreten Konformitätsnachweis zu prüfen",
+      "wrong": [
+        "FFKM oder eine andere Werkstofffamilie unkritisch bestätigen, weil sie chemisch breit beständig ist",
+        "die trinkwasserhygienische Eignung aus der Werkstofffamilie statt aus dem konkreten Produkt-/Compound-Nachweis ableiten",
+        "Kosten und technisch einfachere, konkret zugelassene Kandidaten nicht gegen den tatsächlichen Lastfall abwägen"
+      ],
+      "correct": "FFKM ist für Trinkwasser kein pauschaler 'hält alles'-Shortcut: Entscheidend sind die technische Eignung und der konkrete, produkt- beziehungsweise compoundbezogene Trinkwassernachweis für den Zielmarkt; aus der Werkstofffamilie allein folgt keine Freigabe. In Deutschland sind dafür die KTW-BWGL und – soweit der konkrete Nachweisumfang es verlangt – die mikrobiologische Prüfung nach DVGW W 270 zu beachten; im Vereinigten Königreich ist ein WRAS-Materialnachweis nach BS 6920 und in Nordamerika typischerweise NSF/ANSI/CAN 61 relevant. FFKM-Compounds sind typischerweise teurer und können bei einem einfachen Wasserlastfall überdimensioniert sein; ein konkret trinkwassergeeignetes EPDM-Compound ist daher als wirtschaftlicherer Kandidat zu prüfen, sofern Temperatur, Wasserzusammensetzung und Mechanik passen. Freigegeben wird erst die konkrete Ausführung mit gültigem Nachweis, nicht die Familie.",
+      "gates": ["confident_wrong"],
+      "provenance": ["eval:DEFAULT-02(must_catch,must_avoid)"],
+      "sources": [
+        "Umweltbundesamt, Bewertungsgrundlage für Kunststoffe und andere organische Materialien im Kontakt mit Trinkwasser (KTW-BWGL), Stand 27. Oktober 2025 (https://www.umweltbundesamt.de/themen/wasser/trinkwasser/trinkwasser-verteilen/bewertungsgrundlagen-leitlinien)",
+        "DVGW-Arbeitsblatt W 270, Vermehrung von Mikroorganismen auf Werkstoffen für den Trinkwasserbereich (https://www.dvgw-regelwerk.de/technische-regel/arbeitsblatt-w-270/2b00b1)",
+        "WRAS, Material Approval for non-metallic components including O-rings is based on BS 6920 (https://www.wrasapprovals.co.uk/approvals/faqs/what_s_the_difference_between_a_wras_fitting_approval_and_a_wras_material_approval/)",
+        "NSF, NSF/ANSI/CAN 61 covers health effects of joining and sealing materials in drinking-water systems (https://www.nsf.org/gb/en/water-systems/nsf-ansi-can-61-testing-and-certification)",
+        "Trelleborg Sealing Solutions, FFKM can carry higher cost and may be overengineered for some processing applications (https://www.trelleborg.com/en/media/products-and-solutions-news/passing-the-taste-test)"
+      ],
+      "retrieval_terms": ["Trinkwasser", "FFKM", "EPDM", "hält alles", "haelt alles", "Zulassung", "KTW"],
+      "retrieval_required_terms_any": ["Trinkwasser"],
+      "retrieval_min_hits": 2,
+      "tags": ["Trinkwasser", "FFKM", "Compliance", "Kosten"],
+      "xrefs": []
+    },
+    {
+      "id": "POLICY-REINIGUNG-COMPLIANCE-WERKSTOFF-OFFEN",
+      "trigger": "Werkstoffauswahl bei unbekannter aggressiver Reinigungslösung und Lebensmittelkontakt",
+      "wrong": [
+        "eine Werkstofffamilie festlegen, obwohl die genaue Reinigungschemie unbekannt ist",
+        "eine Lebensmittelkonformität oder Zulassung für einen nicht konkret belegten Compound behaupten",
+        "nur auf den Hersteller verweisen, ohne den belastbaren Prüfpfad und die entscheidenden Eingaben zu benennen"
+      ],
+      "correct": "Bei einer nur allgemein als aggressiv bezeichneten Reinigungslösung bleibt der Dichtungswerkstoff OFFEN: Ohne Produktidentität beziehungsweise genaue Chemie, Konzentration, Temperaturprofil, Einwirkzeit und alle weiteren Kontaktmedien ist keine belastbare Werkstoffempfehlung möglich. Lebensmittelkontakt verlangt zusätzlich den konkret geforderten Markt- und Konformitätsnachweis für die reale Dichtungsausführung; aus der Werkstofffamilie allein folgt keine Freigabe. Als Kandidatenraum ist eine hygienegerechte Dichtungsbauform zu prüfen. Zuerst Sicherheits-/Technikdatenblatt der Reinigungslösung und Nachweisumfang klären, dann Dichtungsbauform und konkreten Compound durch die zuständige Fachstelle gegen Herstellerdaten und einen anwendungsnahen Nachweis prüfen.",
+      "gates": ["confident_wrong", "invented_precision"],
+      "provenance": ["eval:LOES-COMPLIANCE-FAILCLOSED-01(must_catch,must_avoid)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, section 2.3: reliable base-polymer selection requires identified temperature and all media, including cleaning fluids (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)",
+        "EagleBurgmann food-processing guidance: hygienic design, product-contact material evidence and application-specific CIP/SIP chemistry (https://www.eagleburgmann.com/en/industries/food-processing-industry/)"
+      ],
+      "retrieval_terms": ["Reinigungslösung", "Reinigungschemie", "aggressiv", "Chemie", "Lebensmittelkontakt", "CIP"],
+      "retrieval_min_hits": 3,
+      "tags": ["Reinigungschemie", "Lebensmittelkontakt", "Werkstoff offen", "Compliance"],
+      "xrefs": ["POLICY-SYNTHETIKOEL-KLASSE-OFFEN"]
     },
     {
       "id": "POLICY-SCHOKO-CIP-WERKSTOFF-OFFEN",
@@ -165,6 +287,10 @@
       "correct": "Für ein Schokoladen-Rührwerk mit taumelnder Welle ist eine hygienische doppeltwirkende Gleitringdichtung mit geeignetem Sperr-/Barrieremedium der naheliegende Dichtungstyp-Kandidat; eine einfache Lippenlösung ist wegen Taumeln, Hygiene und Produktkontakt kritisch. Der Werkstoff bleibt jedoch OFFEN, bis genaue CIP-Chemie und -Temperatur, Wellenauslenkung/Rundlauf, Zulassungsumfang, Bauraum und akzeptable Leckage geklärt sind. Keine Werkstofffamilie als passend und keine konkrete Zulassung behaupten; die konkrete Ausführung anschließend per Datenblatt und Herstellerfreigabe verifizieren.",
       "gates": ["invented_precision", "confident_wrong"],
       "provenance": ["eval:LOES-SCHOKO-NICHT-ABSCHIEBEN-01(must_catch,must_avoid)"],
+      "sources": [
+        "EagleBurgmann M481C agitator seal: food-and-beverage application, cartridge arrangement and pressurised barrier-fluid operation as a double seal (https://www.eagleburgmann.com/en/products/mechanical-seals/agitator-seals/liquid-lubricated-seals/m481c/download_pdf/)",
+        "EagleBurgmann food-processing guidance: hygienic design and CIP/SIP chemistry are application-specific selection inputs (https://www.eagleburgmann.com/en/industries/food-processing-industry/)"
+      ],
       "retrieval_terms": ["Schoko", "Schokolade", "Rührwerk", "CIP", "taumelt", "taumeln"],
       "retrieval_min_hits": 3,
       "tags": ["Schokolade", "CIP", "Rührwerk", "Werkstoff offen"],
@@ -181,6 +307,10 @@
       "correct": "Für ein belüftetes Getriebe mit Mineralöl bei 80 °C und staubiger Umgebung ist ein RWDR mit Staublippe/AS-Ausführung die sinnvolle Grundrichtung. NBR und HNBR bilden einen zu prüfenden Kandidatenraum; NBR ist keine Freigabe-Zusage, HNBR ist als Temperatur-/Alterungsreserve mitzuprüfen. Vor der Auswahl sind Wellenzustand (Härte, Rauheit, Drall, Rundlauf), Schmierfilm beziehungsweise Fettfüllung zwischen Haupt- und Staublippe, Entlüftung/Differenzdruck und die konkrete Compound-Beständigkeit zu verifizieren.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:LOES-ERARBEITEN-NICHT-NUR-FRAGEN-01(must_catch,must_avoid)"],
+      "sources": [
+        "Trelleborg Rotary Seals catalogue, Stefa TRD radial oil seal: additional dust lip for polluted environments, lubricant between both lips and gearbox application (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
+        "Parker O-Ring Handbook ORD 5700, compound selection depends on identified temperature and fluid compatibility (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
       "retrieval_terms": ["Getriebe", "Mineralöl", "80 °C", "Staub", "staubig", "belüftet"],
       "retrieval_min_hits": 3,
       "tags": ["Getriebe", "Mineralöl", "NBR", "HNBR", "Staublippe"],
@@ -197,6 +327,10 @@
       "correct": "Für FKM in normalem Wasser bei Raumtemperatur liegt im geprüften Wissensstand kein belastbares Verträglichkeitsverdikt vor. Deshalb weder 'passt' noch 'unverträglich' behaupten. Zuerst Wasserqualität und Zusätze, Temperaturprofil, statische oder dynamische Belastung, Druck und Zulassungsanforderungen klären; anschließend den konkreten Compound gegen eine belastbare Beständigkeitstabelle beziehungsweise Herstellerdaten prüfen. Eine Dampf-/Heißwasser-Unverträglichkeit darf nicht auf kaltes Wasser übertragen werden.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:GC-KEINE-DATEN-FKM-WASSER-01(must_catch,must_avoid)"],
+      "sources": [
+        "Internal reviewed-knowledge coverage boundary: no authoritative FKM × ambient-water verdict in the shipped compatibility matrix",
+        "Parker O-Ring Handbook ORD 5700, compound selection requires the concrete fluid, temperature and application conditions (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
       "retrieval_terms": ["FKM", "Wasser", "Raumtemperatur", "normal"],
       "retrieval_min_hits": 2,
       "tags": ["FKM", "Wasser", "kein Verdikt"],
@@ -213,6 +347,10 @@
       "correct": "Zu hohe Umfangsgeschwindigkeit erhöht Reibungswärme und beansprucht den Schmierfilm an der Dichtkante. Temperaturanstieg und Mangelschmierung beschleunigen Verschleiß und thermo-oxidative Alterung; die Lippe kann verhärten, Rückstellvermögen verlieren, verschleißen und schließlich lecken. Mitentscheidend sind Werkstoff und Lippenbauform, Medium/Schmierung, Temperaturabfuhr, Wellenoberfläche einschließlich Rauheit und Drall sowie Rundlauf/Exzentrizität. Keine eigene Grenzzahl nennen; konkrete Grenzen kommen nur aus Rechenkern, Datenblatt oder Herstellerangabe.",
       "gates": ["confident_wrong", "invented_precision"],
       "provenance": ["eval:BUX-WISSENSFRAGE-DEPTH-01(must_catch,must_avoid)", "calc_seed:umfangsgeschwindigkeit(reviewed)"],
+      "sources": [
+        "SKF Industrial Shaft Seals catalogue, radial-shaft-seal lubrication, friction and failure-analysis guidance (https://www.skf.com/go/18729)",
+        "Trelleborg Rotary Seals catalogue, shaft surface, lubrication, speed and radial-oil-seal operating guidance (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)"
+      ],
       "retrieval_terms": ["RWDR", "Umfangsgeschwindigkeit", "ausfällt", "ausfall", "warum", "zu hoch"],
       "retrieval_min_hits": 2,
       "tags": ["RWDR", "Umfangsgeschwindigkeit", "Wissensfrage"],
@@ -229,6 +367,9 @@
       "correct": "Quellung und Erweichung sprechen für einen Medienangriff, identifizieren den Werkstoff aber nicht. Zuerst Altwerkstoff beziehungsweise Kennzeichnung, genaue Öl-/Additivspezifikation, Temperatur, Dauer und Belastungsart klären und den Befund gegen Beständigkeitsdaten prüfen. Nur falls EPDM tatsächlich bestätigt ist, gilt der reviewed Befund: EPDM quillt in Mineralöl grundsätzlich stark. Einen Ersatzwerkstoff erst als zu prüfenden Kandidatenraum und nicht als sichere Eignungszusage nennen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:DIAG-QUELLUNG-MEDIUM-01(must_catch,must_avoid)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, fluid-compatibility and failure-analysis guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
       "retrieval_terms": ["quillt", "Quellung", "weich", "Mineralöl"],
       "retrieval_min_hits": 2,
       "tags": ["Diagnose", "Quellung", "Werkstoff offen"],
@@ -282,6 +423,9 @@
       "correct": "Differenzieren statt pauschal: für viele Medien-Werkstoff-Paare (z. B. FKM × organische Säuren) entscheiden Konzentration und Temperatur — verdünnt evtl. ok, konzentriert/heiß problematisch. Nach Konzentration und Temperatur fragen und auf die Beständigkeitstabelle des konkreten Compounds verweisen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:UNCERT-03(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, chemical compatibility is compound-, concentration- and temperature-dependent (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
       "retrieval_terms": ["FKM", "Essigsäure"],
       "retrieval_min_hits": 2,
       "tags": ["Beständigkeit", "Differenzierung"],
@@ -326,6 +470,9 @@
       "correct": "Wenn Anforderungen konkurrieren, den Zielkonflikt offenlegen statt ein Schein-Optimum vortäuschen. Beispiel Aceton × 180 °C × günstig: Aceton greift NBR/FKM an; EPDM ist gegen Aceton ok, aber 180 °C dauerhaft grenzwertig; FFKM löst Chemie + Temperatur, ist aber teuer — kein günstiger Werkstoff erfüllt alle drei. Den Trade-off dem Nutzer/Hersteller überlassen.",
       "gates": ["confident_wrong"],
       "provenance": ["eval:CONFLICT-01(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, base-polymer selection and chemical-resistance tables (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
       "retrieval_terms": ["Aceton", "180 °C", "günstig", "billig", "preiswert", "Kosten"],
       "retrieval_min_hits": 3,
       "tags": ["Zielkonflikt", "Trade-off"],
@@ -339,10 +486,17 @@
         "rechnet nicht oder falsch",
         "nennt keine Geschwindigkeitsgrenze"
       ],
-      "correct": "Die Umfangsgeschwindigkeit deterministisch berechnen lassen (Rechenkern: v = π·d1·n/60000; d1 in mm, n in 1/min → m/s) und den Kern-Wert exakt referenzieren — nie selbst rechnen. Den Wert gegen die zulässige Werkstoffgrenze stellen (Standard-NBR-Lippe enger, FKM mit mehr Reserve); Formel und Eingaben-Herkunft offenlegen. Fehlen Eingaben, keinen Zahlenwert nennen und die fehlenden Eingaben benennen. Oberflächengüte (Rz, kein Drall), Schmierung und Temperatur entscheiden mit.",
+      "correct": "Die Umfangsgeschwindigkeit ausschließlich vom deterministischen Rechenkern berechnen lassen und dessen Wert, Formel, Eingabeherkunft und Warnung exakt übernehmen; in der Antwort nie selbst rechnen. Ein grenzwertiger oder überschrittener Kernbefund ist ein Pflichtbefund, keine Freigabe: Temperatur, Schmierung, Wellenoberfläche und Druck bleiben zu klären. Fehlen Recheneingaben, keinen Zahlenwert nennen; ohne geerdete Eignung keine alternative Werkstofffamilie empfehlen.",
       "correct_general": "Liegt die Umfangsgeschwindigkeit über der Belastungsgrenze, ist eine Standard-NBR-Lippe unzureichend — eine höher belastbare Lippe ist nötig.",
       "gates": ["confident_wrong"],
       "provenance": ["principles:§4", "eval:CALC-01(must_catch)", "owner:boundary-review-2026-06-11(reword: Kern-referenziert, nie selbst rechnen)", "owner:kern-fix-01(strip plugged '~14 m/s' example — verbatim hedge-echo must be parametric-clean)", "claude:incident-2026-07-04(correct_general added — a same-conclusion restatement of the always-relevant core consequence (v over limit -> standard NBR insufficient -> higher-rated lip needed), worded to match natural draft phrasing rather than the calc-methodology prose in `correct`, for _caveat_addressed's caveat-detection heuristic; calibrated against the actual flagged production draft text from this incident, not invented. Does NOT enable a recommendation split — correct_recommendation/applies_to intentionally absent, see l3_verifier.py::_caveat_addressed)"],
+      "sources": [
+        "Trelleborg Rotary Seals catalogue, radial-oil-seal speed, material, lubrication and shaft-surface guidance (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/catalogs/rotary_gb_en.pdf)",
+        "Reviewed deterministic calculation registry: calc_seed.json#umfangsgeschwindigkeit"
+      ],
+      "retrieval_terms": ["RWDR", "Wellendichtring", "Umfangsgeschwindigkeit", "Drehzahl", "U/min", "rpm", "NBR"],
+      "retrieval_required_terms_any": ["Umfangsgeschwindigkeit", "Drehzahl", "U/min", "rpm"],
+      "retrieval_min_hits": 2,
       "tags": ["Berechnung", "Umfangsgeschwindigkeit"],
       "xrefs": []
     },
@@ -354,12 +508,17 @@
         "kein Extrusionsschutz (Stützringe) bei Hochdruck",
         "kein Sicherheits-/Freigabe-Hinweis"
       ],
-      "correct": "Bei Hochdruck-Gas mit schnellen Druckwechseln explosive Dekompression (RGD/ED) ansprechen — das Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse. RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936), Hochdruck → Extrusionsschutz (Stützringe); ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung.",
-      "correct_general": "Bei Hochdruck-Gas mit schnellen Druckwechseln explosive Dekompression (RGD/ED) ansprechen — das Elastomer absorbiert Gas, bei schnellem Druckabfall Blasenbildung/Risse. ausdrücklich: sicherheitskritisch → Auslegung und Freigabe zwingend mit dem Hersteller, dies ist nur Orientierung.",
-      "correct_recommendation": "RGD-beständige Compounds (spezielle HNBR/FKM nach NORSOK M-710 / ISO 23936), Hochdruck → Extrusionsschutz (Stützringe);",
-      "applies_to": ["hochdruck", "gas", "erdgas", "druckwechsel", "dekompression", "rgd"],
+      "correct": "Dieser Gasdichtungsfall ist sicherheitskritisch und darf aus den vorliegenden Angaben weder mit einer konkreten Bauform noch mit einem Werkstoff beantwortet oder freigegeben werden. Vor jeder Auswahl müssen Hersteller oder zuständige Fachstelle Dichtprinzip, Leckage- und gegebenenfalls Barrierekonzept, Temperatur, Bewegung beziehungsweise Drehzahl, vollständiges Druckprofil einschließlich möglicher schneller Druckentlastung sowie die zulässige Leckage auslegen und final freigeben. Das Risiko explosiver beziehungsweise schneller Gasdekompression (RGD/ED) und der erforderliche Extrusionsschutz sind Pflichtprüfpunkte; eine Werkstofffamilie allein belegt weder RGD-Beständigkeit noch die Eignung des Gesamtsystems.",
       "gates": ["walked_into_trap"],
       "provenance": ["eval:SAFETY-01(must_catch)"],
+      "sources": [
+        "ISO 19880-7:2025, safety requirements and manufacturer-agreed design for high-pressure hydrogen O-ring seal systems (https://www.iso.org/standard/81701.html)",
+        "Trelleborg Sealing Solutions for Hydrogen, hydrogen compatibility and rapid-gas-decompression testing (https://www.trelleborg.com/seals/-/media/tss-media-repository/tss_website/pdf-and-other-literature/brochures/h2pro_en.pdf)",
+        "Parker O-Ring Handbook, explosive-decompression failure mechanism and correction guidance (https://www.parker.com/literature/O-Ring%20Division%20Literature/Section%20X.pdf)"
+      ],
+      "retrieval_terms": ["Wasserstoff", "H2", "H₂", "Erdgas", "Stickstoff", "CO2", "CO₂", "Gas", "Gasdichtung", "Hochdruckgas", "Hochdruck", "bar", "Druckwechsel"],
+      "retrieval_min_hits": 2,
+      "retrieval_required_terms_any": ["Wasserstoff", "H2", "H₂", "Erdgas", "Stickstoff", "CO2", "CO₂", "Gas", "Gasdichtung", "Hochdruckgas"],
       "tags": ["Sicherheitskritisch", "RGD"],
       "xrefs": []
     },

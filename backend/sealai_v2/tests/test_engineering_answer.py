@@ -11,7 +11,11 @@ from sealai_v2.core.engineering_answer import (
     EngineeringKnowledgeAnswer,
     validate_engineering_answer,
 )
-from sealai_v2.core.l1_generator import L1Generator, _fact_subjects
+from sealai_v2.core.l1_generator import (
+    L1Generator,
+    _fact_subjects,
+    _fallback_engineering_answer,
+)
 from sealai_v2.knowledge.material_parameters import lookup
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.render.engineering_answer import render_engineering_answer
@@ -68,6 +72,64 @@ def test_subject_binding_does_not_treat_hnbr_as_nbr() -> None:
     assert _fact_subjects(fact, ("NBR", "PTFE")) == frozenset()
 
 
+def test_single_subject_binding_rejects_unrelated_retrieval() -> None:
+    fact = GroundingFact(
+        "AFLAS kann in bestimmten Dampfbedingungen eingesetzt werden.",
+        "ledger",
+        card_id="FK-AFLAS-DAMPF",
+    )
+    assert _fact_subjects(fact, ("NBR",)) == frozenset()
+
+
+def test_single_subject_binding_accepts_boundary_matched_reviewed_text() -> None:
+    fact = GroundingFact(
+        "NBR ist eine compoundabhängige Elastomerfamilie.",
+        "ledger",
+        card_id="FK-WERKSTOFF-UEBERBLICK",
+    )
+    assert _fact_subjects(fact, ("NBR",)) == frozenset({"NBR"})
+
+
+def test_single_subject_fallback_does_not_rebind_unrelated_evidence() -> None:
+    fact = GroundingFact(
+        "AFLAS kann in bestimmten Dampfbedingungen eingesetzt werden.",
+        "ledger",
+        card_id="FK-AFLAS-DAMPF",
+        answer_facets=("properties",),
+    )
+    answer = _fallback_engineering_answer(
+        plan={
+            "profile": "material_overview",
+            "subjects": ["NBR"],
+            "sections": [{"heading": "Eigenschaften", "facets": ["properties"]}],
+        },
+        evidence_facts={"E1": fact},
+        evidence_subjects={"E1": frozenset()},
+        case_revision=1,
+    )
+    assert answer.claims == []
+
+
+def test_unknown_medium_fallback_leads_with_qualification_not_material_guess() -> None:
+    answer = _fallback_engineering_answer(
+        plan={
+            "profile": "medium_overview",
+            "subjects": ["Prozessmedium"],
+            "sections": [],
+        },
+        evidence_facts={},
+        evidence_subjects={},
+        case_revision=1,
+        question=(
+            "Welcher Dichtungswerkstoff passt für ein exotisches Prozessmedium ohne geprüfte "
+            "Verträglichkeitsdaten?"
+        ),
+    )
+
+    assert "noch kein Dichtungswerkstoff seriös auswählen" in answer.conclusion
+    assert "datenblatt- und testgestützt qualifiziert" in answer.conclusion
+
+
 def test_unreviewed_number_is_rejected() -> None:
     with pytest.raises(
         EngineeringAnswerValidationError, match="unsupported_numeric_content"
@@ -106,6 +168,26 @@ def test_renderer_owns_aligned_comparison_and_parameter_tables() -> None:
     assert "| Parameter | NBR | PTFE |" in rendered
     assert "Druckverformungsrest" in rendered
     assert "Typ-, Mindest- und Referenzwerte" in rendered
+
+
+def test_pure_knowledge_boundary_does_not_turn_into_case_intake() -> None:
+    rendered = render_engineering_answer(
+        _answer(),
+        knowledge_answer_plan={
+            "comparison": False,
+            "subjects": ["NBR"],
+            "sections": [{"heading": "Einordnung", "facets": ["definition"]}],
+        },
+        communication_plan={
+            "goal": "answer_requested_knowledge",
+            "case_bound": False,
+            "next_question": "",
+        },
+    )
+
+    assert "Für diese Wissensfrage sind keine Falldaten erforderlich" in rendered
+    assert "Abgrenzung zur konkreten Auslegung" in rendered
+    assert "Für Auswahl oder Freigabe noch erforderlich" not in rendered
 
 
 def test_fallback_missing_information_never_exposes_internal_facets() -> None:

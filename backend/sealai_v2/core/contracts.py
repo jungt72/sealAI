@@ -132,6 +132,7 @@ class SystemPromptAssembler(Protocol):
         engineering_flags: list[dict] | None = None,
         material_params: list | None = None,
         knowledge_answer_plan: dict | None = None,
+        communication_plan: dict | None = None,
         risk_flags: list[str] | None = None,
     ) -> str: ...
 

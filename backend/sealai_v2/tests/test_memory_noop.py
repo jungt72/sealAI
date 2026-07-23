@@ -6,8 +6,9 @@ on the answer path when memory is empty: if the prompt is byte-for-byte unchange
 from the same distribution as before. The golden is an 8-config matrix (flags × grounding × calc),
 all with empty memory and no ``conversation_window`` param.
 
-The baseline is **re-captured whenever the prompt LEGITIMATELY changes** — most recently for the
-EngineeringAnswer-v2 senior-engineering doctrine, previously at **M6a-B**
+The baseline is **re-captured whenever the prompt LEGITIMATELY changes** — most recently on
+**2026-07-22** for the evidence-bound compliance instruction (no ungrounded standards), and before
+that for the EngineeringAnswer-v2 senior-engineering doctrine, previously at **M6a-B**
 after the owner-approved additive ``# Gesprächsführung`` edge bullets, at **M8-A** after the
 owner-approved additive calc-provenance line (diff = exactly the ``Eingaben:`` origin line in the 4
 calc configs; recapture asserted additive-only), and at **M8-B** after the owner-approved

@@ -156,6 +156,14 @@ def test_wellendurchmesser_mm():
     assert welle is not None and "80" in welle.wert
 
 
+def test_compact_number_unit_spelling_is_bound_without_guessing() -> None:
+    facts = extract_inline("40mm und 8000")
+
+    welle = _by_feld(facts, "wellendurchmesser")
+    assert welle is not None and welle.wert == "40 mm"
+    assert _by_feld(facts, "drehzahl") is None
+
+
 def test_kein_emit_fuer_unmapped_einheit():
     """'5 kPa' → kein druck-Fact (kPa ist known-other, allein → defer)."""
     facts = extract_inline("Druck liegt bei 5 kPa.")

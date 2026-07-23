@@ -12,6 +12,7 @@ from sealai_v2.knowledge.qdrant_retrieval import (
     OpenAiEmbedder,
     QdrantFachkartenRetriever,
     _REVIEWED_BACKFILL_MIN_RELATIVE_SCORE_HYBRID,
+    _fuse_dense_and_lexical_points,
     _hits_to_result,
     _make_embedder,
     _quelle,
@@ -549,6 +550,7 @@ class _FakeClient:
         self._profile_points = profile_points if profile_points is not None else []
         self.last_query_points_kwargs: dict | None = None
         self.last_scroll_kwargs: dict | None = None
+        self.scroll_calls: list[dict] = []
 
     def query_points(self, collection, **kwargs):
         self.last_query_points_kwargs = kwargs
@@ -556,7 +558,185 @@ class _FakeClient:
 
     def scroll(self, collection, **kwargs):
         self.last_scroll_kwargs = kwargs
+        self.scroll_calls.append(kwargs)
         return self._profile_points, None
+
+
+def _claim_point(card_id: str, claim_id: str, score: float = 0.0, **payload):
+    return _FakePoint(
+        {
+            "card_id": card_id,
+            "claim_id": claim_id,
+            "claim_text": claim_id,
+            "review_state": "reviewed",
+            "scope": {},
+            **payload,
+        },
+        score,
+    )
+
+
+def test_dense_lexical_fusion_rewards_cross_lane_cards_and_interleaves_claims():
+    dense = [
+        _claim_point("VERBOSE", "verbose-1", 0.99),
+        _claim_point("VERBOSE", "verbose-2", 0.98),
+        _claim_point("VERBOSE", "verbose-3", 0.97),
+        _claim_point("CROSS-LANE", "cross", 0.80),
+        _claim_point("DENSE-ONLY", "dense-only", 0.70),
+    ]
+    lexical = [_claim_point("LEXICAL-ONLY", "lexical-only")]
+
+    fused = _fuse_dense_and_lexical_points(
+        dense,
+        lexical,
+        ("CROSS-LANE", "LEXICAL-ONLY"),
+    )
+
+    assert [point.payload["card_id"] for point in fused[:3]] == [
+        "CROSS-LANE",
+        "VERBOSE",
+        "LEXICAL-ONLY",
+    ]
+    assert [point.payload["claim_id"] for point in fused].count("cross") == 1
+
+
+def test_lexical_scroll_is_tenant_scoped_card_bounded_and_payload_only():
+    client = _FakeClient(points=[])
+    retriever = QdrantFachkartenRetriever(
+        Settings(), client=client, embedder=_FakeDenseEmbedder()
+    )
+
+    asyncio.run(
+        retriever.retrieve(
+            "NBR O-Ring ist draußen rissig geworden", tenant_id="customer-a", k=5
+        )
+    )
+
+    lexical_call = next(
+        call
+        for call in client.scroll_calls
+        if {condition.key for condition in call["scroll_filter"].must}
+        == {"tenant_id", "card_id"}
+    )
+    conditions = {
+        condition.key: condition for condition in lexical_call["scroll_filter"].must
+    }
+    assert set(conditions["tenant_id"].match.any) == {"customer-a", GLOBAL_TENANT}
+    assert 0 < len(conditions["card_id"].match.any) <= 16
+    assert lexical_call["limit"] == 256
+    assert lexical_call["with_payload"] is True
+    assert lexical_call["with_vectors"] is False
+
+
+def test_optional_lexical_and_profile_scroll_failures_preserve_dense_result():
+    class _FailingScrollClient(_FakeClient):
+        def scroll(self, collection, **kwargs):
+            self.scroll_calls.append(kwargs)
+            raise RuntimeError("optional scroll unavailable")
+
+    dense = [
+        _claim_point(
+            "FK-PTFE-KALTFLUSS",
+            "dense-survives",
+            0.91,
+            review_state="draft",
+            scope={"material": ["PTFE"]},
+        )
+    ]
+    retriever = QdrantFachkartenRetriever(
+        Settings(),
+        client=_FailingScrollClient(points=dense),
+        embedder=_FakeDenseEmbedder(),
+    )
+
+    result = asyncio.run(
+        retriever.retrieve("Technische Details zu PTFE", tenant_id="customer-a", k=5)
+    )
+
+    assert [fact.claim_id for fact in result.provisional] == ["dense-survives"]
+    assert len(retriever._client.scroll_calls) == 2
+
+
+def test_lexically_fetched_claims_are_revalidated_and_retired_claims_drop():
+    lexical_points = [
+        _claim_point("FK-NBR-OZON", "active", 0.0),
+        _claim_point("FK-NBR-OZON", "retired", 0.0),
+    ]
+
+    class _LexicalClient(_FakeClient):
+        def scroll(self, collection, **kwargs):
+            self.scroll_calls.append(kwargs)
+            keys = {condition.key for condition in kwargs["scroll_filter"].must}
+            return (lexical_points if "card_id" in keys else []), None
+
+    class _Ledger:
+        def resolve_claims(self, claim_ids, *, tenant_id):
+            assert tenant_id == "customer-a"
+            assert "active" in claim_ids and "retired" in claim_ids
+            return {
+                "active": {
+                    "claim_id": "active",
+                    "claim_text": "canonical ledger text",
+                    "card_id": "FK-NBR-OZON",
+                    "review_state": "reviewed",
+                    "sources": ["ledger-source"],
+                    "quelle": "ledger",
+                    "scope": {"material": ["NBR"], "medium": ["Ozon"]},
+                }
+            }
+
+    retriever = QdrantFachkartenRetriever(
+        Settings(),
+        client=_LexicalClient(points=[]),
+        embedder=_FakeDenseEmbedder(),
+        knowledge_ledger=_Ledger(),
+    )
+    result = asyncio.run(
+        retriever.retrieve(
+            "NBR O-Ring ist draußen rissig geworden", tenant_id="customer-a", k=5
+        )
+    )
+
+    assert [fact.claim_id for fact in result.grounding_facts] == ["active"]
+    assert [fact.text for fact in result.grounding_facts] == ["canonical ledger text"]
+
+
+def test_focused_oring_profile_is_additive_after_case_evidence():
+    case_fact = _claim_point(
+        "FK-NBR-OZON",
+        "case-evidence",
+        0.95,
+        scope={
+            "material": ["NBR"],
+            "medium": ["Ozon", "Witterung"],
+            "application": ["Außeneinsatz"],
+        },
+    )
+    profile_fact = _claim_point(
+        "FK-ORING-ENGINEERING-PROFILE",
+        "oring-profile",
+        0.0,
+        subject_type="seal_type",
+        answer_facets=["definition"],
+        scope={"application": ["O-Ring", "ORing"]},
+    )
+    client = _FakeClient(points=[case_fact], profile_points=[profile_fact])
+    retriever = QdrantFachkartenRetriever(
+        Settings(), client=client, embedder=_FakeDenseEmbedder()
+    )
+
+    result = asyncio.run(
+        retriever.retrieve(
+            "NBR O-Ring ist der Witterung ausgesetzt und reißt. Was tun?",
+            tenant_id="customer-a",
+            k=1,
+        )
+    )
+
+    assert [fact.card_id for fact in result.grounding_facts] == [
+        "FK-NBR-OZON",
+        "FK-ORING-ENGINEERING-PROFILE",
+    ]
 
 
 def test_rerank_points_reorders_head_and_leaves_tail_untouched():
@@ -807,7 +987,12 @@ def test_retrieve_does_not_scroll_material_profile_for_focused_case_question():
         )
     )
 
-    assert client.last_scroll_kwargs is None
+    assert client.scroll_calls
+    assert all(
+        "subject_type"
+        not in {condition.key for condition in call["scroll_filter"].must}
+        for call in client.scroll_calls
+    )
 
 
 def test_retrieve_scrolls_bounded_seal_profile_for_focused_rwdr_case():
