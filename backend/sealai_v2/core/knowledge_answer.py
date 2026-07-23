@@ -66,6 +66,108 @@ _METHOD_KNOWLEDGE_RE = re.compile(
     r"vertr(?:ä|ae)glich\w*)\b",
     re.IGNORECASE,
 )
+# A bare digit is a cheap, reliable proxy for "this message states an actual case parameter"
+# (dimension, speed, temperature, pressure, ...) -- used below to keep a reviewed material/
+# seal-type alias mention from being treated as content-free when it is really one named entity
+# inside a real engineering case.
+_DIGIT_RE = re.compile(r"\d")
+
+# Purely conversational/request scaffolding -- greetings, politeness, pronouns, the vague
+# "etwas ueber X" reference, and the request verbs themselves ("kannst du ... sagen/erklaeren").
+# Used only to recognize a message as content-free ASIDE FROM a named material/seal-type alias
+# (see ``_is_content_free_alias_mention``) -- deliberately small and closed, mirroring this
+# codebase's existing curated-word-list pattern (e.g. routing.py's own smalltalk-remainder set)
+# rather than trying to regex-enumerate every possible phrasing.
+_CONVERSATIONAL_FILLER_TOKENS = frozenset(
+    {
+        "hallo",
+        "hi",
+        "hey",
+        "guten",
+        "tag",
+        "morgen",
+        "abend",
+        "servus",
+        "moin",
+        "bitte",
+        "danke",
+        "gerne",
+        "kannst",
+        "koenntest",
+        "könntest",
+        "wuerdest",
+        "würdest",
+        "kann",
+        "koennen",
+        "können",
+        "sollst",
+        "du",
+        "dir",
+        "dich",
+        "ich",
+        "mir",
+        "mich",
+        "wir",
+        "uns",
+        "sie",
+        "ihnen",
+        "etwas",
+        "was",
+        "wie",
+        "ueber",
+        "über",
+        "zu",
+        "zum",
+        "zur",
+        "mal",
+        "noch",
+        "nochmal",
+        "sagen",
+        "sag",
+        "erzaehlen",
+        "erzählen",
+        "erzaehl",
+        "erzähl",
+        "erklaeren",
+        "erklären",
+        "erklaer",
+        "erklär",
+        "geben",
+        "gebe",
+        "gib",
+        "zeigen",
+        "zeig",
+        "information",
+        "informationen",
+        "info",
+        "infos",
+        "mehr",
+    }
+)
+
+
+def _is_content_free_alias_mention(
+    text: str, tokens: set[str], materials: tuple[str, ...], seals: tuple[str, ...]
+) -> bool:
+    """Whether ``text`` names a reviewed material/seal-type alias and carries no other
+    substantive content -- i.e. every remaining token is either part of the alias itself or
+    pure conversational scaffolding, and no digit is present (a real case parameter). This is
+    what makes "hallo, kannst du mir etwas ueber ptfe sagen?" trigger a knowledge profile
+    without also triggering for a query like "lebensmittelechte Dichtung fuer eine
+    Schokoladen-Anlage, EPDM food-grade?", which names EPDM but is really a specific
+    compatibility question that must stay on its own, more targeted retrieval path."""
+
+    if not (materials or seals) or _DIGIT_RE.search(text):
+        return False
+    alias_tokens: set[str] = set()
+    for canonical in materials:
+        for alias in _MATERIAL_ALIASES.get(canonical, ()):
+            alias_tokens |= query_tokens(alias)
+    for canonical in seals:
+        for alias in _SEAL_ALIASES.get(canonical, ()):
+            alias_tokens |= query_tokens(alias)
+    return not (tokens - alias_tokens - _CONVERSATIONAL_FILLER_TOKENS)
+
 
 _MATERIAL_ALIASES: dict[str, tuple[str, ...]] = {
     "PTFE": ("ptfe", "polytetrafluorethylen", "polytetrafluoroethylene"),
@@ -592,12 +694,31 @@ def build_knowledge_answer_plan(
         bool(materials or seals or media or medium_context) and len(tokens) <= 4
     )
     explicit_medium_method = bool(medium_context and _METHOD_KNOWLEDGE_RE.search(text))
+    # 2026-07-23: a reviewed material/seal-type alias (the same closed, curated list
+    # ``detected_material_subjects``/``_detected_seals`` already use everywhere else) is an
+    # unambiguous subject even wrapped in conversational scaffolding -- e.g. "hallo, kannst du
+    # mir etwas über ptfe sagen?" names PTFE exactly as clearly as "was ist PTFE?" does.
+    # ``short_subject_query`` alone missed this because it also requires ``len(tokens) <= 4``,
+    # and ``_KNOWLEDGE_RE`` has no "kannst du...sagen"-shaped alternative -- together they left
+    # this exact phrasing with zero facets available, which starved ``knowledge_retrieval_limit``
+    # down to k=5 and (independently) excluded the reviewed card from the deterministic
+    # exact-alias Qdrant fast path and the lexical eligibility filter, since both of those gates
+    # call this same function. This must stay narrow: it is NOT enough to check "no digit" --
+    # e.g. "lebensmittelechte Dichtung für eine Schokoladen-Anlage, EPDM food-grade?" also names
+    # a reviewed alias (EPDM) and has no digit, but is a specific compatibility question with
+    # real content beyond the material name, and retrieval.py's own single-material-subject
+    # narrowing (InProcessRetriever.retrieve, "Prefer cards whose identity names the requested
+    # material") would then wrongly displace the actually-relevant food-grade card in favor of a
+    # generic EPDM-only shortlist. ``_is_content_free_alias_mention`` requires every remaining
+    # token to be either the alias itself or known conversational filler -- see its docstring.
+    bare_entity_mention = _is_content_free_alias_mention(text, tokens, materials, seals)
     explicit_profile_trigger = bool(
         route_name in _PROFILE_ROUTES
         or _KNOWLEDGE_RE.search(text)
         or _COMPARISON_RE.search(text)
         or short_subject_query
         or explicit_medium_method
+        or bare_entity_mention
     )
     # Fallarbeit may name both a seal type and a material. The seal profile supplies the system-
     # level interfaces and failure modes; broad material profiles would instead displace focused

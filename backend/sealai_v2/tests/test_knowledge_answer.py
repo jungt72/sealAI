@@ -156,6 +156,58 @@ def test_only_explicit_knowledge_turns_expand_retrieval() -> None:
     )
 
 
+def test_conversational_material_mention_still_expands_retrieval() -> None:
+    """2026-07-23 production bug, found live: "hallo, kannst du mir etwas über ptfe
+    sagen?" deterministically routes to MATERIAL_KNOWLEDGE (PTFE is an exact, reviewed
+    alias -- routing.py's own material-topic check doesn't care about surrounding
+    words), but the retrieval-budget/eligibility gate is a SEPARATE function
+    (this one) that only recognized the subject via short_subject_query's <=4-token
+    cutoff or _KNOWLEDGE_RE's fixed trigger-phrase list -- neither of which matches
+    "kannst du...sagen" wrapped in a greeting, so this exact phrasing silently fell
+    back to k=5 and lost eligibility for the deterministic exact-alias fast path,
+    producing a "no evidence" answer for a materially well-documented topic. A bare,
+    unambiguous reviewed-alias mention must expand retrieval regardless of the
+    conversational filler around it."""
+
+    question = "hallo, kannst du mir etwas über ptfe sagen?"
+    assert knowledge_retrieval_limit(question) == 12
+    plan = build_knowledge_answer_plan(question, route_name="material_knowledge")
+    assert plan is not None
+    assert plan.subjects == ("PTFE",)
+
+
+def test_alias_mention_within_a_specific_question_does_not_narrow_to_bare_overview() -> (
+    None
+):
+    """Regression for the fix above: a message naming a reviewed alias (EPDM) but carrying
+    real, specific content beyond it ("lebensmittelechte Dichtung für eine Schokoladen-Anlage,
+    EPDM food-grade?") must NOT be treated as a content-free bare mention. InProcessRetriever's
+    own single-material-subject narrowing ("Prefer cards whose identity names the requested
+    material") activates whenever build_knowledge_answer_plan returns a material-subject plan,
+    and would otherwise displace the actually-relevant food-grade card in favor of a generic
+    EPDM-only shortlist -- this broke test_owner_attested_foodgrade_claims_are_grounding in
+    test_retrieval.py the first time this fix was attempted with a plain no-digit check."""
+
+    question = (
+        "lebensmittelechte Dichtung für eine Schokoladen-Anlage, EPDM food-grade?"
+    )
+    assert knowledge_retrieval_limit(question) == 5
+    assert build_knowledge_answer_plan(question) is None
+
+
+def test_bare_alias_mention_with_case_parameters_does_not_expand_retrieval() -> None:
+    """The digit guard behind the fix above must keep excluding a real engineering
+    case that merely names a seal type in passing -- otherwise any case turn
+    mentioning RWDR/O-Ring/etc. would wrongly get the wider knowledge-overview
+    budget and the case-only seal profile in test_case_profile_is_available_
+    without_expanding_the_retrieval_budget below would stop being a meaningful
+    boundary."""
+
+    question = "RWDR 45 mm bei 1500 U/min, Mineralöl und 80 Grad technisch vorprüfen"
+    assert knowledge_retrieval_limit(question) == 5
+    assert build_knowledge_answer_plan(question) is None
+
+
 def test_case_profile_is_available_without_expanding_the_retrieval_budget() -> None:
     question = "RWDR 45 mm bei 1500 U/min, Mineralöl und 80 Grad technisch vorprüfen"
     assert build_knowledge_answer_plan(question) is None
