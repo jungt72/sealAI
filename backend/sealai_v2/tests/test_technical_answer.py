@@ -1770,6 +1770,49 @@ def test_unsupported_decision_forces_conservative_human_review():
     )
 
 
+def test_evidence_bound_claim_may_restate_exact_user_operating_value():
+    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload["conclusion"] = "Temperatur und Wärmehaushalt werden geprüft."
+    payload["claims"][0]["text"] = (
+        "Die Nutzerangabe von 145 °C gehört in die Prüfung des Wärmehaushalts."
+    )
+    answer = TechnicalAnswer.model_validate(payload)
+
+    validate_technical_answer(
+        answer,
+        case_revision=7,
+        allowed_evidence_ids=frozenset({"EV-1"}),
+        require_evidence_for_all_claims=True,
+        evidence_text_by_id={
+            "EV-1": "Temperatur und Wärmehaushalt sind gemeinsam zu prüfen."
+        },
+        user_context_text="Der Betrieb liegt bei etwa 145 °C.",
+    )
+
+
+def test_evidence_bound_claim_still_rejects_invented_numeric_threshold():
+    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload["conclusion"] = "Temperatur und Wärmehaushalt werden geprüft."
+    payload["claims"][0]["text"] = (
+        "Bei 190 °C überschreitet die Dichtung eine technische Grenze."
+    )
+    answer = TechnicalAnswer.model_validate(payload)
+
+    with pytest.raises(
+        TechnicalAnswerValidationError, match="number_absent_from_cited_evidence"
+    ):
+        validate_technical_answer(
+            answer,
+            case_revision=7,
+            allowed_evidence_ids=frozenset({"EV-1"}),
+            require_evidence_for_all_claims=True,
+            evidence_text_by_id={
+                "EV-1": "Temperatur und Wärmehaushalt sind gemeinsam zu prüfen."
+            },
+            user_context_text="Der Betrieb liegt bei etwa 145 °C.",
+        )
+
+
 def test_structured_answer_contract_caps_chat_density():
     schema = TechnicalAnswer.model_json_schema()
     props = schema["properties"]
