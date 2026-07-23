@@ -156,6 +156,265 @@ def test_evidence_bound_technical_answer_repairs_once_then_falls_back():
     assert "failed deterministic evidence validation" in client.calls[1]["system"]
 
 
+def test_reviewed_archetype_is_rendered_deterministically_before_model_selection():
+    client = FakeLlmClient(_payload())
+    facts = tuple(
+        GroundingFact(
+            text,
+            "owner-reviewed archetype",
+            card_id="ARCHETYPE-RUEHRWERK",
+            claim_id=f"ARCHETYPE-RUEHRWERK:{index}",
+            sources=("owner-review",),
+            answer_facets=("applications", "selection_inputs"),
+        )
+        for index, text in enumerate(
+            (
+                "Das Prozessmedium berührt die Dichtung direkt.",
+                "Trockenlauf beim Anfahren erzeugt Reibung und Wärme.",
+                "Wellenauslenkung und Taumeln können den dynamischen Kontakt stören.",
+            )
+        )
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welche Wellendichtung empfiehlst du für mein Rührwerk?",
+            flags=Flags(),
+            grounding_facts=facts,
+            archetype_context={
+                "archetyp": "ruehrwerk",
+                "interview_fragen": ["Welches Prozessmedium liegt an?"],
+                "blinde_flecken": [],
+                "dichtungsrelevante_besonderheiten": [],
+            },
+            communication_plan={
+                **build_communication_plan(
+                    question="Welche Wellendichtung empfiehlst du für mein Rührwerk?",
+                    route_name="engineering_case",
+                ).to_dict(),
+                "next_question": "Welches Prozessmedium liegt an?",
+                "question_reason": "Das trennt die Lösungswege.",
+            },
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Prozessmedium" in answer.text
+    assert "Trockenlauf" in answer.text
+    assert "Wellenauslenkung" in answer.text
+    assert "Welches Prozessmedium liegt an?" in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_archetype"
+    assert client.calls == []
+
+
+def test_source_bound_speed_policy_outranks_reviewed_archetype():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Getriebe RWDR 40x62x8 mit NBR bei 6000 U/min, hält das?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Die Umfangsgeschwindigkeit ist die zentrale Auslegungsgröße.",
+                    "owner-reviewed archetype",
+                    card_id="ARCHETYPE-GETRIEBE",
+                    claim_id="ARCHETYPE-GETRIEBE:1",
+                    sources=("owner-review",),
+                    answer_facets=("operating_factors",),
+                ),
+                GroundingFact(
+                    "Eine Eignungsfrage mit Durchmesser und Drehzahl benötigt den Rechenkernbefund.",
+                    "reviewed policy",
+                    card_id="CALC-UMFANGSGESCHWINDIGKEIT",
+                    sources=("primary-source",),
+                    kind="trap",
+                ),
+            ),
+            archetype_context={
+                "archetyp": "getriebe",
+                "interview_fragen": ["Welches Öl samt Additiven liegt an?"],
+                "blinde_flecken": [],
+                "dichtungsrelevante_besonderheiten": [],
+            },
+            communication_plan={
+                **build_communication_plan(
+                    question="Getriebe RWDR 40x62x8 mit NBR bei 6000 U/min, hält das?",
+                    route_name="engineering_case",
+                ).to_dict(),
+                # Defense-in-depth: even a conflicting upstream orientation marker must never
+                # suppress a computed value required by an active reviewed policy.
+                "general_material_orientation": True,
+            },
+            require_evidence_for_all_claims=True,
+            calc=CalcResult(
+                computed=(
+                    ComputedValue(
+                        calc_id="umfangsgeschwindigkeit",
+                        name="v_m_s",
+                        value=12.5664,
+                        unit="m/s",
+                        stage=1,
+                        derivation_depth=1,
+                        formula="v = pi*d*n/60000",
+                        warnings=("Standard-NBR-Lippe bei diesem Wert kritisch prüfen",),
+                    ),
+                )
+            ),
+            case_revision=7,
+        )
+    )
+
+    assert "v_m_s = 12.5664 m/s" in answer.text
+    assert "Kernwarnung" in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_policy"
+    assert client.calls == []
+
+
+def test_general_rwdr_material_orientation_is_direct_and_suppresses_calc_tangent():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "RWDR 40x62x8 bei 8000 U/min: Welche Werkstoffe kommen grundsätzlich infrage?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "RWDR-Bauformen unterscheiden sich durch Elastomer- oder PTFE-Lippe.",
+                    "reviewed profile",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    claim_id="RWDR-VARIANTS",
+                    sources=("primary-source",),
+                    answer_facets=("variants", "applications"),
+                ),
+                GroundingFact(
+                    "Werkstoff und Bauform hängen von Medium, Temperatur, Druck und Schmierung ab.",
+                    "reviewed profile",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    claim_id="RWDR-SELECTION",
+                    sources=("primary-source",),
+                    answer_facets=("selection_inputs", "operating_factors"),
+                ),
+            ),
+            communication_plan={
+                **build_communication_plan(
+                    question=(
+                        "RWDR 40x62x8 bei 8000 U/min: Welche Werkstoffe kommen "
+                        "grundsätzlich infrage?"
+                    ),
+                    route_name="engineering_case",
+                ).to_dict(),
+                "general_material_orientation": True,
+                "next_question": "Welches Medium und Temperaturprofil liegen an?",
+            },
+            require_evidence_for_all_claims=True,
+            calc=CalcResult(
+                computed=(
+                    ComputedValue(
+                        calc_id="umfangsgeschwindigkeit",
+                        name="v_m_s",
+                        value=16.7552,
+                        unit="m/s",
+                        stage=1,
+                        derivation_depth=1,
+                        formula="v = pi*d*n/60000",
+                        inputs_used=("d1_mm", "rpm"),
+                    ),
+                )
+            ),
+            case_revision=7,
+        )
+    )
+
+    assert "elastomere Lippenwerkstoffe" in answer.text
+    assert "PTFE-basierte Lippenlösungen" in answer.text
+    assert "v_m_s" not in answer.text
+    assert "16.7552" not in answer.text
+    assert answer.finish_reason == "deterministic_material_orientation"
+    assert client.calls == []
+
+
+def test_nbr_thermal_diagnosis_is_qualitative_actionable_and_human_bounded():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Unser NBR-Wellendichtring ist hart und rissig geworden und leckt.",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "NBR liegt bei etwa 100–120 °C an der Dauertemperaturgrenze; bei 130 °C drohen Verhärtung und Versprödung.",
+                    "reviewed card",
+                    card_id="FK-NBR-DAUERTEMP",
+                    claim_id="NBR-LIMIT",
+                    sources=("primary-source",),
+                    answer_facets=("limits", "failure_modes"),
+                ),
+                GroundingFact(
+                    "Bei höherer Dauertemperatur: HNBR oder FKM.",
+                    "reviewed card",
+                    card_id="FK-NBR-DAUERTEMP",
+                    claim_id="NBR-FIX",
+                    sources=("primary-source",),
+                    answer_facets=("variants", "applications"),
+                ),
+                GroundingFact(
+                    "Synthetiköle und Additive können NBR zusätzlich angreifen.",
+                    "reviewed card",
+                    card_id="FK-NBR-DAUERTEMP",
+                    claim_id="NBR-MEDIUM",
+                    sources=("primary-source",),
+                    answer_facets=("media_compatibility", "limits"),
+                ),
+            ),
+            communication_plan={
+                **build_communication_plan(
+                    question=(
+                        "Unser NBR-Wellendichtring ist hart und rissig geworden und leckt."
+                    ),
+                    route_name="leakage_troubleshooting",
+                ).to_dict(),
+                "next_question": "Welche Temperatur tritt direkt an der Dichtlippe auf?",
+            },
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "thermischer Alterung" in answer.text
+    assert "HNBR oder FKM" in answer.text
+    assert "Hersteller oder die zuständige Fachstelle" in answer.text
+    assert "100" not in answer.text
+    assert "120" not in answer.text
+    assert "130" not in answer.text
+    assert answer.finish_reason == "deterministic_diagnostic_evidence"
+    assert client.calls == []
+
+
+def test_exact_steam_limit_request_answers_epistemic_boundary_directly():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Bis genau wie viel Grad hält ein EPDM-O-Ring in Sattdampf?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard.",
+                    "reviewed policy",
+                    card_id="TRAP-FKM-DAMPF",
+                    sources=("primary-source",),
+                    kind="trap",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "universell genaue Grenztemperatur" in answer.text
+    assert "Datenblatt" in answer.text
+    assert "Scheingenauigkeit" in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_policy"
+    assert client.calls == []
+
+
 def test_solution_fallback_selects_relevant_facets_instead_of_first_card_entries():
     client = FakeLlmClient(_payload(evidence_ids=[]))
     answer = asyncio.run(

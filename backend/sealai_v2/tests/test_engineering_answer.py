@@ -110,6 +110,26 @@ def test_single_subject_fallback_does_not_rebind_unrelated_evidence() -> None:
     assert answer.claims == []
 
 
+def test_unknown_medium_fallback_leads_with_qualification_not_material_guess() -> None:
+    answer = _fallback_engineering_answer(
+        plan={
+            "profile": "medium_overview",
+            "subjects": ["Prozessmedium"],
+            "sections": [],
+        },
+        evidence_facts={},
+        evidence_subjects={},
+        case_revision=1,
+        question=(
+            "Welcher Dichtungswerkstoff passt für ein exotisches Prozessmedium ohne geprüfte "
+            "Verträglichkeitsdaten?"
+        ),
+    )
+
+    assert "noch kein Dichtungswerkstoff seriös auswählen" in answer.conclusion
+    assert "datenblatt- und testgestützt qualifiziert" in answer.conclusion
+
+
 def test_unreviewed_number_is_rejected() -> None:
     with pytest.raises(
         EngineeringAnswerValidationError, match="unsupported_numeric_content"

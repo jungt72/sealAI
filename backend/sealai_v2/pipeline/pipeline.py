@@ -31,6 +31,7 @@ from sealai_v2.pipeline.routing import (
     resolve_comparison_followup,
     resolve_calculation_followup,
     requests_calculation,
+    requests_general_material_orientation,
     requests_solution,
 )
 from sealai_v2.orchestration.execution_policy import (
@@ -1763,6 +1764,28 @@ class Pipeline:
                 conflicts=policy_conflicts,
             )
             communication_plan = _communication_plan.to_dict()
+            communication_plan["general_material_orientation"] = (
+                requests_general_material_orientation(knowledge_question)
+                and not calculation_requested
+            )
+            if archetype_context:
+                # An exact owner-reviewed application profile should lead the next question as
+                # well as the evidence.  Reusing its first reviewed interview question prevents a
+                # generic case-state field (often pressure) from displacing the machine-specific
+                # discriminator (for example process medium on a mixer or oil/additives on a
+                # gearbox).  This changes presentation only; the profile remains incapable of
+                # routing or authorising a claim.
+                archetype_questions = tuple(
+                    str(item).strip()
+                    for item in archetype_context.get("interview_fragen", ())
+                    if str(item).strip()
+                )
+                if archetype_questions:
+                    communication_plan["next_question"] = archetype_questions[0]
+                    communication_plan["question_reason"] = (
+                        "Diese Angabe trennt im erkannten Anwendungstyp zuerst die technisch "
+                        "relevanten Lösungswege."
+                    )
             if _communication_plan.goal == "clarify_under_specified_case":
                 # A bare application noun contains too little information for a sourced engineering
                 # answer.  Use the governed, one-question clarification verbatim: this avoids both

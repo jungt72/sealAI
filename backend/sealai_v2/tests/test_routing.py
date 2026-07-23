@@ -29,9 +29,36 @@ def test_general_material_orientation_does_not_authorize_unsolicited_calculation
     )
 
 
+@pytest.mark.parametrize("adverb", ["normalerweise", "üblicherweise", "prinzipiell"])
+def test_broad_material_orientation_synonyms_do_not_leak_calculation(
+    adverb: str,
+) -> None:
+    assert not calculation_relevant_for_response(
+        f"RWDR 40x62x8 bei 6000 U/min: Welche Elastomere sind {adverb} einsetzbar?",
+        has_kernel_inputs=True,
+    )
+
+
 def test_closed_rwdr_candidate_decision_authorizes_relevant_kernel_result() -> None:
     assert calculation_relevant_for_response(
         "RWDR 40x62x8 aus Standard-NBR bei 6000 U/min: Reicht das?",
+        has_kernel_inputs=True,
+    )
+
+
+def test_complete_rwdr_candidate_intake_authorizes_proactive_speed_risk() -> None:
+    assert calculation_relevant_for_response(
+        "RWDR 40x62x8, NBR, 6000 U/min, Öl. Die Temperatur ist noch offen.",
+        has_kernel_inputs=True,
+    )
+
+
+def test_explicit_calculation_wins_even_with_broad_orientation_adverb() -> None:
+    assert calculation_relevant_for_response(
+        (
+            "RWDR 40x62x8 mit NBR bei 6000 U/min: Wie hoch ist die "
+            "Umfangsgeschwindigkeit normalerweise für so einen Werkstoff?"
+        ),
         has_kernel_inputs=True,
     )
 

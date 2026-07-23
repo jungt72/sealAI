@@ -197,8 +197,10 @@ _EXPLICIT_CALC_SPEECH_RE = re.compile(
 )
 _GENERAL_MATERIAL_ORIENTATION_RE = re.compile(
     r"\bwelche\w*\s+(?:werkstoffe?|material(?:ien|e)?|elastomere?|compounds?)\b"
-    r"[^?!.]{0,100}\b(?:grunds[aä]tzlich|allgemein|typischerweise|in\s+frage|infrage)\b|"
-    r"\b(?:grunds[aä]tzlich|allgemein|typischerweise)\b[^?!.]{0,100}"
+    r"[^?!.]{0,100}\b(?:grunds[aä]tzlich|prinzipiell|allgemein|generell|"
+    r"normalerweise|[uü]blicherweise|typischerweise|im\s+allgemeinen|in\s+frage|infrage)\b|"
+    r"\b(?:grunds[aä]tzlich|prinzipiell|allgemein|generell|normalerweise|"
+    r"[uü]blicherweise|typischerweise|im\s+allgemeinen)\b[^?!.]{0,100}"
     r"\b(?:werkstoffe?|material(?:ien|e)?|elastomere?|compounds?)\b",
     re.IGNORECASE,
 )
@@ -739,11 +741,37 @@ def calculation_relevant_for_response(
         return True
     if requests_general_material_orientation(question):
         return False
-    return bool(
+    # A terse first-turn application record can already contain everything the reviewed kernel
+    # needs to expose a material/speed trap even though it is phrased as facts rather than as a
+    # question (for example: seal designation + candidate material + rpm).  This is not an
+    # invitation to narrate every computed value: it is narrowly limited to a rotating seal with
+    # complete kernel inputs and an explicitly named material candidate.  Broad "which materials
+    # generally?" questions were rejected above and therefore retain the no-unsolicited-calc
+    # restraint.
+    rotating_material_case = bool(
         has_kernel_inputs
-        and _CLOSED_CANDIDATE_DECISION_RE.search(question or "")
         and _ROTATING_SPEED_CONTEXT_RE.search(question or "")
         and _has_material_topic(question, material_terms)
+    )
+    proactive_candidate_check = bool(
+        rotating_material_case
+        and re.search(
+            r"\b(?:rwdr|radialwellendichtring|wellendichtring|simmerring)\b",
+            question or "",
+            re.IGNORECASE,
+        )
+        and re.search(
+            r"\b\d+(?:[.,]\d+)?\s*(?:u\s*/\s*min|1\s*/\s*min|rpm)\b",
+            question or "",
+            re.IGNORECASE,
+        )
+    )
+    return bool(
+        proactive_candidate_check
+        or (
+            rotating_material_case
+            and _CLOSED_CANDIDATE_DECISION_RE.search(question or "")
+        )
     )
 
 

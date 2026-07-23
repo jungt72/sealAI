@@ -46,12 +46,15 @@ logger = logging.getLogger(__name__)
 
 _UNCLEAR_MEDIUM_RE = re.compile(
     r"\b(?:synthetische[snmr]?\s+[öo]l|unspezifiziert\w*|unbekannt\w*|unklar\w*|"
-    r"genaue\s+(?:sorte|zusammensetzung)\s+(?:ist\s+)?(?:nicht\s+bekannt|unbekannt))\b",
+    r"exotisch\w*|genaue\s+(?:sorte|zusammensetzung)\s+(?:ist\s+)?"
+    r"(?:nicht\s+bekannt|unbekannt)|(?:keine?|ohne)\s+(?:gepr[uü]fte\w*\s+)?"
+    r"vertr[aä]glichkeits(?:angabe|daten|nachweis)\w*)\b",
     re.IGNORECASE,
 )
 _MATERIAL_SELECTION_RE = re.compile(
-    r"\b(?:werkstoff|material|elastomer|compound)\b[^?!.]{0,80}\b(?:passt|geeign(?:et|ung)|wählen|waehlen)\b|"
-    r"\bwelche(?:r|s)?\s+(?:werkstoff|material|elastomer|compound)\b",
+    r"\b(?:dichtungswerkstoff|werkstoff|material|elastomer|compound)\b[^?!.]{0,80}"
+    r"\b(?:passt|geeign(?:et|ung)|wählen|waehlen)\b|"
+    r"\bwelche(?:r|s)?\s+(?:dichtungswerkstoff|werkstoff|material|elastomer|compound)\b",
     re.IGNORECASE,
 )
 _QUANTITATIVE_DETAIL_RE = re.compile(
@@ -75,7 +78,14 @@ def _requests_quantitative_detail(question: str) -> bool:
     return bool(_QUANTITATIVE_DETAIL_RE.search(question or ""))
 
 
-def _engineering_conclusion(plan: dict) -> str:
+def _engineering_conclusion(plan: dict, *, question: str = "") -> str:
+    if _requires_material_abstention(question):
+        return (
+            "Ohne geprüfte Verträglichkeitsdaten für das konkrete Medium lässt sich noch kein "
+            "Dichtungswerkstoff seriös auswählen. Zuerst werden Stoffidentität und Betriebsfenster "
+            "geklärt; anschließend wird ein konkreter Compound datenblatt- und testgestützt "
+            "qualifiziert."
+        )
     subjects = tuple(
         str(subject) for subject in plan.get("subjects", ()) if str(subject)
     )
@@ -163,6 +173,7 @@ def _fallback_engineering_answer(
     evidence_facts: dict[str, GroundingFact],
     evidence_subjects: dict[str, frozenset[str]],
     case_revision: int,
+    question: str = "",
 ) -> EngineeringKnowledgeAnswer:
     """Fail closed to exact reviewed statements, preserving subject and facet identity."""
     claims: list[EngineeringClaim] = []
@@ -249,7 +260,7 @@ def _fallback_engineering_answer(
         schema_version=2,
         profile=str(plan.get("profile") or "engineering_knowledge"),
         case_revision=case_revision,
-        conclusion=_engineering_conclusion(plan),
+        conclusion=_engineering_conclusion(plan, question=question),
         claims=claims,
         assumptions=[],
         missing_information=_engineering_missing_information(plan),
@@ -301,6 +312,64 @@ def _deterministic_knowledge_answer(
         ],
         recommendation={"summary": "", "status": "none", "conditions": []},
         needs_human_review=False,
+    )
+
+
+def _deterministic_archetype_answer(
+    *,
+    archetype_context: dict,
+    evidence_facts: dict[str, GroundingFact],
+    case_revision: int,
+) -> TechnicalAnswer | None:
+    """Render an exact reviewed machine profile without gambling on model claim selection."""
+
+    key = str(archetype_context.get("archetyp") or "").strip().casefold()
+    card_id = f"ARCHETYPE-{key.upper()}"
+    profile_facts = [
+        (evidence_id, fact)
+        for evidence_id, fact in evidence_facts.items()
+        if fact.card_id == card_id
+    ]
+    if not key or not profile_facts:
+        return None
+    profile_facts.sort(key=lambda item: item[0])
+    if key == "getriebe":
+        conclusion = (
+            "Beim Getriebe sind hier drei gekoppelte Punkte entscheidend: die "
+            "Umfangsgeschwindigkeit, die Beständigkeit gegen das konkrete Öl samt Additiven und "
+            "Temperatur sowie eine ausreichend harte und drallfreie Wellenoberfläche. Erst danach "
+            "ist eine Werkstoff- oder Bauformfreigabe belastbar."
+        )
+    elif key == "ruehrwerk":
+        conclusion = (
+            "Für das Rührwerk wäre eine sofortige Werkstofffestlegung noch zu früh: Zuerst zählen "
+            "das direkt anliegende Prozessmedium, möglicher Trockenlauf beim Anfahren und "
+            "Wellenauslenkung beziehungsweise Taumeln. Diese Punkte entscheiden mit, ob ein "
+            "klassischer RWDR überhaupt die passende Bauform ist."
+        )
+    else:
+        conclusion = (
+            f"Für den Anwendungstyp {key} werden zuerst die geprüften anwendungsspezifischen "
+            "Belastungen und blinden Flecken geklärt; eine konkrete Werkstoff- oder "
+            "Bauformfreigabe folgt erst danach."
+        )
+    return TechnicalAnswer(
+        schema_version=1,
+        intent="reviewed_archetype_orientation",
+        case_revision=case_revision,
+        conclusion=conclusion,
+        assumptions=[],
+        missing_information=[],
+        claims=[
+            TechnicalClaim(
+                text=fact.text,
+                evidence_ids=[evidence_id],
+                criticality="supporting",
+            )
+            for evidence_id, fact in profile_facts[:4]
+        ],
+        recommendation={"summary": "", "status": "none", "conditions": []},
+        needs_human_review=True,
     )
 
 
@@ -558,7 +627,18 @@ def _deterministic_evidence_answer(
             )
         ]
         if nbr_thermal_aging and nbr_thermal_evidence:
-            selected_evidence = nbr_thermal_evidence[:2]
+            # The reviewed temperature claim contains catalogue example values.  They are useful
+            # evidence for the causal direction but the user asked for a diagnosis, not a numerical
+            # limit.  Prefer the reviewed fix and conditional media claim in the visible answer;
+            # this avoids turning an application-specific diagnosis into a falsely universal
+            # temperature threshold.
+            non_numeric_nbr_evidence = [
+                item
+                for item in evidence_facts.items()
+                if item[1].card_id == "FK-NBR-DAUERTEMP"
+                and not re.search(r"\d", item[1].text)
+            ]
+            selected_evidence = non_numeric_nbr_evidence[:2]
         elif diagnostic_evidence:
             application_contrast = "application_contrast" in set(
                 (communication_plan or {}).get("must_include", ())
@@ -578,10 +658,12 @@ def _deterministic_evidence_answer(
         missing = []
         if nbr_thermal_aging and nbr_thermal_evidence:
             conclusion = (
-                "Das Schadensbild passt vorläufig zu thermischer Alterung von NBR; bei "
-                "synthetischem Öl kann ein kritisches Basisöl oder Additivpaket den Angriff "
-                "zusätzlich verstärken. Beides muss am realen Lippen-Temperaturprofil und am "
-                "genauen Öl getrennt geprüft werden."
+                "Das Schadensbild passt vorläufig zu thermischer Alterung beziehungsweise "
+                "Dauer-Übertemperatur von NBR. Als Abhilfe ist die reale Temperatur direkt an der "
+                "Dichtlippe zu prüfen und ein höher temperaturbeständiger Werkstoff in Richtung "
+                "HNBR oder FKM zu bewerten; Medium und Additive bleiben als mögliche Verstärker "
+                "separat zu prüfen. Die endgültige Werkstofffreigabe muss der Hersteller oder die "
+                "zuständige Fachstelle bestätigen."
             )
         else:
             conclusion = (
@@ -614,7 +696,42 @@ def _deterministic_evidence_answer(
                 "nicht belastbar identifizieren. Ich grenze deshalb zuerst das Altteil ein."
             )
 
-    computed = tuple(calc.computed) if calc is not None else ()
+    if (
+        (communication_plan or {}).get("general_material_orientation")
+        and rwdr_context
+        and not policy_evidence
+    ):
+        variant_evidence = [
+            item
+            for item in evidence_facts.items()
+            if item[1].card_id == "FK-RWDR-ENGINEERING-PROFILE"
+            and "variants" in item[1].answer_facets
+        ]
+        selection_evidence = [
+            item
+            for item in evidence_facts.items()
+            if item[1].card_id == "FK-RWDR-ENGINEERING-PROFILE"
+            and "selection_inputs" in item[1].answer_facets
+            and item not in variant_evidence
+        ]
+        if variant_evidence:
+            selected_evidence = (variant_evidence + selection_evidence)[:2]
+            missing = []
+            conclusion = (
+                "Grundsätzlich kommen für einen RWDR elastomere Lippenwerkstoffe und "
+                "PTFE-basierte Lippenlösungen infrage. Aus Wellendurchmesser und Drehzahl allein "
+                "lässt sich die passende Werkstofffamilie aber nicht seriös wählen; Medium samt "
+                "Additiven, Temperatur an der Dichtlippe, Druck, Schmierung und Wellenzustand "
+                "entscheiden gemeinsam. Die genannten Betriebswerte sind für die spätere Prüfung "
+                "notiert, ohne hier ungefragt einen Geschwindigkeitswert vorwegzunehmen."
+            )
+
+    computed = (
+        ()
+        if (communication_plan or {}).get("general_material_orientation")
+        and not policy_evidence
+        else (tuple(calc.computed) if calc is not None else ())
+    )
     if computed:
         if (
             "CALC-UMFANGSGESCHWINDIGKEIT" in policy_ids
@@ -675,13 +792,27 @@ def _deterministic_evidence_answer(
     )
 
 
-def _render_reviewed_policy_answer(answer: TechnicalAnswer) -> str:
+def _render_reviewed_policy_answer(
+    answer: TechnicalAnswer, *, question: str = ""
+) -> str:
     """Render a matched reviewed policy as a short conversation, not a mini-document."""
 
     paragraphs = [answer.conclusion.strip()]
     policy_ids = {
         evidence_id for claim in answer.claims for evidence_id in claim.evidence_ids
     }
+    if "TRAP-FKM-DAMPF" in policy_ids and re.search(
+        r"\b(?:genau|exakt|bis\s+(?:zu\s+)?welche|wie\s+viel)\b",
+        question or "",
+        re.IGNORECASE,
+    ):
+        return (
+            "Eine universell genaue Grenztemperatur kann ich aus der aktuell geprüften Evidenz "
+            "nicht belastbar ableiten. Für Sattdampf ist peroxidvernetztes EPDM der geprüfte "
+            "Kandidatenraum; die konkrete Obergrenze muss für den tatsächlichen Compound, seine "
+            "Vernetzung, Druck und Expositionsdauer gegen Datenblatt beziehungsweise Hersteller "
+            "verifiziert werden. Eine einzelne exakte Zahl würde hier Scheingenauigkeit erzeugen."
+        )
     if policy_ids.intersection(
         {"TRAP-FKM-DAMPF", "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG"}
     ):
@@ -950,6 +1081,32 @@ class L1Generator:
             if (
                 knowledge_answer_plan is None
                 and require_evidence_for_all_claims
+                and archetype_context
+                and not source_bound_policy_present
+            ):
+                technical = _deterministic_archetype_answer(
+                    archetype_context=archetype_context,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                )
+                if technical is not None:
+                    return Answer(
+                        text=strip_sourcing(
+                            render_technical_answer(
+                                technical,
+                                communication_plan=communication_plan,
+                            )
+                        ),
+                        model=self._model_config.model,
+                        grounding_facts=grounding_facts,
+                        finish_reason="deterministic_reviewed_archetype",
+                        verification_claims=tuple(
+                            claim.text for claim in technical.claims
+                        ),
+                    )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
                 and source_bound_policy_present
             ):
                 # Reviewed trap facts reach this branch only through the catalog's explicit,
@@ -966,7 +1123,9 @@ class L1Generator:
                     communication_plan=communication_plan,
                 )
                 return Answer(
-                    text=strip_sourcing(_render_reviewed_policy_answer(technical)),
+                    text=strip_sourcing(
+                        _render_reviewed_policy_answer(technical, question=question)
+                    ),
                     model=self._model_config.model,
                     grounding_facts=grounding_facts,
                     finish_reason="deterministic_reviewed_policy",
@@ -979,6 +1138,31 @@ class L1Generator:
                             ),
                         )
                     ),
+                )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
+                and evidence_facts
+                and (communication_plan or {}).get("general_material_orientation")
+            ):
+                technical = _deterministic_evidence_answer(
+                    question=evidence_query or question,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                    calc=calc,
+                    communication_plan=communication_plan,
+                )
+                return Answer(
+                    text=strip_sourcing(
+                        render_technical_answer(
+                            technical,
+                            communication_plan=communication_plan,
+                        )
+                    ),
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_material_orientation",
+                    verification_claims=tuple(claim.text for claim in technical.claims),
                 )
             if (
                 knowledge_answer_plan is None
@@ -1139,7 +1323,7 @@ class L1Generator:
                     engineering = engineering.model_copy(
                         update={
                             "conclusion": _engineering_conclusion(
-                                knowledge_answer_plan
+                                knowledge_answer_plan, question=question
                             ),
                             "assumptions": [],
                             "missing_information": _engineering_missing_information(
@@ -1169,6 +1353,7 @@ class L1Generator:
                         evidence_facts=evidence_facts,
                         evidence_subjects=evidence_subjects_v2,
                         case_revision=case_revision,
+                        question=question,
                     )
                     result = LlmResult(
                         text="",
