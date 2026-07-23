@@ -364,8 +364,10 @@ def _deterministic_archetype_answer(
                 "Die gleiche RWDR-Bauform ist nicht automatisch in beiden Anwendungen gleich "
                 "einsetzbar. Beim Rührwerk können Wellenauslenkung beziehungsweise Taumeln den "
                 "dynamischen Lippenkontakt verlieren lassen; zusätzlich wirken Prozessmedium und "
-                "möglicher Trockenlauf anders als im ölgeschmierten Getriebe. Deshalb ist hier "
-                "zuerst die Anwendung und nicht reflexhaft nur der Werkstoff zu korrigieren."
+                "möglicher Trockenlauf anders als im ölgeschmierten Getriebe. Deshalb sind zuerst "
+                "Rundlauf und Wellenführung konstruktiv zu prüfen; wenn diese Belastung nicht "
+                "beherrscht wird, ist eine passend ausgelegte Gleitringdichtung als "
+                "Bauform-Kandidat zu bewerten, statt reflexhaft nur den Werkstoff zu wechseln."
             )
         elif has_reactor_duty:
             conclusion = (
@@ -391,7 +393,7 @@ def _deterministic_archetype_answer(
             ("vakuum", "gleitringdichtung", "wellenauslenkung", "prozessmedium")
             if is_application_contrast and has_reactor_duty
             else (
-                ("wellenauslenkung", "prozessmedium", "trockenlauf")
+                ("wellenauslenkung", "prozessmedium", "trockenlauf", "gleitringdichtung")
                 if is_application_contrast
                 else (
                     ("vakuum", "gleitringdichtung", "prozessmedium", "trockenlauf")

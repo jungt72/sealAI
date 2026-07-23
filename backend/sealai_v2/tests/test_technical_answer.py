@@ -280,6 +280,8 @@ def test_reviewed_application_contrast_explains_why_same_rwdr_can_leak_in_mixer(
     assert "nicht automatisch" in answer.text
     assert "Wellenauslenkung" in answer.text
     assert "ölgeschmierten Getriebe" in answer.text
+    assert "Wellenführung" in answer.text
+    assert "Gleitringdichtung" in answer.text
     assert "Hygiene-/Reinigungsregime" not in answer.text
     assert client.calls == []
 
