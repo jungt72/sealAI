@@ -171,16 +171,36 @@ def _fold_archetype_text(value: str) -> str:
 def exact_reviewed_archetype(
     question: str, catalog: ArchetypeCatalog | None
 ) -> ArchetypeProfile | None:
-    """Resolve only an explicitly named reviewed application profile."""
+    """Resolve one explicitly named reviewed application profile.
+
+    A comparison can legitimately name several machines.  In that case catalog order must never
+    decide which profile wins: that made a sentence about *my mixer* inherit the gearbox profile
+    merely because ``getriebe`` is stored first.  Resolve a uniquely possessed/targeted application
+    (``mein Rührwerk``, ``bei meinem Getriebe``); otherwise leave the multi-application turn
+    unresolved so the normal comparison/diagnosis path can handle it.
+    """
 
     if catalog is None:
         return None
     normalized = _fold_archetype_text(question)
+    matches: list[ArchetypeProfile] = []
     for profile in catalog.reviewed():
         key = _fold_archetype_text(profile.key)
         if re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", normalized):
-            return profile
-    return None
+            matches.append(profile)
+    if len(matches) <= 1:
+        return matches[0] if matches else None
+
+    targeted: list[ArchetypeProfile] = []
+    for profile in matches:
+        key = _fold_archetype_text(profile.key)
+        if re.search(
+            rf"\b(?:bei|in|fuer)\s+mein(?:e[mnrs]?|em|en|er|es)?\s+{re.escape(key)}\b|"
+            rf"\bmein(?:e[mnrs]?|em|en|er|es)?\s+{re.escape(key)}\b",
+            normalized,
+        ):
+            targeted.append(profile)
+    return targeted[0] if len(targeted) == 1 else None
 
 
 def reviewed_archetype_grounding_facts(
@@ -197,7 +217,7 @@ def reviewed_archetype_grounding_facts(
         if item
     )
     card_id = f"ARCHETYPE-{profile.key.upper()}"
-    return tuple(
+    facts: list[GroundingFact] = list(
         GroundingFact(
             text=text,
             quelle=(
@@ -219,3 +239,45 @@ def reviewed_archetype_grounding_facts(
         for index, text in enumerate(profile.dichtungsrelevante_besonderheiten)
         if text
     )
+    next_index = len(facts)
+    pressure_vacuum = str(
+        profile.typische_konstellation.get("druck_vakuum") or ""
+    ).strip()
+    if pressure_vacuum:
+        facts.append(
+            GroundingFact(
+                text=f"Druck- und Vakuumbetrieb sind anwendungsspezifisch zu prüfen: {pressure_vacuum}.",
+                quelle=(
+                    f"Archetyp {profile.key} (owner-reviewed; "
+                    f"{', '.join(profile.provenance)})"
+                ),
+                card_id=card_id,
+                sources=sources,
+                claim_kind="system_dependent",
+                answer_facets=("operating_factors", "selection_inputs"),
+                subject_type="application",
+                claim_id=f"{card_id}:{next_index}",
+            )
+        )
+        next_index += 1
+    for form in profile.typische_eignungen.get("bauformen", ()):
+        form_text = str(form).strip()
+        if not form_text:
+            continue
+        facts.append(
+            GroundingFact(
+                text=f"Bauform-Kandidat: {form_text}.",
+                quelle=(
+                    f"Archetyp {profile.key} (owner-reviewed; "
+                    f"{', '.join(profile.provenance)})"
+                ),
+                card_id=card_id,
+                sources=sources,
+                claim_kind="system_dependent",
+                answer_facets=("design_interfaces", "applications", "selection_inputs"),
+                subject_type="application",
+                claim_id=f"{card_id}:{next_index}",
+            )
+        )
+        next_index += 1
+    return tuple(facts)

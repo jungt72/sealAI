@@ -21,6 +21,10 @@ from sealai_v2.core.technical_answer import (
     validate_technical_answer,
 )
 from sealai_v2.prompts.assembler import PromptAssembler
+from sealai_v2.knowledge.archetypes import (
+    load_archetypes,
+    reviewed_archetype_grounding_facts,
+)
 from sealai_v2.knowledge.traps import load_traps
 from sealai_v2.tests._fakes import FakeLlmClient, ScriptedFakeLlmClient
 
@@ -204,6 +208,208 @@ def test_reviewed_archetype_is_rendered_deterministically_before_model_selection
     assert "Wellenauslenkung" in answer.text
     assert "Welches Prozessmedium liegt an?" in answer.text
     assert answer.finish_reason == "deterministic_reviewed_archetype"
+    assert client.calls == []
+
+
+def test_reviewed_reactor_archetype_answers_medium_vacuum_and_seal_form_without_cip_drift():
+    question = (
+        "Rührwerk im Reaktor, vertikale Welle, leicht aggressives Prozessmedium, "
+        "gelegentlich Vakuum. Welche Dichtung passt grundsätzlich?"
+    )
+    facts = reviewed_archetype_grounding_facts(question, load_archetypes())
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=facts,
+            archetype_context={
+                "archetyp": "ruehrwerk",
+                "interview_fragen": ["Welches Prozessmedium liegt genau an?"],
+                "blinde_flecken": [],
+                "dichtungsrelevante_besonderheiten": [],
+            },
+            communication_plan={
+                **build_communication_plan(
+                    question=question,
+                    route_name="engineering_case",
+                ).to_dict(),
+                "next_question": "Welches Prozessmedium liegt genau an?",
+            },
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Medienverträglichkeit" in answer.text
+    assert "Vakuum" in answer.text
+    assert "Gleitringdichtung" in answer.text
+    assert "Trockenlauf" in answer.text
+    assert "Hygiene-/Reinigungsregime" not in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_archetype"
+    assert client.calls == []
+
+
+def test_reviewed_application_contrast_explains_why_same_rwdr_can_leak_in_mixer():
+    question = (
+        "Bei meinem Rührwerk leckt der gleiche RWDR ständig, beim baugleichen Getriebe nie. "
+        "Woran liegt das?"
+    )
+    facts = reviewed_archetype_grounding_facts(question, load_archetypes())
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=facts,
+            archetype_context={
+                "archetyp": "ruehrwerk",
+                "interview_fragen": ["Wie groß ist die Wellenauslenkung?"],
+                "blinde_flecken": [],
+                "dichtungsrelevante_besonderheiten": [],
+            },
+            communication_plan=build_communication_plan(
+                question=question,
+                route_name="leakage_troubleshooting",
+            ).to_dict(),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "nicht automatisch" in answer.text
+    assert "Wellenauslenkung" in answer.text
+    assert "ölgeschmierten Getriebe" in answer.text
+    assert "Hygiene-/Reinigungsregime" not in answer.text
+    assert client.calls == []
+
+
+def test_reviewed_application_contrast_preserves_vacuum_reactor_duty_and_seal_form():
+    question = (
+        "Bei meinem Rührwerk im Vakuum-Reaktor leckt der gleiche RWDR ständig, beim "
+        "baugleichen Getriebe nie. Woran liegt das?"
+    )
+    facts = reviewed_archetype_grounding_facts(question, load_archetypes())
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=facts,
+            archetype_context={
+                "archetyp": "ruehrwerk",
+                "interview_fragen": ["Wie groß ist die Wellenauslenkung?"],
+                "blinde_flecken": [],
+                "dichtungsrelevante_besonderheiten": [],
+            },
+            communication_plan=build_communication_plan(
+                question=question,
+                route_name="leakage_troubleshooting",
+            ).to_dict(),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Vakuum" in answer.text
+    assert "Gleitringdichtung" in answer.text
+    assert "Wellenauslenkung" in answer.text
+    assert "Prozessmedium" in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_archetype"
+    assert client.calls == []
+
+
+def test_reviewed_oring_design_deterministically_keeps_gland_fill_and_swelling_reserve():
+    question = "Wie viel Verpressung soll mein statischer O-Ring haben?"
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Die typische statische radiale Verpressung eines O-Rings liegt bei "
+                    "~15–25 % der Schnurstärke (Richtwert); dynamisch geringer.",
+                    "Parker ORD 5700",
+                    card_id="FK-ORING-VERPRESSUNG",
+                    claim_id="FK-ORING-VERPRESSUNG:0",
+                    sources=("Parker ORD 5700 §3.6",),
+                ),
+                GroundingFact(
+                    "Die Nutfüllung so auslegen, dass Platz für Toleranzketten, Wärmedehnung "
+                    "und Quellung bleibt: 60 bis 85 Prozent Nutfüllung, 75 Prozent als Optimum "
+                    "und mindestens 10 Prozent freier Nutraum.",
+                    "Parker ORD 5700",
+                    card_id="FK-ORING-VERPRESSUNG",
+                    claim_id="FK-ORING-VERPRESSUNG:1",
+                    sources=("Parker ORD 5700 §3.7",),
+                ),
+            ),
+            communication_plan=build_communication_plan(
+                question=question,
+                route_name="engineering_case",
+            ).to_dict(),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "15–25" in answer.text
+    assert "Nutfüll" in answer.text
+    assert "Quellung" in answer.text
+    assert "10 Prozent" in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_oring_design"
+    assert client.calls == []
+
+
+def test_pharma_sip_policy_keeps_validation_and_hygienic_system_requirements():
+    question = "Dichtung für einen Pharma-Bioreaktor, der mit Dampf sterilisiert wird (SIP)."
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "FKM hydrolysiert/versprödet in Sattdampf. EPDM (peroxidvernetzt) ist "
+                    "der Dampf-/SIP-Kandidatenraum.",
+                    "reviewed policy",
+                    card_id="TRAP-FKM-DAMPF",
+                    sources=("primary-source",),
+                    kind="trap",
+                ),
+                GroundingFact(
+                    "Bei Pharma-Produktkontakt und Dampfsterilisation muss das konkrete "
+                    "Dichtungssystem die geforderten Qualifikations- und Zulassungsnachweise "
+                    "erfüllen; diese sind compound- und chargenspezifisch zu bestätigen.",
+                    "owner-reviewed",
+                    card_id="FK-PHARMA-SIP-VALIDIERUNG",
+                    claim_id="FK-PHARMA-SIP-VALIDIERUNG:0",
+                    sources=("owner-review",),
+                ),
+                GroundingFact(
+                    "Für den Pharma-Bioreaktor sind spaltarme hygienische Ausführung, "
+                    "Reinigbarkeit sowie Extractables und Leachables Teil der Systemvalidierung.",
+                    "owner-reviewed",
+                    card_id="FK-PHARMA-SIP-VALIDIERUNG",
+                    claim_id="FK-PHARMA-SIP-VALIDIERUNG:1",
+                    sources=("owner-review",),
+                ),
+            ),
+            communication_plan=build_communication_plan(
+                question=question,
+                route_name="engineering_case",
+            ).to_dict(),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "EPDM" in answer.text
+    assert "Qualifikations" in answer.text
+    assert "hygienische" in answer.text
+    assert "Extractables" in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_policy"
     assert client.calls == []
 
 

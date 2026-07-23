@@ -1,5 +1,5 @@
 {
-  "version": "trap_catalog_v5",
+  "version": "trap_catalog_v6",
   "source": "Derived from owner-authored ground truth: eval must_catch/must_avoid (seed_set_v0), Architektur-Prinzipien §2 trap list, and the documented M1 divergences (eval/runs/m1-baseline). reviewed = owner-grounded (may correct); draft_for_review = model-proposed, UNREVIEWED (flag only). No fact in `reviewed` is model-sourced.",
   "reviewed": [
     {
@@ -44,6 +44,26 @@
       "provenance": ["principles:§2", "eval:TRAP-02(must_catch)", "eval:COMBO-03(must_catch)", "divergence:m1-baseline"],
       "tags": ["EPDM", "Mineralöl", "Polarität"],
       "xrefs": ["TRAP-FOODGRADE-FETT"]
+    },
+    {
+      "id": "POLICY-EPDM-MINERALOEL-DIREKT",
+      "trigger": "Direkte Frage oder Diagnose zu EPDM in Mineral-, Hydrauliköl oder anderen Kohlenwasserstoffen",
+      "wrong": [
+        "eine direkte EPDM-Öl-Frage in ein allgemeines oder themenfremdes Retrieval-Fallback verlieren",
+        "die Quellung als Chargen-/Lagerfehler statt als grundsätzliche Werkstoff-Unverträglichkeit behandeln",
+        "erneut EPDM für Mineralöl empfehlen"
+      ],
+      "correct": "EPDM ist UNPOLAR und quillt grundsätzlich stark in Mineralölen/Kohlenwasserstoffen/Fetten — das ist Werkstoff-Unverträglichkeit, kein Chargen-/Lagerfehler. Für Mineralöl-Hydraulik NBR (Standard) oder FKM (höhere Temp/Beständigkeit); EPDM nur bei glykol-/wasserbasierten Fluiden (HFC/HFD-R) oder Bremsflüssigkeit. Vor der finalen Compound-Auswahl die genaue Hydraulikflüssigkeit, Additive und Temperatur gegen Herstellerdaten prüfen.",
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["trap-correct:TRAP-EPDM-MINERALOEL", "eval:TRAP-02(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, EPDM compatibility and compound-selection guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
+      "retrieval_terms": ["EPDM", "Hydrauliköl", "Mineralöl", "Kohlenwasserstoff", "Öl", "Schmierfett"],
+      "retrieval_required_terms_any": ["EPDM"],
+      "retrieval_min_hits": 2,
+      "tags": ["EPDM", "Mineralöl", "Hydrauliköl", "Quellung"],
+      "xrefs": ["TRAP-EPDM-MINERALOEL"]
     },
     {
       "id": "POLICY-EPDM-MINERALOEL-GEGENCHECK",
@@ -153,6 +173,26 @@
       "provenance": ["principles:§2", "eval:DEFAULT-01(must_catch)"],
       "tags": ["NBR", "Temperatur"],
       "xrefs": []
+    },
+    {
+      "id": "POLICY-NBR-HOCHTEMP-SYNTHETIKOEL",
+      "trigger": "NBR-Default bei erhöhter Dauertemperatur oder Synthetiköl wird konkret hinterfragt",
+      "wrong": [
+        "NBR nur wegen bisheriger Gewohnheit bestätigen",
+        "Temperaturalterung und Synthetiköl-/Additiv-Verträglichkeit voneinander entkoppeln",
+        "aus der Werkstofffamilie allein eine finale Compound-Freigabe ableiten"
+      ],
+      "correct": "NBR liegt bei ~100-120 °C an der Dauertemperaturgrenze; 130 °C dauerhaft führt typischerweise zu Verhärtung, Versprödung und verkürzter Lebensdauer. 'NBR wie immer' ist hier deshalb keine belastbare Richtung. HNBR oder FKM sind bei dieser Temperatur zu prüfende Kandidatenfamilien; zugleich muss die konkrete Synthetiköl-Basis samt Additivpaket gegen den jeweiligen Compound verifiziert werden, bevor eine Auswahl final bestätigt wird.",
+      "gates": ["walked_into_trap", "confident_wrong"],
+      "provenance": ["trap-correct:TRAP-NBR-DAUERTEMP", "eval:DEFAULT-01(must_catch)"],
+      "sources": [
+        "Parker O-Ring Handbook ORD 5700, NBR temperature limits and compound-selection guidance (https://www.parker.com/content/dam/Parker-com/Literature/O-Ring-Division-Literature/ORD-5700.pdf)"
+      ],
+      "retrieval_terms": ["NBR", "130 °C", "Dauertemperatur", "Synthetiköl", "wie immer", "dauerhaft"],
+      "retrieval_required_terms_any": ["NBR"],
+      "retrieval_min_hits": 2,
+      "tags": ["NBR", "Dauertemperatur", "Synthetiköl"],
+      "xrefs": ["TRAP-NBR-DAUERTEMP"]
     },
     {
       "id": "TRAP-FOODGRADE-FETT",

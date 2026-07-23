@@ -188,7 +188,10 @@ def retrieve_reviewed_trap_facts(
     """Return high-precision reviewed policy facts relevant before generation.
 
     Only entries with an explicit owner-curated retrieval surface participate. Draft traps and
-    prose-derived similarity are excluded, preserving the "no LLM grounds LLM" boundary.
+    prose-derived similarity are excluded, preserving the "no LLM grounds LLM" boundary. A broad
+    source-less verifier trap may have a precise source-bound policy sibling for L1. Such pairs must
+    express the same reviewed core correction; the precise policy adds activation/provenance and may
+    add bounded qualification context, but must never contradict the broad trap.
     """
     if catalog is None or k <= 0:
         return ()

@@ -317,6 +317,7 @@ def _deterministic_knowledge_answer(
 
 def _deterministic_archetype_answer(
     *,
+    question: str,
     archetype_context: dict,
     evidence_facts: dict[str, GroundingFact],
     case_revision: int,
@@ -333,6 +334,7 @@ def _deterministic_archetype_answer(
     if not key or not profile_facts:
         return None
     profile_facts.sort(key=lambda item: item[0])
+    normalized = (question or "").casefold()
     if key == "getriebe":
         conclusion = (
             "Beim Getriebe sind hier drei gekoppelte Punkte entscheidend: die "
@@ -341,12 +343,72 @@ def _deterministic_archetype_answer(
             "ist eine Werkstoff- oder Bauformfreigabe belastbar."
         )
     elif key == "ruehrwerk":
-        conclusion = (
-            "Für das Rührwerk wäre eine sofortige Werkstofffestlegung noch zu früh: Zuerst zählen "
-            "das direkt anliegende Prozessmedium, möglicher Trockenlauf beim Anfahren und "
-            "Wellenauslenkung beziehungsweise Taumeln. Diese Punkte entscheiden mit, ob ein "
-            "klassischer RWDR überhaupt die passende Bauform ist."
+        is_application_contrast = bool(
+            re.search(r"\br[uü]hrwerk\w*\b", normalized)
+            and re.search(r"\bgetriebe\w*\b", normalized)
         )
+        has_reactor_duty = bool(
+            re.search(r"\b(?:reaktor|vakuum|unterdruck|druck|aggressiv\w*)\b", normalized)
+        )
+        if is_application_contrast and has_reactor_duty:
+            conclusion = (
+                "Die gleiche RWDR-Bauform ist im Rührwerk nicht automatisch so einsetzbar wie im "
+                "Getriebe. Wellenauslenkung beziehungsweise Taumeln können den dynamischen "
+                "Lippenkontakt verlieren lassen; im Vakuum-Reaktor kommen das direkt anliegende "
+                "Prozessmedium und das Druck-/Vakuum-Regime hinzu. Deshalb ist hier eine "
+                "Gleitringdichtung als Bauform-Kandidat zu prüfen, bevor nur der Werkstoff "
+                "gewechselt wird."
+            )
+        elif is_application_contrast:
+            conclusion = (
+                "Die gleiche RWDR-Bauform ist nicht automatisch in beiden Anwendungen gleich "
+                "einsetzbar. Beim Rührwerk können Wellenauslenkung beziehungsweise Taumeln den "
+                "dynamischen Lippenkontakt verlieren lassen; zusätzlich wirken Prozessmedium und "
+                "möglicher Trockenlauf anders als im ölgeschmierten Getriebe. Deshalb ist hier "
+                "zuerst die Anwendung und nicht reflexhaft nur der Werkstoff zu korrigieren."
+            )
+        elif has_reactor_duty:
+            conclusion = (
+                "Beim Rührwerk im Reaktor stehen Medienverträglichkeit und Bauform vor einer "
+                "Werkstofffestlegung. Das Prozessmedium liegt direkt an, und Druck beziehungsweise "
+                "Vakuum sowie möglicher Trockenlauf müssen gemeinsam bewertet werden; für diesen "
+                "anspruchsvolleren Betrieb ist eine Gleitringdichtung ein zu prüfender "
+                "Bauform-Kandidat, keine pauschale Freigabe."
+            )
+        else:
+            conclusion = (
+                "Für das Rührwerk wäre eine sofortige Werkstofffestlegung noch zu früh: Zuerst "
+                "zählen das direkt anliegende Prozessmedium, möglicher Trockenlauf beim Anfahren "
+                "und Wellenauslenkung beziehungsweise Taumeln. Diese Punkte entscheiden mit, ob "
+                "ein klassischer RWDR überhaupt die passende Bauform ist."
+            )
+
+        # A reviewed profile contains several independent application dimensions.  Select the ones
+        # that answer this turn instead of blindly taking catalog order (which previously injected
+        # an unrelated CIP/food sentence into a vacuum-reactor question and triggered a false L3
+        # food-grade block).  The facts remain exact owner-reviewed text; only selection changes.
+        priority_terms = (
+            ("vakuum", "gleitringdichtung", "wellenauslenkung", "prozessmedium")
+            if is_application_contrast and has_reactor_duty
+            else (
+                ("wellenauslenkung", "prozessmedium", "trockenlauf")
+                if is_application_contrast
+                else (
+                    ("vakuum", "gleitringdichtung", "prozessmedium", "trockenlauf")
+                    if has_reactor_duty
+                    else ("prozessmedium", "trockenlauf", "wellenauslenkung")
+                )
+            )
+        )
+        selected: list[tuple[str, GroundingFact]] = []
+        for term in priority_terms:
+            for item in profile_facts:
+                if item in selected or term not in item[1].text.casefold():
+                    continue
+                selected.append(item)
+                break
+        if selected:
+            profile_facts = selected
     else:
         conclusion = (
             f"Für den Anwendungstyp {key} werden zuerst die geprüften anwendungsspezifischen "
@@ -510,6 +572,19 @@ def _deterministic_evidence_answer(
                 "Kandidatenraum; Standard-FKM ist trotz seiner Temperaturfestigkeit in "
                 "anderen Medien kein sicherer Dampf-Default."
             )
+            if re.search(r"\b(?:pharma|bioreaktor|produktkontakt)\b", normalized):
+                pharma_evidence = [
+                    item
+                    for item in evidence_facts.items()
+                    if item[1].card_id == "FK-PHARMA-SIP-VALIDIERUNG"
+                ]
+                if pharma_evidence:
+                    selected_evidence = policy_evidence[:1] + pharma_evidence[:2]
+                    conclusion += (
+                        " Im Pharma-Produktkontakt gehören die konkrete "
+                        "Qualifikations-/Zulassungsdokumentation, hygienische Ausführung sowie "
+                        "Extractables/Leachables zur Systemvalidierung."
+                    )
         elif "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG" in policy_ids:
             conclusion = (
                 "Bei Trinkwasser entscheidet nicht die maximal breite Werkstofffamilie, "
@@ -523,6 +598,24 @@ def _deterministic_evidence_answer(
             )
         else:
             conclusion = "Der entscheidende fachliche Punkt ist:"
+
+    oring_compression_evidence = [
+        item
+        for item in evidence_facts.items()
+        if item[1].card_id == "FK-ORING-VERPRESSUNG"
+    ]
+    if (
+        not policy_evidence
+        and oring_compression_evidence
+        and re.search(r"\bo[- ]?ring\w*\b", normalized)
+        and re.search(r"\b(?:verpress\w*|squeeze)\b", normalized)
+    ):
+        selected_evidence = oring_compression_evidence[:4]
+        missing = []
+        conclusion = (
+            "Für einen statischen O-Ring ist nicht nur die Verpressung maßgebend: Der Nutfüllgrad "
+            "muss zugleich Reserve für Toleranzen, Wärmedehnung und medienbedingte Quellung lassen."
+        )
     if work_solution_candidate:
         profile_items = [
             item
@@ -1085,6 +1178,7 @@ class L1Generator:
                 and not source_bound_policy_present
             ):
                 technical = _deterministic_archetype_answer(
+                    question=evidence_query or question,
                     archetype_context=archetype_context,
                     evidence_facts=evidence_facts,
                     case_revision=case_revision,
@@ -1138,6 +1232,44 @@ class L1Generator:
                             ),
                         )
                     ),
+                )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
+                and not source_bound_policy_present
+                and not any(fact.kind == "trap" for fact in evidence_facts.values())
+                and any(
+                    fact.card_id == "FK-ORING-VERPRESSUNG"
+                    for fact in evidence_facts.values()
+                )
+                and re.search(r"\bo[- ]?ring\w*\b", (evidence_query or question), re.I)
+                and re.search(
+                    r"\b(?:verpress\w*|squeeze)\b",
+                    (evidence_query or question),
+                    re.I,
+                )
+            ):
+                # The reviewed O-ring card already contains both coupled design axes.  Rendering
+                # them deterministically prevents a valid but incomplete sample from mentioning
+                # squeeze while silently dropping gland-fill reserve for swelling.
+                technical = _deterministic_evidence_answer(
+                    question=evidence_query or question,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                    calc=calc,
+                    communication_plan=communication_plan,
+                )
+                return Answer(
+                    text=strip_sourcing(
+                        render_technical_answer(
+                            technical,
+                            communication_plan=communication_plan,
+                        )
+                    ),
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_reviewed_oring_design",
+                    verification_claims=tuple(claim.text for claim in technical.claims),
                 )
             if (
                 knowledge_answer_plan is None

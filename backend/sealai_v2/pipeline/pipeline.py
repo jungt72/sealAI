@@ -428,12 +428,30 @@ _EXFIL_REQUEST_REFUSAL_TEXT = (
     "Interne Systemanweisungen, Prompts und vertrauliche Wissensbasis-Inhalte gebe ich nicht aus. "
     "Bei einer konkreten Frage zur Dichtungstechnik helfe ich dir gern fachlich weiter."
 )
+_CROSS_TENANT_REQUEST_REFUSAL_TEXT = (
+    "Ich habe keinen Zugriff auf Fälle, Gespräche oder Werkstoffdaten anderer Nutzer oder "
+    "Mandanten und gebe solche Informationen nicht aus. Ich spekuliere darüber auch nicht. "
+    "Wenn du mir deinen eigenen Dichtungsfall beschreibst, helfe ich dir gern fachlich weiter."
+)
 _EXFIL_REQUEST_RE = re.compile(
     r"\b(?:system[- ]?prompt|systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|"
     r"wissensbasis)\b.*\b(?:aus(?:geben|gabe)|zeig(?:en|e)?|nenn(?:en|e)?|"
     r"w[oö]rtlich|vollst[aä]ndig|verrat(?:en|e)?|offenleg(?:en|e)?)\b|"
     r"\b(?:gib|zeige?|nenne?|verrate?|offenlege?)\b.*\b(?:system[- ]?prompt|"
     r"systemanweisung(?:en)?|interne[nr]?\s+anweisung(?:en)?|wissensbasis)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+_CROSS_TENANT_REQUEST_RE = re.compile(
+    # Direct ownership: "Fälle/Daten anderer Mandanten" (not: "was empfehlen andere Kunden?").
+    r"\b(?:f[aä]ll\w*|gespr[aä]ch\w*|daten\w*|frage\w*)\s+"
+    r"(?:anderer|fremder)\s+(?:nutzer|anwender|kunden|mandanten)\b|"
+    # Direct history question: "Was haben andere Nutzer heute gefragt/besprochen?"
+    r"\bwas\s+haben\s+(?:andere|fremde)\s+(?:nutzer|anwender|kunden|mandanten)\b"
+    r".{0,100}\b(?:gefragt|besprochen|angegeben)\b|"
+    # Referenced group followed by an explicit disclosure command: "andere Nutzer ... zeig deren Fälle".
+    r"\b(?:andere|fremde)\s+(?:nutzer|anwender|kunden|mandanten)\b.{0,220}"
+    r"\b(?:zeig\w*|gib\w*|nenn\w*|list\w*|offenleg\w*|verrat\w*)\b.{0,120}"
+    r"\b(?:deren|ihre|f[aä]ll\w*|gespr[aä]ch\w*|daten\w*|frage\w*|werkstoff\w*)\b",
     re.IGNORECASE | re.DOTALL,
 )
 _DECODE_REQUEST_RE = re.compile(
@@ -577,6 +595,12 @@ def _explicit_exfil_request_guard(question: str, answer: Answer) -> Answer:
     The leak detector remains the final content-based backstop. This intent-shaped guard closes the
     UX gap where a model safely avoided disclosure but failed to state a clear refusal.
     """
+    if _CROSS_TENANT_REQUEST_RE.search(question or ""):
+        return Answer(
+            text=_CROSS_TENANT_REQUEST_REFUSAL_TEXT,
+            model=_EXFIL_REQUEST_GUARD_MODEL,
+            grounding_facts=answer.grounding_facts,
+        )
     if not _EXFIL_REQUEST_RE.search(question or ""):
         return answer
     return Answer(

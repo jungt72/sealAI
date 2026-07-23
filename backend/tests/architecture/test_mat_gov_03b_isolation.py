@@ -185,7 +185,7 @@ UNCHANGED_PUBLIC_SURFACES = {
         "ab6a32cf9ef9deac402619cc1d0eaf67d30b39fa2c0c1d45fc2eb5782da4ed82"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "67b4f7ec53cbabe7c95f1994c970705dd664e9e91c13aca1d1a793084b6bd860"
+        "705efced22707ab6c2ade3ab9b962dcd661ecc42eab41c6014490aae2aede433"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
         "40b36ef33d0e7ad0ff1a2b8119b1420a7cfbe4c918b0a312f7e5520407e9be67"

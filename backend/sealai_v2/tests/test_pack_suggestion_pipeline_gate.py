@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from sealai_v2.core.contracts import Intent, ModelConfig, Understanding
 from sealai_v2.core.l1_generator import L1Generator
-from sealai_v2.knowledge.archetypes import load_archetypes
+from sealai_v2.knowledge.archetypes import (
+    load_archetypes,
+    reviewed_archetype_grounding_facts,
+)
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.tests._fakes import FakeLlmClient
@@ -98,3 +101,43 @@ def test_exact_archetype_resolution_does_not_guess_from_a_partial_word():
     p.archetypes = load_archetypes()
 
     assert p._archetype_context(None, question="Getriebemotor auswählen") is None
+
+
+def test_multi_application_sentence_uses_explicitly_owned_application_not_catalog_order():
+    p = _pipeline(pack_suggestion_enabled=False)
+    p.archetypes = load_archetypes()
+
+    context = p._archetype_context(
+        None,
+        question=(
+            "Bei meinem Rührwerk leckt der gleiche RWDR ständig, beim baugleichen Getriebe nie."
+        ),
+    )
+
+    assert context is not None
+    assert context["archetyp"] == "ruehrwerk"
+
+
+def test_ambiguous_multi_application_sentence_does_not_inherit_catalog_order():
+    p = _pipeline(pack_suggestion_enabled=False)
+    p.archetypes = load_archetypes()
+
+    assert (
+        p._archetype_context(
+            None,
+            question="Vergleiche Getriebe und Rührwerk hinsichtlich der Wellendichtung.",
+        )
+        is None
+    )
+
+
+def test_ruehrwerk_profile_exposes_reviewed_vacuum_and_seal_form_facts():
+    facts = reviewed_archetype_grounding_facts(
+        "Rührwerk im Reaktor mit Vakuum: welche Dichtung?",
+        load_archetypes(),
+    )
+    texts = "\n".join(fact.text for fact in facts)
+
+    assert "Vakuum" in texts
+    assert "Gleitringdichtung" in texts
+    assert all(fact.card_id == "ARCHETYPE-RUEHRWERK" for fact in facts)

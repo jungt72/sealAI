@@ -28,7 +28,7 @@ def _evidenced(catalog: TrapCatalog) -> TrapCatalog:
 def test_loads_production_catalog():
     cat = load_traps()
     assert cat.reviewed(), "expected reviewed entries"
-    assert cat.version == "trap_catalog_v5"
+    assert cat.version == "trap_catalog_v6"
 
 
 def test_every_entry_well_formed():
@@ -119,6 +119,14 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
         (
             "Bitte empfehle einen Werkstoff für eine Anwendung mit Wasserdampf.",
             "TRAP-FKM-DAMPF",
+        ),
+        (
+            "EPDM-O-Ringe quellen in unserem Hydrauliköl. Woran liegt das?",
+            "POLICY-EPDM-MINERALOEL-DIREKT",
+        ),
+        (
+            "Kann NBR bei 130 °C Dauertemperatur im Synthetiköl bleiben?",
+            "POLICY-NBR-HOCHTEMP-SYNTHETIKOEL",
         ),
         (
             "FFKM hält alles aus, also nehme ich es für Trinkwasser.",
