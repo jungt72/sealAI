@@ -215,13 +215,7 @@ def validate_technical_answer(
             allowed_text = f"{cited_text} {calculation_context_text}"
             if _identifiers(claim.text) - _identifiers(allowed_text):
                 errors.append("named_assertion_absent_from_cited_evidence")
-            # A claim may restate an exact operating value supplied by the user (for example
-            # "145 °C" from the current case) while its technical mechanism remains bound to
-            # cited evidence.  The user value is context, never authority for a new limit.  Keep
-            # identifier validation evidence-only, and allow only exact/tolerance-matched numbers
-            # from the user context; an invented threshold still fails this check.
-            numeric_basis = f"{allowed_text} {user_context_text}"
-            if _unsupported_numbers(claim.text, numeric_basis):
+            if _unsupported_numbers(claim.text, allowed_text):
                 errors.append("number_absent_from_cited_evidence")
     if answer.recommendation.status in {"conditional", "not_recommended"}:
         decision_claims = [

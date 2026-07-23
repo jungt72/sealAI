@@ -73,9 +73,7 @@ _VENDOR_OR_ORDER_CONTEXT_RE = re.compile(
     r"bestellen|kaufen)\w*\b",
     re.IGNORECASE,
 )
-_VERIFIED_VENDOR_EVIDENCE_RE = re.compile(
-    r"(?:manufacturer|hersteller)", re.IGNORECASE
-)
+_VERIFIED_VENDOR_EVIDENCE_RE = re.compile(r"(?:manufacturer|hersteller)", re.IGNORECASE)
 
 
 def _requires_material_abstention(question: str) -> bool:
@@ -394,7 +392,9 @@ def _deterministic_archetype_answer(
             and re.search(r"\bgetriebe\w*\b", normalized)
         )
         has_reactor_duty = bool(
-            re.search(r"\b(?:reaktor|vakuum|unterdruck|druck|aggressiv\w*)\b", normalized)
+            re.search(
+                r"\b(?:reaktor|vakuum|unterdruck|druck|aggressiv\w*)\b", normalized
+            )
         )
         if is_application_contrast and has_reactor_duty:
             conclusion = (
@@ -439,7 +439,12 @@ def _deterministic_archetype_answer(
             ("vakuum", "gleitringdichtung", "wellenauslenkung", "prozessmedium")
             if is_application_contrast and has_reactor_duty
             else (
-                ("wellenauslenkung", "prozessmedium", "trockenlauf", "gleitringdichtung")
+                (
+                    "wellenauslenkung",
+                    "prozessmedium",
+                    "trockenlauf",
+                    "gleitringdichtung",
+                )
                 if is_application_contrast
                 else (
                     ("vakuum", "gleitringdichtung", "prozessmedium", "trockenlauf")
@@ -489,7 +494,9 @@ def _render_compact_reviewed_archetype(
     """Render first-turn archetype guidance as a conversation, not a mini specification."""
 
     paragraphs = [answer.conclusion.strip()]
-    claims = [claim.text.strip().rstrip(".") for claim in answer.claims if claim.text.strip()]
+    claims = [
+        claim.text.strip().rstrip(".") for claim in answer.claims if claim.text.strip()
+    ]
     if claims:
         paragraphs.append(
             "Zur Eingrenzung prüfe diese Punkte zusammen: "
@@ -879,6 +886,15 @@ def _deterministic_evidence_answer(
                 priorities.append(
                     "das reale Temperatur-/Druckprofil einschließlich Verdampfen oder Flashing"
                 )
+            case_conditions = []
+            if abrasive:
+                case_conditions.append("abrasivem Feststoffeintrag")
+            if viscous:
+                case_conditions.append("hoher Viskosität")
+            if thermal_or_pressure_stress:
+                case_conditions.append("dem genannten Temperatur-/Unterdruckprofil")
+            if intermittent:
+                case_conditions.append("intermittierendem Betrieb")
             priority_text = (
                 ", ".join(priorities[:-1]) + " und " + priorities[-1]
                 if len(priorities) > 1
@@ -886,16 +902,25 @@ def _deterministic_evidence_answer(
                 if priorities
                 else "Schmierfilm, Wärmehaushalt und den realen Versagenspfad"
             )
+            case_text = (
+                ", ".join(case_conditions[:-1]) + " und " + case_conditions[-1]
+                if len(case_conditions) > 1
+                else case_conditions[0]
+                if case_conditions
+                else "den genannten Betriebsbedingungen"
+            )
             conclusion = (
-                "Das Fehlerbild lässt sich bereits sinnvoll priorisieren: Zuerst sind "
-                f"{priority_text} zu prüfen; ein isolierter Werkstoffwechsel würde die "
-                "Systemursache wahrscheinlich nicht beheben. Als vorläufige Lösungsrichtung "
-                "sollte deshalb die Dichtungsumgebung stabilisiert werden. Wenn Befund und "
-                "Medium diese Mechanismen bestätigen, ist eine an das Medium angepasste "
-                "Gleitringdichtungs-Ausführung zusammen mit einem abgestimmten Puffer-, Sperr-, "
-                "Spül- oder Kühlkonzept zu bewerten; Gleitflächenpaarung und "
-                "Sekundärdichtungen folgen erst aus dieser Systementscheidung. Das ist ein "
-                "prüfpflichtiger Kandidatenraum, keine Freigabe."
+                f"Die Kombination aus {case_text} passt zu mehreren gekoppelten "
+                "Versagenspfaden; sie rechtfertigt noch keinen einzelnen als dominante "
+                f"Ursache. Als erste Hypothesen sind {priority_text} zu prüfen. Ein "
+                "isolierter Werkstoffwechsel wäre deshalb zu kurz gegriffen. Die belastbare "
+                "Arbeitsrichtung ist, zuerst die Dichtungsumgebung und den Schmierfilm zu "
+                "stabilisieren. Bestätigen Befund und konkretes Medium die Hypothesen, sollte "
+                "die Fachprüfung eine an das Medium angepasste Gleitringdichtungs-Ausführung "
+                "zusammen mit einem abgestimmten Puffer-, Sperr-, Spül- oder Kühlkonzept "
+                "bewerten; Gleitflächenpaarung und Sekundärdichtungen folgen erst aus dieser "
+                "Systementscheidung. Das ist ein prüfpflichtiger Kandidatenraum, keine "
+                "Freigabe."
             )
         elif work_solution_candidate:
             conclusion = (
@@ -1306,7 +1331,9 @@ class L1Generator:
             risk_flags=risk_flags,
         )
         if self._structured_output_enabled:
-            vendor_boundary = _vendor_compound_boundary_answer(question, grounding_facts)
+            vendor_boundary = _vendor_compound_boundary_answer(
+                question, grounding_facts
+            )
             if vendor_boundary is not None:
                 return Answer(
                     text=vendor_boundary,
@@ -1462,13 +1489,13 @@ class L1Generator:
                 and require_evidence_for_all_claims
                 and evidence_facts
                 and (communication_plan or {}).get("goal") == "diagnose_failure"
-                and not work_solution_candidate
             ):
                 technical = _deterministic_evidence_answer(
                     question=evidence_query or question,
                     evidence_facts=evidence_facts,
                     case_revision=case_revision,
                     calc=calc,
+                    work_solution_candidate=work_solution_candidate,
                     communication_plan=communication_plan,
                 )
                 return Answer(

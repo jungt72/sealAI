@@ -494,7 +494,9 @@ def test_reviewed_oring_design_deterministically_keeps_gland_fill_and_swelling_r
 
 
 def test_pharma_sip_policy_keeps_validation_and_hygienic_system_requirements():
-    question = "Dichtung für einen Pharma-Bioreaktor, der mit Dampf sterilisiert wird (SIP)."
+    question = (
+        "Dichtung für einen Pharma-Bioreaktor, der mit Dampf sterilisiert wird (SIP)."
+    )
     client = FakeLlmClient(_payload())
     answer = asyncio.run(
         _generator(client).generate(
@@ -593,7 +595,9 @@ def test_source_bound_speed_policy_outranks_reviewed_archetype():
                         stage=1,
                         derivation_depth=1,
                         formula="v = pi*d*n/60000",
-                        warnings=("Standard-NBR-Lippe bei diesem Wert kritisch prüfen",),
+                        warnings=(
+                            "Standard-NBR-Lippe bei diesem Wert kritisch prüfen",
+                        ),
                     ),
                 )
             ),
@@ -1334,7 +1338,7 @@ def test_diagnostic_evidence_preempts_model_and_uses_one_governed_question():
     assert len(client.calls) == 0
 
 
-def test_solution_oriented_glrd_diagnosis_uses_synthesis_and_actionable_fallback():
+def test_solution_oriented_glrd_diagnosis_preempts_unsafe_free_synthesis():
     client = FakeLlmClient(_payload(evidence_ids=[]))
     question = (
         "Die Gleitringdichtung am vertikalen Mischer wird mit abrasivem, zähflüssigem "
@@ -1393,13 +1397,16 @@ def test_solution_oriented_glrd_diagnosis_uses_synthesis_and_actionable_fallback
         )
     )
 
-    assert len(client.calls) == 2
-    assert "Systemursache" in answer.text
-    assert "Dichtungsumgebung stabilisiert" in answer.text
+    assert client.calls == []
+    assert "keinen einzelnen als dominante Ursache" in answer.text
+    assert "belastbare Arbeitsrichtung" in answer.text
+    assert "Dichtungsumgebung und den Schmierfilm" in answer.text
     assert "Sperr-" in answer.text and "Kühlkonzept" in answer.text
     assert "Welches konkrete Medium" in answer.text
     assert "bloße Materialliste" not in answer.text
-    assert answer.finish_reason == "deterministic_evidence_fallback"
+    assert "PTFE" not in answer.text
+    assert "SiC" not in answer.text
+    assert answer.finish_reason == "deterministic_diagnostic_evidence"
 
 
 def test_hardened_nbr_diagnostic_prefers_thermal_and_oil_evidence():
@@ -1457,7 +1464,9 @@ def test_hardened_nbr_diagnostic_prefers_thermal_and_oil_evidence():
 
 def test_replacement_identification_without_dedicated_evidence_fails_bounded():
     client = FakeLlmClient(_payload())
-    question = "Wie finde ich Ersatz für die kaputte Wellendichtung ohne Code am Altteil?"
+    question = (
+        "Wie finde ich Ersatz für die kaputte Wellendichtung ohne Code am Altteil?"
+    )
     communication_plan = build_communication_plan(
         question=question,
         route_name="engineering_case",
@@ -1768,49 +1777,6 @@ def test_unsupported_decision_forces_conservative_human_review():
     validate_technical_answer(
         calibrated, case_revision=7, allowed_evidence_ids=frozenset()
     )
-
-
-def test_evidence_bound_claim_may_restate_exact_user_operating_value():
-    payload = json.loads(_payload(evidence_ids=["EV-1"]))
-    payload["conclusion"] = "Temperatur und Wärmehaushalt werden geprüft."
-    payload["claims"][0]["text"] = (
-        "Die Nutzerangabe von 145 °C gehört in die Prüfung des Wärmehaushalts."
-    )
-    answer = TechnicalAnswer.model_validate(payload)
-
-    validate_technical_answer(
-        answer,
-        case_revision=7,
-        allowed_evidence_ids=frozenset({"EV-1"}),
-        require_evidence_for_all_claims=True,
-        evidence_text_by_id={
-            "EV-1": "Temperatur und Wärmehaushalt sind gemeinsam zu prüfen."
-        },
-        user_context_text="Der Betrieb liegt bei etwa 145 °C.",
-    )
-
-
-def test_evidence_bound_claim_still_rejects_invented_numeric_threshold():
-    payload = json.loads(_payload(evidence_ids=["EV-1"]))
-    payload["conclusion"] = "Temperatur und Wärmehaushalt werden geprüft."
-    payload["claims"][0]["text"] = (
-        "Bei 190 °C überschreitet die Dichtung eine technische Grenze."
-    )
-    answer = TechnicalAnswer.model_validate(payload)
-
-    with pytest.raises(
-        TechnicalAnswerValidationError, match="number_absent_from_cited_evidence"
-    ):
-        validate_technical_answer(
-            answer,
-            case_revision=7,
-            allowed_evidence_ids=frozenset({"EV-1"}),
-            require_evidence_for_all_claims=True,
-            evidence_text_by_id={
-                "EV-1": "Temperatur und Wärmehaushalt sind gemeinsam zu prüfen."
-            },
-            user_context_text="Der Betrieb liegt bei etwa 145 °C.",
-        )
 
 
 def test_structured_answer_contract_caps_chat_density():
