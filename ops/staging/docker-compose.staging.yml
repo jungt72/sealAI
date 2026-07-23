@@ -55,6 +55,22 @@ services:
       SEALAI_V2_AUTH_ISSUER: https://sealingai.com/realms/sealAI
       SEALAI_V2_AUTH_AUDIENCE: sealai-v2
       OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY required — pass via docker compose --env-file}
+      # Knowledge-mode retrieval parity with prod (docker-compose.deploy.yml): without these,
+      # every knowledge-route query fails closed with product_mode_unavailable/pilot_not_activated
+      # (settings.py's own fail-safe default), so staging could never live-verify a knowledge-
+      # answer fix — the exact gap this block closes. Defaults below match settings.py's code
+      # defaults (safe/off), same as prod's own passthrough pattern; the real values already come
+      # from .env.prod via this file's existing --env-file invocation (ops/staging/up-staging-v2.sh),
+      # so staging now reads the SAME live Qdrant collection prod does. Read-only: a chat query
+      # never writes to Qdrant. The embed model (fastembed local MiniLM) is not pre-baked into
+      # Dockerfile.v2, so the first knowledge query after a fresh build downloads it at runtime.
+      SEALAI_V2_KNOWLEDGE_MODE_ENABLED: ${SEALAI_V2_KNOWLEDGE_MODE_ENABLED:-false}
+      SEALAI_V2_RETRIEVER_BACKEND: ${SEALAI_V2_RETRIEVER_BACKEND:-in_process}
+      SEALAI_V2_QDRANT_URL: ${SEALAI_V2_QDRANT_URL:-http://qdrant:6333}
+      SEALAI_V2_QDRANT_COLLECTION: ${SEALAI_V2_QDRANT_COLLECTION:-sealai_v2_knowledge_v1}
+      SEALAI_V2_EMBED_PROVIDER: ${SEALAI_V2_EMBED_PROVIDER:-openai}
+      SEALAI_V2_EMBED_MODEL: ${SEALAI_V2_EMBED_MODEL:-text-embedding-3-small}
+      SEALAI_V2_EMBED_CACHE_DIR: ${SEALAI_V2_EMBED_CACHE_DIR:-}
     # NO host port publish: this host's firewall drops host→container traffic on newly created
     # bridges (verified 2026-06-10: 172.18.x sealai_default reachable, fresh staging bridge not),
     # and docker-proxy targets the staging-net IP. Diagnose via
