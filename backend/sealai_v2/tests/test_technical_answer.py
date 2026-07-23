@@ -286,6 +286,135 @@ def test_reviewed_application_contrast_explains_why_same_rwdr_can_leak_in_mixer(
     assert client.calls == []
 
 
+def test_compact_reviewed_archetype_is_conversational_in_first_turn():
+    question = "Ein Wellendichtring an einem Getriebe ist undicht. Was soll ich prüfen?"
+    facts = reviewed_archetype_grounding_facts(question, load_archetypes())
+    client = FakeLlmClient(_payload())
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="leakage_troubleshooting",
+    ).to_dict()
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=facts,
+            archetype_context={
+                "archetyp": "getriebe",
+                "interview_fragen": ["Welches Öl und welche Additivierung liegen an?"],
+                "blinde_flecken": [],
+                "dichtungsrelevante_besonderheiten": [],
+            },
+            communication_plan=communication_plan,
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Umfangsgeschwindigkeit" in answer.text
+    assert "Rundlauf" in answer.text
+    assert "Als nächsten Schritt:" in answer.text
+    assert "**Technische Einordnung**" not in answer.text
+    assert "\n- " not in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_archetype"
+    assert client.calls == []
+
+
+def test_vendor_compound_number_request_returns_neutral_matching_brief():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welche genaue Compound-Nummer von [Hersteller] soll ich bestellen?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact("Allgemeiner Dichtungsfakt.", "ledger", card_id="EV-1"),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "weder neutral noch verlässlich" in answer.text
+    assert "Matching-Briefing" in answer.text
+    assert "Werkstofffamilie" in answer.text
+    assert "Hersteller oder Händler" in answer.text
+    assert answer.finish_reason == "deterministic_vendor_compound_boundary"
+    assert client.calls == []
+
+
+def test_compound_family_designation_question_does_not_trigger_vendor_boundary():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welche Bezeichnung hat der FKM-Compound nach ISO 1629?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "PTFE zeigt eine geringe Reibung.",
+                    "ledger",
+                    card_id="EV-1",
+                    sources=("reviewed-source",),
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.finish_reason != "deterministic_vendor_compound_boundary"
+    assert len(client.calls) == 1
+
+
+def test_verified_manufacturer_compound_evidence_preempts_generic_boundary():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welche Compound-Nummer dieses Herstellers soll ich bestellen?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "PTFE zeigt eine geringe Reibung. Der verifizierte Hersteller führt "
+                    "Compound ACME-42.",
+                    "verified manufacturer capability",
+                    card_id="MANUFACTURER-CAPABILITY-ACME",
+                    sources=("verified datasheet",),
+                    subject_type="manufacturer",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.finish_reason != "deterministic_vendor_compound_boundary"
+    assert len(client.calls) >= 1
+
+
+def test_generic_compound_card_does_not_preempt_vendor_boundary():
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welche Compound-Nummer dieses Herstellers soll ich bestellen?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Allgemeine, geprüfte Compound-Anforderung.",
+                    "reviewed material card",
+                    card_id="FK-COMPOUND-GENERAL",
+                    sources=("reviewed source",),
+                    subject_type="material",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.finish_reason == "deterministic_vendor_compound_boundary"
+    assert client.calls == []
+
+
 def test_reviewed_application_contrast_preserves_vacuum_reactor_duty_and_seal_form():
     question = (
         "Bei meinem Rührwerk im Vakuum-Reaktor leckt der gleiche RWDR ständig, beim "

@@ -63,6 +63,19 @@ _QUANTITATIVE_DETAIL_RE = re.compile(
     r"konkrete[rs]?\s+(?:wert|bereich|grenze))\b",
     re.IGNORECASE,
 )
+_COMPOUND_IDENTIFIER_REQUEST_RE = re.compile(
+    r"\bcompound(?:[-\s]?(?:nummer|code|grade))\w*\b|"
+    r"\b(?:nummer|code|grade)\b[^?!.]{0,60}\bcompound\w*\b",
+    re.IGNORECASE,
+)
+_VENDOR_OR_ORDER_CONTEXT_RE = re.compile(
+    r"\b(?:hersteller|anbieter|lieferant|händler|haendler|portfolio|produktlinie|"
+    r"bestellen|kaufen)\w*\b",
+    re.IGNORECASE,
+)
+_VERIFIED_VENDOR_EVIDENCE_RE = re.compile(
+    r"(?:manufacturer|hersteller)", re.IGNORECASE
+)
 
 
 def _requires_material_abstention(question: str) -> bool:
@@ -76,6 +89,39 @@ def _requests_quantitative_detail(question: str) -> bool:
     """A broad "details" request asks for depth, not an unsolicited catalogue of limit values."""
 
     return bool(_QUANTITATIVE_DETAIL_RE.search(question or ""))
+
+
+def _vendor_compound_boundary_answer(
+    question: str, grounding_facts: tuple[GroundingFact, ...]
+) -> str | None:
+    """State the manufacturer-data boundary and still leave the user with a usable next step."""
+
+    if not (
+        _COMPOUND_IDENTIFIER_REQUEST_RE.search(question or "")
+        and _VENDOR_OR_ORDER_CONTEXT_RE.search(question or "")
+    ):
+        return None
+    if any(
+        fact.sources
+        and (
+            fact.subject_type == "manufacturer"
+            or _VERIFIED_VENDOR_EVIDENCE_RE.search(fact.card_id or "")
+        )
+        for fact in grounding_facts
+    ):
+        return None
+    return (
+        "Eine genaue herstellerspezifische Compound-Nummer nenne ich dir hier nicht: Ohne "
+        "kuratierte Herstellerdaten und die vollständige Anwendungsspezifikation wäre sie weder "
+        "neutral noch verlässlich, sondern geraten.\n\n"
+        "Ich kann dir stattdessen ein neutrales Matching-Briefing erstellen. Darin halten wir "
+        "Werkstofffamilie und geforderte Härte, exaktes Medium einschließlich Konzentration und "
+        "Additiven, Temperaturprofil, Druck, statische oder dynamische Bewegung, Dichtungsbauform "
+        "und erforderliche Zulassungen fest. Mit diesem Briefing kann der Hersteller oder Händler "
+        "die passende interne Compound-Nummer zuordnen und mit Datenblatt sowie Freigabe bestätigen.\n\n"
+        "Nenne mir dafür zuerst Anwendung, Medium und Temperaturprofil; dann formuliere ich das "
+        "Briefing so, dass du es direkt für das Hersteller-Matching verwenden kannst."
+    )
 
 
 def _engineering_conclusion(plan: dict, *, question: str = "") -> str:
@@ -435,6 +481,36 @@ def _deterministic_archetype_answer(
         recommendation={"summary": "", "status": "none", "conditions": []},
         needs_human_review=True,
     )
+
+
+def _render_compact_reviewed_archetype(
+    answer: TechnicalAnswer, communication_plan: dict | None
+) -> str:
+    """Render first-turn archetype guidance as a conversation, not a mini specification."""
+
+    paragraphs = [answer.conclusion.strip()]
+    claims = [claim.text.strip().rstrip(".") for claim in answer.claims if claim.text.strip()]
+    if claims:
+        paragraphs.append(
+            "Zur Eingrenzung prüfe diese Punkte zusammen: "
+            + "; ".join(claims)
+            + ". (quellengebunden)"
+        )
+    if answer.needs_human_review:
+        paragraphs.append(
+            "Die konkrete Ausführung und Freigabe muss anschließend der Hersteller oder die "
+            "zuständige Fachstelle bestätigen."
+        )
+    plan = communication_plan or {}
+    planned_question = str(plan.get("next_question") or "").strip()
+    if planned_question:
+        reason = str(plan.get("question_reason") or "").strip()
+        paragraphs.append(
+            "Als nächsten Schritt: "
+            + planned_question
+            + (f" {reason}" if reason else "")
+        )
+    return "\n\n".join(paragraph for paragraph in paragraphs if paragraph)
 
 
 def _deterministic_evidence_answer(
@@ -1160,6 +1236,14 @@ class L1Generator:
             risk_flags=risk_flags,
         )
         if self._structured_output_enabled:
+            vendor_boundary = _vendor_compound_boundary_answer(question, grounding_facts)
+            if vendor_boundary is not None:
+                return Answer(
+                    text=vendor_boundary,
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_vendor_compound_boundary",
+                )
             evidence_facts = dict(knowledge_evidence_facts)
             if knowledge_answer_plan is None:
                 for index, fact in enumerate(grounding_facts):
@@ -1186,13 +1270,18 @@ class L1Generator:
                     case_revision=case_revision,
                 )
                 if technical is not None:
+                    rendered = (
+                        _render_compact_reviewed_archetype(
+                            technical, communication_plan
+                        )
+                        if compact_technical_answer
+                        else render_technical_answer(
+                            technical,
+                            communication_plan=communication_plan,
+                        )
+                    )
                     return Answer(
-                        text=strip_sourcing(
-                            render_technical_answer(
-                                technical,
-                                communication_plan=communication_plan,
-                            )
-                        ),
+                        text=strip_sourcing(rendered),
                         model=self._model_config.model,
                         grounding_facts=grounding_facts,
                         finish_reason="deterministic_reviewed_archetype",
