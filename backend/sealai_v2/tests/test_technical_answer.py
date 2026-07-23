@@ -738,6 +738,94 @@ def test_diagnostic_evidence_preempts_model_and_uses_one_governed_question():
     assert len(client.calls) == 0
 
 
+def test_hardened_nbr_diagnostic_prefers_thermal_and_oil_evidence():
+    client = FakeLlmClient(_payload())
+    question = "Der NBR-RWDR ist hart und rissig. Was tun?"
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="leakage_troubleshooting",
+    )
+    thermal = (
+        "NBR liegt bei erhöhter Dauertemperatur an seiner Grenze; dauerhaft darüber "
+        "drohen Verhärtung und Versprödung."
+    )
+    oil = "Synthetiköle und Additive können NBR zusätzlich angreifen."
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    thermal,
+                    "ledger",
+                    card_id="FK-NBR-DAUERTEMP",
+                    claim_id="FK-NBR-DAUERTEMP:0",
+                    answer_facets=("limits", "failure_modes"),
+                ),
+                GroundingFact(
+                    oil,
+                    "ledger",
+                    card_id="FK-NBR-DAUERTEMP",
+                    claim_id="FK-NBR-DAUERTEMP:2",
+                    answer_facets=("media_compatibility", "limits"),
+                ),
+                GroundingFact(
+                    "Ein allgemeines RWDR-Profil.",
+                    "ledger",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    claim_id="FK-RWDR-ENGINEERING-PROFILE:0",
+                    answer_facets=("failure_modes",),
+                ),
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert "passt vorläufig zu thermischer Alterung" in answer.text
+    assert thermal in answer.text and oil in answer.text
+    assert "allgemeines RWDR-Profil" not in answer.text
+    assert communication_plan.next_question in answer.text
+    assert len(client.calls) == 0
+
+
+def test_replacement_identification_without_dedicated_evidence_fails_bounded():
+    client = FakeLlmClient(_payload())
+    question = "Wie finde ich Ersatz für die kaputte Wellendichtung ohne Code am Altteil?"
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="engineering_case",
+    )
+    unrelated = "Allgemeiner Hinweis zu einer Wellendichtung."
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    unrelated,
+                    "ledger",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    claim_id="FK-RWDR-ENGINEERING-PROFILE:0",
+                    answer_facets=("definition",),
+                ),
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert "noch nicht belastbar identifizieren" in answer.text
+    assert "Ja – auch ohne lesbaren Code" not in answer.text
+    assert unrelated not in answer.text
+    assert communication_plan.next_question in answer.text
+    assert len(client.calls) == 0
+
+
 def test_diagnostic_fallback_prefers_case_lexical_relevance_over_generic_failure_card():
     client = FakeLlmClient(_payload())
     question = (

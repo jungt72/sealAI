@@ -45,6 +45,15 @@ _GENERIC_SINGLE_SCOPE = frozenset(
         "rührwerk",
         "ruehrwerk",
         "rotationsmaschine",
+        "wellendichtung",
+        "wellendichtring",
+        "radialwellendichtung",
+        "radialwellendichtring",
+        "rwdr",
+        "o-ring",
+        "oring",
+        "gleitringdichtung",
+        "glrd",
         "werkstoffauswahl",
         "dichtungsauslegung",
     }
@@ -130,7 +139,11 @@ _RETRIEVAL_CONCEPT_STEMS: dict[str, tuple[str, ...]] = {
         "simmerring",
     ),
     "preload_loss": ("vorspann", "kaltfluss", "kriech"),
+    "hardening": ("verhaert", "versproed", "hart"),
+    "cracking": ("riss",),
 }
+
+_CLAIM_CONCEPT_WEIGHTS = {"hardening": 3}
 
 
 def _fold_retrieval_text(value: str) -> str:
@@ -149,7 +162,7 @@ def _retrieval_concepts(value: str) -> frozenset[str]:
     def token_matches_stem(token: str, stem: str) -> bool:
         # Short engineering abbreviations such as UV must match a complete token. Treating them as
         # arbitrary substrings creates unrelated hits (for example inside a longer product name).
-        if len(stem) <= 3:
+        if len(stem) <= 3 or stem == "hart":
             return token == stem
         return token == stem or token.startswith(stem) or stem in token
 
@@ -163,11 +176,21 @@ def _retrieval_concepts(value: str) -> frozenset[str]:
 def _score(card: Fachkarte, query: str) -> int:
     query_lower = query.lower()
     query_concepts = _retrieval_concepts(query)
-    return sum(
-        1
-        for tok in card.scope_tokens()
-        if tok in query_lower or bool(query_concepts & _retrieval_concepts(tok))
-    )
+    # A semantic concept is one signal, irrespective of how many aliases a card lists for it.
+    # Counting every alias separately made broad profile cards dominate a precise card merely
+    # because their scope contained e.g. seven spellings of ``shaft_seal``. Literal scope tags stay
+    # independently useful, while inferred concepts are deduplicated at the card boundary.
+    matched_signals: set[str] = set()
+    for tok in card.scope_tokens():
+        normalized = str(tok).strip().lower()
+        if not normalized:
+            continue
+        if normalized in query_lower:
+            matched_signals.add(f"tag:{_fold_retrieval_text(normalized)}")
+            continue
+        for concept in query_concepts & _retrieval_concepts(normalized):
+            matched_signals.add(f"concept:{concept}")
+    return len(matched_signals)
 
 
 def _ascii_fold(value: str) -> str:
@@ -195,7 +218,12 @@ def _specific_single_scope_hit(card: Fachkarte, query: str) -> bool:
             if not normalized or len(normalized) < 4:
                 continue
             if normalized in _GENERIC_SINGLE_SCOPE and not (
-                dimension == "application" and has_sealing_context
+                # Reviewed seal profiles are bounded additive context for an explicitly sealing-
+                # related application turn. They may enter on one generic application anchor, but
+                # the deduplicated score above prevents their synonym count from taking the lead.
+                dimension == "application"
+                and card.subject_type == "seal_type"
+                and has_sealing_context
             ):
                 continue
             if tag_matches(str(tag), tokens, query_lower) or tag_matches(
@@ -255,7 +283,11 @@ def _reviewed_claim_overlap(
         and (len(token) >= 4 or token in _SHORT_DOMAIN_TOKENS)
     }
     if not query_terms:
-        return 0
+        query_concepts = _retrieval_concepts(query)
+        if not query_concepts:
+            return 0
+    else:
+        query_concepts = _retrieval_concepts(query)
     best = 0
     for claim in card.reviewed_claims():
         claim_terms = query_tokens(claim.text)
@@ -263,8 +295,30 @@ def _reviewed_claim_overlap(
             any(_related_token(query_term, claim_term) for claim_term in claim_terms)
             for query_term in query_terms
         )
+        matched += sum(
+            _CLAIM_CONCEPT_WEIGHTS.get(concept, 1)
+            for concept in query_concepts & _retrieval_concepts(claim.text)
+        )
         best = max(best, matched)
     return best
+
+
+def _reviewed_claim_concept_overlap(card: Fachkarte, query: str) -> int:
+    """Semantic symptom support from reviewed claim text, independent of generic word overlap."""
+
+    query_concepts = _retrieval_concepts(query)
+    if not query_concepts:
+        return 0
+    return max(
+        (
+            sum(
+                _CLAIM_CONCEPT_WEIGHTS.get(concept, 1)
+                for concept in query_concepts & _retrieval_concepts(claim.text)
+            )
+            for claim in card.reviewed_claims()
+        ),
+        default=0,
+    )
 
 
 def _is_material_overview(card: Fachkarte, query_lower: str) -> bool:
@@ -362,8 +416,16 @@ class InProcessRetriever:
         ranked_cards = ranked_lexical_cards(query, self._catalog)
         reviewed: list[GroundingFact] = []
         provisional: list[GroundingFact] = []
-        for card in ranked_cards[: max(0, k)]:
-            for claim_index, claim in enumerate(card.claims):
+        selected_cards = ranked_cards[: max(0, k)]
+        # Interleave claims across cards. A comprehensive profile may contain many valid claims,
+        # but it must not occupy the complete front of the evidence window before a precise
+        # replacement, diagnostic or compatibility card gets one turn.
+        max_claims = max((len(card.claims) for card in selected_cards), default=0)
+        for claim_index in range(max_claims):
+            for card in selected_cards:
+                if claim_index >= len(card.claims):
+                    continue
+                claim = card.claims[claim_index]
                 if claim.quarantined:
                     continue
                 fact = GroundingFact(
@@ -421,31 +483,50 @@ def ranked_lexical_cards(
         for term in card.scope.get("material", ())
         if str(term).strip()
     )
-    candidates: list[tuple[int, int, bool, bool, Fachkarte]] = []
+    candidates: list[tuple[int, int, int, bool, bool, Fachkarte]] = []
     for card in source.cards:
         scope_score = _score(card, query)
         lexical_score = _reviewed_claim_overlap(
             card, query, material_tokens=material_tokens
         )
+        concept_score = _reviewed_claim_concept_overlap(card, query)
         overview = _is_knowledge_overview(card, query, allow_case_subject_profile=False)
         specific_hit = bool(card.reviewed_claims()) and (
             _specific_single_scope_hit(card, query)
             or _is_medium_selection_method(card, query)
         )
-        candidates.append((scope_score, lexical_score, overview, specific_hit, card))
+        candidates.append(
+            (scope_score, lexical_score, concept_score, overview, specific_hit, card)
+        )
 
     # Relevance tiers are intentionally exclusive. Once an exact reviewed medium/application
     # tag exists, weak prose overlap cannot add unrelated cards. Only when scope matching finds
     # nothing do we use the strongest reviewed-claim overlap as a bounded fallback.
-    has_specific_hit = any(item[3] for item in candidates)
+    has_specific_hit = any(item[4] for item in candidates)
     has_structural_hit = any(
-        (scope_score >= _MIN_SCOPE_HITS or overview) and bool(card.reviewed_claims())
-        for scope_score, _lexical, overview, _specific, card in candidates
+        (
+            scope_score >= _MIN_SCOPE_HITS
+            or (scope_score >= 1 and concept_score >= 1)
+            or overview
+        )
+        and bool(card.reviewed_claims())
+        for scope_score, _lexical, concept_score, overview, _specific, card in candidates
     )
     max_lexical = max((item[1] for item in candidates), default=0)
     scored: list[tuple[int, Fachkarte]] = []
-    for scope_score, lexical_score, overview, specific_hit, card in candidates:
-        structural_hit = scope_score >= _MIN_SCOPE_HITS or overview
+    for (
+        scope_score,
+        lexical_score,
+        concept_score,
+        overview,
+        specific_hit,
+        card,
+    ) in candidates:
+        structural_hit = (
+            scope_score >= _MIN_SCOPE_HITS
+            or (scope_score >= 1 and concept_score >= 1)
+            or overview
+        )
         eligible = (
             structural_hit
             or (has_specific_hit and specific_hit)

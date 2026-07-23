@@ -24,6 +24,9 @@ _ALLOWED = {
         "knowledge/retrieval.py",
         "knowledge/qdrant_retrieval.py",
         "knowledge/matrix.py",
+        # Exact, owner-reviewed application profiles are a curated grounding lane. Runtime text
+        # only selects an existing reviewed key; it never becomes the claim.
+        "knowledge/archetypes.py",
         # Owner-reviewed failure-mode policy facts with explicit high-precision retrieval terms.
         # The loader rejects retrieval terms on draft traps, so runtime/user text can only select
         # an already-reviewed fact; it can never become the fact itself.

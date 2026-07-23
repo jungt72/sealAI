@@ -14,7 +14,7 @@ BASE_RUNTIME_HASHES = {
         "59606ffc63256519f7c25bc3154459acf8bf5a5d7e90d1663afc17a725d901df"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "fb99bbede567fcf33c2ef50c84e3b12d760e235f5e4dc0652e887fe4fc68aa40"
+        "ff0dd7f62813aa018bb028f52b18470d2725834f70572907d393664bc583b106"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
         "40b36ef33d0e7ad0ff1a2b8119b1420a7cfbe4c918b0a312f7e5520407e9be67"

@@ -145,7 +145,7 @@ class CascadeCalcEngine:
                     # never this velocity signal (the number stays single-sourced in calc_seed.json).
                     warnings.append(
                         f"über der Belastungsgrenze der {d.limit.label} → "
-                        f"{d.limit.label} bei diesem Wert unzureichend, höher belastbare Lösung nötig"
+                        f"{d.limit.label} bei diesem Wert unzureichend, höher belastbare Lippe nötig"
                     )
                 elif (
                     d.limit

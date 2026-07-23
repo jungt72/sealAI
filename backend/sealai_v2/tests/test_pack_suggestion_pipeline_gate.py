@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from sealai_v2.core.contracts import Intent, ModelConfig, Understanding
 from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.prompts.assembler import PromptAssembler
 from sealai_v2.tests._fakes import FakeLlmClient
@@ -73,3 +74,27 @@ def test_pack_suggestion_context_populated_when_flag_on_and_suggestion_present()
 def test_medium_hint_context_populated_when_flag_on_and_hint_present():
     p = _pipeline(pack_suggestion_enabled=True)
     assert p._medium_hint_context(_UNDERSTANDING_WITH_BOTH) == {"medium_hint": "Teig"}
+
+
+def test_execution_policy_can_resolve_exact_reviewed_archetype_without_understand():
+    p = _pipeline(pack_suggestion_enabled=False)
+    p.archetypes = load_archetypes()
+
+    context = p._archetype_context(
+        None,
+        question="Beim Rührwerk müssen wir Medium und Wellenbewegung bewerten.",
+    )
+
+    assert context is not None
+    assert context["archetyp"] == "ruehrwerk"
+    assert any(
+        "Wellenauslenkung" in item
+        for item in context["dichtungsrelevante_besonderheiten"]
+    )
+
+
+def test_exact_archetype_resolution_does_not_guess_from_a_partial_word():
+    p = _pipeline(pack_suggestion_enabled=False)
+    p.archetypes = load_archetypes()
+
+    assert p._archetype_context(None, question="Getriebemotor auswählen") is None

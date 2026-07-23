@@ -22,8 +22,8 @@ These tests prove, end to end via ``Pipeline.run()``:
      generator is called with an EMPTY calc regardless of the real computed calc.
   2. flag ON + a kernel=True route (engineering_case) → the L1 generator still gets the REAL calc.
   3. flag OFF (default) → EVERY route gets the real calc (byte-identical hard gate).
-  4. the guard contract, L3 verify() and the response payload's calc all still receive/reflect the
-     REAL calc regardless of the flag/route (explicit assertions, not assumed).
+  4. the guard contract and L3 verify() receive the same answer-relevant calc as L1, while the
+     response payload still reflects the REAL calc as telemetry (explicit assertions, not assumed).
   5. the actual bug repro: general_sealing_knowledge + a real Umfangsgeschwindigkeit ``not_computed``
      entry → L1 gets an empty calc (no basis to comment) while the payload still shows the real
      ``not_computed`` for transparency.
@@ -307,12 +307,14 @@ def test_flag_on_engineering_case_streaming_path_receives_real_calc(
 # ── 4: guard contract + L3 verify() + response payload ALL keep the REAL calc (explicit) ----------
 
 
-def test_guard_verify_and_payload_keep_real_calc_when_l1_is_suppressed(
+def test_guard_and_verify_share_answer_relevant_calc_while_payload_keeps_telemetry(
     monkeypatch,
 ) -> None:
-    """The isolation proof: on a suppressed (kernel=False) turn, prove — with explicit captures, not
-    assumptions — that the guard contract, L3 verify() and the response payload ALL still receive/
-    reflect the REAL calc, while ONLY the L1 prompt got the empty one."""
+    """An unsolicited result cannot be authorized after L1 suppression.
+
+    Guard and verifier therefore see the same empty answer context; the response payload retains the
+    real kernel result as internal/product telemetry.
+    """
     _patch_compute(monkeypatch, _SYNTH_CALC)
 
     # Capture the calc that L3 verify() is handed.
@@ -367,10 +369,10 @@ def test_guard_verify_and_payload_keep_real_calc_when_l1_is_suppressed(
     assert result.route_name == "general_sealing_knowledge"
     # L1 PROMPT: suppressed (empty).
     assert gen.l1_calcs and all(c == CalcResult() for c in gen.l1_calcs)
-    # L3 verify(): got the REAL calc (both the calc object and the split computed/not_computed args).
-    assert captured_verify["calc"] == _SYNTH_CALC
-    assert captured_verify["not_computed"] == (_UMFANG_NOT_COMPUTED,)
-    # Guard contract: built from the REAL calc.
-    assert captured_guard["calc"] == _SYNTH_CALC
+    # L3 and the guard share L1's answer-relevance boundary; neither can authorize the suppressed
+    # kernel tangent after generation.
+    assert captured_verify["calc"] == CalcResult()
+    assert captured_verify["not_computed"] == ()
+    assert captured_guard["calc"] == CalcResult()
     # Response payload: reflects the REAL calc for transparency/telemetry.
     assert result.not_computed == (_UMFANG_NOT_COMPUTED,)

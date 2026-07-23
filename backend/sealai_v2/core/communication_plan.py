@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from sealai_v2.core.user_goal import requests_replacement_identification
+
 
 @dataclass(frozen=True)
 class CommunicationPlan:
@@ -92,6 +94,11 @@ _FIELD_QUESTIONS: dict[str, tuple[str, str]] = {
 _NBR_ENVIRONMENTAL_CRACK_RE = re.compile(
     r"\bnbr\b.*\b(?:au[sß]en|fre(?:ien|iland)|ozon|uv|witterung)\w*\b|"
     r"\b(?:au[sß]en|fre(?:ien|iland)|ozon|uv|witterung)\w*\b.*\bnbr\b",
+    re.IGNORECASE,
+)
+_NBR_THERMAL_AGING_RE = re.compile(
+    r"\bnbr\b.*\b(?:hart|verh[aä]rt\w*|verspr[oö]d\w*|riss\w*)\b|"
+    r"\b(?:hart|verh[aä]rt\w*|verspr[oö]d\w*|riss\w*)\b.*\bnbr\b",
     re.IGNORECASE,
 )
 _APPLICATION_CONTRAST_RE = re.compile(
@@ -231,6 +238,28 @@ def build_communication_plan(
             must_not_include=("unrequested_case_assumptions",),
         )
 
+    if route_name == "engineering_case" and requests_replacement_identification(
+        question
+    ):
+        return CommunicationPlan(
+            goal="identify_replacement_seal",
+            response_moves=("acknowledge", "answer", "clarify", "justify"),
+            depth="brief",
+            answer_first=True,
+            max_questions=1,
+            case_bound=True,
+            next_question=(
+                "Kannst du Innen- und Außendurchmesser sowie Breite nennen und ein Foto von "
+                "beiden Seiten samt vorhandener Kennzeichnung bereitstellen?"
+            ),
+            question_reason=(
+                "Damit lassen sich Grundabmessung, Lippenbauform, Feder und mögliche "
+                "Drehrichtung zuerst belastbar eingrenzen."
+            ),
+            must_include=("identification_steps", "one_discriminating_question"),
+            must_not_include=("premature_replacement_release", "failure_diagnosis_detour"),
+        )
+
     if route_name == "leakage_troubleshooting":
         diagnostic_must_include = (
             "cause_before_replacement",
@@ -244,6 +273,15 @@ def build_communication_plan(
             reason = (
                 "Damit lässt sich der naheliegende Ozon-/Witterungsriss bestätigen und eine "
                 "spätere Abhilfe zugleich gegen den realen Medienkontakt abgrenzen."
+            )
+        elif _NBR_THERMAL_AGING_RE.search(question):
+            next_question = (
+                "Welche maximale Temperatur tritt direkt an der Dichtlippe auf, und welches "
+                "genaue Öl samt Basis und Additivpaket wird eingesetzt?"
+            )
+            reason = (
+                "Damit lässt sich thermische Alterung von einem zusätzlichen Angriff durch "
+                "Synthetiköl oder Additive unterscheiden."
             )
         elif _APPLICATION_CONTRAST_RE.search(question):
             next_question = (

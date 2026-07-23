@@ -185,6 +185,25 @@ class _UnitlessCalculationMemory:
         return None
 
 
+class _ResolvedCalculationMemory(_RequiredMissingMemory):
+    def recall(self, **kwargs):
+        base = super().recall(**kwargs)
+        return MemoryView(
+            case_state=base.case_state,
+            case_state_v2=base.case_state_v2,
+            window=(
+                Turn(
+                    role="user",
+                    text="Wie hoch ist die Umfangsgeschwindigkeit bei meinem RWDR?",
+                ),
+                Turn(
+                    role="assistant",
+                    text="Wellendurchmesser und Drehzahl sind im Fall erfasst.",
+                ),
+            ),
+        )
+
+
 class _SteamGuidanceMemory:
     _known_values = {
         "dichtungstyp": "rwdr",
@@ -643,6 +662,43 @@ def test_irrelevant_calc_inputs_do_not_block_grounded_material_compatibility():
     assert result.turn_state.needs_human_review is True
 
 
+def test_general_material_orientation_keeps_computation_as_telemetry_only():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
+    pipeline.engine = CascadeCalcEngine()
+
+    result = asyncio.run(
+        pipeline.run(
+            "RWDR 40x62x8 bei 6000 U/min: Welche Werkstoffe kommen grundsätzlich infrage?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.computed_values
+    systems = standard.systems + frontier.systems
+    assert systems
+    assert "v_m_s = 12.57 m/s" not in systems[-1]
+    assert "12.57 m/s" not in result.answer.text
+    assert helper.calls == []
+
+
+def test_closed_standard_lip_question_receives_rwdr_derived_kernel_result():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
+    pipeline.engine = CascadeCalcEngine()
+
+    result = asyncio.run(
+        pipeline.run(
+            "RWDR 40x62x8 aus Standard-NBR bei 6000 U/min: Reicht das?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.computed_values
+    systems = standard.systems + frontier.systems
+    assert systems
+    assert "v_m_s = 12.5664 m/s" in systems[-1]
+    assert helper.calls == []
+
+
 def test_ungrounded_high_risk_case_never_calls_a_model():
     pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
     result = asyncio.run(
@@ -719,6 +775,26 @@ def test_contextual_calculation_followup_asks_only_for_missing_unit() -> None:
     assert result.answer.text.count("?") == 1
 
 
+def test_resolved_calculation_followup_keeps_computed_value_answer_relevant() -> None:
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=1)
+    pipeline.engine = CascadeCalcEngine()
+    pipeline.memory = _ResolvedCalculationMemory()
+
+    result = asyncio.run(
+        pipeline.run(
+            "Und wie hoch ist sie jetzt genau?",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("case-1"),
+        )
+    )
+
+    computed = {item.calc_id: item for item in result.computed_values}
+    assert computed["umfangsgeschwindigkeit"].value == 3.927
+    systems = standard.systems + frontier.systems
+    assert systems and "v_m_s = 3.927 m/s" in systems[-1]
+    assert helper.calls == []
+
+
 def test_material_guidance_retrieval_is_bound_to_typed_case_context() -> None:
     pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
     pipeline.memory = _SteamGuidanceMemory()
@@ -780,6 +856,14 @@ def test_reviewed_archetype_expands_only_the_retrieval_query_for_solution_work()
     assert "RWDR" in pipeline.retriever.queries[0]
     called_users = [user for client in (standard, frontier) for user in client.users]
     assert called_users == [original]
+    assert "ARCHETYPE-GETRIEBE" in {
+        fact.card_id for fact in result.grounding_facts
+    }
+    called_systems = [
+        system for client in (standard, frontier) for system in client.systems
+    ]
+    assert any("EP/AW-Additive" in system for system in called_systems)
+    assert any("# Erkannte Maschinen-Art: getriebe" in system for system in called_systems)
 
 
 def test_active_unknown_scope_guidance_uses_case_without_rag_or_reasking_known_fact():

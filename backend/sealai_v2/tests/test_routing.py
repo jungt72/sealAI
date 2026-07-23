@@ -12,6 +12,7 @@ import pytest
 from sealai_v2.core.contracts import Intent, Turn
 from sealai_v2.pipeline.routing import (
     RouteName,
+    calculation_relevant_for_response,
     classify_route,
     classify_route_deterministic,
     requests_solution,
@@ -19,6 +20,20 @@ from sealai_v2.pipeline.routing import (
     resolve_material_comparison_followup,
     detect_engineering_signals,
 )
+
+
+def test_general_material_orientation_does_not_authorize_unsolicited_calculation() -> None:
+    assert not calculation_relevant_for_response(
+        "RWDR 40x62x8 bei 6000 U/min: Welche Werkstoffe kommen grundsätzlich infrage?",
+        has_kernel_inputs=True,
+    )
+
+
+def test_closed_rwdr_candidate_decision_authorizes_relevant_kernel_result() -> None:
+    assert calculation_relevant_for_response(
+        "RWDR 40x62x8 aus Standard-NBR bei 6000 U/min: Reicht das?",
+        has_kernel_inputs=True,
+    )
 
 
 def test_material_comparison_followup_resolves_prior_user_subject() -> None:
@@ -697,6 +712,14 @@ class TestEngineeringCase:
         d = classify_route(
             "Ich brauche einen Ersatz fuer meine Dichtung.", intent=Intent.FALLARBEIT
         )
+        assert d.forced_full_pipeline is True
+
+    def test_unknown_replacement_identification_outranks_damage_wording(self) -> None:
+        d = classify_route_deterministic(
+            "Wie finde ich Ersatz für meine kaputte Wellendichtung ohne Code am Altteil?"
+        )
+
+        assert d.route is RouteName.ENGINEERING_CASE
         assert d.forced_full_pipeline is True
 
     def test_compression_language_forces_full_pipeline(self) -> None:

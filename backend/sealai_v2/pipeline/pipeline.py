@@ -22,6 +22,7 @@ from sealai_v2.obs.safe_trace import safe_input_projection, safe_output_projecti
 from sealai_v2.pipeline.routing import (
     RouteDecision,
     RouteName,
+    calculation_relevant_for_response,
     classify_route,
     classify_route_deterministic,
     is_adjacent_out_of_scope_request,
@@ -112,7 +113,11 @@ from sealai_v2.core.seal_type_extract import extract_seal_type_facts
 from sealai_v2.memory.context_assembler import MemoryContextBundle, MemoryContextService
 from sealai_v2.core.wissensstand import compute_wissensstand
 from sealai_v2.pipeline.produktspec_step import compute_kandidaten_spec
-from sealai_v2.knowledge.archetypes import load_archetypes
+from sealai_v2.knowledge.archetypes import (
+    exact_reviewed_archetype as _exact_reviewed_archetype,
+    load_archetypes,
+    reviewed_archetype_grounding_facts as _reviewed_archetype_grounding_facts,
+)
 from sealai_v2.knowledge.domain_packs import load_rwdr_v1_pack
 from sealai_v2.knowledge.fachkarten import load_fachkarten
 from sealai_v2.knowledge.matrix import InProcessCompatibilityMatrix
@@ -177,32 +182,14 @@ def _reviewed_archetype_retrieval_query(
     answer fact or a selection decision.
     """
 
-    if archetypes is None or not requests_solution(question):
+    profile = _exact_reviewed_archetype(question, archetypes)
+    if profile is None or not requests_solution(question):
         return question
-    normalized = (
-        (question or "")
-        .casefold()
-        .replace("ä", "ae")
-        .replace("ö", "oe")
-        .replace("ü", "ue")
-        .replace("ß", "ss")
-    )
-    additions: list[str] = []
-    for profile in archetypes.reviewed():
-        key = (
-            profile.key.casefold()
-            .replace("ä", "ae")
-            .replace("ö", "oe")
-            .replace("ü", "ue")
-            .replace("ß", "ss")
-        )
-        if not re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", normalized):
-            continue
-        additions.extend(
-            str(value).strip()
-            for value in profile.typische_eignungen.get("bauformen", ())
-            if str(value).strip()
-        )
+    additions = [
+        str(value).strip()
+        for value in profile.typische_eignungen.get("bauformen", ())
+        if str(value).strip()
+    ]
     if not additions:
         return question
     return question + "\n" + " ".join(dict.fromkeys(additions))
@@ -1344,12 +1331,22 @@ class Pipeline:
             governed_matrix_facts = (
                 retrieval.matrix_facts if governed_matrix_grounding_allowed else ()
             )
-            l1_grounding = grounding_facts + governed_matrix_facts + trap_facts
+            reviewed_archetype_facts = (
+                _reviewed_archetype_grounding_facts(question, self.archetypes)
+                if self.execution_policy_enabled
+                else ()
+            )
+            l1_grounding = (
+                grounding_facts
+                + governed_matrix_facts
+                + trap_facts
+                + reviewed_archetype_facts
+            )
             # M8-A provenance binding: remembered case facts → calc inputs, DETERMINISTIC + DECLARED
             # (owner-confirmed table; fail-closed on ambiguity — never LLM-judged). Explicit caller
             # params (eval fixtures) take precedence per key. Empty everywhere → byte-identical no-op.
             inline_facts = extract_inline(question)
-            if self.baseline_hardening_enabled:
+            if self.baseline_hardening_enabled or self.execution_policy_enabled:
                 # INC-BASELINE-HARDENING: Welle = d1 bei RWDR — derive the shaft Ø from a bare
                 # designation ("RWDR 40x62x8") so the Umfangsgeschwindigkeit kern can fire even
                 # without an explicit "40 mm". A TYPED shaft Ø still wins over the derived one
@@ -1359,19 +1356,27 @@ class Pipeline:
                 merge_inline(mem.case_state, inline_facts)
             )  # L4 durable facts excluded — never a calc input; inline overlay: fresh > recalled
             merged_params = dict(bound.params)
-            if not calculation_requested and not {"d1_mm", "rpm"}.issubset(
-                merged_params
-            ):
+            param_origins = dict(bound.origins)
+            for key, value in (params or {}).items():
+                merged_params[key] = value
+                param_origins[key] = "Parameter (explizit übergeben)"
+            calculation_relevant = calculation_relevant_for_response(
+                knowledge_question,
+                has_kernel_inputs={"d1_mm", "rpm"}.issubset(merged_params),
+                material_terms=self.knowledge_material_terms,
+            )
+            if not calculation_relevant:
                 trap_facts = tuple(
                     fact
                     for fact in trap_facts
                     if fact.card_id != "CALC-UMFANGSGESCHWINDIGKEIT"
                 )
-                l1_grounding = grounding_facts + governed_matrix_facts + trap_facts
-            param_origins = dict(bound.origins)
-            for key, value in (params or {}).items():
-                merged_params[key] = value
-                param_origins[key] = "Parameter (explizit übergeben)"
+                l1_grounding = (
+                    grounding_facts
+                    + governed_matrix_facts
+                    + trap_facts
+                    + reviewed_archetype_facts
+                )
             # Stage order: verstehen → ground → COMPUTE → answer → verify → (render). compute() runs
             # after ground so Fachkarten-property inputs (qualitative swelling flag) are available.
             if early_clarification or cached_answer is not None:
@@ -1399,7 +1404,10 @@ class Pipeline:
             # reviewed profile's interview questions + blind spots as advisory L1 context.
             if understand_task is not None:
                 understanding = await understand_task
-            archetype_context = self._archetype_context(understanding)
+            archetype_context = self._archetype_context(
+                understanding,
+                question=(question if self.execution_policy_enabled else None),
+            )
             pack_suggestion_context = self._pack_suggestion_context(understanding)
             medium_hint_context = self._medium_hint_context(understanding)
 
@@ -1540,18 +1548,12 @@ class Pipeline:
             # prompt has no business discussing kernel/calc topics — feeding it the real calc (esp. its
             # `not_computed` entries) is what caused the off-topic "Umfangsgeschwindigkeit nicht
             # berechenbar" tangent on a conceptual question. Suppress ONLY the L1 PROMPT input to an
-            # empty CalcResult() here; every OTHER consumer below keeps the real `calc` untouched —
-            # build_guard_contract(calc=calc), stages.verify(computed_values=calc.computed, ...), and
-            # the PipelineResult's computed/not_computed all still reflect the real calc for
-            # transparency/telemetry/L3. Flag OFF (default) or no route decision -> l1_calc IS calc
-            # -> byte-identical to today; and it can only ever REMOVE calc from a kernel=False route's
-            # prompt, never change any kernel=True route's prompt.
+            # empty CalcResult() here. Under the execution policy the same answer-relevance boundary
+            # also feeds the guard/verifier below; the full result remains on PipelineResult as
+            # telemetry, but an unsolicited number cannot become authorized merely because the
+            # kernel was able to compute it.
             l1_calc = calc
-            if (
-                self.execution_policy_enabled
-                and not calc.computed
-                and not requests_calculation(question)
-            ):
+            if self.execution_policy_enabled and not calculation_relevant:
                 l1_calc = CalcResult()
             if (
                 self.suppress_calc_for_non_kernel_routes_enabled
@@ -1609,7 +1611,9 @@ class Pipeline:
             ):
                 from sealai_v2.core.response_contract import build_guard_contract
 
-                _gc = build_guard_contract(grounding_facts=l1_grounding, calc=calc)
+                _gc = build_guard_contract(
+                    grounding_facts=l1_grounding, calc=l1_calc
+                )
                 guard_contract = _gc.to_dict() if _gc is not None else None
 
             execution_decision: ExecutionDecision | None = None
@@ -1673,7 +1677,7 @@ class Pipeline:
                         ),
                         provisional_evidence_count=len(retrieval.provisional),
                         document_count=len(source_ids),
-                        tool_step_count=len(calc.computed),
+                        tool_step_count=len(l1_calc.computed),
                         case_conflict_count=len(case_state_v2.open_conflicts),
                         required_missing=policy_missing_fields,
                         contract_status=(
@@ -1688,7 +1692,7 @@ class Pipeline:
                             fact.kind == "trap" for fact in l1_grounding
                         ),
                         calculation_requested=calculation_requested,
-                        calculation_computed_count=len(calc.computed),
+                        calculation_computed_count=len(l1_calc.computed),
                         solution_requested=solution_requested,
                     )
                 )
@@ -1778,7 +1782,7 @@ class Pipeline:
                     _communication_plan.goal == "orient_material_selection"
                     or (
                         route_decision.route is RouteName.ENGINEERING_CASE
-                        and calc.computed
+                        and l1_calc.computed
                     )
                     or route_decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
                 )
@@ -1829,7 +1833,7 @@ class Pipeline:
                             question=question,
                             missing_fields=policy_missing_fields,
                             conflicts=policy_conflicts,
-                            calc=calc,
+                            calc=l1_calc,
                         ),
                         model="deterministic-policy",
                         grounding_facts=l1_grounding,
@@ -2046,12 +2050,14 @@ class Pipeline:
                         knowledge_question,
                         answer,
                         flags=flags,
-                        grounding_facts=grounding_facts,
-                        computed_values=calc.computed,
-                        not_computed=calc.not_computed,
+                        grounding_facts=(
+                            grounding_facts + reviewed_archetype_facts
+                        ),
+                        computed_values=l1_calc.computed,
+                        not_computed=l1_calc.not_computed,
                         matrix_facts=governed_matrix_facts,
                         # OPTIMIZE_BACKLOG #5: full draft context → topic-scoped correction + non-degraded regen
-                        calc=calc,
+                        calc=l1_calc,
                         case_context=case_context or None,
                         durable_context=durable_context or None,
                         conversation_window=conversation_window or None,
@@ -2067,8 +2073,8 @@ class Pipeline:
                 with _staged(timer, progress, "verify_ms", "verify"):
                     answer, verdict = run_parametric_guard(
                         answer,
-                        computed_values=calc.computed,
-                        not_computed=calc.not_computed,
+                        computed_values=l1_calc.computed,
+                        not_computed=l1_calc.not_computed,
                         comparison_context=bool(decode_result),
                     )
 
@@ -2463,22 +2469,32 @@ class Pipeline:
             answer = await generator.generate(question, **kwargs)
         return answer
 
-    def _archetype_context(self, understanding: Understanding | None) -> dict | None:
-        """G4: map a recognised soft archetype to its reviewed profile's advisory L1 context
-        (interview questions + blind spots). None when there is no archetype / no store / no match —
-        so the no-archetype path stays byte-identical. Annotate-only; it never gates or routes."""
-        if understanding is None or self.archetypes is None:
+    def _archetype_context(
+        self, understanding: Understanding | None, *, question: str | None = None
+    ) -> dict | None:
+        """Map a reviewed archetype to advisory L1 context without affecting routing.
+
+        The legacy path accepts the bounded Understand annotation. Under execution policy, where
+        Understand is intentionally skipped, ``question`` enables exact reviewed-key resolution.
+        """
+        if self.archetypes is None:
             return None
-        key = getattr(understanding, "archetype", None)
-        if not key:
-            return None
-        profile = self.archetypes.by_archetype(key)
-        if profile is None:
+        profile = None
+        if understanding is not None:
+            key = getattr(understanding, "archetype", None)
+            if key:
+                profile = self.archetypes.by_archetype(key)
+        if profile is None and question:
+            profile = _exact_reviewed_archetype(question, self.archetypes)
+        if profile is None or not profile.reviewed:
             return None
         return {
             "archetyp": profile.key,
             "interview_fragen": list(profile.interview_fragen),
             "blinde_flecken": list(profile.blinde_flecken),
+            "dichtungsrelevante_besonderheiten": list(
+                profile.dichtungsrelevante_besonderheiten
+            ),
         }
 
     def _pack_suggestion_context(

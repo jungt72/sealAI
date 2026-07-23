@@ -8,7 +8,12 @@ import asyncio
 import pytest
 
 from sealai_v2.knowledge.fachkarten import Claim, Fachkarte, FachkartenCatalog
-from sealai_v2.knowledge.retrieval import InProcessRetriever, _card_severity
+from sealai_v2.knowledge.retrieval import (
+    InProcessRetriever,
+    _card_severity,
+    _retrieval_concepts,
+    _score,
+)
 from sealai_v2.tests.reviewed_catalog import independently_reviewed_test_catalog
 
 
@@ -154,11 +159,81 @@ def test_controlled_engineering_concepts_generalize_beyond_eval_wording(
     assert expected_card in {fact.card_id for fact in res.grounding_facts}
 
 
+def test_semantic_scope_aliases_count_as_one_card_signal():
+    profile = Fachkarte(
+        id="FK-PROFILE",
+        scope={
+            "application": [
+                "Wellendichtung",
+                "Radialwellendichtring",
+                "RWDR",
+                "Simmerring",
+                "Dichtlippe",
+            ]
+        },
+        claims=(),
+        review_state="draft",
+        provenance=("test",),
+    )
+
+    # One literal tag plus one inferred concept; the four aliases do not add four more points.
+    assert _score(profile, "Wie funktioniert eine Wellendichtung?") == 2
+
+
+def test_claims_are_interleaved_across_equally_ranked_cards():
+    def card(card_id: str) -> Fachkarte:
+        return Fachkarte(
+            id=card_id,
+            scope={"material": ["NBR"], "medium": ["Getriebeöl"]},
+            claims=tuple(
+                Claim(
+                    text=f"{card_id} claim {index}",
+                    review_state="reviewed",
+                    sources=("test-source",),
+                    provenance=("owner:test",),
+                    reviewed_by="test-domain-reviewer",
+                    reviewed_at="2026-07-11T00:00:00Z",
+                    review_expires_at="2099-07-11T00:00:00Z",
+                )
+                for index in range(3)
+            ),
+            review_state="reviewed",
+            provenance=("owner:test",),
+        )
+
+    res = asyncio.run(
+        InProcessRetriever(FachkartenCatalog(cards=(card("FK-A"), card("FK-B")))).retrieve(
+            "NBR in Getriebeöl", tenant_id="t", k=2
+        )
+    )
+
+    assert [fact.card_id for fact in res.grounding_facts] == [
+        "FK-A",
+        "FK-B",
+        "FK-A",
+        "FK-B",
+        "FK-A",
+        "FK-B",
+    ]
+
+
 def test_short_uv_abbreviation_does_not_match_inside_unrelated_suv_token():
     res = asyncio.run(
         _r().retrieve("O-Ring für ein SUV-Getriebe auswählen", tenant_id="t", k=5)
     )
     assert "FK-NBR-OZON" not in {fact.card_id for fact in res.grounding_facts}
+
+
+def test_hardening_stem_does_not_match_hartverchromte_shaft_surface():
+    assert "hardening" not in _retrieval_concepts(
+        "RWDR auf einer hartverchromten Wellenoberfläche"
+    )
+
+
+def test_crack_stem_still_matches_inflected_rissig_wording():
+    concepts = _retrieval_concepts("Der NBR-RWDR ist rissig.")
+
+    assert {"tear", "cracking"} <= concepts
 
 
 def test_schokolade_ruehrwerk_case_retrieves_food_and_seal_profiles():

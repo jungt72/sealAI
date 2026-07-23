@@ -45,6 +45,7 @@ from sealai_v2.core.knowledge_answer import (
 from sealai_v2.core.medium_extract import extract_media, extract_medium_facts
 from sealai_v2.core.seal_spec_extract import extract_seal_spec
 from sealai_v2.core.text_match import query_tokens, tag_matches
+from sealai_v2.core.user_goal import requests_replacement_identification
 from sealai_v2.pipeline.stages import is_alternativen_request
 
 
@@ -192,6 +193,24 @@ _CALC_QUANTITY_RE = re.compile(
 _EXPLICIT_CALC_SPEECH_RE = re.compile(
     r"\b(?:berechne|berechnen|berechnung|rechne|ausrechnen|ermittle|bestimme|"
     r"wie\s+hoch|welchen\s+wert|was\s+betr(?:ä|ae)gt)\b",
+    re.IGNORECASE,
+)
+_GENERAL_MATERIAL_ORIENTATION_RE = re.compile(
+    r"\bwelche\w*\s+(?:werkstoffe?|material(?:ien|e)?|elastomere?|compounds?)\b"
+    r"[^?!.]{0,100}\b(?:grunds[aä]tzlich|allgemein|typischerweise|in\s+frage|infrage)\b|"
+    r"\b(?:grunds[aä]tzlich|allgemein|typischerweise)\b[^?!.]{0,100}"
+    r"\b(?:werkstoffe?|material(?:ien|e)?|elastomere?|compounds?)\b",
+    re.IGNORECASE,
+)
+_CLOSED_CANDIDATE_DECISION_RE = re.compile(
+    r"\b(?:reicht|passt|geeignet|ausreichend|freigeben|freigabe|beibehalten|"
+    r"einsetzen|verwenden|nehmen)\b",
+    re.IGNORECASE,
+)
+_ROTATING_SPEED_CONTEXT_RE = re.compile(
+    r"\b(?:rwdr|radialwellendichtring|wellendichtring|simmerring)\b|"
+    r"\b\d+(?:[.,]\d+)?\s*(?:u\s*/\s*min|1\s*/\s*min|rpm)\b|"
+    r"\b\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?(?:\s*[x×]\s*\d+(?:[.,]\d+)?)?\b",
     re.IGNORECASE,
 )
 
@@ -698,6 +717,36 @@ def requests_calculation(question: str) -> bool:
     )
 
 
+def requests_general_material_orientation(question: str) -> bool:
+    """Whether the user asks for a broad material landscape, not a candidate decision."""
+
+    return bool(_GENERAL_MATERIAL_ORIENTATION_RE.search(question or ""))
+
+
+def calculation_relevant_for_response(
+    question: str,
+    *,
+    has_kernel_inputs: bool = False,
+    material_terms: tuple[str, ...] = (),
+) -> bool:
+    """Authorize calculation narration only when it advances the current speech act.
+
+    The kernel may still compute for telemetry. This predicate governs whether its result may enter
+    grounding, generation or verification for the answer the user actually requested.
+    """
+
+    if requests_calculation(question):
+        return True
+    if requests_general_material_orientation(question):
+        return False
+    return bool(
+        has_kernel_inputs
+        and _CLOSED_CANDIDATE_DECISION_RE.search(question or "")
+        and _ROTATING_SPEED_CONTEXT_RE.search(question or "")
+        and _has_material_topic(question, material_terms)
+    )
+
+
 _CONTEXTUAL_CALC_REFERENCE_RE = re.compile(
     r"\b(?:sie|ihn|ihm|er|der\s+wert|das\s+ergebnis|jetzt|genau)\b",
     re.IGNORECASE,
@@ -1172,6 +1221,10 @@ def _forced_route(question: str, signals: tuple[str, ...]) -> RouteName:
     (the current full pipeline); the label only makes telemetry/dashboards readable."""
     if _RFQ_RE.search(question):
         return RouteName.RFQ_MANUFACTURER_BRIEF
+    if requests_replacement_identification(question):
+        # ``kaputt`` is only context here. The requested task is to identify the old seal so an
+        # evidence-bound replacement can be specified, not to diagnose the failure mechanism.
+        return RouteName.ENGINEERING_CASE
     if (
         "recognized_failure_symptom" in signals
         or "leakage_or_failure_language" in signals

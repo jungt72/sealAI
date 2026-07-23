@@ -24,8 +24,11 @@ no network (``core`` stays I/O-free; the in-process catalog is canonical, a DB a
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from sealai_v2.core.contracts import GroundingFact
 
 _SEED_DIR = Path(__file__).resolve().parent
 _DEFAULT_FILE = _SEED_DIR / "archetypes_seed.json"
@@ -151,4 +154,68 @@ def load_archetypes(path: Path | None = None) -> ArchetypeCatalog:
         profiles=tuple(profiles),
         version=str(data.get("version", "")),
         source=str(data.get("source", "")),
+    )
+
+
+def _fold_archetype_text(value: str) -> str:
+    return (
+        (value or "")
+        .casefold()
+        .replace("ä", "ae")
+        .replace("ö", "oe")
+        .replace("ü", "ue")
+        .replace("ß", "ss")
+    )
+
+
+def exact_reviewed_archetype(
+    question: str, catalog: ArchetypeCatalog | None
+) -> ArchetypeProfile | None:
+    """Resolve only an explicitly named reviewed application profile."""
+
+    if catalog is None:
+        return None
+    normalized = _fold_archetype_text(question)
+    for profile in catalog.reviewed():
+        key = _fold_archetype_text(profile.key)
+        if re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", normalized):
+            return profile
+    return None
+
+
+def reviewed_archetype_grounding_facts(
+    question: str, catalog: ArchetypeCatalog | None
+) -> tuple[GroundingFact, ...]:
+    """Build claim-level evidence from an exact owner-reviewed application profile."""
+
+    profile = exact_reviewed_archetype(question, catalog)
+    if profile is None:
+        return ()
+    sources = tuple(profile.sources) or tuple(
+        f"sealingAI owner-reviewed archetype profile; {item}"
+        for item in profile.provenance
+        if item
+    )
+    card_id = f"ARCHETYPE-{profile.key.upper()}"
+    return tuple(
+        GroundingFact(
+            text=text,
+            quelle=(
+                f"Archetyp {profile.key} (owner-reviewed; "
+                f"{', '.join(profile.provenance)})"
+            ),
+            card_id=card_id,
+            sources=sources,
+            claim_kind="system_dependent",
+            answer_facets=(
+                "applications",
+                "operating_factors",
+                "selection_inputs",
+                "failure_modes",
+            ),
+            subject_type="application",
+            claim_id=f"{card_id}:{index}",
+        )
+        for index, text in enumerate(profile.dichtungsrelevante_besonderheiten)
+        if text
     )

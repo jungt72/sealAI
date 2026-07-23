@@ -463,6 +463,7 @@ def _deterministic_evidence_answer(
                 "FK-RWDR-ENGINEERING-PROFILE",
                 "FK-GLRD-ENGINEERING-PROFILE",
             }
+            or item[1].card_id.startswith("ARCHETYPE-")
             or item[1].kind in {"matrix", "trap"}
         ]
         if profile_items:
@@ -525,6 +526,17 @@ def _deterministic_evidence_answer(
     if (communication_plan or {}).get(
         "goal"
     ) == "diagnose_failure" and not policy_evidence:
+        nbr_thermal_aging = bool(
+            re.search(r"\bnbr\b", normalized)
+            and re.search(
+                r"\b(?:hart|verh[aä]rt\w*|verspr[oö]d\w*|riss\w*)\b",
+                normalized,
+            )
+            and not re.search(
+                r"\b(?:au[sß]en|freien|freiland|ozon|uv|witter\w*|wetter|sonne)\b",
+                normalized,
+            )
+        )
         diagnostic_facets = {
             "failure_modes",
             "mechanism",
@@ -537,7 +549,17 @@ def _deterministic_evidence_answer(
             if item[1].claim_kind != "example_value"
             and diagnostic_facets.intersection(item[1].answer_facets)
         ]
-        if diagnostic_evidence:
+        nbr_thermal_evidence = [
+            item
+            for item in evidence_facts.items()
+            if item[1].card_id == "FK-NBR-DAUERTEMP"
+            and {"failure_modes", "limits", "media_compatibility"}.intersection(
+                item[1].answer_facets
+            )
+        ]
+        if nbr_thermal_aging and nbr_thermal_evidence:
+            selected_evidence = nbr_thermal_evidence[:2]
+        elif diagnostic_evidence:
             application_contrast = "application_contrast" in set(
                 (communication_plan or {}).get("must_include", ())
             )
@@ -552,12 +574,45 @@ def _deterministic_evidence_answer(
                 )
             )
             selected_evidence = diagnostic_evidence
-        selected_evidence = selected_evidence[:1]
+        selected_evidence = selected_evidence[: (2 if nbr_thermal_aging else 1)]
         missing = []
-        conclusion = (
-            "Bei einer Undichtigkeit sollte zuerst der Versagenspfad eingegrenzt werden; "
-            "ein Werkstoffwechsel allein wäre noch keine belastbare Ursachenbehebung."
-        )
+        if nbr_thermal_aging and nbr_thermal_evidence:
+            conclusion = (
+                "Das Schadensbild passt vorläufig zu thermischer Alterung von NBR; bei "
+                "synthetischem Öl kann ein kritisches Basisöl oder Additivpaket den Angriff "
+                "zusätzlich verstärken. Beides muss am realen Lippen-Temperaturprofil und am "
+                "genauen Öl getrennt geprüft werden."
+            )
+        else:
+            conclusion = (
+                "Bei einer Undichtigkeit sollte zuerst der Versagenspfad eingegrenzt werden; "
+                "ein Werkstoffwechsel allein wäre noch keine belastbare Ursachenbehebung."
+            )
+
+    if (communication_plan or {}).get(
+        "goal"
+    ) == "identify_replacement_seal" and not policy_evidence:
+        replacement_evidence = [
+            item
+            for item in evidence_facts.items()
+            if item[1].card_id == "FK-ERSATZDICHTUNG-IDENTIFIKATION"
+        ]
+        if replacement_evidence:
+            selected_evidence = replacement_evidence[:1]
+            missing = []
+            conclusion = (
+                "Ja – auch ohne lesbaren Code lässt sich die alte Dichtung systematisch "
+                "identifizieren. Entscheidend sind zuerst Geometrie, Lippen- und Federbauform "
+                "sowie alle noch erkennbaren Kennzeichnungen; die Betriebsdaten sichern danach "
+                "ab, ob ein maßgleicher Ersatz technisch passt."
+            )
+        else:
+            selected_evidence = []
+            missing = []
+            conclusion = (
+                "Die alte Dichtung kann ich mit der in diesem Durchlauf abgerufenen Evidenz noch "
+                "nicht belastbar identifizieren. Ich grenze deshalb zuerst das Altteil ein."
+            )
 
     computed = tuple(calc.computed) if calc is not None else ()
     if computed:
@@ -947,6 +1002,31 @@ class L1Generator:
                     model=self._model_config.model,
                     grounding_facts=grounding_facts,
                     finish_reason="deterministic_diagnostic_evidence",
+                    verification_claims=tuple(claim.text for claim in technical.claims),
+                )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
+                and evidence_facts
+                and (communication_plan or {}).get("goal")
+                == "identify_replacement_seal"
+            ):
+                technical = _deterministic_evidence_answer(
+                    question=evidence_query or question,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                    calc=calc,
+                    communication_plan=communication_plan,
+                )
+                return Answer(
+                    text=strip_sourcing(
+                        _render_diagnostic_evidence_answer(
+                            technical, communication_plan
+                        )
+                    ),
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_replacement_identification",
                     verification_claims=tuple(claim.text for claim in technical.claims),
                 )
             if (

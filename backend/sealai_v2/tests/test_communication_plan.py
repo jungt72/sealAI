@@ -133,6 +133,17 @@ def test_leakage_plan_prioritises_diagnosis_over_material_replacement() -> None:
     assert "cause_before_replacement" in plan.must_include
 
 
+def test_unknown_replacement_plan_answers_identification_goal_not_failure_detour() -> None:
+    plan = build_communication_plan(
+        question="Wie finde ich Ersatz für meine kaputte Wellendichtung ohne Code am Altteil?",
+        route_name="engineering_case",
+    )
+
+    assert plan.goal == "identify_replacement_seal"
+    assert "Innen- und Außendurchmesser" in plan.next_question
+    assert "failure_diagnosis_detour" in plan.must_not_include
+
+
 def test_leakage_plan_supplies_one_discriminating_question_without_case_gaps() -> None:
     plan = build_communication_plan(
         question="Der Wellendichtring ist undicht. Was soll ich prüfen?",
@@ -153,6 +164,17 @@ def test_environmental_nbr_cracks_get_a_cause_specific_next_step() -> None:
     assert "Öl oder Fett" in plan.next_question
     assert "Ozon-/Witterungsriss" in plan.question_reason
     assert plan.next_question.count("?") == 1
+
+
+def test_hardened_nbr_lip_asks_for_lip_temperature_and_exact_oil() -> None:
+    plan = build_communication_plan(
+        question="Der NBR-RWDR ist hart und rissig. Was tun?",
+        route_name="leakage_troubleshooting",
+    )
+
+    assert "direkt an der Dichtlippe" in plan.next_question
+    assert "Basis und Additivpaket" in plan.next_question
+    assert "thermische Alterung" in plan.question_reason
 
 
 def test_application_contrast_gets_a_runout_specific_next_step() -> None:
