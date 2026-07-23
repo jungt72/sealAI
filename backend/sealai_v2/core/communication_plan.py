@@ -71,6 +71,14 @@ _FIELD_QUESTIONS: dict[str, tuple[str, str]] = {
         "Welche Drehzahl liegt im Normalbetrieb und maximal an?",
         "Damit lässt sich die dynamische Belastung der Dichtstelle einordnen.",
     ),
+    "Einheit der Drehzahl": (
+        "In welcher Einheit ist die bereits genannte Drehzahl angegeben, zum Beispiel U/min?",
+        "Ohne die Einheit darf der Rechenkern den vorhandenen Zahlenwert nicht als Drehzahl binden.",
+    ),
+    "Einheit des Wellendurchmessers": (
+        "In welcher Einheit ist der bereits genannte Wellendurchmesser angegeben, zum Beispiel mm?",
+        "Ohne die Einheit darf der Rechenkern den vorhandenen Zahlenwert nicht als Länge binden.",
+    ),
     "Dichtungstyp oder Dichtstelle": (
         "Welche Dichtungsart oder konkrete Dichtstelle gehört zu diesem Fall?",
         "Damit ordne ich den Fall dem passenden Auslegungs- und Fragenpfad zu.",
@@ -80,6 +88,46 @@ _FIELD_QUESTIONS: dict[str, tuple[str, str]] = {
         "So nutze ich den vorhandenen Case gezielt, statt bereits geklärte Angaben erneut abzufragen.",
     ),
 }
+
+_NBR_ENVIRONMENTAL_CRACK_RE = re.compile(
+    r"\bnbr\b.*\b(?:au[sß]en|fre(?:ien|iland)|ozon|uv|witterung)\w*\b|"
+    r"\b(?:au[sß]en|fre(?:ien|iland)|ozon|uv|witterung)\w*\b.*\bnbr\b",
+    re.IGNORECASE,
+)
+_APPLICATION_CONTRAST_RE = re.compile(
+    r"\br[uü]hrwerk\w*\b.*\bgetriebe\w*\b|\bgetriebe\w*\b.*\br[uü]hrwerk\w*\b",
+    re.IGNORECASE,
+)
+_BARE_APPLICATION_REQUEST_RE = re.compile(
+    r"^\s*(?:ich\s+(?:brauche|ben[oö]tige|suche)\s+(?:eine[nr]?\s+)?dichtung|"
+    r"welche\s+dichtung\s+(?:brauche|ben[oö]tige|nehme)\s+ich|"
+    r"dichtung(?:sl[oö]sung)?\s+gesucht)\s+f[uü]r\s+"
+    r"(?:meine|unsere|eine|einen|die|den)?\s*"
+    r"(?:pumpe|r[uü]hrwerk|mischer|ventil|zylinder|kompressor|reaktor|bioreaktor)\w*"
+    r"\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_MATERIAL_SELECTION_REQUEST_RE = re.compile(
+    r"\b(?:empfiehl|empfehl)\w*[^?!.]{0,55}\b(?:material|werkstoff|elastomer|compound)\b|"
+    r"\bwelche[rns]?\s+(?:material|werkstoff|elastomer|compound)\b[^?!.]{0,80}"
+    r"(?:eign\w*|passt|w[aä]re|pr[uü]fen|nehmen|w[aä]hlen)\b|"
+    r"\b(?:material|werkstoff|elastomer|compound)\b[^?!.]{0,55}\b"
+    r"(?:empfehl\w*|ausw[aä]hl\w*|passt)\b|"
+    r"\bworauf\s+sollte\s+ich\s+bei\s+(?:der|einer)\s+"
+    r"(?:werkstoff|material)(?:wahl|auswahl)\s+achten\b",
+    re.IGNORECASE,
+)
+_STEAM_CONTEXT_RE = re.compile(
+    r"\b(?:wasser|satt|hei[sß]|[uü]berhitzt)\w*dampf\w*\b|\bdampf\w*\b|\bsip\b",
+    re.IGNORECASE,
+)
+_DYNAMIC_TIGHTNESS_TARGET_RE = re.compile(
+    r"\b(?:maximale\s+dichtheit|leckage\s*(?:[:=]\s*)?(?:null|0)|leckagefrei\w*)\b"
+    r"[^?!.]{0,100}\b(?:welle|rotierend\w*|dynamisch\w*|dichtung|optimal)\w*\b|"
+    r"\b(?:welle|rotierend\w*|dynamisch\w*)\w*\b[^?!.]{0,100}"
+    r"\b(?:maximale\s+dichtheit|leckage\s*(?:null|0)|leckagefrei\w*)\b",
+    re.IGNORECASE,
+)
 
 
 def _next_case_question(
@@ -173,12 +221,158 @@ def build_communication_plan(
             response_moves=("answer", "explain", "summarize"),
             depth="deep" if route_name == "material_comparison" else "normal",
             answer_first=True,
-            max_questions=1 if next_question else 0,
+            max_questions=(
+                1 if route_name == "material_comparison" or next_question else 0
+            ),
             case_bound=case_bound,
             next_question=next_question,
             question_reason=reason,
             must_include=("direct_answer",),
             must_not_include=("unrequested_case_assumptions",),
+        )
+
+    if route_name == "leakage_troubleshooting":
+        diagnostic_must_include = (
+            "cause_before_replacement",
+            "next_diagnostic_step",
+        )
+        if _NBR_ENVIRONMENTAL_CRACK_RE.search(question):
+            next_question = (
+                "Kommt die betroffene Außenfläche zusätzlich mit Öl oder Fett in Kontakt, "
+                "und steht das Elastomer dort unter Dehnung?"
+            )
+            reason = (
+                "Damit lässt sich der naheliegende Ozon-/Witterungsriss bestätigen und eine "
+                "spätere Abhilfe zugleich gegen den realen Medienkontakt abgrenzen."
+            )
+        elif _APPLICATION_CONTRAST_RE.search(question):
+            next_question = (
+                "Wie unterscheiden sich Rundlauf, Wellenauslenkung und Bewegungsprofil am "
+                "Rührwerk gegenüber dem Getriebe?"
+            )
+            reason = (
+                "Dieser Vergleich prüft direkt, ob die Anwendung den dynamischen Kontakt der "
+                "Dichtlippe verliert, obwohl Bauform und Werkstoff gleich sind."
+            )
+            diagnostic_must_include = (
+                "cause_before_replacement",
+                "next_diagnostic_step",
+                "application_contrast",
+            )
+        elif not next_question:
+            next_question = (
+                "Trat die Leckage direkt nach Montage oder erst nach Betriebszeit auf, und "
+                "welche Spur ist an Dichtlippe und Wellenlaufbahn sichtbar?"
+            )
+            reason = (
+                "Das trennt Montagefehler von thermischer, schmierungsbedingter oder "
+                "oberflächenbedingter Schädigung."
+            )
+        return CommunicationPlan(
+            goal="diagnose_failure",
+            response_moves=("answer", "explain", "clarify", "justify"),
+            depth="brief",
+            answer_first=True,
+            max_questions=1,
+            case_bound=True,
+            next_question=next_question,
+            question_reason=reason,
+            must_include=diagnostic_must_include,
+            must_not_include=(
+                "premature_material_recommendation",
+                "unplanned_question_list",
+            ),
+        )
+
+    if route_name == "engineering_case" and _DYNAMIC_TIGHTNESS_TARGET_RE.search(
+        question
+    ):
+        return CommunicationPlan(
+            goal="resolve_dynamic_sealing_tradeoff",
+            response_moves=("answer", "compare", "clarify", "justify"),
+            depth="brief",
+            answer_first=True,
+            max_questions=1,
+            case_bound=True,
+            next_question=(
+                "Welche Priorität hat Vorrang – die kleinstmögliche zulässige Leckage, "
+                "Lebensdauer und Effizienz oder geringe Wartung – und welche Leckagerate ist "
+                "messbar noch akzeptabel?"
+            ),
+            question_reason=(
+                "Erst diese Priorität macht den Zielkonflikt zwischen Dichtwirkung, "
+                "Schmierfilm, Reibung und Verschleiß technisch entscheidbar."
+            ),
+            must_include=("explicit_tradeoff", "evidence_bound_candidate_space"),
+            must_not_include=(
+                "zero_leakage_promise",
+                "unqualified_architecture_choice",
+                "unplanned_question_list",
+            ),
+        )
+
+    if route_name == "engineering_case" and _BARE_APPLICATION_REQUEST_RE.fullmatch(
+        question
+    ):
+        return CommunicationPlan(
+            goal="clarify_under_specified_case",
+            response_moves=("acknowledge", "clarify", "justify"),
+            depth="brief",
+            answer_first=True,
+            max_questions=1,
+            case_bound=True,
+            next_question=(
+                "Geht es um eine rotierende Wellenabdichtung, eine statische Gehäusestelle "
+                "oder eine andere Dichtstelle, und welches Medium liegt dort an?"
+            ),
+            question_reason=(
+                "Diese beiden Angaben trennen zuerst das Dichtprinzip und den maßgeblichen "
+                "Beständigkeitspfad, ohne den Fall mit einem Vollkatalog zu überfrachten."
+            ),
+            must_include=("bounded_case_clarification", "question_reason"),
+            must_not_include=(
+                "technical_claims",
+                "recommendations",
+                "unplanned_question_list",
+            ),
+        )
+
+    if route_name == "engineering_case" and _MATERIAL_SELECTION_REQUEST_RE.search(
+        question
+    ):
+        if _STEAM_CONTEXT_RE.search(question):
+            next_question = (
+                "Handelt es sich um gesättigten oder überhitzten Dampf, und welche maximale "
+                "Temperatur sowie welcher maximale Druck treten auf?"
+            )
+            reason = (
+                "Dampfzustand, Temperatur und Druck bestimmen gemeinsam das belastbare "
+                "Compound- und Lebensdauerfenster."
+            )
+        elif not next_question:
+            next_question = (
+                "Welche genaue Medienzusammensetzung und welches Temperaturprofil liegen an der "
+                "Dichtstelle vor?"
+            )
+            reason = (
+                "Eine Werkstofffamilie ist erst mit Medium, Konzentration beziehungsweise "
+                "Additivpaket und Temperaturprofil belastbar einzugrenzen."
+            )
+        return CommunicationPlan(
+            goal="orient_material_selection",
+            response_moves=("answer", "explain", "clarify", "justify"),
+            depth="brief",
+            answer_first=True,
+            max_questions=1,
+            case_bound=True,
+            next_question=next_question,
+            question_reason=reason,
+            must_include=("provisional_orientation", "one_discriminating_question"),
+            must_not_include=(
+                "unbounded_candidate_list",
+                "unplanned_question_list",
+                "unqualified_release",
+            ),
         )
 
     return CommunicationPlan(
@@ -216,6 +410,12 @@ def render_case_intake_response(question: str, plan: CommunicationPlan) -> str:
 def render_case_clarification(plan: CommunicationPlan) -> str:
     """Render one calm, justified next step for an already active case."""
 
+    if plan.goal == "clarify_under_specified_case":
+        return (
+            "Gern – ich grenze den Fall mit dir in wenigen Schritten ein. "
+            f"{plan.next_question} {plan.question_reason}"
+        )
+
     if not plan.next_question:
         return (
             "Den bisherigen Fallkontext habe ich berücksichtigt. Welcher Punkt soll als Nächstes "
@@ -244,6 +444,11 @@ def evaluate_communication(
         ):
             violations.append("intake_contains_evidence")
         if not plan.next_question or plan.next_question not in (text or ""):
+            violations.append("planned_question_missing")
+        if plan.question_reason and plan.question_reason not in (text or ""):
+            violations.append("question_reason_missing")
+    elif plan.goal == "orient_material_selection" and plan.next_question:
+        if plan.next_question not in (text or ""):
             violations.append("planned_question_missing")
         if plan.question_reason and plan.question_reason not in (text or ""):
             violations.append("question_reason_missing")

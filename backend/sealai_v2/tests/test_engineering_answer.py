@@ -150,6 +150,26 @@ def test_renderer_owns_aligned_comparison_and_parameter_tables() -> None:
     assert "Typ-, Mindest- und Referenzwerte" in rendered
 
 
+def test_pure_knowledge_boundary_does_not_turn_into_case_intake() -> None:
+    rendered = render_engineering_answer(
+        _answer(),
+        knowledge_answer_plan={
+            "comparison": False,
+            "subjects": ["NBR"],
+            "sections": [{"heading": "Einordnung", "facets": ["definition"]}],
+        },
+        communication_plan={
+            "goal": "answer_requested_knowledge",
+            "case_bound": False,
+            "next_question": "",
+        },
+    )
+
+    assert "Für diese Wissensfrage sind keine Falldaten erforderlich" in rendered
+    assert "Abgrenzung zur konkreten Auslegung" in rendered
+    assert "Für Auswahl oder Freigabe noch erforderlich" not in rendered
+
+
 def test_fallback_missing_information_never_exposes_internal_facets() -> None:
     payload = {
         "schema_version": 2,

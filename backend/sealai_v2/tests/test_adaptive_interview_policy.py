@@ -464,6 +464,12 @@ def test_compute_required_missing_lists_short_german_labels_in_curated_order() -
     )
 
 
+def test_compute_required_missing_accepts_legacy_distilled_temperature_key() -> None:
+    state = _state({"medium": "Heißwasser", "temperatur": "90 °C"})
+
+    assert "Betriebstemperatur" not in compute_required_missing(state, PACK)
+
+
 def test_compute_required_missing_drops_a_field_once_it_is_answered() -> None:
     values = _required_values()
     values.pop("wellendurchmesser")

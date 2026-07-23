@@ -55,6 +55,10 @@ class TrapEntry:
     # drafting. This is deliberately explicit rather than inferred from prose or selected by an LLM.
     retrieval_terms: tuple[str, ...] = ()
     retrieval_min_hits: int = 0
+    # Optional required-any group: at least one of these owner-curated terms must match in
+    # addition to retrieval_min_hits. This prevents generic pressure/temperature vocabulary from
+    # activating a medium-specific policy without the medium being present.
+    retrieval_required_terms_any: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
 
     @property
@@ -107,6 +111,9 @@ def _entry(raw: dict, review_state: str) -> TrapEntry:
         applies_to=tuple(str(a) for a in raw.get("applies_to", [])),
         retrieval_terms=tuple(str(t) for t in raw.get("retrieval_terms", [])),
         retrieval_min_hits=int(raw.get("retrieval_min_hits", 0)),
+        retrieval_required_terms_any=tuple(
+            str(t) for t in raw.get("retrieval_required_terms_any", [])
+        ),
         sources=tuple(str(source) for source in raw.get("sources", [])),
     )
 
@@ -161,6 +168,10 @@ def load_traps(path: Path | None = None) -> TrapCatalog:
                     )
             elif e.retrieval_min_hits:
                 raise ValueError(f"{e.id}: retrieval_min_hits requires retrieval_terms")
+            if e.retrieval_required_terms_any and not e.retrieval_terms:
+                raise ValueError(
+                    f"{e.id}: retrieval_required_terms_any requires retrieval_terms"
+                )
             entries.append(e)
     if not entries:
         raise ValueError("trap catalog is empty")
@@ -203,6 +214,8 @@ def retrieve_reviewed_trap_facts(
             card_id=entry.id,
             sources=entry.sources,
             kind="trap",
+            claim_kind="safety_caution",
+            answer_facets=("limits", "failure_modes", "selection_inputs"),
         )
         for _hits, entry in matches[:k]
     )
@@ -220,6 +233,10 @@ def reviewed_trap_retrieval_hits(
     """
     q_norm = (question or "").lower()
     tokens = q_tokens if q_tokens is not None else query_tokens(q_norm)
+    if entry.retrieval_required_terms_any and not any(
+        tag_matches(term, tokens, q_norm) for term in entry.retrieval_required_terms_any
+    ):
+        return 0
     return sum(1 for term in entry.retrieval_terms if tag_matches(term, tokens, q_norm))
 
 

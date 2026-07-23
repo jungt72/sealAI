@@ -8,11 +8,15 @@ from sealai_v2.core.contracts import (
     LlmResult,
     ModelConfig,
     MemoryView,
+    RememberedFact,
     RetrievalResult,
     SessionContext,
+    Turn,
 )
 from sealai_v2.core.case_state import CaseField, CaseFieldStatus, CaseStateV2
+from sealai_v2.core.calc.evaluator import CascadeCalcEngine
 from sealai_v2.core.l1_generator import L1Generator
+from sealai_v2.knowledge.archetypes import load_archetypes
 from sealai_v2.memory.store import InProcessConversationMemory
 from sealai_v2.pipeline.pipeline import Pipeline
 from sealai_v2.pipeline.semantic_router import SemanticRouter
@@ -103,9 +107,18 @@ class _RequiredMissingMemory:
     )
 
     def recall(self, **kwargs):
-        return MemoryView(case_state_v2=self.state)
+        return MemoryView(
+            case_state=tuple(
+                RememberedFact(feld=key, wert=value, provenance="user-form")
+                for key, value in self._known_values.items()
+            ),
+            case_state_v2=self.state,
+        )
 
     def record_turn(self, **kwargs):
+        return None
+
+    def set_derived(self, **kwargs):
         return None
 
 
@@ -126,6 +139,82 @@ class _UnknownScopeMemory:
         return MemoryView(case_state_v2=self.state)
 
     def record_turn(self, **kwargs):
+        return None
+
+
+class _UnitlessCalculationMemory:
+    _known_values = {
+        "dichtungstyp": "rwdr",
+        "anwendungsziel": "new_design",
+        "medium": "Mineralöl",
+        "betriebstemperatur": "60 °C",
+        "druck": "0,2 bar",
+        "wellendurchmesser": "40 mm",
+        "drehzahl": "8000",
+    }
+    state = CaseStateV2(
+        case_id="calc-context-case",
+        revision=2,
+        fields=tuple(
+            CaseField(key=key, value=value, status=CaseFieldStatus.CONFIRMED)
+            for key, value in _known_values.items()
+        ),
+    )
+
+    def recall(self, **kwargs):
+        return MemoryView(
+            case_state=tuple(
+                RememberedFact(feld=key, wert=value, provenance="user-stated")
+                for key, value in self._known_values.items()
+            ),
+            case_state_v2=self.state,
+            window=(
+                Turn(
+                    role="user",
+                    text="Wie hoch ist die Umfangsgeschwindigkeit bei meinem RWDR?",
+                ),
+                Turn(role="assistant", text="Nenne Durchmesser und Drehzahl."),
+                Turn(role="user", text="40 mm und 8000"),
+            ),
+        )
+
+    def record_turn(self, **kwargs):
+        return None
+
+    def set_derived(self, **kwargs):
+        return None
+
+
+class _SteamGuidanceMemory:
+    _known_values = {
+        "dichtungstyp": "rwdr",
+        "medium": "Heißwasser",
+        "medium_kategorie": "Wasser",
+        "temperatur": "90 °C",
+        "drehzahl": "200 U/min",
+    }
+    state = CaseStateV2(
+        case_id="steam-guidance-case",
+        revision=2,
+        fields=tuple(
+            CaseField(key=key, value=value, status=CaseFieldStatus.CONFIRMED)
+            for key, value in _known_values.items()
+        ),
+    )
+
+    def recall(self, **kwargs):
+        return MemoryView(
+            case_state=tuple(
+                RememberedFact(feld=key, wert=value, provenance="user-stated")
+                for key, value in self._known_values.items()
+            ),
+            case_state_v2=self.state,
+        )
+
+    def record_turn(self, **kwargs):
+        return None
+
+    def set_derived(self, **kwargs):
         return None
 
 
@@ -194,7 +283,26 @@ def test_owner_reported_intake_is_case_aware_without_retrieval_or_model_call():
     assert "Quelle" not in result.answer.text
 
 
-def test_unclassified_regional_greeting_uses_bounded_semantic_router():
+def test_bare_application_case_uses_deterministic_bounded_clarification() -> None:
+    pipeline, _helper, standard, frontier = _pipeline(evidence_count=8)
+
+    result = asyncio.run(
+        pipeline.run(
+            "Ich brauche eine Dichtung für meine Pumpe.",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "engineering_case"
+    assert result.answer.model == "deterministic-context-clarification"
+    assert result.answer.text.count("?") == 1
+    assert "rotierende Wellenabdichtung" in result.answer.text
+    assert "welches Medium" in result.answer.text
+    assert "Vollkatalog" in result.answer.text
+    assert standard.calls == frontier.calls == []
+
+
+def test_unclassified_colloquial_social_turn_uses_bounded_semantic_router():
     pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
     router_client = _RecordingClient(
         json.dumps(
@@ -214,7 +322,9 @@ def test_unclassified_regional_greeting_uses_bounded_semantic_router():
         ModelConfig("ministral-8b-2512", max_output_tokens=96),
     )
 
-    result = asyncio.run(pipeline.run("Moin", tenant=TenantContext("tenant-1")))
+    result = asyncio.run(
+        pipeline.run("Na, wie läuft's bei dir?", tenant=TenantContext("tenant-1"))
+    )
 
     assert result.route_name == "smalltalk_navigation"
     assert len(router_client.calls) == 1
@@ -222,6 +332,101 @@ def test_unclassified_regional_greeting_uses_bounded_semantic_router():
     assert helper.calls == []
     assert frontier.calls == []
     assert len(standard.calls) == 1
+
+
+def test_deterministic_domain_boundary_cannot_be_overridden_by_semantic_router():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
+    router_client = _RecordingClient(
+        json.dumps(
+            {
+                "primary_route": "general_sealing_knowledge",
+                "speech_act": "request_recommendation",
+                "conversation_relation": "new_topic",
+                "case_bound": False,
+                "contains_technical_request": True,
+                "confidence": 0.99,
+            }
+        )
+    )
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+
+    result = asyncio.run(
+        pipeline.run(
+            "Welchen Elektromotor soll ich für mein Rührwerk nehmen?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "unsupported_or_ambiguous"
+    assert router_client.calls == []
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert "außerhalb meiner Dichtungstechnik-Kompetenz" in result.answer.text
+    assert "Drehzahl" in result.answer.text and "Wellendichtung" in result.answer.text
+
+
+def test_domain_boundary_handles_embedded_question_with_german_verb_final_order():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
+    result = asyncio.run(
+        pipeline.run(
+            "Kannst du mir auch sagen, welchen Elektromotor ich für mein Rührwerk nehmen soll?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "unsupported_or_ambiguous"
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert "außerhalb meiner Dichtungstechnik-Kompetenz" in result.answer.text
+    assert "Drehzahl" in result.answer.text and "Wellendichtung" in result.answer.text
+
+
+def test_mixed_drive_and_seal_turn_keeps_both_intents_out_of_free_generation():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=0)
+    result = asyncio.run(
+        pipeline.run(
+            "Welchen Motor soll ich nehmen? Ich möchte auch eine passende Dichtung besprechen.",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "unsupported_or_ambiguous"
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert "außerhalb meiner Dichtungstechnik-Kompetenz" in result.answer.text
+    assert "Den Dichtungsteil deiner Anfrage bearbeite ich gern" in result.answer.text
+    assert result.answer.text.count("?") == 1
+
+
+def test_seal_request_with_motor_as_location_is_not_intercepted_by_drive_boundary():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    result = asyncio.run(
+        pipeline.run(
+            "Ich brauche eine Dichtung für den Motor, kannst du sie auslegen?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "engineering_case"
+    assert helper.calls == []
+    assert len(standard.calls) + len(frontier.calls) == 1
+    assert "außerhalb meiner Dichtungstechnik-Kompetenz" not in result.answer.text
+
+
+def test_ambiguous_same_gender_anaphora_never_reaches_free_generation():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    result = asyncio.run(
+        pipeline.run(
+            "Motor für die Anlage, wir brauchen eine Bewertung des Werkstoffs, kannst du ihn auslegen?",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "unsupported_or_ambiguous"
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert "den Bezug" in result.answer.text
+    assert result.answer.text.count("?") == 1
 
 
 def test_deep_well_sourced_knowledge_stays_one_standard_call():
@@ -488,6 +693,93 @@ def test_known_required_field_stops_before_retrieval_and_models():
     assert result.turn_state.model_tier == "none"
     assert "Welche minimale, normale und maximale Temperatur" in result.answer.text
     assert result.answer.text.count("?") == 1
+
+
+def test_contextual_calculation_followup_asks_only_for_missing_unit() -> None:
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
+    pipeline.memory = _UnitlessCalculationMemory()
+    pipeline.engine = CascadeCalcEngine()
+
+    result = asyncio.run(
+        pipeline.run(
+            "Und wie hoch ist sie jetzt genau?",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("calc-context-case"),
+        )
+    )
+
+    assert result.route_name == "engineering_case"
+    assert result.turn_state.execution_class == "D1"
+    assert result.computed_values == ()
+    assert "bereits genannte Drehzahl" in result.answer.text
+    assert "U/min" in result.answer.text
+    assert "Anwendungsziel" not in result.answer.text
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.turn_state.model_tier == "none"
+    assert result.answer.text.count("?") == 1
+
+
+def test_material_guidance_retrieval_is_bound_to_typed_case_context() -> None:
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=4)
+    pipeline.memory = _SteamGuidanceMemory()
+
+    result = asyncio.run(
+        pipeline.run(
+            "Worauf sollte ich bei der Werkstoffwahl achten?",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("steam-guidance-case"),
+        )
+    )
+
+    assert result.route_name == "engineering_case"
+    assert result.turn_state.execution_class != "D1"
+    assert (
+        "Verbindlicher Fallkontext aus Nutzereingaben" in pipeline.retriever.queries[-1]
+    )
+    assert "medium: Heißwasser" in pipeline.retriever.queries[-1]
+    assert "temperatur: 90 °C" in pipeline.retriever.queries[-1]
+    assert standard.calls or frontier.calls
+    assert helper.calls == []
+
+
+def test_explicit_calculation_uses_complete_target_inputs_before_pack_clarification():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=1)
+    retriever = pipeline.retriever
+    pipeline.engine = CascadeCalcEngine()
+    pipeline.memory = _RequiredMissingMemory()
+
+    result = asyncio.run(
+        pipeline.run(
+            "Wie hoch ist die Umfangsgeschwindigkeit?",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("case-1"),
+        )
+    )
+
+    computed = {item.calc_id: item for item in result.computed_values}
+    assert "umfangsgeschwindigkeit" in computed
+    assert computed["umfangsgeschwindigkeit"].value == 3.927
+    assert retriever.calls == 1
+    assert "Welche minimale, normale und maximale Temperatur" not in result.answer.text
+    assert helper.calls == []
+    assert len(standard.calls) + len(frontier.calls) == 1
+
+
+def test_reviewed_archetype_expands_only_the_retrieval_query_for_solution_work():
+    pipeline, _helper, standard, frontier = _pipeline(evidence_count=1)
+    pipeline.archetypes = load_archetypes()
+    original = (
+        "Getriebe, Mineralöl, 80 °C, belüftet, 40-mm-Welle, 1500 U/min, "
+        "staubige Umgebung. Was wäre der sinnvolle Ansatz?"
+    )
+
+    result = asyncio.run(pipeline.run(original, tenant=TenantContext("tenant-1")))
+
+    assert result.route_name == "engineering_case"
+    assert pipeline.retriever.calls == 1
+    assert "RWDR" in pipeline.retriever.queries[0]
+    called_users = [user for client in (standard, frontier) for user in client.users]
+    assert called_users == [original]
 
 
 def test_active_unknown_scope_guidance_uses_case_without_rag_or_reasking_known_fact():

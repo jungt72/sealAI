@@ -57,6 +57,20 @@ def test_communication_enforcement_keeps_only_planned_question_and_reason() -> N
     assert evaluate_communication(repaired, plan).passed
 
 
+def test_guard_requires_the_governed_question_not_an_arbitrary_model_question() -> None:
+    plan = build_communication_plan(
+        question="Welcher Werkstoff wäre für diese Anwendung zu prüfen?",
+        route_name="engineering_case",
+    )
+
+    verdict = evaluate_communication(
+        "Ich grenze den Fall ein. Welche Farbe hat die Dichtung?", plan
+    )
+
+    assert not verdict.passed
+    assert "planned_question_missing" in verdict.violations
+
+
 def test_communication_enforcement_removes_questions_from_answer_only_route() -> None:
     plan = build_communication_plan(
         question="Was ist PTFE?",
@@ -93,3 +107,106 @@ def test_knowledge_plan_answers_first_and_does_not_invent_case_questions() -> No
     assert plan.answer_first is True
     assert plan.max_questions == 0
     assert plan.next_question == ""
+
+
+def test_material_comparison_allows_one_discriminating_question() -> None:
+    plan = build_communication_plan(
+        question="PTFE gegenüber einem Elastomer: Welche Vor- und Nachteile gibt es?",
+        route_name="material_comparison",
+    )
+
+    answer = "Ich kann PTFE zuordnen. Welches Elastomer möchtest du vergleichen?"
+    assert plan.max_questions == 1
+    assert evaluate_communication(answer, plan).passed
+
+
+def test_leakage_plan_prioritises_diagnosis_over_material_replacement() -> None:
+    plan = build_communication_plan(
+        question="Der Wellendichtring ist undicht. Was soll ich prüfen?",
+        route_name="leakage_troubleshooting",
+        missing_fields=("Druck", "Drehzahl"),
+    )
+
+    assert plan.goal == "diagnose_failure"
+    assert plan.depth == "brief"
+    assert plan.max_questions == 1
+    assert "cause_before_replacement" in plan.must_include
+
+
+def test_leakage_plan_supplies_one_discriminating_question_without_case_gaps() -> None:
+    plan = build_communication_plan(
+        question="Der Wellendichtring ist undicht. Was soll ich prüfen?",
+        route_name="leakage_troubleshooting",
+    )
+
+    assert plan.next_question.count("?") == 1
+    assert "direkt nach Montage oder erst nach Betriebszeit" in plan.next_question
+    assert "Montagefehler" in plan.question_reason
+
+
+def test_environmental_nbr_cracks_get_a_cause_specific_next_step() -> None:
+    plan = build_communication_plan(
+        question="NBR-Dichtung im Freien mit feinen Rissen an der Außenfläche: Ursache?",
+        route_name="leakage_troubleshooting",
+    )
+
+    assert "Öl oder Fett" in plan.next_question
+    assert "Ozon-/Witterungsriss" in plan.question_reason
+    assert plan.next_question.count("?") == 1
+
+
+def test_application_contrast_gets_a_runout_specific_next_step() -> None:
+    plan = build_communication_plan(
+        question=(
+            "Der gleiche RWDR leckt im Rührwerk ständig, im baugleichen Getriebe nie."
+        ),
+        route_name="leakage_troubleshooting",
+    )
+
+    assert "Rundlauf" in plan.next_question
+    assert "Rührwerk gegenüber dem Getriebe" in plan.next_question
+    assert "dynamischen Kontakt" in plan.question_reason
+    assert "application_contrast" in plan.must_include
+
+
+def test_bare_application_request_is_bounded_to_one_grouped_question() -> None:
+    plan = build_communication_plan(
+        question="Ich brauche eine Dichtung für meine Pumpe.",
+        route_name="engineering_case",
+    )
+    answer = render_case_clarification(plan)
+
+    assert plan.goal == "clarify_under_specified_case"
+    assert "rotierende Wellenabdichtung" in plan.next_question
+    assert "welches Medium" in plan.next_question
+    assert answer.count("?") == 1
+    assert "wenigen Schritten" in answer
+    assert "Vollkatalog" in answer
+
+
+def test_steam_material_request_gets_brief_orientation_contract_and_one_key_question() -> (
+    None
+):
+    plan = build_communication_plan(
+        question="Bitte empfiehl mir ein Material für eine Wasserdampf-Anwendung.",
+        route_name="engineering_case",
+    )
+
+    assert plan.goal == "orient_material_selection"
+    assert plan.depth == "brief"
+    assert "gesättigten oder überhitzten Dampf" in plan.next_question
+    assert "Temperatur" in plan.next_question and "Druck" in plan.next_question
+    assert plan.next_question.count("?") == 1
+
+
+def test_dynamic_zero_leakage_target_gets_an_explicit_tradeoff_contract() -> None:
+    plan = build_communication_plan(
+        question="Maximale Dichtheit an der Welle, Leckage null – was ist optimal?",
+        route_name="engineering_case",
+    )
+
+    assert plan.goal == "resolve_dynamic_sealing_tradeoff"
+    assert "explicit_tradeoff" in plan.must_include
+    assert "welche Leckagerate" in plan.next_question
+    assert "Schmierfilm, Reibung und Verschleiß" in plan.question_reason
+    assert plan.next_question.count("?") == 1

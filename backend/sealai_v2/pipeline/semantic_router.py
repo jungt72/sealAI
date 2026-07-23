@@ -8,13 +8,19 @@ timeouts, invalid schemas and low confidence all preserve the caller's conservat
 from __future__ import annotations
 
 import asyncio
+import re
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from sealai_v2.core.contracts import LlmClient, ModelConfig
 from sealai_v2.llm.structured import StructuredOutputError, generate_structured
-from sealai_v2.pipeline.routing import RouteDecision, RouteName
+from sealai_v2.pipeline.routing import (
+    RouteDecision,
+    RouteName,
+    has_domain_anchor,
+    has_material_anchor,
+)
 
 SEMANTIC_ROUTER_VERSION = "semantic-router.v2"
 
@@ -85,12 +91,29 @@ Rules:
 - confidence expresses confidence in the primary route, not in any technical claim.
 """
 
+_ALLOWED_SMALLTALK_INPUT_RE = re.compile(
+    r"^\s*(?:hallo|hi|hey|moin|servus|gr[uü][sß]\s+gott|guten\s+(?:morgen|tag|abend)|"
+    r"danke|vielen\s+dank|tsch(?:u|ü)ss|auf\s+wiedersehen|"
+    r"wie\s+geht(?:'s|\s+es)|na\b.{0,30}\bwie\s+l[aä]uft|"
+    r"was\s+kannst\s+du|erz[aä]hl\s+mir\s+etwas|hilfe)\b.*$",
+    re.IGNORECASE,
+)
+
+
+def _bare_fragment(question: str) -> bool:
+    """A single noun/entity is not an information speech act."""
+
+    return len(re.findall(r"[\wÄÖÜäöüß-]+", question or "", re.UNICODE)) <= 1
+
 
 def resolve_semantic_decision(
     classification: SemanticRouteClassification,
     *,
     fallback: RouteDecision,
     confidence_threshold: float,
+    question: str = "",
+    case_active: bool = False,
+    material_terms: tuple[str, ...] = (),
 ) -> RouteDecision:
     """Apply the deterministic policy boundary to one schema-valid model classification."""
     if classification.confidence < confidence_threshold:
@@ -109,6 +132,10 @@ def resolve_semantic_decision(
         classification.speech_act is not SpeechAct.SOCIAL
         or classification.case_bound
         or classification.contains_technical_request
+        or (
+            bool(question.strip())
+            and not _ALLOWED_SMALLTALK_INPUT_RE.match(question or "")
+        )
     ):
         return RouteDecision(
             route=fallback.route,
@@ -131,13 +158,16 @@ def resolve_semantic_decision(
             deterministic_signal_count=fallback.deterministic_signal_count,
         )
 
-    if (
-        classification.primary_route
-        in {
-            RouteName.GENERAL_SEALING_KNOWLEDGE,
-            RouteName.MATERIAL_KNOWLEDGE,
-        }
-        and classification.speech_act is not SpeechAct.REQUEST_INFORMATION
+    if classification.primary_route in {
+        RouteName.GENERAL_SEALING_KNOWLEDGE,
+        RouteName.MATERIAL_KNOWLEDGE,
+    } and (
+        classification.speech_act is not SpeechAct.REQUEST_INFORMATION
+        or (bool(question.strip()) and _bare_fragment(question))
+        or (
+            bool(question.strip())
+            and not has_domain_anchor(question, material_terms=material_terms)
+        )
     ):
         return RouteDecision(
             route=fallback.route,
@@ -159,7 +189,37 @@ def resolve_semantic_decision(
             deterministic_signal_count=fallback.deterministic_signal_count,
         )
 
+    if (
+        bool(question.strip())
+        and not case_active
+        and classification.primary_route
+        in {
+            RouteName.ENGINEERING_CASE,
+            RouteName.LEAKAGE_TROUBLESHOOTING,
+            RouteName.RFQ_MANUFACTURER_BRIEF,
+        }
+        and not has_domain_anchor(question, material_terms=material_terms)
+    ):
+        return RouteDecision(
+            route=fallback.route,
+            reason=f"semantic_missing_domain_anchor;fallback={fallback.reason}",
+            confidence=fallback.confidence,
+            forced_full_pipeline=fallback.forced_full_pipeline,
+            deterministic_signal_count=fallback.deterministic_signal_count,
+        )
+
     route = classification.primary_route
+    normalization = ""
+    if (
+        route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        and classification.speech_act is SpeechAct.REQUEST_INFORMATION
+        and has_material_anchor(question, material_terms=material_terms)
+    ):
+        # The model may identify the speech act, but a stable, typed material
+        # entity owns the knowledge namespace.  This removes provider variance
+        # between general and material knowledge without authorizing a claim.
+        route = RouteName.MATERIAL_KNOWLEDGE
+        normalization = ":material_anchor_normalized"
     forced = route not in {
         RouteName.SMALLTALK_NAVIGATION,
         RouteName.CASE_INTAKE_INVITE,
@@ -171,7 +231,7 @@ def resolve_semantic_decision(
         reason=(
             f"semantic:{SEMANTIC_ROUTER_VERSION}:"
             f"{classification.speech_act.value}:"
-            f"{classification.conversation_relation.value}"
+            f"{classification.conversation_relation.value}{normalization}"
         ),
         confidence=classification.confidence,
         forced_full_pipeline=forced,
@@ -203,6 +263,7 @@ class SemanticRouter:
         case_active: bool,
         case_fields: tuple[str, ...] = (),
         required_missing: tuple[str, ...] = (),
+        material_terms: tuple[str, ...] = (),
     ) -> RouteDecision:
         fields = ", ".join(case_fields) or "none"
         missing = ", ".join(required_missing) or "none"
@@ -244,4 +305,7 @@ class SemanticRouter:
             classification,
             fallback=fallback,
             confidence_threshold=self._confidence_threshold,
+            question=question,
+            case_active=case_active,
+            material_terms=material_terms,
         )

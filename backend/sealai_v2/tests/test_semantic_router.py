@@ -42,7 +42,7 @@ def _response(
     )
 
 
-def _classify(answer: str, question: str = "Moin"):
+def _classify(answer: str, question: str = "Moin", *, case_active: bool = False):
     client = FakeLlmClient(answer)
     router = SemanticRouter(
         client,
@@ -54,7 +54,7 @@ def _classify(answer: str, question: str = "Moin"):
         router.classify(
             question,
             fallback=_fallback(),
-            case_active=False,
+            case_active=case_active,
         )
     )
     return decision, client
@@ -79,6 +79,20 @@ def test_mixed_greeting_uses_technical_primary_route() -> None:
             confidence=0.97,
         ),
         "Moin, kannst du mir Details zu einem unbekannten Compound geben?",
+    )
+
+    assert decision.route is RouteName.MATERIAL_KNOWLEDGE
+    assert decision.forced_full_pipeline is False
+
+
+def test_material_anchor_normalizes_general_knowledge_provider_variance() -> None:
+    decision, _ = _classify(
+        _response(
+            "general_sealing_knowledge",
+            speech_act="request_information",
+            confidence=0.99,
+        ),
+        "Was zeichnet EPDM allgemein aus?",
     )
 
     assert decision.route is RouteName.MATERIAL_KNOWLEDGE
@@ -120,6 +134,7 @@ def test_case_and_failure_routes_remain_full_pipeline() -> None:
         decision, _ = _classify(
             _response(route, speech_act="describe_case", case_bound=True),
             "Das tritt nur nach dem Wiederanlauf auf",
+            case_active=True,
         )
         assert decision.route.value == route
         assert decision.forced_full_pipeline is True
@@ -182,3 +197,85 @@ def test_prompt_marks_active_case_without_exposing_transcript() -> None:
     assert "CASE_FIELD_NAMES: medium, druck" in client.calls[0]["user"]
     assert "OPEN_REQUIRED_FIELD_NAMES: Betriebstemperatur" in client.calls[0]["user"]
     assert "Servus" in client.calls[0]["user"]
+
+
+def test_bare_entity_cannot_be_promoted_to_a_knowledge_request() -> None:
+    decision, _ = _classify(
+        _response(
+            "material_knowledge",
+            speech_act="request_information",
+            contains_technical_request=True,
+        ),
+        "PTFE",
+    )
+
+    assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+    assert decision.reason.startswith("semantic_inconsistent_knowledge")
+
+
+def test_off_topic_question_cannot_be_promoted_to_smalltalk() -> None:
+    decision, _ = _classify(
+        _response("smalltalk_navigation", contains_technical_request=False),
+        "Wie wird morgen das Wetter?",
+    )
+
+    assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+    assert decision.reason.startswith("semantic_inconsistent_smalltalk")
+
+
+def test_off_topic_information_question_cannot_be_promoted_to_knowledge() -> None:
+    for question in (
+        "Welche Aktie soll ich diese Woche kaufen?",
+        "Wie funktioniert eigentlich ein Verbrennungsmotor?",
+    ):
+        decision, _ = _classify(
+            _response(
+                "general_sealing_knowledge",
+                speech_act="request_information",
+                contains_technical_request=False,
+            ),
+            question,
+        )
+
+        assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+        assert decision.reason.startswith("semantic_inconsistent_knowledge")
+
+
+def test_compound_word_is_a_valid_material_domain_anchor() -> None:
+    decision, _ = _classify(
+        _response(
+            "material_knowledge",
+            speech_act="request_information",
+            contains_technical_request=True,
+        ),
+        "Kannst du mir Details zu einem unbekannten Compound geben?",
+    )
+
+    assert decision.route is RouteName.MATERIAL_KNOWLEDGE
+
+
+def test_new_technical_route_requires_a_domain_anchor() -> None:
+    decision, _ = _classify(
+        _response(
+            "leakage_troubleshooting",
+            speech_act="describe_case",
+            case_bound=True,
+        ),
+        "Das Ding da macht Probleme.",
+    )
+
+    assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+    assert decision.reason.startswith("semantic_missing_domain_anchor")
+
+
+def test_generic_help_may_offer_the_sealing_case_intake() -> None:
+    decision, _ = _classify(
+        _response(
+            "case_intake_invite",
+            speech_act="request_guidance",
+            contains_technical_request=True,
+        ),
+        "Kannst du mir bei einer Sache helfen?",
+    )
+
+    assert decision.route is RouteName.CASE_INTAKE_INVITE

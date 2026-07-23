@@ -7,11 +7,15 @@ this is asserted both per-case and as a standalone property test.
 
 from __future__ import annotations
 
+import pytest
+
 from sealai_v2.core.contracts import Intent, Turn
 from sealai_v2.pipeline.routing import (
     RouteName,
     classify_route,
     classify_route_deterministic,
+    requests_solution,
+    resolve_calculation_followup,
     resolve_material_comparison_followup,
     detect_engineering_signals,
 )
@@ -29,6 +33,83 @@ def test_material_comparison_followup_resolves_prior_user_subject() -> None:
     assert resolution is not None
     assert resolution.subjects == ("NBR", "PTFE")
     assert "NBR und PTFE" in resolution.resolved_question
+
+
+def test_calculation_followup_resolves_only_recent_user_authored_quantity() -> None:
+    resolution = resolve_calculation_followup(
+        "Und wie hoch ist sie jetzt genau?",
+        (
+            Turn(
+                role="user",
+                text="Wie hoch ist die Umfangsgeschwindigkeit bei meinem RWDR?",
+            ),
+            Turn(role="assistant", text="Nenne Durchmesser und Drehzahl."),
+            Turn(role="user", text="40 mm und 8000"),
+        ),
+    )
+
+    assert resolution is not None
+    assert "Rechengröße: Umfangsgeschwindigkeit" in resolution
+
+    parameters = resolve_calculation_followup(
+        "40 mm und 8000",
+        (
+            Turn(
+                role="user",
+                text="Wie hoch ist die Umfangsgeschwindigkeit bei meinem RWDR?",
+            ),
+        ),
+    )
+    assert parameters is not None
+    assert "angeforderte Berechnung der Umfangsgeschwindigkeit" in parameters
+
+
+def test_material_selection_guidance_is_a_solution_goal() -> None:
+    question = "Worauf sollte ich bei der Werkstoffwahl achten?"
+
+    assert requests_solution(question)
+    assert (
+        classify_route_deterministic(question, case_state_nonempty=True).route
+        is RouteName.ENGINEERING_CASE
+    )
+
+
+def test_calculation_followup_never_resolves_ambiguous_or_assistant_only_history() -> (
+    None
+):
+    assert (
+        resolve_calculation_followup(
+            "Und wie hoch ist sie jetzt genau?",
+            (Turn(role="assistant", text="Die Umfangsgeschwindigkeit fehlt."),),
+        )
+        is None
+    )
+    assert (
+        resolve_calculation_followup(
+            "Und wie hoch ist der Wert jetzt genau?",
+            (Turn(role="user", text="Berechne Umfangsgeschwindigkeit und PV-Wert."),),
+        )
+        is None
+    )
+    assert (
+        resolve_calculation_followup(
+            "Okay, und jetzt der Wert für 20 mm?",
+            (Turn(role="user", text="Was bedeutet der PV-Wert eigentlich?"),),
+        )
+        is None
+    )
+    assert (
+        resolve_calculation_followup(
+            "Was kostet eine Wellendichtung bei 50 mm Wellendurchmesser?",
+            (
+                Turn(
+                    role="user",
+                    text="Berechne die Verpressung für den O-Ring.",
+                ),
+            ),
+        )
+        is None
+    )
 
 
 def test_material_comparison_followup_does_not_trust_assistant_subjects() -> None:
@@ -160,6 +241,14 @@ class TestSmalltalkNavigation:
         assert d.route == RouteName.SMALLTALK_NAVIGATION
         assert d.forced_full_pipeline is False
         assert d.deterministic_signal_count == 0
+
+    def test_unambiguous_regional_greetings_route_deterministically(self) -> None:
+        for greeting in ("Moin", "Servus"):
+            decision = classify_route_deterministic(greeting)
+
+            assert decision.route is RouteName.SMALLTALK_NAVIGATION
+            assert decision.reason == "deterministic_smalltalk_shape"
+            assert decision.forced_full_pipeline is False
 
     def test_thanks_and_greeting_variants(self) -> None:
         for q in ("Danke dir!", "Guten Morgen", "Vielen Dank fuer die Hilfe"):
@@ -783,3 +872,196 @@ class TestForcedFullPipelineInvariant:
         assert any(
             detect_engineering_signals(q) for q in self._SIGNAL_BEARING_QUESTIONS
         )
+
+
+class TestRealWorldRoutingPrinciples:
+    def test_hyphenated_engineering_value_is_an_engineering_case(self) -> None:
+        for question in (
+            "RWDR an einer 40-mm-Welle mit Wasser als Medium.",
+            "Dichtung an einer 10-bar-Leitung.",
+        ):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.ENGINEERING_CASE, question
+            assert decision.forced_full_pipeline is True
+
+    def test_process_guidance_without_operating_facts_is_intake(self) -> None:
+        for question in (
+            "Neue Dichtung auslegen – wo fangen wir am besten an?",
+            "Können wir einen neuen Dichtungsfall gemeinsam strukturieren?",
+            "Moin, neuer Dichtungsfall – ich weiß noch nicht, welche Informationen relevant sind.",
+        ):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.CASE_INTAKE_INVITE, question
+            assert decision.forced_full_pipeline is False
+
+    def test_application_plus_operating_context_is_never_intake(self) -> None:
+        for question in (
+            "Es geht um eine rotierende Welle mit Hydrauliköl.",
+            "ATEX-Rührwerk mit Lösemitteldampf und wechselnder Drehzahl.",
+            "Langsam oszillierende Stange in Reinigungschemie.",
+        ):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.ENGINEERING_CASE, question
+            assert decision.forced_full_pipeline is True
+
+    def test_modified_seal_selection_request_is_an_engineering_case(self) -> None:
+        decision = classify_route_deterministic(
+            "Ich brauche eine lebensmittelechte Dichtung für eine Schokoladen-Anlage. "
+            "EPDM ist doch food-grade, oder?"
+        )
+
+        assert decision.route is RouteName.ENGINEERING_CASE
+        assert decision.forced_full_pipeline is True
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "Bitte empfiehl mir ein Material für die Anwendung mit Wasserdampf.",
+            "Welcher Werkstoff wäre bei Dampfkontakt grundsätzlich zu prüfen?",
+            "Welche genaue Compound-Nummer von unserem Hersteller soll ich bestellen?",
+            "Bitte nenne den Werkstoffcode des Lieferanten für diesen Fall.",
+            "Dichtung für einen Pharma-Bioreaktor, der mit Dampf sterilisiert wird (SIP).",
+            "Für einen SIP-Reaktor im Pharmabereich brauche ich eine Dichtung.",
+        ],
+    )
+    def test_selection_identifier_and_regulated_application_speech_acts_force_engineering(
+        self, question: str
+    ) -> None:
+        decision = classify_route_deterministic(question)
+
+        assert decision.route is RouteName.ENGINEERING_CASE
+        assert decision.forced_full_pipeline is True
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "Ich will maximale Dichtheit an meiner Welle, Leckage null – was ist optimal?",
+            "Ziel ist eine leckagefreie Wellenabdichtung; welche Lösung ist sinnvoll?",
+        ],
+    )
+    def test_leakage_target_is_design_work_not_an_observed_failure(
+        self, question: str
+    ) -> None:
+        decision = classify_route(question, diagnosis={"legacy_match": "leakage"})
+        signals = detect_engineering_signals(question)
+
+        assert decision.route is RouteName.ENGINEERING_CASE
+        assert "dynamic_leakage_target" in signals
+        assert "leakage_or_failure_language" not in signals
+
+    def test_leakage_target_does_not_hide_an_explicit_failure_symptom(self) -> None:
+        question = "Die Dichtung ist undicht; unser Ziel ist Leckage null."
+        decision = classify_route_deterministic(question)
+
+        assert decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
+        assert "leakage_or_failure_language" in detect_engineering_signals(question)
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            (
+                "Wir hatten als Anforderung Leckage null definiert. Jetzt beobachten wir "
+                "eine Leckage von 4 ml pro Stunde."
+            ),
+            "Ziel war Leckage 0; aktuell messen wir Leckage 0,5 ml/h.",
+        ],
+    )
+    def test_leakage_target_does_not_hide_an_observed_leak_measurement(
+        self, question: str
+    ) -> None:
+        decision = classify_route_deterministic(question)
+        signals = detect_engineering_signals(question)
+
+        assert decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
+        assert "leakage_or_failure_language" in signals
+        assert "dynamic_leakage_target" not in signals
+
+    def test_generic_recommendation_grammar_needs_a_domain_anchor(self) -> None:
+        decision = classify_route_deterministic(
+            "Welche Aktie soll ich diese Woche kaufen?"
+        )
+
+        assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS
+        assert decision.forced_full_pipeline is True
+
+    def test_general_seal_category_comparison_stays_general_knowledge(self) -> None:
+        decision = classify_route_deterministic(
+            "Welche grundsätzlichen Unterschiede gibt es zwischen statischen und "
+            "dynamischen Dichtungen?"
+        )
+
+        assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert decision.forced_full_pipeline is False
+
+    def test_general_application_overview_does_not_become_engineering_case(
+        self,
+    ) -> None:
+        decision = classify_route_deterministic(
+            "Welche Dichtungsarten gibt es für rotierende Wellen?"
+        )
+
+        assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert decision.forced_full_pipeline is False
+
+    def test_surface_roughness_at_sealing_interface_is_domain_knowledge(self) -> None:
+        decision = classify_route_deterministic(
+            "Erklär bitte allgemein, warum Oberflächenrauheit an einer Dichtstelle wichtig ist."
+        )
+
+        assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
+        assert decision.forced_full_pipeline is False
+
+    def test_material_class_and_property_phrasings_are_deterministic(self) -> None:
+        for question in (
+            "Was zeichnet EPDM allgemein aus?",
+            "Welche Werkstoffklasse ist FFKM?",
+            "Was bedeutet Shore-Härte bei Elastomeren?",
+        ):
+            decision = classify_route_deterministic(question)
+            assert decision.route is RouteName.MATERIAL_KNOWLEDGE, question
+            assert decision.forced_full_pipeline is False
+
+    def test_definitional_material_designation_is_knowledge_not_identifier_work(
+        self,
+    ) -> None:
+        decision = classify_route_deterministic(
+            "Wofür steht die Werkstoffbezeichnung HNBR?"
+        )
+
+        assert decision.route is RouteName.MATERIAL_KNOWLEDGE
+        assert decision.reason == "deterministic_explicit_material_knowledge_request"
+
+    def test_concrete_manufacturer_compound_identifier_stays_engineering_work(
+        self,
+    ) -> None:
+        for question in (
+            "Welche genaue Compoundnummer hat der Hersteller für diesen Fall freigegeben?",
+            "Was bedeutet die genaue Compoundnummer, die uns der Hersteller freigegeben hat?",
+            "Wofür steht die freigegebene Compound-Nr. unseres Herstellers genau?",
+            "Was heißt die Compound-Nummer 12345 bei diesem Hersteller?",
+            "Was bedeutet die genaue Werkstoffbezeichnung, die für unseren Fall zugelassen ist?",
+            "Wofür steht die genaue Werkstoffbezeichnung, die für diesen Fall vorgegeben wurde?",
+            "Was bedeutet die Werkstoffbezeichnung, die der Kunde für das Bauteil vorgeschrieben hat?",
+            "Was bedeutet die genaue Werkstoffbezeichnung FKM 80, die wir einsetzen sollen?",
+            "Was bedeutet die Werkstoffbezeichnung Silikon70?",
+        ):
+            decision = classify_route_deterministic(question)
+
+            assert decision.route is RouteName.ENGINEERING_CASE, question
+            assert "manufacturer_identifier_request" in decision.reason
+
+    def test_colloquial_leakage_shape_routes_to_troubleshooting(self) -> None:
+        decision = classify_route_deterministic(
+            "Dichtung nach Stillstand immer nass, im Lauf fast trocken – was ist da los?"
+        )
+
+        assert decision.route is RouteName.LEAKAGE_TROUBLESHOOTING
+        assert decision.forced_full_pipeline is True
+
+    def test_diagnostic_use_of_unterscheiden_is_not_a_context_comparison(self) -> None:
+        resolution = resolve_material_comparison_followup(
+            "Welche Ursache würdest du jetzt als Erstes unterscheiden?",
+            (Turn(role="user", text="Das Medium ist Mineralöl bei 60 °C."),),
+        )
+
+        assert resolution is None

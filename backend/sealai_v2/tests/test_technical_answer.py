@@ -12,6 +12,7 @@ from sealai_v2.core.contracts import (
     GroundingFact,
     ModelConfig,
 )
+from sealai_v2.core.communication_plan import build_communication_plan
 from sealai_v2.core.l1_generator import L1Generator
 from sealai_v2.core.technical_answer import (
     TechnicalAnswer,
@@ -20,6 +21,7 @@ from sealai_v2.core.technical_answer import (
     validate_technical_answer,
 )
 from sealai_v2.prompts.assembler import PromptAssembler
+from sealai_v2.knowledge.traps import load_traps
 from sealai_v2.tests._fakes import FakeLlmClient, ScriptedFakeLlmClient
 
 
@@ -128,7 +130,7 @@ def test_knowledge_answer_falls_back_without_a_second_paid_call():
     assert len(client.calls) == 1
 
 
-def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
+def test_evidence_bound_technical_answer_repairs_once_then_falls_back():
     client = FakeLlmClient(_payload(evidence_ids=[]))
     answer = asyncio.run(
         _generator(client).generate(
@@ -149,8 +151,453 @@ def test_evidence_bound_technical_answer_falls_back_without_second_paid_call():
 
     assert "Geprüfter technischer Zusammenhang" in answer.text
     assert answer.finish_reason == "deterministic_evidence_fallback"
-    assert len(client.calls) == 1
+    assert len(client.calls) == 2
     assert "one primary provisional candidate" in client.calls[0]["system"]
+    assert "failed deterministic evidence validation" in client.calls[1]["system"]
+
+
+def test_solution_fallback_selects_relevant_facets_instead_of_first_card_entries():
+    client = FakeLlmClient(_payload(evidence_ids=[]))
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Getriebe in staubiger Umgebung: Was wäre ein sinnvoller Ansatz?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "EPDM passt zu Glykol-Wasser-Gemischen.",
+                    "ledger",
+                    card_id="FK-UNRELATED-EPDM",
+                    answer_facets=("media_compatibility",),
+                ),
+                GroundingFact(
+                    "RWDR-Bauformen unterscheiden sich unter anderem durch eine Staublippe.",
+                    "ledger",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    answer_facets=("variants", "applications"),
+                    claim_id="RWDR-VARIANTS",
+                ),
+                GroundingFact(
+                    "Die Gegenlauffläche muss hinsichtlich Drall, Rundlauf und Rauheit geprüft werden.",
+                    "ledger",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    answer_facets=("design_interfaces", "selection_inputs"),
+                    claim_id="RWDR-INTERFACES",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            work_solution_candidate=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Staublippe" in answer.text
+    assert "Drall, Rundlauf und Rauheit" in answer.text
+    assert "EPDM passt zu Glykol" not in answer.text
+    assert answer.text.count("quellengebunden") == 2
+
+
+def test_source_bound_policy_fact_outranks_broad_profile_in_fallback():
+    client = FakeLlmClient(_payload(evidence_ids=[]))
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Getriebe in staubiger Umgebung: Was wäre ein sinnvoller Ansatz?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Ein RWDR ist eine berührende Rotationsdichtung.",
+                    "ledger",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    answer_facets=("definition",),
+                ),
+                GroundingFact(
+                    "Für die staubige Umgebung ist ein RWDR mit Staublippe der zu prüfende Kandidat.",
+                    "reviewed policy",
+                    card_id="POLICY-GETRIEBE",
+                    sources=("primary-source",),
+                    kind="trap",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            work_solution_candidate=True,
+            case_revision=7,
+        )
+    )
+
+    assert "RWDR mit Staublippe" in answer.text
+    assert "berührende Rotationsdichtung" not in answer.text
+    assert "Nächster Klärungsschritt" not in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_policy"
+    assert len(client.calls) == 0
+
+
+def test_source_bound_safety_policy_preempts_unsafe_model_expansion():
+    client = FakeLlmClient(_payload())
+    safety_policy = load_traps().by_id("SAFETY-RGD-HD-GAS")
+    assert safety_policy is not None
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Wasserstoff bei 700 bar mit schnellen Druckwechseln: Welche Dichtung passt?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    safety_policy.correct,
+                    "reviewed policy",
+                    card_id="SAFETY-RGD-HD-GAS",
+                    sources=("ISO 19880-7",),
+                    kind="trap",
+                ),
+                GroundingFact(
+                    "Eine doppelte Gleitringdichtung ist eine verfügbare Bauform.",
+                    "broad profile",
+                    card_id="FK-GLRD-ENGINEERING-PROFILE",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            work_solution_candidate=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.text.startswith(
+        "Das ist ein sicherheitskritischer Hochdruck-Wasserstofffall."
+    )
+    assert "RGD/ED" in answer.text
+    assert "doppelte Gleitringdichtung" not in answer.text
+    assert "HNBR" not in answer.text and "FKM" not in answer.text
+    assert answer.text.count("Wasserstoff") == 1
+    assert answer.finish_reason == "deterministic_reviewed_policy"
+    assert len(client.calls) == 0
+
+
+def test_safety_lead_is_preserved_when_safety_and_calculation_policies_cofire():
+    client = FakeLlmClient(_payload())
+    calc = CalcResult(
+        computed=(
+            ComputedValue(
+                calc_id="umfangsgeschwindigkeit",
+                name="v_m_s",
+                value=14.137,
+                unit="m/s",
+                stage=1,
+                derivation_depth=1,
+                formula="pi*d1*n/60000",
+                warnings=("grenzwertiger Betriebspunkt",),
+            ),
+        )
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Wasserstoff-Hochdruckfall an einer rotierenden Welle",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Keine Auswahl ohne sicherheitstechnische Systemfreigabe.",
+                    "reviewed safety policy",
+                    card_id="SAFETY-RGD-HD-GAS",
+                    sources=("safety source",),
+                    kind="trap",
+                ),
+                GroundingFact(
+                    "Den Rechenkernbefund exakt übernehmen und nicht als Freigabe behandeln.",
+                    "reviewed calculation policy",
+                    card_id="CALC-UMFANGSGESCHWINDIGKEIT",
+                    sources=("calculation source",),
+                    kind="trap",
+                ),
+            ),
+            calc=calc,
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.text.startswith(
+        "Das ist ein sicherheitskritischer Hochdruck-Wasserstofffall."
+    )
+    assert "v_m_s = 14.137 m/s" in answer.text
+    assert "grenzwertiger Betriebspunkt" in answer.text
+
+
+def test_source_bound_speed_policy_preserves_kernel_result_without_material_guess():
+    client = FakeLlmClient(_payload())
+    calc = CalcResult(
+        computed=(
+            ComputedValue(
+                calc_id="umfangsgeschwindigkeit",
+                name="v_m_s",
+                value=14.137,
+                unit="m/s",
+                stage=1,
+                derivation_depth=1,
+                formula="pi*d1*n/60000",
+                warnings=(
+                    "Standard-NBR-Lippe ist in diesem Betriebspunkt überfordert",
+                ),
+                input_origins=("d1_mm=user", "rpm=user"),
+            ),
+        )
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "RWDR mit 45 mm bei 6000 U/min: Welches Material empfiehlst du?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Die Umfangsgeschwindigkeit ausschließlich deterministisch berechnen "
+                    "lassen und ohne geerdete Eignung keine alternative Werkstofffamilie "
+                    "empfehlen.",
+                    "reviewed policy",
+                    card_id="CALC-UMFANGSGESCHWINDIGKEIT",
+                    sources=("rotary catalogue",),
+                    kind="trap",
+                ),
+            ),
+            calc=calc,
+            require_evidence_for_all_claims=True,
+            work_solution_candidate=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.text.startswith("Der Rechenkern ergibt:")
+    assert (
+        "v_m_s = 14.137 m/s (pi*d1*n/60000; Eingaben: d1_mm=user, rpm=user)"
+        in answer.text
+    )
+    assert "Standard-NBR-Lippe ist in diesem Betriebspunkt überfordert" in answer.text
+    assert "FKM" not in answer.text
+    assert "höher belastbare Lippe" not in answer.text
+    assert "ausschließlich deterministisch berechnen" not in answer.text
+    assert "**Technische Einordnung**" not in answer.text
+    assert "**Fachprüfung erforderlich**" not in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_policy"
+    assert len(client.calls) == 0
+
+
+@pytest.mark.parametrize(
+    "question",
+    (
+        "NBR-Wellendichtringe in Synthetiköl mit Ester-Additiven: ist das in Ordnung?",
+        "HNBR-O-Ring in einem polyesterhaltigen Synthetiköl: ist das geeignet?",
+    ),
+)
+def test_source_bound_synthetic_oil_policy_stays_generic_without_invented_case_detail(
+    question,
+):
+    client = FakeLlmClient(_payload())
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Die genaue Synthetiköl-Klasse und das Additivpaket müssen vor einer "
+                    "Werkstofffreigabe produktbezogen geprüft werden.",
+                    "reviewed policy",
+                    card_id="POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
+                    sources=("material handbook",),
+                    kind="trap",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Werkstoffwahl" in answer.text
+    assert "ausdrücklich offen" in answer.text
+    assert "Ölbasis, Additivpaket" in answer.text
+    assert "NBR-Wellendichtringe" not in answer.text
+    assert "Ester-Additiven" not in answer.text
+    assert len(client.calls) == 0
+
+
+@pytest.mark.parametrize(
+    ("policy_id", "question", "expected", "forbidden"),
+    (
+        (
+            "TRAP-FKM-DAMPF",
+            "Bitte empfiehl mir ein Material für Wasserdampf.",
+            "EPDM (peroxidvernetzt) ist der Dampf-/SIP-Standard",
+            "Der entscheidende fachliche Punkt ist",
+        ),
+        (
+            "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG",
+            "FFKM hält alles aus, also nehme ich es für Trinkwasser.",
+            "produkt- beziehungsweise compoundbezogene Trinkwassernachweis",
+            "Belastbar festhalten lässt sich",
+        ),
+    ),
+)
+def test_user_facing_policy_is_exact_concise_and_never_calls_model(
+    policy_id, question, expected, forbidden
+):
+    client = FakeLlmClient(_payload())
+    policy = load_traps().by_id(policy_id)
+    assert policy is not None and policy.sources
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    policy.correct,
+                    "reviewed policy",
+                    card_id=policy.id,
+                    sources=policy.sources,
+                    kind="trap",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert expected in answer.text
+    assert forbidden not in answer.text
+    assert "quellengebunden" not in answer.text
+    assert answer.finish_reason == "deterministic_reviewed_policy"
+    assert len(client.calls) == 0
+
+
+def test_broad_knowledge_answer_omits_unrequested_example_values():
+    facts = (
+        GroundingFact(
+            "PTFE besitzt eine niedrige Reibung und ausgeprägte Kriechneigung.",
+            "reviewed handbook",
+            card_id="PTFE-MECHANISM",
+            claim_kind="mechanism",
+            answer_facets=("mechanism",),
+        ),
+        GroundingFact(
+            "Ein PTFE-Beispielcompound ist bis 260 °C katalogisiert.",
+            "reviewed catalogue",
+            card_id="PTFE-EXAMPLE-VALUE",
+            claim_kind="example_value",
+            answer_facets=("parameters",),
+        ),
+    )
+    broad_client = FakeLlmClient(_payload(evidence_ids=[]))
+    broad = asyncio.run(
+        _generator(broad_client).generate(
+            "Erkläre PTFE bitte ausführlich.",
+            flags=Flags(),
+            grounding_facts=facts,
+            knowledge_answer_plan=_knowledge_plan(),
+            case_revision=7,
+        )
+    )
+    quantitative_client = FakeLlmClient(_payload(evidence_ids=[]))
+    quantitative = asyncio.run(
+        _generator(quantitative_client).generate(
+            "Welche Temperaturbereiche und Kennwerte hat PTFE?",
+            flags=Flags(),
+            grounding_facts=facts,
+            knowledge_answer_plan=_knowledge_plan(),
+            case_revision=7,
+        )
+    )
+
+    assert "niedrige Reibung" in broad.text
+    assert "260 °C" not in broad.text
+    assert "omit catalogue ranges" in broad_client.calls[0]["system"].lower()
+    assert "260 °C" in quantitative.text
+
+
+def test_named_standard_must_exist_in_the_cited_evidence():
+    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload["claims"][0]["text"] = "ISO 99999 bestätigt diese Auslegung."
+    client = FakeLlmClient(json.dumps(payload))
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welcher Dichtungsaufbau passt?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Die Bauform muss gegen den realen Betriebspunkt geprüft werden.",
+                    "ledger",
+                    card_id="EV-1",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "ISO 99999" not in answer.text
+    assert answer.finish_reason == "deterministic_evidence_fallback"
+
+
+def test_recommendation_may_not_add_material_absent_from_evidenced_decision_claim():
+    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload["claims"][0] = {
+        "text": "Ein RWDR benötigt einen tragfähigen Schmierfilm.",
+        "evidence_ids": ["EV-1"],
+        "criticality": "decision_relevant",
+    }
+    payload["recommendation"] = {
+        "summary": "FKM als Primärwerkstoff einsetzen.",
+        "status": "conditional",
+        "conditions": ["Betriebspunkt prüfen"],
+    }
+    client = FakeLlmClient(json.dumps(payload))
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Welcher Dichtungsaufbau passt?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Ein RWDR benötigt einen tragfähigen Schmierfilm.",
+                    "ledger",
+                    card_id="EV-1",
+                ),
+            ),
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "FKM als Primärwerkstoff" not in answer.text
+    assert answer.finish_reason == "deterministic_evidence_fallback"
+
+
+def test_unclear_medium_blocks_even_an_evidenced_material_as_recommendation():
+    payload = json.loads(_payload(evidence_ids=["EV-1"]))
+    payload["conclusion"] = "Die Werkstoffwahl bleibt bis zur Medienklärung offen."
+    payload["claims"][0] = {
+        "text": "FKM ist eine Elastomerfamilie.",
+        "evidence_ids": ["EV-1"],
+        "criticality": "decision_relevant",
+    }
+    payload["recommendation"] = {
+        "summary": "FKM als Primärwerkstoff einsetzen.",
+        "status": "conditional",
+        "conditions": ["Datenblatt prüfen"],
+    }
+    client = FakeLlmClient(json.dumps(payload))
+
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Synthetisches Öl, genaue Sorte unbekannt: Welcher Werkstoff passt?",
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "FKM ist eine Elastomerfamilie.",
+                    "ledger",
+                    card_id="EV-1",
+                ),
+            ),
+            baseline_hardening=True,
+            require_evidence_for_all_claims=True,
+            case_revision=7,
+        )
+    )
+
+    assert "FKM als Primärwerkstoff einsetzen" not in answer.text
+    assert answer.finish_reason == "deterministic_evidence_fallback"
 
 
 def test_rwdr_fallback_surfaces_kernel_value_and_discriminating_inputs():
@@ -165,6 +612,7 @@ def test_rwdr_fallback_surfaces_kernel_value_and_discriminating_inputs():
                 stage=1,
                 derivation_depth=1,
                 formula="pi*d*n/60",
+                warnings=("grenzwertige Auslegung; Temperatur bestimmt die Reserve",),
             ),
         )
     )
@@ -185,14 +633,16 @@ def test_rwdr_fallback_surfaces_kernel_value_and_discriminating_inputs():
         )
     )
     assert "v_m_s = 3.534 m/s" in answer.text
+    assert "grenzwertige Auslegung" in answer.text
     assert "Wellenhärte, Rauheit und Drallfreiheit" in answer.text
     assert "Druckdifferenz einschließlich Druckspitzen" in answer.text
     assert answer.finish_reason == "deterministic_evidence_fallback"
-    assert len(client.calls) == 1
+    assert len(client.calls) == 2
 
 
 def test_compact_technical_answer_caps_first_turn_density_deterministically():
     payload = json.loads(_payload())
+    payload["conclusion"] = "Technische Einordnung."
     payload["assumptions"] = ["a", "b"]
     payload["missing_information"] = ["m1", "m2", "m3", "m4", "m5"]
     payload["claims"] = [
@@ -214,7 +664,13 @@ def test_compact_technical_answer_caps_first_turn_density_deterministically():
         _generator(client).generate(
             "RWDR-Fall",
             flags=Flags(),
-            grounding_facts=(GroundingFact("fact", "ledger", card_id="EV-1"),),
+            grounding_facts=(
+                GroundingFact(
+                    "claim 0 claim 1 claim 2 claim 3 claim 4",
+                    "ledger",
+                    card_id="EV-1",
+                ),
+            ),
             require_evidence_for_all_claims=True,
             compact_technical_answer=True,
             case_revision=7,
@@ -226,6 +682,183 @@ def test_compact_technical_answer_caps_first_turn_density_deterministically():
     assert "m4" not in answer.text and "m5" not in answer.text
     assert "c3" not in answer.text and "c4" not in answer.text
     assert "**Annahmen**" not in answer.text
+
+
+def test_diagnostic_evidence_preempts_model_and_uses_one_governed_question():
+    payload = json.loads(_payload())
+    payload["conclusion"] = (
+        "Grenze zuerst den Versagenspfad ein; ein Werkstoffwechsel allein löst die "
+        "Ursache nicht."
+    )
+    payload["assumptions"] = ["unbelegte Annahme"]
+    payload["missing_information"] = ["m1", "m2", "m3", "m4"]
+    payload["claims"] = [
+        {
+            "text": f"diagnostic claim {index}",
+            "evidence_ids": ["EV-1"],
+            "criticality": "supporting",
+        }
+        for index in range(5)
+    ]
+    payload["recommendation"] = {
+        "summary": "FKM einsetzen.",
+        "status": "conditional",
+        "conditions": ["c1", "c2", "c3"],
+    }
+    client = FakeLlmClient(json.dumps(payload))
+    communication_plan = build_communication_plan(
+        question="Der Wellendichtring ist undicht. Was soll ich prüfen?",
+        route_name="leakage_troubleshooting",
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            "Der Wellendichtring ist undicht. Was soll ich prüfen?",
+            flags=Flags(),
+            grounding_facts=tuple(
+                GroundingFact(
+                    f"diagnostic claim {index}",
+                    "ledger",
+                    card_id=f"EV-{index}",
+                )
+                for index in range(5)
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert answer.text.count("diagnostic claim") == 1
+    assert "FKM einsetzen" not in answer.text
+    assert "**Annahmen**" not in answer.text
+    assert "**Technische Einordnung**" not in answer.text
+    assert communication_plan.next_question in answer.text
+    assert answer.finish_reason == "deterministic_diagnostic_evidence"
+    assert len(client.calls) == 0
+
+
+def test_diagnostic_fallback_prefers_case_lexical_relevance_over_generic_failure_card():
+    client = FakeLlmClient(_payload())
+    question = (
+        "Der gleiche RWDR leckt im Rührwerk ständig, im baugleichen Getriebe nie."
+    )
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="leakage_troubleshooting",
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Allgemeine Ausfälle können durch Temperatur oder Montage entstehen.",
+                    "ledger",
+                    card_id="GENERIC-FAILURE",
+                    answer_facets=("failure_modes",),
+                ),
+                GroundingFact(
+                    "Beim Rührwerk können Rundlauf und Wellenauslenkung stärker als im Getriebe "
+                    "sein und den dynamischen Lippenkontakt des RWDR unterbrechen.",
+                    "ledger",
+                    card_id="APPLICATION-CONTRAST",
+                    answer_facets=("mechanism", "design_interfaces"),
+                ),
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Beim Rührwerk können Rundlauf" in answer.text
+    assert "Allgemeine Ausfälle" not in answer.text
+    assert communication_plan.next_question in answer.text
+    assert len(client.calls) == 0
+
+
+def test_generic_diagnostic_prefers_failure_mode_over_lexical_design_detail():
+    client = FakeLlmClient(_payload())
+    question = "Der Wellendichtring am Getriebe ist undicht."
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="leakage_troubleshooting",
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Wellendichtring und Getriebe benötigen eine definierte Laufspur.",
+                    "ledger",
+                    card_id="DESIGN-DETAIL",
+                    answer_facets=("design_interfaces",),
+                ),
+                GroundingFact(
+                    "Zuerst sind Montage, Schmierung, thermische Schädigung und Rundlauf als "
+                    "mögliche Versagenspfade zu trennen.",
+                    "ledger",
+                    card_id="FAILURE-MODES",
+                    answer_facets=("failure_modes",),
+                ),
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            case_revision=7,
+        )
+    )
+
+    assert "Zuerst sind Montage" in answer.text
+    assert "definierte Laufspur" not in answer.text
+    assert len(client.calls) == 0
+
+
+def test_dynamic_tightness_target_uses_evidence_bound_tradeoff_without_model_call():
+    client = FakeLlmClient(_payload())
+    question = "Maximale Dichtheit an der Welle, Leckage null – was ist optimal?"
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="engineering_case",
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Die Dichtkante benötigt einen tragfähigen Schmierfilm; radiale "
+                    "Lippenkraft beeinflusst Reibung, Wärmeeintrag und Verlustleistung.",
+                    "reviewed rwdr profile",
+                    card_id="FK-RWDR-ENGINEERING-PROFILE",
+                    claim_id="rwdr-film",
+                    answer_facets=("mechanism", "tradeoffs"),
+                ),
+                GroundingFact(
+                    "Bei einer Gleitringdichtung sind kontrollierte mikroskopische Leckage "
+                    "und Wärmeabfuhr Teil des Funktionsprinzips.",
+                    "reviewed glrd profile",
+                    card_id="FK-GLRD-ENGINEERING-PROFILE",
+                    claim_id="glrd-film",
+                    answer_facets=("mechanism", "operating_factors"),
+                ),
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            work_solution_candidate=True,
+            case_revision=7,
+        )
+    )
+
+    assert "physikalisch kaum erreichbar" in answer.text
+    assert "kein einzelnes Optimum" in answer.text
+    assert "Schmierfilm" in answer.text and "Reibung" in answer.text
+    assert communication_plan.next_question in answer.text
+    assert answer.finish_reason == "deterministic_tradeoff_evidence"
+    assert len(client.calls) == 0
 
 
 def test_knowledge_answer_drops_redundant_recommendation_block():

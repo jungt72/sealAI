@@ -44,6 +44,36 @@ from sealai_v2.render.technical_answer import render_technical_answer
 
 logger = logging.getLogger(__name__)
 
+_UNCLEAR_MEDIUM_RE = re.compile(
+    r"\b(?:synthetische[snmr]?\s+[öo]l|unspezifiziert\w*|unbekannt\w*|unklar\w*|"
+    r"genaue\s+(?:sorte|zusammensetzung)\s+(?:ist\s+)?(?:nicht\s+bekannt|unbekannt))\b",
+    re.IGNORECASE,
+)
+_MATERIAL_SELECTION_RE = re.compile(
+    r"\b(?:werkstoff|material|elastomer|compound)\b[^?!.]{0,80}\b(?:passt|geeign(?:et|ung)|wählen|waehlen)\b|"
+    r"\bwelche(?:r|s)?\s+(?:werkstoff|material|elastomer|compound)\b",
+    re.IGNORECASE,
+)
+_QUANTITATIVE_DETAIL_RE = re.compile(
+    r"\b(?:kennwerte?|zahlen?|werte?|temperaturbereich|druckgrenze|"
+    r"geschwindigkeitsgrenze|einsatzgrenze|wie\s+hoch|wie\s+viel|"
+    r"konkrete[rs]?\s+(?:wert|bereich|grenze))\b",
+    re.IGNORECASE,
+)
+
+
+def _requires_material_abstention(question: str) -> bool:
+    return bool(
+        _UNCLEAR_MEDIUM_RE.search(question or "")
+        and _MATERIAL_SELECTION_RE.search(question or "")
+    )
+
+
+def _requests_quantitative_detail(question: str) -> bool:
+    """A broad "details" request asks for depth, not an unsolicited catalogue of limit values."""
+
+    return bool(_QUANTITATIVE_DETAIL_RE.search(question or ""))
+
 
 def _engineering_conclusion(plan: dict) -> str:
     subjects = tuple(
@@ -280,10 +310,12 @@ def _deterministic_evidence_answer(
     evidence_facts: dict[str, GroundingFact],
     case_revision: int,
     calc: CalcResult | None = None,
+    work_solution_candidate: bool = False,
+    communication_plan: dict | None = None,
 ) -> TechnicalAnswer:
     """Senior-shaped fallback that only restates evidence and deterministic kernel output."""
     normalized = (question or "").casefold()
-    if any(
+    rwdr_context = any(
         alias in normalized
         for alias in (
             "rwdr",
@@ -292,7 +324,11 @@ def _deterministic_evidence_answer(
             "simmerring",
             "wellendichtring",
         )
-    ):
+    ) or any(
+        fact.card_id == "FK-RWDR-ENGINEERING-PROFILE"
+        for fact in evidence_facts.values()
+    )
+    if rwdr_context:
         missing = [
             "Druckdifferenz einschließlich Druckspitzen und Druckrichtung.",
             "Exakte Ölbezeichnung, Additivpaket sowie minimale, maximale und an der Dichtkante erwartete Temperatur.",
@@ -316,13 +352,254 @@ def _deterministic_evidence_answer(
             "Belastbar festhalten lässt sich auf Basis der geprüften Fachquellen:"
         )
 
+    selected_evidence = list(evidence_facts.items())
+    query_terms = {
+        term
+        for term in re.findall(r"[a-zäöüß][a-zäöüß-]{3,}", normalized)
+        if term
+        not in {
+            "welche",
+            "welcher",
+            "wäre",
+            "waere",
+            "sinnvoll",
+            "ansatz",
+            "lösung",
+            "loesung",
+            "bitte",
+            "kannst",
+        }
+    }
+    facet_priority = {
+        "failure_modes": 10,
+        "variants": 9,
+        "design_interfaces": 8,
+        "selection_inputs": 7,
+        "tradeoffs": 6,
+        "applications": 5,
+        "operating_factors": 4,
+        "mechanism": 3,
+        "media_compatibility": 2,
+        "limits": 1,
+    }
+
+    def lexical_overlap(item: tuple[str, GroundingFact]) -> int:
+        _evidence_id, fact = item
+        fact_terms = set(re.findall(r"[a-zäöüß][a-zäöüß-]{3,}", fact.text.casefold()))
+        return len(query_terms & fact_terms)
+
+    def relevance(item: tuple[str, GroundingFact]) -> tuple[int, int, int, str]:
+        evidence_id, fact = item
+        facet_score = max(
+            (facet_priority.get(facet, 0) for facet in fact.answer_facets),
+            default=0,
+        )
+        # A sourced, owner-reviewed policy fact is already high-precision matched by the trap
+        # retriever.  It must outrank a broad profile card in the fail-closed path; otherwise a
+        # perfectly relevant policy fact is present but the user still receives the first generic
+        # paragraphs of a seal handbook.
+        return (
+            -int(fact.kind == "trap"),
+            -lexical_overlap(item),
+            -facet_score,
+            evidence_id,
+        )
+
+    selected_evidence.sort(key=relevance)
+    policy_evidence = [item for item in selected_evidence if item[1].kind == "trap"]
+    policy_ids: set[str] = set()
+    if policy_evidence:
+        selected_evidence = policy_evidence[:2]
+        missing = []
+        policy_ids = {fact.card_id for _evidence_id, fact in policy_evidence}
+        if "SAFETY-RGD-HD-GAS" in policy_ids:
+            hydrogen_stated = bool(re.search(r"\b(?:wasserstoff|h2|h₂)\b", normalized))
+            high_pressure_stated = bool(
+                "hochdruck" in normalized
+                or re.search(r"\b\d+(?:[.,]\d+)?\s*bar\b", normalized)
+            )
+            if hydrogen_stated and high_pressure_stated:
+                case_label = "Hochdruck-Wasserstofffall"
+            elif hydrogen_stated:
+                case_label = "Wasserstoff-Gasdichtungsfall"
+            elif high_pressure_stated:
+                case_label = "Hochdruck-Gasdichtungsfall"
+            else:
+                case_label = "Gasdichtungsfall"
+            conclusion = (
+                f"Das ist ein sicherheitskritischer {case_label}. Eine konkrete "
+                "Auswahl oder Freigabe wäre mit den vorliegenden Angaben nicht verantwortbar."
+            )
+        elif "CALC-UMFANGSGESCHWINDIGKEIT" in policy_ids:
+            conclusion = (
+                "Die Umfangsgeschwindigkeit ist hier eine Pflichtberechnung; ohne den "
+                "deterministischen Befund gibt es keine Werkstoff- oder Bauformfreigabe."
+            )
+        elif "TRAP-FKM-DAMPF" in policy_ids:
+            conclusion = (
+                "Für Wasserdampf ist peroxidvernetztes EPDM der belastbare erste "
+                "Kandidatenraum; Standard-FKM ist trotz seiner Temperaturfestigkeit in "
+                "anderen Medien kein sicherer Dampf-Default."
+            )
+        elif "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG" in policy_ids:
+            conclusion = (
+                "Bei Trinkwasser entscheidet nicht die maximal breite Werkstofffamilie, "
+                "sondern die konkrete technische Eignung samt gültigem Trinkwassernachweis."
+            )
+        elif "POLICY-SYNTHETIKOEL-KLASSE-OFFEN" in policy_ids:
+            conclusion = (
+                "Die Werkstoffwahl bleibt bei der noch unklaren Synthetiköl-Klasse "
+                "ausdrücklich offen und muss anhand von Ölbasis, Additivpaket und "
+                "konkreter Werkstoffausführung produktbezogen verifiziert werden."
+            )
+        else:
+            conclusion = "Der entscheidende fachliche Punkt ist:"
+    if work_solution_candidate:
+        profile_items = [
+            item
+            for item in selected_evidence
+            if item[1].card_id
+            in {
+                "FK-RWDR-ENGINEERING-PROFILE",
+                "FK-GLRD-ENGINEERING-PROFILE",
+            }
+            or item[1].kind in {"matrix", "trap"}
+        ]
+        if profile_items:
+            selected_evidence = profile_items
+        selected_evidence.sort(key=relevance)
+        selected_evidence = selected_evidence[:4]
+        if not policy_evidence:
+            conclusion = (
+                "Auf Basis der geprüften Fachquellen lässt sich der Lösungsraum technisch "
+                "eingrenzen; entscheidend sind:"
+            )
+
+    if (communication_plan or {}).get("goal") == "resolve_dynamic_sealing_tradeoff":
+        tradeoff_terms = {
+            "schmierfilm": 8,
+            "reibung": 7,
+            "wärme": 6,
+            "verschleiß": 6,
+            "leckage": 5,
+            "anpress": 5,
+            "gleitringdichtung": 4,
+            "rwdr": 3,
+            "niederdruck": 3,
+        }
+
+        def tradeoff_score(item: tuple[str, GroundingFact]) -> tuple[int, int, str]:
+            evidence_id, fact = item
+            fact_text = fact.text.casefold()
+            score = sum(
+                weight for term, weight in tradeoff_terms.items() if term in fact_text
+            )
+            return (-score, -lexical_overlap(item), evidence_id)
+
+        tradeoff_evidence = [
+            item
+            for item in evidence_facts.items()
+            if item[1].claim_kind != "example_value"
+            and (
+                item[1].card_id
+                in {"FK-RWDR-ENGINEERING-PROFILE", "FK-GLRD-ENGINEERING-PROFILE"}
+                or {"tradeoffs", "mechanism", "operating_factors"}.intersection(
+                    item[1].answer_facets
+                )
+            )
+            and any(term in item[1].text.casefold() for term in tradeoff_terms)
+        ]
+        if tradeoff_evidence:
+            tradeoff_evidence.sort(key=tradeoff_score)
+            selected_evidence = tradeoff_evidence[:2]
+        missing = []
+        conclusion = (
+            "‚Null Leckage‘ ist bei einer dynamischen Berührungsdichtung physikalisch kaum "
+            "erreichbar, weil ein dünner Schmierfilm für die Funktion gewollt ist. Maximale "
+            "Dichtheit beziehungsweise höhere Anpressung erhöht Reibung, Wärme und Verschleiß "
+            "und kann Wirkungsgrad und Lebensdauer senken. Das ist kein einzelnes Optimum, "
+            "sondern ein offenzulegender Zielkonflikt, der nach zulässiger Leckage, Lebensdauer, "
+            "Effizienz und Wartungsaufwand priorisiert werden muss."
+        )
+
+    if (communication_plan or {}).get(
+        "goal"
+    ) == "diagnose_failure" and not policy_evidence:
+        diagnostic_facets = {
+            "failure_modes",
+            "mechanism",
+            "design_interfaces",
+            "operating_factors",
+        }
+        diagnostic_evidence = [
+            item
+            for item in selected_evidence
+            if item[1].claim_kind != "example_value"
+            and diagnostic_facets.intersection(item[1].answer_facets)
+        ]
+        if diagnostic_evidence:
+            application_contrast = "application_contrast" in set(
+                (communication_plan or {}).get("must_include", ())
+            )
+            diagnostic_evidence.sort(
+                key=lambda item: (
+                    -lexical_overlap(item) if application_contrast else 0,
+                    -int("failure_modes" in item[1].answer_facets),
+                    -int(item[1].claim_kind == "safety_caution"),
+                    -int("mechanism" in item[1].answer_facets),
+                    -lexical_overlap(item),
+                    item[0],
+                )
+            )
+            selected_evidence = diagnostic_evidence
+        selected_evidence = selected_evidence[:1]
+        missing = []
+        conclusion = (
+            "Bei einer Undichtigkeit sollte zuerst der Versagenspfad eingegrenzt werden; "
+            "ein Werkstoffwechsel allein wäre noch keine belastbare Ursachenbehebung."
+        )
+
     computed = tuple(calc.computed) if calc is not None else ()
     if computed:
-        values = "; ".join(
-            f"{item.name} = {item.value:g} {item.unit} ({item.formula})"
-            for item in computed
+        if (
+            "CALC-UMFANGSGESCHWINDIGKEIT" in policy_ids
+            and "SAFETY-RGD-HD-GAS" not in policy_ids
+        ):
+            values = "; ".join(
+                f"{item.name} = {item.value:g} {item.unit} ({item.formula}"
+                + (
+                    f"; Eingaben: {', '.join(item.input_origins)}"
+                    if item.input_origins
+                    else ""
+                )
+                + ")"
+                for item in computed
+            )
+            conclusion = f"Der Rechenkern ergibt: {values}."
+        else:
+            values = "; ".join(
+                f"{item.name} = {item.value:g} {item.unit} ({item.formula})"
+                for item in computed
+            )
+            conclusion += f" Deterministisch berechnet: {values}."
+        warnings = tuple(
+            dict.fromkeys(
+                warning for item in computed for warning in item.warnings if warning
+            )
         )
-        conclusion += f" Deterministisch berechnet: {values}."
+        if warnings:
+            label = (
+                "Kernwarnung"
+                if "CALC-UMFANGSGESCHWINDIGKEIT" in policy_ids
+                and "SAFETY-RGD-HD-GAS" not in policy_ids
+                else "Einordnung des Rechenkerns"
+            )
+            conclusion += f" {label}: " + " ".join(warnings) + "."
+    if "CALC-UMFANGSGESCHWINDIGKEIT" in policy_ids:
+        conclusion += (
+            " Für die nächste Einordnung brauche ich die Temperatur an der Dichtstelle "
+            "und den Differenzdruck beziehungsweise die Entlüftung."
+        )
     return TechnicalAnswer(
         schema_version=1,
         intent="evidence_bound_technical_answer",
@@ -336,11 +613,66 @@ def _deterministic_evidence_answer(
                 evidence_ids=[evidence_id],
                 criticality="supporting",
             )
-            for evidence_id, fact in list(evidence_facts.items())[:8]
+            for evidence_id, fact in selected_evidence[:4]
         ],
         recommendation={"summary": "", "status": "none", "conditions": []},
         needs_human_review=True,
     )
+
+
+def _render_reviewed_policy_answer(answer: TechnicalAnswer) -> str:
+    """Render a matched reviewed policy as a short conversation, not a mini-document."""
+
+    paragraphs = [answer.conclusion.strip()]
+    policy_ids = {
+        evidence_id for claim in answer.claims for evidence_id in claim.evidence_ids
+    }
+    if policy_ids.intersection(
+        {"TRAP-FKM-DAMPF", "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG"}
+    ):
+        # These policies already contain the complete, user-facing reviewed decision.  Rendering
+        # the summary plus a second labelled evidence paragraph recreates the document-like answer
+        # that the policy is meant to replace.  Keep the exact reviewed fact; the communication
+        # contract appends the single governed question where the case still needs one.
+        return " ".join(
+            claim.text.strip() for claim in answer.claims if claim.text.strip()
+        )
+    if any(
+        "CALC-UMFANGSGESCHWINDIGKEIT" in evidence_id
+        for claim in answer.claims
+        for evidence_id in claim.evidence_ids
+    ):
+        # The calculation conclusion already contains the governed value, formula, input origins,
+        # kernel warning and bounded next need.  Repeating the full internal calculation policy is
+        # safe but document-like and obscures the actual answer.
+        return paragraphs[0]
+    if answer.claims:
+        paragraphs.append(
+            " ".join(
+                f"{claim.text.strip()} (quellengebunden)" for claim in answer.claims
+            )
+        )
+    return "\n\n".join(paragraph for paragraph in paragraphs if paragraph)
+
+
+def _render_diagnostic_evidence_answer(
+    answer: TechnicalAnswer, communication_plan: dict | None
+) -> str:
+    """Lead one troubleshooting turn as short prose with one governed next question."""
+
+    paragraphs = [answer.conclusion.strip()]
+    if answer.claims:
+        paragraphs.append(
+            " ".join(
+                f"{claim.text.strip()} (quellengebunden)" for claim in answer.claims
+            )
+        )
+    plan = communication_plan or {}
+    question = str(plan.get("next_question") or "").strip()
+    if question:
+        reason = str(plan.get("question_reason") or "").strip()
+        paragraphs.append(question + (f" {reason}" if reason else ""))
+    return "\n\n".join(paragraph for paragraph in paragraphs if paragraph)
 
 
 def _calc_payload(calc: CalcResult | None) -> tuple[list[dict], list[dict], list[str]]:
@@ -505,12 +837,26 @@ class L1Generator:
         work_solution_candidate: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
+        evidence_query: str | None = None,
     ) -> Answer:
         prompt_grounding_facts = grounding_facts
         knowledge_evidence_facts: dict[str, GroundingFact] = {}
+        suppress_example_values = bool(
+            knowledge_answer_plan is not None
+            and not _requests_quantitative_detail(question)
+        )
+        if suppress_example_values:
+            # Broad explanations should be deep in mechanisms and trade-offs, not long catalog
+            # dumps of otherwise sourced limit values. Numeric/example claims remain available when
+            # the user explicitly requests ranges, limits or values.
+            prompt_grounding_facts = tuple(
+                fact
+                for fact in prompt_grounding_facts
+                if fact.claim_kind != "example_value"
+            )
         if self._structured_output_enabled and knowledge_answer_plan is not None:
             prompt_grounding_facts, knowledge_evidence_facts = (
-                _knowledge_evidence_context(grounding_facts)
+                _knowledge_evidence_context(prompt_grounding_facts)
             )
         system = self._assemble_system(
             flags=flags,
@@ -535,10 +881,101 @@ class L1Generator:
         if self._structured_output_enabled:
             evidence_facts = dict(knowledge_evidence_facts)
             if knowledge_answer_plan is None:
-                for fact in grounding_facts:
+                for index, fact in enumerate(grounding_facts):
                     if fact.card_id:
-                        evidence_facts[fact.card_id] = fact
+                        evidence_id = fact.claim_id or fact.card_id
+                        if evidence_id in evidence_facts:
+                            evidence_id = f"{fact.card_id}:{index}"
+                        evidence_facts[evidence_id] = fact
             allowed_ids = frozenset(evidence_facts)
+            source_bound_policy_present = any(
+                fact.kind == "trap" and bool(fact.sources)
+                for fact in evidence_facts.values()
+            )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
+                and source_bound_policy_present
+            ):
+                # Reviewed trap facts reach this branch only through the catalog's explicit,
+                # high-precision retrieval terms and carry primary-source provenance.  Letting a
+                # generative pass expand such a policy fact can reintroduce the exact unsafe or
+                # over-specific recommendation the policy is meant to prevent.  Render the exact
+                # reviewed statement and deterministic kernel output instead.
+                technical = _deterministic_evidence_answer(
+                    question=evidence_query or question,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                    calc=calc,
+                    work_solution_candidate=work_solution_candidate,
+                    communication_plan=communication_plan,
+                )
+                return Answer(
+                    text=strip_sourcing(_render_reviewed_policy_answer(technical)),
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_reviewed_policy",
+                    verification_claims=tuple(
+                        claim.text
+                        for claim in sorted(
+                            technical.claims,
+                            key=lambda claim: (
+                                claim.criticality != "decision_relevant"
+                            ),
+                        )
+                    ),
+                )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
+                and evidence_facts
+                and (communication_plan or {}).get("goal") == "diagnose_failure"
+            ):
+                technical = _deterministic_evidence_answer(
+                    question=evidence_query or question,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                    calc=calc,
+                    communication_plan=communication_plan,
+                )
+                return Answer(
+                    text=strip_sourcing(
+                        _render_diagnostic_evidence_answer(
+                            technical, communication_plan
+                        )
+                    ),
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_diagnostic_evidence",
+                    verification_claims=tuple(claim.text for claim in technical.claims),
+                )
+            if (
+                knowledge_answer_plan is None
+                and require_evidence_for_all_claims
+                and evidence_facts
+                and (communication_plan or {}).get("goal")
+                == "resolve_dynamic_sealing_tradeoff"
+            ):
+                technical = _deterministic_evidence_answer(
+                    question=evidence_query or question,
+                    evidence_facts=evidence_facts,
+                    case_revision=case_revision,
+                    calc=calc,
+                    work_solution_candidate=True,
+                    communication_plan=communication_plan,
+                )
+                return Answer(
+                    text=strip_sourcing(
+                        render_technical_answer(
+                            technical,
+                            communication_plan=communication_plan,
+                        )
+                    ),
+                    model=self._model_config.model,
+                    grounding_facts=grounding_facts,
+                    finish_reason="deterministic_tradeoff_evidence",
+                    verification_claims=tuple(claim.text for claim in technical.claims),
+                )
             if knowledge_answer_plan is not None:
                 from sealai_v2.core.knowledge_answer import facets_for_fact
                 from sealai_v2.knowledge.material_parameters import parameter_text
@@ -561,7 +998,10 @@ class L1Generator:
                     for evidence_id, fact in evidence_facts.items()
                 }
                 coverage_by_subject = {
-                    str(entry.get("subject")): set(entry.get("covered_facets", ()))
+                    str(entry.get("subject")): (
+                        set(entry.get("covered_facets", ()))
+                        - ({"parameters"} if suppress_example_values else set())
+                    )
                     for entry in knowledge_answer_plan.get("subject_coverage", ())
                 }
                 required_cells = {
@@ -599,6 +1039,13 @@ class L1Generator:
                     f"{case_revision}; allowed subjects: {', '.join(subjects) or 'Dichtungstechnik'}. "
                     f"Evidence ownership: {evidence_map or '(none)'}."
                 )
+                if suppress_example_values:
+                    instruction += (
+                        " The user did not request quantitative detail. Omit catalogue "
+                        "ranges, example values, numeric limits and parameter tables; explain "
+                        "mechanisms, trade-offs and selection inputs using only the remaining "
+                        "reviewed evidence."
+                    )
                 try:
                     engineering, result = await generate_structured(
                         self._client,
@@ -745,6 +1192,9 @@ class L1Generator:
                 )
                 technical = calibrate_technical_answer(technical)
                 if compact_technical_answer:
+                    diagnose_failure = bool(
+                        (communication_plan or {}).get("goal") == "diagnose_failure"
+                    )
                     priority = {
                         "decision_relevant": 0,
                         "supporting": 1,
@@ -760,9 +1210,21 @@ class L1Generator:
                             )[:3],
                             "recommendation": technical.recommendation.model_copy(
                                 update={
-                                    "conditions": technical.recommendation.conditions[
-                                        :2
-                                    ]
+                                    "summary": (
+                                        ""
+                                        if diagnose_failure
+                                        else technical.recommendation.summary
+                                    ),
+                                    "status": (
+                                        "none"
+                                        if diagnose_failure
+                                        else technical.recommendation.status
+                                    ),
+                                    "conditions": (
+                                        []
+                                        if diagnose_failure
+                                        else technical.recommendation.conditions[:2]
+                                    ),
                                 }
                             ),
                         }
@@ -780,6 +1242,19 @@ class L1Generator:
                             "needs_human_review": False,
                         }
                     )
+                calculation_context_text = " ".join(
+                    " ".join(
+                        (
+                            item.name,
+                            f"{item.value:g}",
+                            item.unit,
+                            item.formula,
+                            *item.warnings,
+                            *item.input_origins,
+                        )
+                    )
+                    for item in (calc.computed if calc is not None else ())
+                )
                 validate_technical_answer(
                     technical,
                     case_revision=case_revision,
@@ -787,6 +1262,20 @@ class L1Generator:
                     require_evidence_for_all_claims=(
                         knowledge_answer_plan is not None
                         or require_evidence_for_all_claims
+                    ),
+                    evidence_text_by_id=(
+                        {
+                            evidence_id: fact.text
+                            for evidence_id, fact in evidence_facts.items()
+                        }
+                        if knowledge_answer_plan is not None
+                        or require_evidence_for_all_claims
+                        else None
+                    ),
+                    calculation_context_text=calculation_context_text,
+                    user_context_text=question,
+                    forbid_material_recommendation=bool(
+                        baseline_hardening and _requires_material_abstention(question)
                     ),
                 )
                 if required_knowledge_facets:
@@ -842,7 +1331,42 @@ class L1Generator:
             try:
                 technical, result = await _call(system + structured_instruction)
             except (StructuredOutputError, TechnicalAnswerValidationError) as exc:
-                if knowledge_answer_plan is not None and evidence_facts:
+                # A validation miss often means the model understood the case but attached a broad
+                # card ID, introduced one uncited identifier, or omitted a required evidence ID.
+                # Give evidence-bound answers one bounded repair using the exact deterministic
+                # failure reason before discarding their case-specific synthesis.  The repaired
+                # object passes the identical validator; a second miss still fails closed below.
+                repaired = False
+                if (
+                    knowledge_answer_plan is None
+                    and require_evidence_for_all_claims
+                    and evidence_facts
+                ):
+                    repair = (
+                        "\n\nThe previous object failed deterministic evidence validation "
+                        f"({exc}). Repair it once: preserve the user's actual goal, remove every "
+                        "unsupported name or number, cite the exact allowed evidence ID on each "
+                        "technical claim, and keep a concrete provisional solution when the "
+                        "evidence supports one. Return exactly one TechnicalAnswer object."
+                    )
+                    try:
+                        technical, result = await _call(
+                            system + structured_instruction + repair
+                        )
+                        repaired = True
+                    except (
+                        StructuredOutputError,
+                        TechnicalAnswerValidationError,
+                    ) as repair_exc:
+                        logger.warning(
+                            "structured technical answer repair failed; using reviewed-evidence "
+                            "fallback (%s; repair=%s)",
+                            exc,
+                            repair_exc,
+                        )
+                if repaired:
+                    pass
+                elif knowledge_answer_plan is not None and evidence_facts:
                     logger.warning(
                         "structured knowledge answer failed validation; using reviewed-evidence "
                         "fallback (%s)",
@@ -859,16 +1383,13 @@ class L1Generator:
                         finish_reason="deterministic_knowledge_fallback",
                     )
                 elif require_evidence_for_all_claims and evidence_facts:
-                    logger.warning(
-                        "structured technical answer failed evidence validation; using "
-                        "reviewed-evidence fallback (%s)",
-                        exc,
-                    )
                     technical = _deterministic_evidence_answer(
-                        question=question,
+                        question=evidence_query or question,
                         evidence_facts=evidence_facts,
                         case_revision=case_revision,
                         calc=calc,
+                        work_solution_candidate=work_solution_candidate,
+                        communication_plan=communication_plan,
                     )
                     result = LlmResult(
                         text="",
@@ -938,6 +1459,7 @@ class L1Generator:
         work_solution_candidate: bool = False,
         risk_flags: list[str] | None = None,
         case_revision: int = 0,
+        evidence_query: str | None = None,
     ) -> AsyncIterator[L1StreamEvent]:
         """Streaming variant of ``generate`` (Phase 3B, draft-token streaming). IDENTICAL keyword-arg
         signature and IDENTICAL prompt assembly (both go through ``_assemble_system``), but calls the
@@ -976,6 +1498,7 @@ class L1Generator:
                     work_solution_candidate=work_solution_candidate,
                     risk_flags=risk_flags,
                     case_revision=case_revision,
+                    evidence_query=evidence_query,
                 )
             )
             return

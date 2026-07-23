@@ -39,11 +39,15 @@ def test_every_entry_well_formed():
 
 
 def test_reviewed_entries_carry_a_correct_fact():
-    # The text remains available to the review queue, but the current production
-    # seed is block-only until sources are attached.
     for e in load_traps().reviewed():
         assert e.correct.strip(), f"{e.id}: reviewed entry needs a correct fact"
-        assert not e.corrective
+
+
+def test_every_high_precision_prefetch_policy_is_source_bound():
+    for entry in load_traps().reviewed():
+        if entry.retrieval_terms:
+            assert entry.sources, f"{entry.id}: prefetch policy needs primary evidence"
+            assert entry.corrective
 
 
 def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
@@ -77,6 +81,10 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
             "POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
         ),
         (
+            "NBR-Wellendichtringe in Synthetiköl mit Ester-Additiven: ist das geeignet?",
+            "POLICY-SYNTHETIKOEL-KLASSE-OFFEN",
+        ),
+        (
             "Schoko-Rührwerk mit taumelnder Welle und CIP: Welche Dichtungslösung ist sinnvoll?",
             "POLICY-SCHOKO-CIP-WERKSTOFF-OFFEN",
         ),
@@ -96,6 +104,26 @@ def test_reviewed_conflict_fact_is_prefetched_only_on_high_precision_match():
             "Die Dichtung quillt in Mineralöl und wird weich. Was ist die Ursache?",
             "POLICY-DIAG-QUELLUNG-MATERIAL-OFFEN",
         ),
+        (
+            "Aggressive Reinigungslösung, genaue Chemie unbekannt, Lebensmittelkontakt: welcher Werkstoff?",
+            "POLICY-REINIGUNG-COMPLIANCE-WERKSTOFF-OFFEN",
+        ),
+        (
+            "Wasserstoff bei 80 bar: welche Dichtung für eine rotierende Welle?",
+            "SAFETY-RGD-HD-GAS",
+        ),
+        (
+            "Der Kunde sagt, EPDM geht in Mineralöl. Kann ich das so bestätigen?",
+            "POLICY-EPDM-MINERALOEL-GEGENCHECK",
+        ),
+        (
+            "Bitte empfehle einen Werkstoff für eine Anwendung mit Wasserdampf.",
+            "TRAP-FKM-DAMPF",
+        ),
+        (
+            "FFKM hält alles aus, also nehme ich es für Trinkwasser.",
+            "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG",
+        ),
     ],
 )
 def test_reviewed_solution_policy_is_prefetched_only_for_qualified_context(
@@ -112,11 +140,111 @@ def test_solution_policy_does_not_fire_on_single_generic_keyword():
         for fact in retrieve_reviewed_trap_facts(catalog, "Was ist Synthetiköl?")
     }
     assert "POLICY-SYNTHETIKOEL-KLASSE-OFFEN" not in ids
+
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(catalog, "Was ist Trinkwasser?")
+    }
+    assert "POLICY-TRINKWASSER-FAMILIE-ZULASSUNG" not in ids
+
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(catalog, "Was bedeutet Dampf?")
+    }
+    assert "TRAP-FKM-DAMPF" not in ids
+
+
+def test_speed_policy_requires_an_actual_speed_or_rotation_term() -> None:
+    catalog = _evidenced(load_traps())
+
+    oil_question_ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(
+            catalog,
+            "NBR-Wellendichtringe in Synthetiköl mit Ester-Additiven: ist das geeignet?",
+        )
+    }
+    speed_question_ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(
+            catalog,
+            "NBR-Wellendichtring bei 8.000 U/min: bitte Umfangsgeschwindigkeit prüfen.",
+        )
+    }
+
+    assert "CALC-UMFANGSGESCHWINDIGKEIT" not in oil_question_ids
+    assert "CALC-UMFANGSGESCHWINDIGKEIT" in speed_question_ids
     ids = {
         fact.card_id
         for fact in retrieve_reviewed_trap_facts(catalog, "Erkläre mir ein Getriebe.")
     }
     assert "POLICY-GETRIEBE-NBR-HNBR-KANDIDATENRAUM" not in ids
+    ids = {
+        fact.card_id
+        for fact in retrieve_reviewed_trap_facts(
+            catalog, "Kann ich EPDM für den Kunden bestätigen?"
+        )
+    }
+    assert "POLICY-EPDM-MINERALOEL-GEGENCHECK" not in ids
+
+
+def test_unknown_cleaning_chemistry_policy_still_develops_a_bounded_solution_path():
+    facts = retrieve_reviewed_trap_facts(
+        _evidenced(load_traps()),
+        "Aggressive Reinigungslösung, genaue Chemie unbekannt, Lebensmittelkontakt: welcher Werkstoff?",
+    )
+    policy = next(
+        fact
+        for fact in facts
+        if fact.card_id == "POLICY-REINIGUNG-COMPLIANCE-WERKSTOFF-OFFEN"
+    )
+
+    assert "Dichtungswerkstoff OFFEN" in policy.text
+    assert "hygienegerechte Dichtungsbauform" in policy.text
+    assert "Sicherheits-/Technikdatenblatt" in policy.text
+    assert "zuständige Fachstelle" in policy.text
+
+
+def test_high_pressure_gas_policy_never_invents_hydrogen_or_rotating_geometry():
+    facts = retrieve_reviewed_trap_facts(
+        load_traps(),
+        "Erdgas unter Hochdruck mit schnellen Druckwechseln: Welche Dichtung passt?",
+    )
+    safety = next(fact for fact in facts if fact.card_id == "SAFETY-RGD-HD-GAS")
+
+    assert "Wasserstoff" not in safety.text
+    assert "rotierenden Welle" not in safety.text
+    assert "Gasdichtungsfall" in safety.text
+
+
+def test_hydrogen_alias_cooccurrence_does_not_invent_high_pressure_or_transients():
+    facts = retrieve_reviewed_trap_facts(
+        load_traps(),
+        "Wasserstoff (H2) bei Umgebungsdruck: Welche statische Dichtung passt?",
+    )
+    safety = next(fact for fact in facts if fact.card_id == "SAFETY-RGD-HD-GAS")
+
+    assert "Hochdruck" not in safety.text
+    assert "mit schnellen Druckwechseln" not in safety.text
+    assert "möglicher schneller Druckentlastung" in safety.text
+
+
+def test_high_pressure_liquid_cannot_activate_the_gas_safety_policy():
+    facts = retrieve_reviewed_trap_facts(
+        load_traps(),
+        "Hydraulikzylinderdichtung bei Hochdruck, 350 bar: Welcher Werkstoff passt?",
+    )
+
+    assert "SAFETY-RGD-HD-GAS" not in {fact.card_id for fact in facts}
+
+
+def test_gas_requirement_still_accepts_non_hydrogen_high_pressure_gas():
+    facts = retrieve_reviewed_trap_facts(
+        load_traps(),
+        "Erdgas bei Hochdruck und schnellen Druckwechseln: Welche Dichtung passt?",
+    )
+
+    assert "SAFETY-RGD-HD-GAS" in {fact.card_id for fact in facts}
 
 
 def test_draft_trap_cannot_define_prefetch_terms(tmp_path):

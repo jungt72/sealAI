@@ -99,7 +99,16 @@ class CaseStateV2:
         return cls(case_id=case_id, revision=revision, fields=fields)
 
     def field(self, key: str) -> CaseField | None:
-        return next((field for field in self.fields if field.key == key), None)
+        exact = next((field for field in self.fields if field.key == key), None)
+        if exact is not None:
+            return exact
+        # The memory distiller's established public vocabulary uses ``temperatur`` while the
+        # versioned interview pack names the same user fact ``betriebstemperatur``. Treat the
+        # legacy key as a read-only alias so a remembered temperature is never asked again.
+        legacy_alias = {"betriebstemperatur": "temperatur"}.get(key)
+        if legacy_alias is None:
+            return None
+        return next((field for field in self.fields if field.key == legacy_alias), None)
 
     def to_remembered_facts(self) -> tuple[RememberedFact, ...]:
         return tuple(

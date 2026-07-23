@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,6 +43,103 @@ class TechnicalAnswer(BaseModel):
 
 class TechnicalAnswerValidationError(ValueError):
     pass
+
+
+_DOMAIN_IDENTIFIERS = frozenset(
+    {
+        "ACM",
+        "AEM",
+        "API",
+        "ATEX",
+        "AU",
+        "CIP",
+        "CR",
+        "DIN",
+        "EG",
+        "EN",
+        "EPDM",
+        "EU",
+        "FDA",
+        "FFKM",
+        "FKM",
+        "FVMQ",
+        "GLRD",
+        "HNBR",
+        "IIR",
+        "ISO",
+        "KTW-BWGL",
+        "NBR",
+        "NORSOK",
+        "NSF",
+        "PA",
+        "PEEK",
+        "POM",
+        "PTFE",
+        "RWDR",
+        "SIP",
+        "UN",
+        "USP",
+        "VMQ",
+        "W270",
+        "WRAS",
+    }
+)
+_MATERIAL_IDENTIFIERS = frozenset(
+    {
+        "ACM",
+        "AEM",
+        "AU",
+        "CR",
+        "EPDM",
+        "EU",
+        "FFKM",
+        "FKM",
+        "FVMQ",
+        "HNBR",
+        "IIR",
+        "NBR",
+        "PA",
+        "PEEK",
+        "POM",
+        "PTFE",
+        "VMQ",
+    }
+)
+_IDENTIFIER_RE = re.compile(
+    r"(?<![A-Za-z0-9-])(?:"
+    + "|".join(
+        sorted((re.escape(item) for item in _DOMAIN_IDENTIFIERS), key=len, reverse=True)
+    )
+    + r")(?![A-Za-z0-9-])"
+)
+_NUMBER_RE = re.compile(r"(?<![A-Za-z0-9])[-+]?\d+(?:[.,]\d+)?")
+
+
+def _identifiers(text: str) -> frozenset[str]:
+    return frozenset(
+        match.group(0).upper() for match in _IDENTIFIER_RE.finditer(text or "")
+    )
+
+
+def _numbers(text: str) -> tuple[float, ...]:
+    values: list[float] = []
+    for match in _NUMBER_RE.finditer(text or ""):
+        try:
+            values.append(float(match.group(0).replace(",", ".")))
+        except ValueError:
+            continue
+    return tuple(values)
+
+
+def _unsupported_numbers(text: str, evidence_text: str) -> bool:
+    allowed = _numbers(evidence_text)
+    for value in _numbers(text):
+        if not any(
+            abs(value - candidate) <= max(0.005, abs(candidate) * 0.02)
+            for candidate in allowed
+        ):
+            return True
+    return False
 
 
 def calibrate_technical_answer(answer: TechnicalAnswer) -> TechnicalAnswer:
@@ -92,6 +191,10 @@ def validate_technical_answer(
     case_revision: int,
     allowed_evidence_ids: frozenset[str],
     require_evidence_for_all_claims: bool = False,
+    evidence_text_by_id: Mapping[str, str] | None = None,
+    calculation_context_text: str = "",
+    user_context_text: str = "",
+    forbid_material_recommendation: bool = False,
 ) -> None:
     errors: list[str] = []
     if answer.case_revision != case_revision:
@@ -104,6 +207,16 @@ def validate_technical_answer(
             errors.append("knowledge_claim_without_evidence")
         if claim.criticality == "decision_relevant" and not claim.evidence_ids:
             errors.append("decision_claim_without_evidence")
+        if evidence_text_by_id is not None and claim.evidence_ids:
+            cited_text = " ".join(
+                evidence_text_by_id.get(evidence_id, "")
+                for evidence_id in claim.evidence_ids
+            )
+            allowed_text = f"{cited_text} {calculation_context_text}"
+            if _identifiers(claim.text) - _identifiers(allowed_text):
+                errors.append("named_assertion_absent_from_cited_evidence")
+            if _unsupported_numbers(claim.text, allowed_text):
+                errors.append("number_absent_from_cited_evidence")
     if answer.recommendation.status in {"conditional", "not_recommended"}:
         decision_claims = [
             claim for claim in answer.claims if claim.criticality == "decision_relevant"
@@ -112,5 +225,33 @@ def validate_technical_answer(
             claim.evidence_ids for claim in decision_claims
         ):
             errors.append("recommendation_without_decision_evidence")
+    if evidence_text_by_id is not None:
+        evidenced_claim_text = " ".join(
+            claim.text for claim in answer.claims if claim.evidence_ids
+        )
+        recommendation_text = " ".join(
+            [answer.recommendation.summary, *answer.recommendation.conditions]
+        )
+        # The separate rule above already requires a cited decision claim for a conditional or
+        # negative recommendation.  Names and values may additionally restate the user's own case
+        # inputs; those are context, not evidence, and never authorise a new claim.
+        recommendation_basis = (
+            f"{evidenced_claim_text} {calculation_context_text} {user_context_text}"
+        )
+        if _identifiers(recommendation_text) - _identifiers(recommendation_basis):
+            errors.append("named_recommendation_without_decision_evidence")
+        if _unsupported_numbers(recommendation_text, recommendation_basis):
+            errors.append("recommendation_number_without_decision_evidence")
+        if forbid_material_recommendation and (
+            _identifiers(recommendation_text) & _MATERIAL_IDENTIFIERS
+        ):
+            errors.append("material_recommendation_with_unresolved_medium")
+        conclusion_basis = (
+            f"{evidenced_claim_text} {calculation_context_text} {user_context_text}"
+        )
+        if _identifiers(answer.conclusion) - _identifiers(conclusion_basis):
+            errors.append("named_conclusion_without_evidence")
+        if _unsupported_numbers(answer.conclusion, conclusion_basis):
+            errors.append("conclusion_number_without_evidence")
     if errors:
         raise TechnicalAnswerValidationError(",".join(sorted(set(errors))))

@@ -83,6 +83,22 @@ _MATERIAL_ALIASES: dict[str, tuple[str, ...]] = {
     "POM": ("pom",),
 }
 
+
+def is_exact_material_alias(value: str) -> bool:
+    """Return whether ``value`` exactly names a curated material family or alias.
+
+    This deliberately does not use the prefix-tolerant query matcher.  It is used at trust
+    boundaries where a grade such as ``Silikon70`` must not be reduced to the family ``Silikon``.
+    """
+
+    normalized = (value or "").strip().casefold()
+    return any(
+        normalized == canonical.casefold()
+        or normalized in {alias.casefold() for alias in aliases}
+        for canonical, aliases in _MATERIAL_ALIASES.items()
+    )
+
+
 _SEAL_ALIASES: dict[str, tuple[str, ...]] = {
     "O-Ring": ("o-ring", "oring"),
     "X-Ring": ("x-ring", "quad-ring"),

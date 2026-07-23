@@ -110,6 +110,8 @@ def render_engineering_answer(
     communication_plan: dict | None = None,
 ) -> str:
     sections = [answer.conclusion.strip()]
+    plan = communication_plan or {}
+    planned_question = str(plan.get("next_question") or "").strip()
     parameter_table = _parameter_table(material_params)
     if parameter_table:
         sections.append(parameter_table)
@@ -125,12 +127,22 @@ def render_engineering_answer(
             "**Annahmen**\n" + "\n".join(f"- {item}" for item in answer.assumptions)
         )
     if answer.missing_information:
-        sections.append(
-            "**Für Auswahl oder Freigabe noch erforderlich**\n"
-            + "\n".join(f"- {item}" for item in answer.missing_information)
-        )
-    plan = communication_plan or {}
-    planned_question = str(plan.get("next_question") or "").strip()
+        if (
+            plan.get("goal") == "answer_requested_knowledge"
+            and not plan.get("case_bound")
+            and not planned_question
+        ):
+            sections.append(
+                "**Abgrenzung zur konkreten Auslegung**\n"
+                "Für diese Wissensfrage sind keine Falldaten erforderlich. Eine spätere "
+                "anwendungsbezogene Auswahl oder Freigabe würde zusätzlich voraussetzen:\n"
+                + "\n".join(f"- {item}" for item in answer.missing_information)
+            )
+        else:
+            sections.append(
+                "**Für Auswahl oder Freigabe noch erforderlich**\n"
+                + "\n".join(f"- {item}" for item in answer.missing_information)
+            )
     if planned_question:
         reason = str(plan.get("question_reason") or "").strip()
         sections.append(
