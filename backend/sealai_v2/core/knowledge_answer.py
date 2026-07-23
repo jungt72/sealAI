@@ -138,6 +138,12 @@ class KnowledgeAnswerPlan:
     sections: tuple[KnowledgeSection, ...]
     available_facets: tuple[str, ...]
     subject_facets: tuple[tuple[str, tuple[str, ...]], ...]
+    # One tuple of facts per entry in ``sections`` (same order, same length) -- each fact
+    # appears under exactly one section, never more than one. See ``_assign_facts_to_sections``.
+    section_facts: tuple[tuple["GroundingFact", ...], ...]
+    # Facts whose facets matched no section's required facets -- kept visible instead of
+    # silently dropped, but not pre-assigned to a heading.
+    unassigned_facts: tuple["GroundingFact", ...]
     evidence_status: str
     evidence_fact_count: int
     evidence_document_count: int
@@ -151,6 +157,15 @@ class KnowledgeAnswerPlan:
     def to_dict(self) -> dict:
         available = set(self.available_facets)
         required = set(self.required_facets)
+
+        def _fact_dict(fact: "GroundingFact") -> dict:
+            return {
+                "text": fact.text,
+                "quelle": fact.quelle,
+                "card_id": getattr(fact, "card_id", ""),
+                "claim_id": getattr(fact, "claim_id", ""),
+            }
+
         return {
             "profile": self.profile,
             "subject_type": self.subject_type,
@@ -187,9 +202,11 @@ class KnowledgeAnswerPlan:
                     "facets": list(section.facets),
                     "covered_facets": [f for f in section.facets if f in available],
                     "missing_facets": [f for f in section.facets if f not in available],
+                    "facts": [_fact_dict(fact) for fact in facts],
                 }
-                for section in self.sections
+                for section, facts in zip(self.sections, self.section_facts)
             ],
+            "unassigned_facts": [_fact_dict(fact) for fact in self.unassigned_facts],
         }
 
 
@@ -464,6 +481,34 @@ def facets_for_fact(fact: "GroundingFact") -> tuple[str, ...]:
     return explicit or _fallback_facets(getattr(fact, "claim_kind", ""))
 
 
+def _assign_facts_to_sections(
+    sections: tuple[KnowledgeSection, ...],
+    grounding_facts: tuple["GroundingFact", ...],
+) -> tuple[tuple[tuple["GroundingFact", ...], ...], tuple["GroundingFact", ...]]:
+    """Deterministically place each fact under exactly one section -- its first
+    facet-matching section in plan order -- so the prompt never shows the same fact under
+    two different headings and the LLM never has to self-partition a shared list. A fact
+    whose facets match no section's required facets goes to a trailing bucket instead of
+    being silently dropped (returned separately, not attached to any section)."""
+    buckets: list[list["GroundingFact"]] = [[] for _ in sections]
+    unassigned: list["GroundingFact"] = []
+    for fact in grounding_facts:
+        fact_facets = set(facets_for_fact(fact))
+        index = next(
+            (
+                i
+                for i, section in enumerate(sections)
+                if fact_facets & set(section.facets)
+            ),
+            None,
+        )
+        if index is None:
+            unassigned.append(fact)
+        else:
+            buckets[index].append(fact)
+    return tuple(tuple(bucket) for bucket in buckets), tuple(unassigned)
+
+
 def facets_for_payload(payload: dict) -> tuple[str, ...]:
     explicit = tuple(
         facet for facet in payload.get("answer_facets", ()) if facet in ANSWER_FACETS
@@ -617,6 +662,9 @@ def build_knowledge_answer_plan(
         for fact in grounding_facts
         if getattr(fact, "card_id", "")
     }
+    section_facts, unassigned_facts = _assign_facts_to_sections(
+        sections, grounding_facts
+    )
     return KnowledgeAnswerPlan(
         profile=profile,
         subject_type=subject_type,
@@ -625,6 +673,8 @@ def build_knowledge_answer_plan(
         sections=sections,
         available_facets=available,
         subject_facets=subject_facets,
+        section_facts=section_facts,
+        unassigned_facts=unassigned_facts,
         evidence_status=evidence_status,
         evidence_fact_count=len(grounding_facts),
         evidence_document_count=len(documents),

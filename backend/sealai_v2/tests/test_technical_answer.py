@@ -70,6 +70,7 @@ def _knowledge_plan() -> dict:
         "evidence_fact_count": 1,
         "evidence_document_count": 1,
         "sections": [],
+        "unassigned_facts": [],
     }
 
 
@@ -262,6 +263,7 @@ def test_knowledge_answer_supplements_missing_claim_level_facet_coverage():
             "facets": ["definition", "parameters"],
             "covered_facets": ["definition", "parameters"],
             "missing_facets": [],
+            "facts": [],
         }
     ]
     client = FakeLlmClient(_payload(evidence_ids=["E1"]))

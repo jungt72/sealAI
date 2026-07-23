@@ -162,8 +162,10 @@ def test_fallback_missing_information_never_exposes_internal_facets() -> None:
                         "facets": ["definition"],
                         "covered_facets": ["definition"],
                         "missing_facets": [],
+                        "facts": [],
                     }
                 ],
+                "unassigned_facts": [],
             },
             case_revision=7,
         )
@@ -233,8 +235,10 @@ def test_l1_uses_v2_schema_for_knowledge_answer() -> None:
                         "facets": ["definition"],
                         "covered_facets": ["definition"],
                         "missing_facets": [],
+                        "facts": [],
                     }
                 ],
+                "unassigned_facts": [],
             },
             case_revision=7,
         )

@@ -424,21 +424,39 @@ Gegenstand: {{ knowledge_answer_plan.subjects | join(", ") }}{% endif %}.
 Evidenzstatus: {{ knowledge_answer_plan.evidence_status }};
 {{ knowledge_answer_plan.evidence_fact_count }} gepruefte Fakten aus
 {{ knowledge_answer_plan.evidence_document_count }} Wissensobjekt(en).
+Jeder Fakt unten ist genau EINEM Abschnitt zugeordnet und darf **nur dort** verwendet werden —
+zitiere denselben Fakt nicht wortgleich in einem zweiten Abschnitt.
 {% for section in knowledge_answer_plan.sections %}
 - **{{ section.heading }}:** {{ section.instruction }}
   Belegt: {{ section.covered_facets | join(", ") if section.covered_facets else "keine Facette" }}.
   Offen: {{ section.missing_facets | join(", ") if section.missing_facets else "nichts" }}.
+  {%- if section.facts %}
+  Fakten fuer GENAU diesen Abschnitt (nicht in einem anderen Abschnitt wiederholen):
+  {%- for f in section.facts %}
+  - [Evidenz-ID: {{ f.claim_id or f.card_id }}] {{ f.text }}  [Quelle: {{ f.quelle }}]
+  {%- endfor %}
+  {%- endif %}
 {% endfor %}
+{%- if knowledge_answer_plan.unassigned_facts %}
+Weitere geprüfte Fakten ohne eindeutige Abschnittszuordnung — jeweils dem inhaltlich
+passendsten Abschnitt zuordnen und dort nur EINMAL verwenden:
+{%- for f in knowledge_answer_plan.unassigned_facts %}
+- [Evidenz-ID: {{ f.claim_id or f.card_id }}] {{ f.text }}  [Quelle: {{ f.quelle }}]
+{%- endfor %}
+{%- endif %}
+Stütze quantitative/normative Aussagen auf die oben zugeordneten Fakten und kennzeichne die
+Quelle. Aussagen aus Allgemeinwissen markierst du als solche — Zahlen dabei nur außerhalb der
+Sperr-Domänen.
 {%- endif %}
 
-{% if grounding_facts %}
+{% if grounding_facts and not knowledge_answer_plan_has_facts %}
 # Belegte Fakten (für diese Antwort herangezogen — Spezifika hieraus belegen und zitieren)
 {% for f in grounding_facts %}
 - {% if knowledge_answer_plan %}[Evidenz-ID: {{ f.claim_id or f.card_id }}] {% endif %}{{ f.text }}  [Quelle: {{ f.quelle }}]
 {% endfor %}
 Stütze quantitative/normative Aussagen auf diese Fakten und kennzeichne die Quelle. Aussagen aus
 Allgemeinwissen markierst du als solche — Zahlen dabei nur außerhalb der Sperr-Domänen.
-{% else %}
+{% elif not grounding_facts %}
 # Provenienz — diese Antwort ist VORLÄUFIG
 Es liegen für diese Frage **keine eingespielten, geprüften (reviewed) Fakten** vor. Qualitative
 Erklärungen aus Allgemeinwissen kennzeichnest du als „**vorläufig** — gegen Datenblatt/Norm bzw. mit dem

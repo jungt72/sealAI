@@ -81,9 +81,23 @@ class PromptAssembler:
             }
             for f in (grounding_facts or [])
         ]
+        # A fact is rendered EITHER inside its assigned section (never more than one, see
+        # knowledge_answer.py::_assign_facts_to_sections) OR, if the plan couldn't place it
+        # anywhere, in the flat fallback block below -- never both, and never silently
+        # dropped. This flag is computed here (Python), not in the template, per this
+        # module's own "Jinja assembles, it never decides" principle.
+        kap = knowledge_answer_plan or None
+        kap_has_facts = bool(
+            kap
+            and (
+                any(section.get("facts") for section in kap.get("sections", ()))
+                or kap.get("unassigned_facts")
+            )
+        )
         return self._template.render(
             anrede=anrede,
             grounding_facts=gf,
+            knowledge_answer_plan_has_facts=kap_has_facts,
             case_context=case_context or [],
             durable_context=durable_context or [],
             conversation_window=conversation_window or [],
