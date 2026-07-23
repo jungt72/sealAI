@@ -174,25 +174,38 @@ def build_communication_plan(
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
     solution_requested: bool = False,
+    case_active: bool = False,
 ) -> CommunicationPlan:
     """Build the single, deterministic communication contract for this turn."""
 
-    case_bound = bool(case_fields or missing_fields or conflicts)
+    case_bound = bool(case_active or case_fields or missing_fields or conflicts)
     next_question, reason = _next_case_question(missing_fields, conflicts)
 
     if route_name == "case_intake_invite":
+        if case_bound:
+            next_question = (
+                "Möchtest du den aktuellen Fall weiterführen oder eine neue "
+                "Dichtungslösung beginnen?"
+            )
+            reason = (
+                "So verwende ich vorhandene Angaben nur dann weiter, wenn sie wirklich "
+                "zu deinem Anliegen gehören."
+            )
+        else:
+            next_question = "Welche Anwendung und Dichtstelle möchtest du abdichten?"
+            reason = (
+                "Davon hängt ab, welche Betriebs-, Geometrie- und Sicherheitsangaben ich "
+                "als Nächstes gezielt von dir brauche."
+            )
         return CommunicationPlan(
             goal="start_case_collaboratively",
             response_moves=("acknowledge", "empathize", "clarify", "justify"),
             depth="brief",
             answer_first=True,
             max_questions=1,
-            case_bound=False,
-            next_question="Welche Anwendung und Dichtstelle möchtest du abdichten?",
-            question_reason=(
-                "Davon hängt ab, welche Betriebs-, Geometrie- und Sicherheitsangaben ich als "
-                "Nächstes gezielt von dir brauche."
-            ),
+            case_bound=case_bound,
+            next_question=next_question,
+            question_reason=reason,
             must_include=("user_goal_acknowledgement", "question_reason"),
             must_not_include=(
                 "technical_claims",
@@ -461,7 +474,9 @@ def render_case_intake_response(question: str, plan: CommunicationPlan) -> str:
     """Render the no-claim intake response without a generative model."""
 
     lower = (question or "").casefold()
-    if "guten morgen" in lower:
+    if plan.case_bound:
+        opening = "Gern – ich habe den bestehenden Fallkontext im Blick."
+    elif "guten morgen" in lower:
         opening = "Guten Morgen – gern, wir entwickeln die Dichtungslösung Schritt für Schritt."
     elif re.search(r"\b(?:hallo|hi|hey|moin|servus)\b", lower):
         opening = (

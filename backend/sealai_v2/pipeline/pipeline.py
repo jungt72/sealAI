@@ -1882,6 +1882,7 @@ class Pipeline:
                             missing_fields=policy_missing_fields,
                             conflicts=policy_conflicts,
                             calc=l1_calc,
+                            case_active=case_active,
                         ),
                         model="deterministic-policy",
                         grounding_facts=l1_grounding,

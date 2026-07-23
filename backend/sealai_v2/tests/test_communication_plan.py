@@ -26,6 +26,26 @@ def test_case_intake_plan_acknowledges_goal_and_asks_exactly_one_question() -> N
     assert evaluate_communication(answer, plan).passed
 
 
+def test_active_case_intake_asks_whether_to_continue_or_start_new() -> None:
+    plan = build_communication_plan(
+        question="Ich möchte eine Dichtungslösung besprechen.",
+        route_name="case_intake_invite",
+        case_active=True,
+    )
+    answer = render_case_intake_response(
+        "Ich möchte eine Dichtungslösung besprechen.", plan
+    )
+
+    assert plan.case_bound is True
+    assert answer.count("?") == 1
+    assert "bestehenden Fallkontext im Blick" in answer
+    assert (
+        "aktuellen Fall weiterführen oder eine neue Dichtungslösung beginnen" in answer
+    )
+    assert "vorhandene Angaben nur dann weiter" in answer
+    assert evaluate_communication(answer, plan).passed
+
+
 def test_intake_guard_rejects_unrelated_evidence_and_question_lists() -> None:
     plan = build_communication_plan(
         question="Ich möchte eine Dichtung entwickeln",

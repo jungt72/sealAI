@@ -380,6 +380,26 @@ def test_case_intake_invite_is_deterministic_without_llm_verifier():
     assert decision.streaming_mode is StreamingMode.ATOMIC
 
 
+def test_active_case_intake_response_does_not_turn_context_into_an_instruction():
+    decision = decide_execution(
+        ExecutionFeatures(route=_route(RouteName.CASE_INTAKE_INVITE))
+    )
+
+    response = deterministic_response(
+        decision,
+        question="ich möchte eine dichtungslösung besprechen",
+        case_active=True,
+    )
+
+    assert response.count("?") == 1
+    assert (
+        "aktuellen Fall weiterführen oder eine neue Dichtungslösung beginnen"
+        in response
+    )
+    assert "Technische Einordnung" not in response
+    assert "quellengebunden" not in response
+
+
 def test_ungrounded_knowledge_is_a_deterministic_evidence_gap():
     decision = decide_execution(
         ExecutionFeatures(route=_route(RouteName.MATERIAL_KNOWLEDGE))

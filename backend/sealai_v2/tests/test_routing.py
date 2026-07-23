@@ -399,6 +399,67 @@ class TestCaseIntakeInvite:
             )
             assert decision.deterministic_signal_count == 0
 
+    def test_active_case_zero_content_opener_paraphrases_still_clarify_scope(
+        self,
+    ) -> None:
+        questions = (
+            "ich möchte eine dichtungslösung besprechen",
+            "Ich würde gern über eine Dichtungslösung sprechen.",
+            "Können wir über eine neue Dichtungslösung sprechen?",
+            "Ich habe eine Dichtungsfrage.",
+            "Ich möchte diese Dichtungslösung besprechen.",
+        )
+        for question in questions:
+            decision = classify_route_deterministic(question, case_state_nonempty=True)
+            assert decision.route is RouteName.CASE_INTAKE_INVITE, (
+                question,
+                decision,
+            )
+            assert decision.reason == (
+                "deterministic_case_opening_active_case_zero_signal"
+            )
+
+    def test_active_case_continuation_guidance_keeps_engineering_context(self) -> None:
+        for question in (
+            "Was brauchst du noch?",
+            "Wie gehen wir jetzt weiter?",
+            "Welche Angaben fehlen dazu noch?",
+        ):
+            decision = classify_route_deterministic(question, case_state_nonempty=True)
+            assert decision.route is RouteName.ENGINEERING_CASE, (
+                question,
+                decision,
+            )
+            assert decision.forced_full_pipeline is True
+
+    def test_unrecognized_active_case_speech_act_waits_for_semantic_resolution(
+        self,
+    ) -> None:
+        for question in (
+            "Lass uns das Thema Abdichtung gemeinsam sortieren.",
+            "Ich würde das Thema Dichtung gerne mit dir durchgehen.",
+            "Ich brauche erstmal Orientierung für eine Abdichtung.",
+        ):
+            decision = classify_route_deterministic(
+                question, case_state_nonempty=True
+            )
+            assert decision.route is RouteName.UNSUPPORTED_OR_AMBIGUOUS, (
+                question,
+                decision,
+            )
+            assert decision.reason == (
+                "deterministic_active_case_current_turn_needs_semantic_resolution"
+            )
+            assert decision.deterministic_signal_count == 0
+
+    def test_active_case_does_not_turn_smalltalk_into_engineering_work(self) -> None:
+        decision = classify_route_deterministic(
+            "Hallo, wie geht es dir?", case_state_nonempty=True
+        )
+
+        assert decision.route is RouteName.SMALLTALK_NAVIGATION
+        assert decision.forced_full_pipeline is False
+
     def test_intake_with_case_detail_never_uses_content_blind_invite(self) -> None:
         for question in (
             "Ich möchte eine PTFE-Dichtung entwickeln. Welche Informationen brauchst du?",
@@ -458,12 +519,15 @@ class TestCaseIntakeInvite:
         assert decision.route is RouteName.GENERAL_SEALING_KNOWLEDGE
         assert decision.forced_full_pipeline is False
 
-    def test_case_opening_never_hijacks_an_existing_case(self) -> None:
+    def test_zero_content_case_opening_stays_clarifying_with_existing_case(
+        self,
+    ) -> None:
         decision = classify_route_deterministic(
             "Ich habe eine Frage.", case_state_nonempty=True
         )
-        assert decision.route is RouteName.ENGINEERING_CASE
-        assert decision.forced_full_pipeline is True
+        assert decision.route is RouteName.CASE_INTAKE_INVITE
+        assert decision.reason == "deterministic_case_opening_active_case_zero_signal"
+        assert decision.forced_full_pipeline is False
 
     def test_partial_engineering_content_never_falls_back_to_case_intake(self) -> None:
         # Stage 2 of the case-intake fix (2026-07-19) starts populating
@@ -830,6 +894,16 @@ class TestAmbiguousAndMissingIntent:
 
 
 class TestCaseStateAndPipelineHints:
+    def test_active_case_does_not_hijack_an_explicit_social_turn(self) -> None:
+        decision = classify_route(
+            "Hallo, wie geht es dir?",
+            case_state_nonempty=True,
+            intent=Intent.GESPRAECH,
+        )
+
+        assert decision.route is RouteName.SMALLTALK_NAVIGATION
+        assert decision.forced_full_pipeline is False
+
     def test_nonempty_case_state_forces_full_pipeline_even_for_a_short_followup(
         self,
     ) -> None:

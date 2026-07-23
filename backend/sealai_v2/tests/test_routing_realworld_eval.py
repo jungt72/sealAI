@@ -27,6 +27,23 @@ def test_realworld_suite_is_large_unique_and_has_holdout_and_repetition() -> Non
     assert sum(case.critical for case in suite.cases) >= 35
 
 
+def test_realworld_suite_covers_vague_intent_inside_an_active_case() -> None:
+    suite = load_suite()
+    dialogue = next(item for item in suite.dialogues if item.id == "RW-MT-007")
+
+    assert dialogue.turns[0].expected_routes == ("engineering_case",)
+    assert len(dialogue.turns[1:]) == 6
+    assert all(
+        turn.expected_routes == ("case_intake_invite",)
+        for turn in dialogue.turns[1:]
+    )
+    assert all(turn.max_questions == 1 for turn in dialogue.turns[1:])
+    assert all(
+        "Technische Einflussgrößen" in turn.forbidden_fragments
+        for turn in dialogue.turns[1:]
+    )
+
+
 def test_realworld_suite_rejects_duplicate_ids(tmp_path: Path) -> None:
     source = (
         Path(__file__).parents[1] / "eval" / "seed_cases" / "routing_realworld_v1.json"

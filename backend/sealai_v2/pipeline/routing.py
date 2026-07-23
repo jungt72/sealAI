@@ -618,7 +618,8 @@ _CASE_DEVELOPMENT_RE = re.compile(
 # independently at the call site — this regex alone never decides a route).
 _CASE_OPENING_RE = re.compile(
     r"\b(?:"
-    r"ich\s+m[oö]chte\s+(?:[\wäöüß/-]+\s+){0,6}(?:besprechen|bereden|reden|sprechen)|"
+    r"ich\s+(?:m[oö]chte|will|w[uü]rde\s+gern)\s+"
+    r"(?:[\wäöüß/-]+\s+){0,6}(?:besprechen|bereden|reden|sprechen)|"
     r"ich\s+m[oö]chte\s+(?:[\wäöüß/-]+\s+){0,8}"
     r"(?:entwickeln|planen|konzipieren|erarbeiten|erstellen|ausw[aä]hlen|auswaehlen|auslegen|finden)|"
     r"ich\s+(?:will|w[uü]rde\s+gern|plane)\s+(?:[\wäöüß/-]+\s+){0,8}"
@@ -647,6 +648,16 @@ _CASE_OPENING_RE = re.compile(
 # ambiguous/full-pipeline) exactly as before this change.
 _CASE_OPENING_MAX_LEN = 200
 _CASE_OPENING_SURROUNDING_MAX_LEN = 65
+_ACTIVE_CASE_CONTINUATION_RE = re.compile(
+    r"\b(?:noch|weiter\w*|fortfahr\w*|fortsetz\w*|jetzt|nun|dazu|daran|damit|hierzu|"
+    r"aktuell\w*|bestehend\w*|dies(?:e|er|es|em|en))\b",
+    re.IGNORECASE,
+)
+_ACTIVE_CASE_ACTION_RE = re.compile(
+    r"\b(?:technisch\s+)?(?:einordnen|bewerten|pr[uü]fen|beurteilen|"
+    r"ausarbeiten|bearbeiten)\b",
+    re.IGNORECASE,
+)
 
 
 def _is_case_opening_shape(question: str) -> bool:
@@ -658,6 +669,20 @@ def _is_case_opening_shape(question: str) -> bool:
         return False
     surrounding = len(text[: match.start()]) + len(text[match.end() :])
     return surrounding <= _CASE_OPENING_SURROUNDING_MAX_LEN
+
+
+def _is_active_case_continuation(
+    question: str, *, material_terms: tuple[str, ...] = ()
+) -> bool:
+    """Recognise an explicit instruction to keep working on the active case."""
+
+    return bool(
+        _ACTIVE_CASE_CONTINUATION_RE.search(question or "")
+        or (
+            _ACTIVE_CASE_ACTION_RE.search(question or "")
+            and has_domain_anchor(question, material_terms=material_terms)
+        )
+    )
 
 
 def has_explicit_knowledge_request(question: str) -> bool:
@@ -1331,9 +1356,11 @@ def classify_route(
             deterministic_signal_count=1,
         )
 
-    case_start_request = _is_case_opening_shape(question) or requests_case_guidance(
-        question
+    case_opening_shape = _is_case_opening_shape(question)
+    active_case_continuation = _is_active_case_continuation(
+        question, material_terms=material_terms
     )
+    case_start_request = case_opening_shape or requests_case_guidance(question)
     if (
         not has_explicit_knowledge_request(question)
         and case_start_request
@@ -1347,22 +1374,33 @@ def classify_route(
             deterministic_signal_count=1,
         )
 
-    # 2026-07-19 (case-intake fix): zero Stage-1 signals, no existing case, no material topic, a
-    # narrow discussion/help-INTENT opener shape, and NOT itself a knowledge request ("was ist...").
-    # Additive and strictly narrower than the domain-knowledge branch below: a message that ALSO
-    # looks like a knowledge request (_KNOWLEDGE_REQUEST_RE) still falls through to
-    # general_sealing_knowledge/material_knowledge exactly as before this change. Uses
-    # _is_case_opening_shape (not a bare .search()) so a long message cannot ride an L3-bypassed
-    # route just by containing the trigger phrase somewhere in it -- see that function's docstring.
+    # A zero-content discussion/help opener is a conversation move, not an engineering instruction.
+    # This remains true with an existing case: case state may inform the clarification, but must not
+    # turn "ich möchte eine Dichtungslösung besprechen" into an implicit request to dump retrieved
+    # claims.  A message that ALSO looks like a knowledge request still falls through to the
+    # knowledge branches below.  _is_case_opening_shape (rather than a bare regex search) prevents
+    # arbitrary trailing content from riding this deterministic, L3-bypassed route.
     if (
-        not case_state_nonempty
-        and not signals
+        not signals
         and case_start_request
+        and (
+            not case_state_nonempty
+            or (
+                case_opening_shape
+                and not (
+                    active_case_continuation and requests_case_guidance(question)
+                )
+            )
+        )
         and not has_explicit_knowledge_request(question)
     ):
         return RouteDecision(
             route=RouteName.CASE_INTAKE_INVITE,
-            reason="case_opening_zero_signal",
+            reason=(
+                "case_opening_active_case_zero_signal"
+                if case_state_nonempty
+                else "case_opening_zero_signal"
+            ),
             confidence=1.0,
             forced_full_pipeline=False,
             deterministic_signal_count=0,
@@ -1395,13 +1433,33 @@ def classify_route(
             forced_full_pipeline=False,
             deterministic_signal_count=0,
         )
-    if case_state_nonempty:
+    if intent == Intent.GESPRAECH and _is_smalltalk_shape(question):
+        return RouteDecision(
+            route=RouteName.SMALLTALK_NAVIGATION,
+            reason="intent=gespraech",
+            confidence=0.7,
+            forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if (
+        case_state_nonempty
+        and active_case_continuation
+        and not has_explicit_knowledge_request(question)
+    ):
         return RouteDecision(
             route=RouteName.ENGINEERING_CASE,
-            reason="existing_case_context",
+            reason="existing_case_explicit_continuation",
             confidence=1.0,
             forced_full_pipeline=True,
             deterministic_signal_count=1,
+        )
+    if case_state_nonempty:
+        return RouteDecision(
+            route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+            reason="active_case_current_turn_needs_semantic_resolution",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=0,
         )
 
     # Stage 2 — zero deterministic signals. Any doubt still forces the full pipeline.
@@ -1411,15 +1469,6 @@ def classify_route(
             reason="no_intent_available",
             confidence=1.0,
             forced_full_pipeline=True,
-            deterministic_signal_count=0,
-        )
-
-    if intent == Intent.GESPRAECH and _is_smalltalk_shape(question):
-        return RouteDecision(
-            route=RouteName.SMALLTALK_NAVIGATION,
-            reason="intent=gespraech",
-            confidence=0.7,
-            forced_full_pipeline=False,
             deterministic_signal_count=0,
         )
 
@@ -1498,9 +1547,11 @@ def classify_route_deterministic(
             forced_full_pipeline=True,
             deterministic_signal_count=1,
         )
-    case_start_request = _is_case_opening_shape(question) or requests_case_guidance(
-        question
+    case_opening_shape = _is_case_opening_shape(question)
+    active_case_continuation = _is_active_case_continuation(
+        question, material_terms=material_terms
     )
+    case_start_request = case_opening_shape or requests_case_guidance(question)
     if (
         not has_explicit_knowledge_request(question)
         and case_start_request
@@ -1513,16 +1564,28 @@ def classify_route_deterministic(
             forced_full_pipeline=True,
             deterministic_signal_count=1,
         )
-    # 2026-07-19 (case-intake fix): see the identical block + rationale in classify_route() above.
+    # See the identical block + rationale in classify_route() above.
     if (
-        not case_state_nonempty
-        and not signals
+        not signals
         and case_start_request
+        and (
+            not case_state_nonempty
+            or (
+                case_opening_shape
+                and not (
+                    active_case_continuation and requests_case_guidance(question)
+                )
+            )
+        )
         and not has_explicit_knowledge_request(question)
     ):
         return RouteDecision(
             route=RouteName.CASE_INTAKE_INVITE,
-            reason="deterministic_case_opening_zero_signal",
+            reason=(
+                "deterministic_case_opening_active_case_zero_signal"
+                if case_state_nonempty
+                else "deterministic_case_opening_zero_signal"
+            ),
             confidence=1.0,
             forced_full_pipeline=False,
             deterministic_signal_count=0,
@@ -1547,20 +1610,32 @@ def classify_route_deterministic(
             forced_full_pipeline=False,
             deterministic_signal_count=0,
         )
-    if case_state_nonempty:
-        return RouteDecision(
-            route=RouteName.ENGINEERING_CASE,
-            reason="existing_case_context",
-            confidence=1.0,
-            forced_full_pipeline=True,
-            deterministic_signal_count=1,
-        )
     if _is_smalltalk_shape(question):
         return RouteDecision(
             route=RouteName.SMALLTALK_NAVIGATION,
             reason="deterministic_smalltalk_shape",
             confidence=1.0,
             forced_full_pipeline=False,
+            deterministic_signal_count=0,
+        )
+    if (
+        case_state_nonempty
+        and active_case_continuation
+        and not has_explicit_knowledge_request(question)
+    ):
+        return RouteDecision(
+            route=RouteName.ENGINEERING_CASE,
+            reason="deterministic_existing_case_explicit_continuation",
+            confidence=1.0,
+            forced_full_pipeline=True,
+            deterministic_signal_count=1,
+        )
+    if case_state_nonempty:
+        return RouteDecision(
+            route=RouteName.UNSUPPORTED_OR_AMBIGUOUS,
+            reason="deterministic_active_case_current_turn_needs_semantic_resolution",
+            confidence=1.0,
+            forced_full_pipeline=True,
             deterministic_signal_count=0,
         )
     return RouteDecision(

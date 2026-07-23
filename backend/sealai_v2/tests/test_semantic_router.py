@@ -66,7 +66,7 @@ def test_regional_greeting_can_route_to_smalltalk() -> None:
     assert decision.route is RouteName.SMALLTALK_NAVIGATION
     assert decision.forced_full_pipeline is False
     assert decision.confidence == 0.99
-    assert decision.reason.startswith("semantic:semantic-router.v2:social")
+    assert decision.reason.startswith("semantic:semantic-router.v3:social")
     assert client.calls[0]["model"] == "ministral-8b-2512"
     assert "ACTIVE_CASE: false" in client.calls[0]["user"]
 
@@ -113,6 +113,25 @@ def test_semantic_router_supports_case_intake_guidance_as_a_distinct_route() -> 
     assert decision.route is RouteName.CASE_INTAKE_INVITE
     assert decision.forced_full_pipeline is False
     assert "request_guidance" in decision.reason
+
+
+def test_semantic_router_can_clarify_a_new_intent_inside_an_active_case() -> None:
+    decision, _ = _classify(
+        _response(
+            "case_intake_invite",
+            speech_act="initiate_case",
+            relation="unclear",
+            case_bound=False,
+            contains_technical_request=True,
+            confidence=0.98,
+        ),
+        "Ich würde das Thema Dichtung gerne mit dir durchgehen.",
+        case_active=True,
+    )
+
+    assert decision.route is RouteName.CASE_INTAKE_INVITE
+    assert decision.forced_full_pipeline is False
+    assert "initiate_case:unclear" in decision.reason
 
 
 def test_semantic_knowledge_route_requires_information_speech_act() -> None:

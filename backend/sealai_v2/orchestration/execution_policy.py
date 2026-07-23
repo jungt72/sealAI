@@ -309,6 +309,7 @@ def deterministic_response(
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
     calc=None,
+    case_active: bool = False,
 ) -> str:
     if decision.reason == "deterministic_case_intake_route":
         from sealai_v2.core.communication_plan import (
@@ -320,6 +321,7 @@ def deterministic_response(
         plan = build_communication_plan(
             question=question,
             route_name=RouteName.CASE_INTAKE_INVITE.value,
+            case_active=case_active,
         )
         response = render_case_intake_response(question, plan)
         verdict = evaluate_communication(response, plan)

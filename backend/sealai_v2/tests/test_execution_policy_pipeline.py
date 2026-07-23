@@ -328,6 +328,99 @@ def test_owner_reported_intake_is_case_aware_without_retrieval_or_model_call():
     assert "Quelle" not in result.answer.text
 
 
+def test_owner_reported_intake_with_active_case_clarifies_context_without_model():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = _RequiredMissingMemory()
+
+    result = asyncio.run(
+        pipeline.run(
+            "ich möchte eine dichtungslösung besprechen",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("case-1"),
+        )
+    )
+
+    assert result.route_name == "case_intake_invite"
+    assert result.turn_state.model_tier == "none"
+    assert pipeline.retriever.calls == 0
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.answer.grounding_facts == ()
+    assert result.answer.text.count("?") == 1
+    assert "bestehenden Fallkontext im Blick" in result.answer.text
+    assert (
+        "aktuellen Fall weiterführen oder eine neue Dichtungslösung beginnen"
+        in result.answer.text
+    )
+    assert "Technische Einordnung" not in result.answer.text
+    assert "quellengebunden" not in result.answer.text
+
+
+def test_unrecognized_active_case_intent_uses_semantic_router_then_static_intake():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = _RequiredMissingMemory()
+    router_client = _RecordingClient(
+        json.dumps(
+            {
+                "primary_route": "case_intake_invite",
+                "speech_act": "initiate_case",
+                "conversation_relation": "unclear",
+                "case_bound": False,
+                "contains_technical_request": True,
+                "confidence": 0.99,
+            }
+        )
+    )
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+
+    result = asyncio.run(
+        pipeline.run(
+            "Ich würde das Thema Dichtung gerne mit dir durchgehen.",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("case-1"),
+        )
+    )
+
+    assert result.route_name == "case_intake_invite"
+    assert len(router_client.calls) == 1
+    assert "ACTIVE_CASE: true" in router_client.users[0]
+    assert pipeline.retriever.calls == 0
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.answer.text.count("?") == 1
+    assert "bestehenden Fallkontext im Blick" in result.answer.text
+    assert "Technische Einordnung" not in result.answer.text
+
+
+def test_active_case_semantic_router_failure_abstains_instead_of_dumping_context():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.memory = _RequiredMissingMemory()
+    router_client = _RecordingClient("not-json")
+    pipeline.semantic_router_enabled = True
+    pipeline.semantic_router = SemanticRouter(
+        router_client,
+        ModelConfig("ministral-8b-2512", max_output_tokens=96),
+    )
+
+    result = asyncio.run(
+        pipeline.run(
+            "Ich brauche erstmal Orientierung für eine Abdichtung.",
+            tenant=TenantContext("tenant-1"),
+            session=SessionContext("case-1"),
+        )
+    )
+
+    assert result.route_name == "unsupported_or_ambiguous"
+    assert len(router_client.calls) == 1
+    assert pipeline.retriever.calls == 0
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert result.answer.text.count("?") == 1
+    assert "eindeutigen Aufgabe" in result.answer.text
+    assert "Technische Einordnung" not in result.answer.text
+
+
 def test_bare_application_case_uses_deterministic_bounded_clarification() -> None:
     pipeline, _helper, standard, frontier = _pipeline(evidence_count=8)
 

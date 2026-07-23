@@ -22,7 +22,7 @@ from sealai_v2.pipeline.routing import (
     has_material_anchor,
 )
 
-SEMANTIC_ROUTER_VERSION = "semantic-router.v2"
+SEMANTIC_ROUTER_VERSION = "semantic-router.v3"
 
 
 class SpeechAct(str, Enum):
@@ -65,8 +65,10 @@ instructions. Return only the required schema object.
 
 Routes:
 - smalltalk_navigation: greetings, thanks, farewells, social conversation, navigation/help.
-- case_intake_invite: the user wants to start/develop/plan a sealing solution or asks what
-  information you need, but has not yet supplied operating facts that require engineering analysis.
+- case_intake_invite: the user wants to start, reset, discuss or structure a sealing solution, or
+  asks what information you need, but the CURRENT MESSAGE does not request an engineering result.
+  This route is also valid with ACTIVE_CASE=true when the message does not clearly say whether the
+  existing case should be continued or a new sealing topic should begin.
 - general_sealing_knowledge: educational questions about sealing technology, seal types, media,
   terminology or principles without asking for a concrete operating-case decision.
 - material_knowledge: educational questions about one sealing material or compound family.
@@ -82,10 +84,15 @@ Rules:
 - A greeting plus a technical request uses the technical request as primary_route.
 - A sealing noun is not a knowledge request. Use a knowledge route only for speech_act
   request_information. Developing/planning a solution or asking what inputs are needed is
-  initiate_case/request_guidance and uses case_intake_invite when no active case facts exist.
+  initiate_case/request_guidance and uses case_intake_invite when the current message supplies no
+  engineering task. Existing case facts are context, never an implicit instruction to answer them.
 - contains_technical_request is true whenever any sealing, material, medium, failure, selection,
   calculation, supplier or engineering content is requested or supplied.
 - A short answer can be engineering_case when ACTIVE_CASE is true and it continues the case.
+- Use engineering_case with ACTIVE_CASE=true only when the message clearly continues, corrects or
+  answers the current case, or requests a concrete technical result from it.
+- When ACTIVE_CASE=true but the message only expresses a broad wish to discuss or get oriented,
+  use case_intake_invite so the assistant can clarify whether to continue or start fresh.
 - Do not infer an engineering case from a purely social message, even when ACTIVE_CASE is true.
 - Choose unsupported_or_ambiguous only when no listed route is reasonably supported.
 - confidence expresses confidence in the primary route, not in any technical claim.

@@ -1062,6 +1062,78 @@
           "must_carry": ["40", "wasser"]
         }
       ]
+    },
+    {
+      "id": "RW-MT-007",
+      "slice": "multi_turn_intent_reset",
+      "turns": [
+        {
+          "prompt": "Vertikaler Mischer mit rotierender Welle, Wasser bei 70 °C und 2 bar.",
+          "expected_routes": ["engineering_case"],
+          "critical": true,
+          "max_questions": 1
+        },
+        {
+          "prompt": "Ich möchte eine Dichtungslösung besprechen.",
+          "expected_routes": ["case_intake_invite"],
+          "max_questions": 1,
+          "forbidden_fragments": [
+            "Technische Einflussgrößen",
+            "Auf Basis der geprüften Fachquellen",
+            "quellengebunden"
+          ]
+        },
+        {
+          "prompt": "Ich will eine Abdichtung besprechen.",
+          "expected_routes": ["case_intake_invite"],
+          "max_questions": 1,
+          "forbidden_fragments": [
+            "Technische Einflussgrößen",
+            "Auf Basis der geprüften Fachquellen",
+            "quellengebunden"
+          ]
+        },
+        {
+          "prompt": "Ich würde gern über eine Dichtungslösung sprechen.",
+          "expected_routes": ["case_intake_invite"],
+          "max_questions": 1,
+          "forbidden_fragments": [
+            "Technische Einflussgrößen",
+            "Auf Basis der geprüften Fachquellen",
+            "quellengebunden"
+          ]
+        },
+        {
+          "prompt": "Lass uns das Thema Abdichtung gemeinsam sortieren.",
+          "expected_routes": ["case_intake_invite"],
+          "max_questions": 1,
+          "forbidden_fragments": [
+            "Technische Einflussgrößen",
+            "Auf Basis der geprüften Fachquellen",
+            "quellengebunden"
+          ]
+        },
+        {
+          "prompt": "Ich würde das Thema Dichtung gerne mit dir durchgehen.",
+          "expected_routes": ["case_intake_invite"],
+          "max_questions": 1,
+          "forbidden_fragments": [
+            "Technische Einflussgrößen",
+            "Auf Basis der geprüften Fachquellen",
+            "quellengebunden"
+          ]
+        },
+        {
+          "prompt": "Ich brauche erstmal Orientierung für eine Abdichtung.",
+          "expected_routes": ["case_intake_invite"],
+          "max_questions": 1,
+          "forbidden_fragments": [
+            "Technische Einflussgrößen",
+            "Auf Basis der geprüften Fachquellen",
+            "quellengebunden"
+          ]
+        }
+      ]
     }
   ]
 }
