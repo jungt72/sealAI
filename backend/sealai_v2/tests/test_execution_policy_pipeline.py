@@ -985,6 +985,45 @@ def test_reviewed_archetype_expands_only_the_retrieval_query_for_solution_work()
     assert any("# Erkannte Maschinen-Art: getriebe" in system for system in called_systems)
 
 
+def test_mixer_first_turn_uses_reviewed_archetype_instead_of_generic_evidence_dump():
+    pipeline, helper, standard, frontier = _pipeline(evidence_count=8)
+    pipeline.archetypes = load_archetypes()
+    pipeline.generator = L1Generator(
+        frontier,
+        PromptAssembler(),
+        ModelConfig("frontier"),
+        structured_output_enabled=True,
+    )
+    pipeline.frontier_generator = pipeline.generator
+    pipeline.standard_generator = L1Generator(
+        standard,
+        PromptAssembler(),
+        ModelConfig("standard"),
+        structured_output_enabled=True,
+    )
+
+    result = asyncio.run(
+        pipeline.run(
+            "Vertikaler Mischer mit rotierender Welle, Wasser bei 70 °C und 2 bar.",
+            tenant=TenantContext("tenant-1"),
+        )
+    )
+
+    assert result.route_name == "engineering_case"
+    assert result.answer.finish_reason == "deterministic_reviewed_archetype"
+    assert helper.calls == standard.calls == frontier.calls == []
+    assert "Prozessmedium" in result.answer.text
+    assert "Trockenlauf" in result.answer.text
+    assert "Wellenauslenkung" in result.answer.text
+    assert "O-Ring" not in result.answer.text
+    assert "Welches Prozessmedium" not in result.answer.text
+    assert "Hygiene-/Reinigungsregime" in result.answer.text
+    assert result.answer.text.count("?") == 1
+    assert "ARCHETYPE-RUEHRWERK" in {
+        fact.card_id for fact in result.grounding_facts
+    }
+
+
 def test_solution_direction_paraphrase_reaches_grounded_solution_synthesis_end_to_end():
     pipeline, helper, standard, frontier = _pipeline()
     pipeline.retriever = _GlrdSolutionRetriever()

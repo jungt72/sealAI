@@ -36,6 +36,17 @@ _DEFAULT_FILE = _SEED_DIR / "archetypes_seed.json"
 _REVIEW_STATES = ("reviewed", "draft")
 # provenance prefixes that establish path (i) owner-grounding (no external source needed)
 _OWNER_PROV_PREFIXES = ("owner", "trap-correct:", "trap:", "eval:")
+_ARCHETYPE_ALIASES: dict[str, tuple[str, ...]] = {
+    "ruehrwerk": (
+        "ruehrwerk",
+        "rührwerk",
+        "mischer",
+        "mischwerk",
+        "rührer",
+        "ruehrer",
+        "agitator",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -168,6 +179,11 @@ def _fold_archetype_text(value: str) -> str:
     )
 
 
+def _profile_aliases(profile: ArchetypeProfile) -> tuple[str, ...]:
+    aliases = _ARCHETYPE_ALIASES.get(profile.key, (profile.key,))
+    return tuple(dict.fromkeys(_fold_archetype_text(alias) for alias in aliases))
+
+
 def exact_reviewed_archetype(
     question: str, catalog: ArchetypeCatalog | None
 ) -> ArchetypeProfile | None:
@@ -185,19 +201,27 @@ def exact_reviewed_archetype(
     normalized = _fold_archetype_text(question)
     matches: list[ArchetypeProfile] = []
     for profile in catalog.reviewed():
-        key = _fold_archetype_text(profile.key)
-        if re.search(rf"(?<![a-z0-9]){re.escape(key)}(?![a-z0-9])", normalized):
+        if any(
+            re.search(
+                rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])",
+                normalized,
+            )
+            for alias in _profile_aliases(profile)
+        ):
             matches.append(profile)
     if len(matches) <= 1:
         return matches[0] if matches else None
 
     targeted: list[ArchetypeProfile] = []
     for profile in matches:
-        key = _fold_archetype_text(profile.key)
-        if re.search(
-            rf"\b(?:bei|in|fuer)\s+mein(?:e[mnrs]?|em|en|er|es)?\s+{re.escape(key)}\b|"
-            rf"\bmein(?:e[mnrs]?|em|en|er|es)?\s+{re.escape(key)}\b",
-            normalized,
+        if any(
+            re.search(
+                rf"\b(?:bei|in|fuer)\s+mein(?:e[mnrs]?|em|en|er|es)?\s+"
+                rf"{re.escape(alias)}\b|"
+                rf"\bmein(?:e[mnrs]?|em|en|er|es)?\s+{re.escape(alias)}\b",
+                normalized,
+            )
+            for alias in _profile_aliases(profile)
         ):
             targeted.append(profile)
     return targeted[0] if len(targeted) == 1 else None

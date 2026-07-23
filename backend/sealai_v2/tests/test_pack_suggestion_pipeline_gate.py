@@ -96,6 +96,25 @@ def test_execution_policy_can_resolve_exact_reviewed_archetype_without_understan
     )
 
 
+def test_mixer_alias_resolves_to_the_reviewed_ruehrwerk_profile():
+    p = _pipeline(pack_suggestion_enabled=False)
+    p.archetypes = load_archetypes()
+
+    context = p._archetype_context(
+        None,
+        question="Vertikaler Mischer mit rotierender Welle und Prozessmedium Wasser.",
+    )
+    facts = reviewed_archetype_grounding_facts(
+        "Vertikaler Mischer mit rotierender Welle und Prozessmedium Wasser.",
+        p.archetypes,
+    )
+
+    assert context is not None
+    assert context["archetyp"] == "ruehrwerk"
+    assert facts
+    assert all(fact.card_id == "ARCHETYPE-RUEHRWERK" for fact in facts)
+
+
 def test_exact_archetype_resolution_does_not_guess_from_a_partial_word():
     p = _pipeline(pack_suggestion_enabled=False)
     p.archetypes = load_archetypes()

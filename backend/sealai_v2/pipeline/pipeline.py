@@ -196,6 +196,64 @@ def _reviewed_archetype_retrieval_query(
     return question + "\n" + " ".join(dict.fromkeys(additions))
 
 
+def _archetype_question_already_answered(
+    candidate: str,
+    *,
+    current_question: str,
+    case_state: CaseStateV2,
+) -> bool:
+    """Skip reviewed interview questions whose requested facts are already present."""
+
+    prompt = candidate.casefold()
+    known = " ".join(
+        [
+            current_question,
+            *(
+                f"{field.key} {field.value or ''}"
+                for field in case_state.fields
+                if field.value
+            ),
+        ]
+    ).casefold()
+    checks: list[bool] = []
+    if re.search(r"\b(?:prozessmedium|medium|[oö]l)\b", prompt):
+        checks.append(
+            bool(extract_medium_facts(known))
+            or bool(
+                re.search(
+                    r"\b(?:wasser|luft|gas|produkt|prozessfl[uü]ssigkeit)\b",
+                    known,
+                )
+            )
+        )
+    if "temperatur" in prompt:
+        checks.append(
+            bool(
+                re.search(r"\b-?\d+(?:[.,]\d+)?\s*°?\s*c\b", known)
+                or re.search(r"\btemperatur\s+\S+", known)
+            )
+        )
+    if re.search(r"\b(?:druck|vakuum)\b", prompt):
+        checks.append(
+            bool(
+                re.search(r"\b\d+(?:[.,]\d+)?\s*bar\b", known)
+                or re.search(r"\b(?:vakuum|unterdruck|drucklos)\b", known)
+            )
+        )
+    if re.search(r"\b(?:additiv|spezifikation)\w*\b", prompt):
+        checks.append(
+            bool(re.search(r"\b(?:additiv|ep/aw|spezifikation)\w*\b", known))
+        )
+    if "konzentration" in prompt:
+        checks.append(
+            bool(
+                re.search(r"\b\d+(?:[.,]\d+)?\s*%", known)
+                or re.search(r"\b(?:rein(?:es)?|wasser)\b", known)
+            )
+        )
+    return bool(checks) and all(checks)
+
+
 def _requested_calculation_missing_fields(
     question: str, calc: CalcResult
 ) -> tuple[str, ...]:
@@ -1805,8 +1863,20 @@ class Pipeline:
                     for item in archetype_context.get("interview_fragen", ())
                     if str(item).strip()
                 )
-                if archetype_questions:
-                    communication_plan["next_question"] = archetype_questions[0]
+                next_archetype_question = next(
+                    (
+                        candidate
+                        for candidate in archetype_questions
+                        if not _archetype_question_already_answered(
+                            candidate,
+                            current_question=question,
+                            case_state=case_state_v2,
+                        )
+                    ),
+                    "",
+                )
+                if next_archetype_question:
+                    communication_plan["next_question"] = next_archetype_question
                     communication_plan["question_reason"] = (
                         "Diese Angabe trennt im erkannten Anwendungstyp zuerst die technisch "
                         "relevanten Lösungswege."

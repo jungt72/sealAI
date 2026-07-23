@@ -32,6 +32,7 @@ def test_realworld_suite_covers_vague_intent_inside_an_active_case() -> None:
     dialogue = next(item for item in suite.dialogues if item.id == "RW-MT-007")
 
     assert dialogue.turns[0].expected_routes == ("engineering_case",)
+    assert "ISO 3601 trennt" in dialogue.turns[0].forbidden_fragments
     assert len(dialogue.turns[1:]) == 6
     assert all(
         turn.expected_routes == ("case_intake_invite",)
