@@ -215,6 +215,75 @@ def test_inprocess_retrieval_returns_deep_rwdr_profile() -> None:
     )
 
 
+def test_a_fact_spanning_two_sections_facets_is_assigned_to_only_one() -> None:
+    """2026-07-23 production bug: a single reviewed claim whose facets span two
+    different sections (here: definition/mechanism AND limits/failure_modes) used to be
+    shown to the LLM as one undifferentiated list, with no rule against citing it under
+    more than one heading -- and it was, verbatim, in a real production answer. The plan
+    must now assign each fact to exactly one section (its first facet-matching section in
+    plan order), so the same fact can never appear under two headings in the same answer.
+    """
+    dual_facet_fact = GroundingFact(
+        text=(
+            "Die Gegenlauffläche darf keinen gerichteten Drall tragen, weil "
+            "Bearbeitungsspuren selbst Medium unter der Lippe fördern können."
+        ),
+        quelle="Trelleborg Auswahlleitfaden",
+        card_id="FK-RWDR-GEGENLAUF",
+        claim_kind="safety_caution",
+        answer_facets=("definition", "mechanism", "limits", "failure_modes"),
+    )
+    unrelated_fact = GroundingFact(
+        text="Glas- und Kohlenstofffuellstoffe veraendern Kriechneigung und Reibung.",
+        quelle="Parker O-Ring Handbook",
+        card_id="FK-FILLERS",
+        claim_kind="family_tendency",
+        answer_facets=("variants", "tradeoffs"),
+    )
+
+    plan = build_knowledge_answer_plan(
+        "kannst du mir helfen eine dichtung zu entwerfen?",
+        grounding_facts=(dual_facet_fact, unrelated_fact),
+        route_name="general_sealing_knowledge",
+    )
+
+    assert plan is not None
+    plan_dict = plan.to_dict()
+    sections_with_dual_fact = [
+        section["heading"]
+        for section in plan_dict["sections"]
+        if any(f["card_id"] == "FK-RWDR-GEGENLAUF" for f in section["facts"])
+    ]
+    assert len(sections_with_dual_fact) == 1, sections_with_dual_fact
+    assert plan_dict["unassigned_facts"] == []
+
+
+def test_fact_matching_no_section_facet_is_kept_visible_as_unassigned() -> None:
+    """A fact whose facets match none of the plan's required section facets must still be
+    surfaced (not silently dropped) -- just without a pre-assigned heading."""
+    stray_fact = GroundingFact(
+        text="Nicht klassifizierbarer Nebenfakt.",
+        quelle="source",
+        card_id="FK-STRAY",
+        answer_facets=(),
+        claim_kind="",
+    )
+    plan = build_knowledge_answer_plan(
+        "Details zu PTFE",
+        material_terms=("PTFE",),
+        grounding_facts=(stray_fact,),
+        route_name="material_knowledge",
+    )
+
+    assert plan is not None
+    plan_dict = plan.to_dict()
+    assert [f["card_id"] for f in plan_dict["unassigned_facts"]] == ["FK-STRAY"]
+    assert all(
+        not any(f["card_id"] == "FK-STRAY" for f in section["facts"])
+        for section in plan_dict["sections"]
+    )
+
+
 def test_case_specific_rwdr_retrieval_is_facet_balanced_and_bounded() -> None:
     import asyncio
 
