@@ -1786,6 +1786,7 @@ class Pipeline:
                     else policy_missing_fields
                 ),
                 conflicts=policy_conflicts,
+                solution_requested=solution_requested,
             )
             communication_plan = _communication_plan.to_dict()
             communication_plan["general_material_orientation"] = (

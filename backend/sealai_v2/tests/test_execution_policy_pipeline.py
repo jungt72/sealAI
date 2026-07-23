@@ -84,6 +84,32 @@ class _TrapOnlyRetriever:
         )
 
 
+class _GlrdSolutionRetriever:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.queries: list[str] = []
+
+    async def retrieve(self, query, *, tenant_id, k=5):
+        self.calls += 1
+        self.queries.append(query)
+        return RetrievalResult(
+            grounding_facts=(
+                GroundingFact(
+                    text=(
+                        "Bei anspruchsvollen Medien ist das Versorgungssystem Teil der "
+                        "Dichtfunktion; Puffer- oder Sperrmedium, Umwälzung und Kühlung "
+                        "müssen zur Anordnung passen."
+                    ),
+                    quelle="reviewed-profile",
+                    card_id="FK-GLRD-ENGINEERING-PROFILE",
+                    claim_id="GLRD-SUPPLY",
+                    sources=("primary-source",),
+                    answer_facets=("design_interfaces", "operating_factors"),
+                ),
+            )
+        )
+
+
 class _RequiredMissingMemory:
     # Every RWDR-required field EXCEPT betriebstemperatur is already confirmed, so
     # pipeline.py's stage-2 wiring (core/interview/policy.py::compute_required_missing)
@@ -864,6 +890,25 @@ def test_reviewed_archetype_expands_only_the_retrieval_query_for_solution_work()
     ]
     assert any("EP/AW-Additive" in system for system in called_systems)
     assert any("# Erkannte Maschinen-Art: getriebe" in system for system in called_systems)
+
+
+def test_solution_direction_paraphrase_reaches_grounded_solution_synthesis_end_to_end():
+    pipeline, helper, standard, frontier = _pipeline()
+    pipeline.retriever = _GlrdSolutionRetriever()
+    question = (
+        "Die Gleitringdichtung am Mischer wird mit abrasivem Medium bei 145 °C heiß "
+        "und leckt. Entwickle bitte eine sinnvolle Lösungsrichtung."
+    )
+
+    result = asyncio.run(pipeline.run(question, tenant=TenantContext("tenant-1")))
+
+    assert result.route_name == "leakage_troubleshooting"
+    assert helper.calls == standard.calls == []
+    assert len(frontier.calls) == 1
+    assert result.turn_state.model_tier == "frontier"
+    assert result.turn_state.verification_mode == "claim_llm"
+    assert "provisional_solution_direction" in frontier.systems[0]
+    assert "Welches konkrete Medium" in frontier.systems[0]
 
 
 def test_active_unknown_scope_guidance_uses_case_without_rag_or_reasking_known_fact():

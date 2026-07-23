@@ -825,7 +825,9 @@ def _deterministic_evidence_answer(
                 )
             )
             selected_evidence = diagnostic_evidence
-        selected_evidence = selected_evidence[: (2 if nbr_thermal_aging else 1)]
+        selected_evidence = selected_evidence[
+            : (3 if work_solution_candidate else (2 if nbr_thermal_aging else 1))
+        ]
         missing = []
         if nbr_thermal_aging and nbr_thermal_evidence:
             conclusion = (
@@ -835,6 +837,74 @@ def _deterministic_evidence_answer(
                 "HNBR oder FKM zu bewerten; Medium und Additive bleiben als mögliche Verstärker "
                 "separat zu prüfen. Die endgültige Werkstofffreigabe muss der Hersteller oder die "
                 "zuständige Fachstelle bestätigen."
+            )
+        elif work_solution_candidate and any(
+            fact.card_id == "FK-GLRD-ENGINEERING-PROFILE"
+            for fact in evidence_facts.values()
+        ):
+            abrasive = bool(
+                re.search(
+                    r"\b(?:abrasiv\w*|feststoff\w*|partikel\w*|schlamm\w*|"
+                    r"kristall\w*)\b",
+                    normalized,
+                )
+            )
+            viscous = bool(
+                re.search(r"\b(?:z[aä]hfl[uü]ssig\w*|viskos\w*)\b", normalized)
+            )
+            intermittent = bool(
+                re.search(
+                    r"\b(?:intermittierend\w*|start\w*|stopp\w*|takt\w*)\b",
+                    normalized,
+                )
+            )
+            thermal_or_pressure_stress = bool(
+                re.search(
+                    r"\b(?:hei[sß]\w*|unterdruck\w*|vakuum\w*|"
+                    r"\d+(?:[.,]\d+)?\s*°?\s*c)\b",
+                    normalized,
+                )
+            )
+            priorities = []
+            if abrasive:
+                priorities.append(
+                    "abrasiven Verschleiß beziehungsweise Feststoffeintrag"
+                )
+            if viscous or intermittent:
+                priorities.append(
+                    "eine unzureichende Dichtspaltversorgung bis hin zu "
+                    "Schmierfilmabriss oder Trockenlauf"
+                )
+            if thermal_or_pressure_stress:
+                priorities.append(
+                    "das reale Temperatur-/Druckprofil einschließlich Verdampfen oder Flashing"
+                )
+            priority_text = (
+                ", ".join(priorities[:-1]) + " und " + priorities[-1]
+                if len(priorities) > 1
+                else priorities[0]
+                if priorities
+                else "Schmierfilm, Wärmehaushalt und den realen Versagenspfad"
+            )
+            conclusion = (
+                "Das Fehlerbild lässt sich bereits sinnvoll priorisieren: Zuerst sind "
+                f"{priority_text} zu prüfen; ein isolierter Werkstoffwechsel würde die "
+                "Systemursache wahrscheinlich nicht beheben. Als vorläufige Lösungsrichtung "
+                "sollte deshalb die Dichtungsumgebung stabilisiert werden. Wenn Befund und "
+                "Medium diese Mechanismen bestätigen, ist eine an das Medium angepasste "
+                "Gleitringdichtungs-Ausführung zusammen mit einem abgestimmten Puffer-, Sperr-, "
+                "Spül- oder Kühlkonzept zu bewerten; Gleitflächenpaarung und "
+                "Sekundärdichtungen folgen erst aus dieser Systementscheidung. Das ist ein "
+                "prüfpflichtiger Kandidatenraum, keine Freigabe."
+            )
+        elif work_solution_candidate:
+            conclusion = (
+                "Die bekannten Betriebs- und Schadensangaben reichen aus, um den Lösungsraum "
+                "vorläufig zu priorisieren: Zuerst ist der tatsächliche Versagensmechanismus "
+                "gegen Schmierung, Wärmehaushalt, Gegenlauffläche und Einbauschnittstellen zu "
+                "prüfen. Die belastbare Abhilfe ist anschließend als System aus Dichtungsbauform, "
+                "Werkstoffpaarung und Betriebsumgebung zu entwickeln, nicht als isolierter "
+                "Werkstofftausch. Das ist eine zu verifizierende Lösungsrichtung, keine Freigabe."
             )
         else:
             conclusion = (
@@ -1392,6 +1462,7 @@ class L1Generator:
                 and require_evidence_for_all_claims
                 and evidence_facts
                 and (communication_plan or {}).get("goal") == "diagnose_failure"
+                and not work_solution_candidate
             ):
                 technical = _deterministic_evidence_answer(
                     question=evidence_query or question,
@@ -1682,6 +1753,7 @@ class L1Generator:
                 if compact_technical_answer:
                     diagnose_failure = bool(
                         (communication_plan or {}).get("goal") == "diagnose_failure"
+                        and not work_solution_candidate
                     )
                     priority = {
                         "decision_relevant": 0,

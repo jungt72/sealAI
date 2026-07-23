@@ -155,6 +155,24 @@ def test_leakage_plan_supplies_one_discriminating_question_without_case_gaps() -
     assert "Montagefehler" in plan.question_reason
 
 
+def test_solution_oriented_process_diagnosis_keeps_solution_goal_and_case_discriminator() -> None:
+    plan = build_communication_plan(
+        question=(
+            "Die Gleitringdichtung am Mischer wird bei abrasivem, zähflüssigem Medium heiß "
+            "und leckt. Entwickle eine sinnvolle Lösungsrichtung."
+        ),
+        route_name="leakage_troubleshooting",
+        solution_requested=True,
+    )
+
+    assert plan.goal == "diagnose_failure"
+    assert plan.depth == "normal"
+    assert "provisional_solution_direction" in plan.must_include
+    assert "Welches konkrete Medium" in plan.next_question
+    assert "Feststoffanteil" in plan.next_question
+    assert plan.max_questions == 1
+
+
 def test_environmental_nbr_cracks_get_a_cause_specific_next_step() -> None:
     plan = build_communication_plan(
         question="NBR-Dichtung im Freien mit feinen Rissen an der Außenfläche: Ursache?",

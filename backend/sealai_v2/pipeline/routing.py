@@ -222,15 +222,28 @@ _ROTATING_SPEED_CONTEXT_RE = re.compile(
 # generic intake interview.  Cover speech acts, not one benchmark sentence.
 _SOLUTION_REQUEST_RE = re.compile(
     r"(?:\b(?:dichtungsl[öo]sung|l[öo]sungs(?:ansatz|weg|vorschlag)|"
-    r"ansatz|ausleg(?:en|ung)|konzept|empfehl(?:en|ung))\b|"
+    r"l[öo]sungs(?:richtung|strategie|option|raum)|"
+    r"ansatz|ausleg(?:en|ung)|konzept|empfehl(?:en|ung)|abhilfe|"
+    r"abstellma[sß]nahme|vorgehensweise)\b|"
     r"\bwelche(?:r|s)?\s+(?:dichtung|dichtungsart|bauform|werkstoff|material)\b|"
     r"\bwas\s+w(?:ä|ae)re\b[^?!.]{0,80}\bsinnvoll\b|"
     r"\bwas\s+ist\b[^?!.]{0,80}\boptimal\b|"
     r"\boptimale?\s+(?:dichtung|dichtungsl[öo]sung|l[öo]sung|auslegung)\b|"
     r"\bwie\s+w(?:ü|ue)rdest\s+du\b[^?!.]{0,80}\b(?:lösen|loesen|auslegen)\b|"
+    r"\b(?:entwickle|erarbeite|skizziere|zeige|nenne)\b[^?!.]{0,100}"
+    r"\b(?:l[öo]sung|l[öo]sungsrichtung|l[öo]sungsweg|vorgehen|"
+    r"ma[sß]nahme|abhilfe)\b|"
+    r"\b(?:wie|womit)\b[^?!.]{0,80}\b(?:beheben|abstellen|l[öo]sen)\b|"
     r"\bworauf\s+sollte\s+ich\s+bei\s+(?:der|einer)\s+"
     r"(?:werkstoff|material)(?:wahl|auswahl)\s+achten\b|"
     r"\b(?:werkstoff|material)\b[^?!.]{0,50}\bpasst\b)",
+    re.IGNORECASE,
+)
+_SOLUTION_REJECTION_RE = re.compile(
+    r"\b(?:noch\s+)?keine?\b[^?!.]{0,35}\b(?:l[öo]sung|l[öo]sungsweg|"
+    r"empfehlung|abhilfe|ma[sß]nahmen?)\b|"
+    r"\bohne\b[^?!.]{0,25}\b(?:l[öo]sung|empfehlung|abhilfe)\b|"
+    r"\b(?:nur|ausschlie[sß]lich)\b[^?!.]{0,35}\b(?:ursache|diagnose|analyse)\b",
     re.IGNORECASE,
 )
 
@@ -850,7 +863,10 @@ def requests_solution(question: str) -> bool:
     remain the sole authorities for what the answer may claim.
     """
 
-    return bool(_SOLUTION_REQUEST_RE.search(question or ""))
+    text = question or ""
+    return bool(
+        _SOLUTION_REQUEST_RE.search(text) and not _SOLUTION_REJECTION_RE.search(text)
+    )
 
 
 def _has_material_topic(question: str, material_terms: tuple[str, ...] = ()) -> bool:

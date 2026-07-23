@@ -1334,6 +1334,74 @@ def test_diagnostic_evidence_preempts_model_and_uses_one_governed_question():
     assert len(client.calls) == 0
 
 
+def test_solution_oriented_glrd_diagnosis_uses_synthesis_and_actionable_fallback():
+    client = FakeLlmClient(_payload(evidence_ids=[]))
+    question = (
+        "Die Gleitringdichtung am vertikalen Mischer wird mit abrasivem, zähflüssigem "
+        "Medium bei 145 °C, Unterdruck und intermittierendem Betrieb heiß und leckt. "
+        "Entwickle eine sinnvolle Lösungsrichtung."
+    )
+    communication_plan = build_communication_plan(
+        question=question,
+        route_name="leakage_troubleshooting",
+        solution_requested=True,
+    )
+    answer = asyncio.run(
+        _generator(client).generate(
+            question,
+            flags=Flags(),
+            grounding_facts=(
+                GroundingFact(
+                    "Dominante Versagensmechanismen sind Schmierfilmabriss/Trockenlauf, "
+                    "Verdampfen oder Flashing im Dichtspalt und abrasiver Verschleiß durch "
+                    "Feststoffe.",
+                    "reviewed profile",
+                    card_id="FK-GLRD-ENGINEERING-PROFILE",
+                    claim_id="GLRD-FAILURE",
+                    sources=("primary-source",),
+                    answer_facets=("failure_modes", "mechanism"),
+                ),
+                GroundingFact(
+                    "Bei anspruchsvollen Medien ist das Versorgungssystem Teil der "
+                    "Dichtfunktion; Puffer- oder Sperrmedium, Umwälzung, Kühlung und "
+                    "Überwachung müssen zur Anordnung passen.",
+                    "reviewed profile",
+                    card_id="FK-GLRD-ENGINEERING-PROFILE",
+                    claim_id="GLRD-SUPPLY",
+                    sources=("primary-source",),
+                    answer_facets=(
+                        "design_interfaces",
+                        "operating_factors",
+                        "variants",
+                    ),
+                ),
+                GroundingFact(
+                    "Medium, Viskosität, Phasenzustand, Feststoffe, Dichtungsraumdruck, "
+                    "Temperatur und Starts oder Stopps sind gemeinsam zu bewerten.",
+                    "reviewed profile",
+                    card_id="FK-GLRD-ENGINEERING-PROFILE",
+                    claim_id="GLRD-INPUTS",
+                    sources=("primary-source",),
+                    answer_facets=("selection_inputs", "operating_factors"),
+                ),
+            ),
+            communication_plan=communication_plan.to_dict(),
+            require_evidence_for_all_claims=True,
+            compact_technical_answer=True,
+            work_solution_candidate=True,
+            case_revision=7,
+        )
+    )
+
+    assert len(client.calls) == 2
+    assert "Systemursache" in answer.text
+    assert "Dichtungsumgebung stabilisiert" in answer.text
+    assert "Sperr-" in answer.text and "Kühlkonzept" in answer.text
+    assert "Welches konkrete Medium" in answer.text
+    assert "bloße Materialliste" not in answer.text
+    assert answer.finish_reason == "deterministic_evidence_fallback"
+
+
 def test_hardened_nbr_diagnostic_prefers_thermal_and_oil_evidence():
     client = FakeLlmClient(_payload())
     question = "Der NBR-RWDR ist hart und rissig. Was tun?"

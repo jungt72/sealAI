@@ -66,7 +66,7 @@ PROTECTED_HASHES = {
         "a285ed7ad58e2fdee5b6a11793b4f88dff4f708510b510424a2090a32a3e1453"
     ),
     "backend/sealai_v2/pipeline/pipeline.py": (
-        "705efced22707ab6c2ade3ab9b962dcd661ecc42eab41c6014490aae2aede433"
+        "b6022b2fe9b938aeabc21a5ef88bdfcf0e9ff43b4289ffd7620ec563f3dea4fb"
     ),
     "backend/sealai_v2/pipeline/stages.py": (
         "40b36ef33d0e7ad0ff1a2b8119b1420a7cfbe4c918b0a312f7e5520407e9be67"

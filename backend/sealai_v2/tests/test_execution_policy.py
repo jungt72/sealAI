@@ -74,6 +74,15 @@ def test_solution_request_recognises_goal_not_one_literal_sentence():
         requests_solution("Welcher Werkstoff passt unter diesen Bedingungen?") is True
     )
     assert requests_solution("Leckage null – was ist hier optimal?") is True
+    assert requests_solution("Entwickle bitte eine sinnvolle Lösungsrichtung.") is True
+    assert (
+        requests_solution("Wie können wir die wiederkehrende Leckage beheben?") is True
+    )
+    assert requests_solution("Welche Abstellmaßnahme würdest du prüfen?") is True
+    assert (
+        requests_solution("Analysiere nur die Ursache und nenne noch keine Lösung.")
+        is False
+    )
     assert requests_solution("Was ist ein RWDR?") is False
 
 

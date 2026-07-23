@@ -135,6 +135,15 @@ _DYNAMIC_TIGHTNESS_TARGET_RE = re.compile(
     r"\b(?:maximale\s+dichtheit|leckage\s*(?:null|0)|leckagefrei\w*)\b",
     re.IGNORECASE,
 )
+_PROCESS_SEAL_STRESS_RE = re.compile(
+    r"\b(?:gleitringdichtung|gleitdichtung|glrd|r[uü]hrwerk|mischer|reaktor)\w*\b",
+    re.IGNORECASE,
+)
+_ABRASIVE_OR_VISCOUS_RE = re.compile(
+    r"\b(?:abrasiv\w*|feststoff\w*|partikel\w*|schlamm\w*|kristall\w*|"
+    r"z[aä]hfl[uü]ssig\w*|viskos\w*)\b",
+    re.IGNORECASE,
+)
 
 
 def _next_case_question(
@@ -164,6 +173,7 @@ def build_communication_plan(
     case_fields: tuple[str, ...] = (),
     missing_fields: tuple[str, ...] = (),
     conflicts: tuple[str, ...] = (),
+    solution_requested: bool = False,
 ) -> CommunicationPlan:
     """Build the single, deterministic communication contract for this turn."""
 
@@ -265,6 +275,8 @@ def build_communication_plan(
             "cause_before_replacement",
             "next_diagnostic_step",
         )
+        if solution_requested:
+            diagnostic_must_include += ("provisional_solution_direction",)
         if _NBR_ENVIRONMENTAL_CRACK_RE.search(question):
             next_question = (
                 "Kommt die betroffene Außenfläche zusätzlich mit Öl oder Fett in Kontakt, "
@@ -297,6 +309,21 @@ def build_communication_plan(
                 "next_diagnostic_step",
                 "application_contrast",
             )
+            if solution_requested:
+                diagnostic_must_include += ("provisional_solution_direction",)
+        elif (
+            solution_requested
+            and _PROCESS_SEAL_STRESS_RE.search(question)
+            and _ABRASIVE_OR_VISCOUS_RE.search(question)
+        ):
+            next_question = (
+                "Welches konkrete Medium liegt an der Dichtstelle an, einschließlich "
+                "Feststoffanteil und typischer Partikelgröße?"
+            )
+            reason = (
+                "Damit lassen sich Abrasionsrisiko, Schmierfähigkeit und Phasenverhalten "
+                "zuerst gegen den passenden Dichtungs- und Versorgungspfad prüfen."
+            )
         elif not next_question:
             next_question = (
                 "Trat die Leckage direkt nach Montage oder erst nach Betriebszeit auf, und "
@@ -309,7 +336,7 @@ def build_communication_plan(
         return CommunicationPlan(
             goal="diagnose_failure",
             response_moves=("answer", "explain", "clarify", "justify"),
-            depth="brief",
+            depth="normal" if solution_requested else "brief",
             answer_first=True,
             max_questions=1,
             case_bound=True,
