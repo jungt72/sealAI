@@ -481,3 +481,52 @@ public API/frontend output, production migration, activation or deployment.
 All material flags remain false and sampling remains zero. MAT-GOV-03C and dark
 staging remain separate gates until at least one complete immutable
 AI-cross-reviewed non-authoritative disqualify-only pack exists.
+
+Execution evidence does not amend this decision: RP-001 produced one
+deterministic six-rule `ai_draft`, but the initial Claude transport and the
+owner-authorized fresh retry both exited before a result envelope. Both are
+registered as `REVIEW_INCOMPLETE` with zero persisted challenges and
+adjudications. Neither is a Claude verdict or satisfies the first-pack gate.
+The retry is exhausted; any later transport requires a new identical review job
+and transport identity.
+
+## ODR-MATERIAL-INTELLIGENCE-AUTONOMOUS-20260719-07
+
+### Decision
+
+`AUTONOMOUS_MATERIAL_INTELLIGENCE_LEAD_GO` is ratified. Codex owns the
+repository implementation and source-bound curation path and must resolve
+uncertainty from the repository, SSoT and actual primary sources. It must
+quarantine any claim that cannot be established without assumption. Claude
+Sonnet 5 remains the independent formal challenger; advice and formal snapshot
+challenge are separate contracts and neither creates human review or factual
+approval.
+
+The frozen RP-001 audit input was authorized for exactly one fresh transport
+retry. Transport failure is `REVIEW_INCOMPLETE`, never a claim finding or
+verdict. After a repeated failure, the exact input is sealed and a new identical
+review job with a new transport identity is planned while non-blocked
+repository, test and documentation work continues.
+
+### Consequence
+
+At most three factual revisions may be created per claim. Open
+CRITICAL/HIGH/MEDIUM findings after that limit require quarantine. A smaller
+source-stable disqualify-only pack is preferred over unsupported breadth.
+Production migration, production deployment, production sampling, an active
+production pointer, release-freeze bypass, positive material statements and
+use of production as staging remain prohibited.
+
+The authorized retry `rp001-claude-transport-20260719-02` exited with code 1
+before a result envelope. Its input hashes remained exact, and it created zero
+challenge and adjudication rows. Therefore the six candidates remain
+`ai_draft`; no first-pack gate, MAT-GOV-03C gate or dark-staging gate is
+satisfied by this execution evidence.
+
+The bounded transport diagnostic then established the current Claude CLI
+contract and a passing synthetic transport canary. The one authorized third
+formal job produced a valid exact-model envelope with zero web requests and
+permission denials, but no strict JSON report. It is therefore
+`INVALID_REPORT_NO_VERDICT`; no challenge or adjudication was persisted and a
+fourth formal attempt is prohibited. RP-001 remains `ai_draft` and all
+downstream gates remain closed.

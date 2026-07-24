@@ -102,7 +102,7 @@
   "capabilities": {
     "material_constraints": {
       "status": "in_build_default_off",
-      "implementation_status": "mat_evid_ai_review_v1_inert_nonhuman_cross_review_foundation_default_off_sampling_zero",
+      "implementation_status": "mat_evid_ai_review_v1_inert_foundation_with_rp001_ai_draft_invalid_formal_report_no_verdict_default_off_sampling_zero",
       "contract_version": "MAT-RULES-01.v1",
       "ai_review_contract_version": "MAT-EVID-AI-REVIEW.v1",
       "activation_gate": "G8",
@@ -126,6 +126,7 @@
         "docs/architecture/ADR_MAT_RULES_01_REVIEWED_PACK.md",
         "docs/architecture/ADR_MAT_EVID_AI_REVIEW_V1.md",
         "docs/ops/material-evidence-ai-review.md",
+        "docs/ops/material-evidence-ai-review/RP-001_ELASTOMER_MEDIA_EXCLUSIONS_AI_V1/README.md",
         "backend/sealai_v2/core/material_rulesets.py",
         "backend/sealai_v2/core/material_shadow.py",
         "backend/sealai_v2/core/material_evidence.py",
@@ -177,6 +178,8 @@
         "backend/sealai_v2/tests/test_mat_evid_ai_review_domain.py",
         "backend/sealai_v2/tests/test_mat_evid_ai_review_persistence.py",
         "backend/sealai_v2/tests/test_mat_evid_ai_review_runner.py",
+        "backend/sealai_v2/tests/test_rp001_ai_pack.py",
+        "backend/sealai_v2/tests/test_rp001_ai_pack_persistence.py",
         "backend/tests/architecture/test_mat_gov_03a_isolation.py",
         "backend/tests/architecture/test_mat_evid_01a_isolation.py",
         "backend/tests/architecture/test_mat_evid_01b_isolation.py",

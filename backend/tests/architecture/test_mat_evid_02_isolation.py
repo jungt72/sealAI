@@ -103,6 +103,7 @@ def test_only_med_norm_and_ai_review_consume_media_identity_contract() -> None:
         REPO / "backend/sealai_v2/core/material_evidence_ai_review.py",
         REPO / "backend/sealai_v2/db/material_evidence_review_v2.py",
         REPO / "backend/sealai_v2/db/medium_catalog.py",
+        REPO / "backend/sealai_v2/material_evidence_ai_review/rp001_pack.py",
     }
     for path in (REPO / "backend/sealai_v2").rglob("*.py"):
         if path in allowed or "tests" in path.parts:

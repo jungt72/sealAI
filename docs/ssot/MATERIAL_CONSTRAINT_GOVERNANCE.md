@@ -519,6 +519,25 @@ normalization; and the Evidence rule/claim binding set must be exactly equal to
 the reviewed set. The operational procedure is
 `docs/ops/material-evidence-ai-review.md`.
 
+The first RP-001 automation attempt is recorded separately as a deterministic
+six-rule `ai_draft` package. Its frozen audit-input domain hash is
+`e74a5df39121fc47c8a648606aa7d831e9819cd6f3950012cd792f5a6620f93e`.
+The initial Claude process and the subsequently owner-authorized fresh retry
+both exited before producing a result envelope, so both attempts are
+`REVIEW_INCOMPLETE`, not challenge verdicts. No challenge or adjudication was
+persisted. The retry is exhausted; another transport must be represented as a
+new identical review job with a new transport identity.
+That third formal job reached a valid exact-model envelope with zero web and
+permission use, but its inner report was prose rather than strict JSON. The
+closed parser rejected it as `INVALID_REPORT_NO_VERDICT`; challenge and
+adjudication counts remain zero. No fourth formal attempt is allowed. This is
+an audit-output failure, not a claim finding and not a cross-review state.
+The package therefore remains in `ai_draft`; the activation blocker requiring
+a first `ai_cross_reviewed_non_authoritative` rule pack remains open. The exact
+draft, source boundaries, artifact hashes and incomplete transport receipt are
+registered under
+`docs/ops/material-evidence-ai-review/RP-001_ELASTOMER_MEDIA_EXCLUSIONS_AI_V1/`.
+
 ## MAT-GOV-03B non-authoritative shadow contract
 
 03B selects no snapshot implicitly. An immutable, time-bounded binding names

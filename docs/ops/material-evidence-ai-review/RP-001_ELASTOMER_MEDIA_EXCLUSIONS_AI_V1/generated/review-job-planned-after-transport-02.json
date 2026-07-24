@@ -1,0 +1,22 @@
+{
+  "audit_input_file_sha256": "b0f3a58d1211368e4beb3dc3d91247b5ea71d8242c0fc04d4b6dba3088b73a65",
+  "audit_input_sha256": "e74a5df39121fc47c8a648606aa7d831e9819cd6f3950012cd792f5a6620f93e",
+  "automatic_execution_authority": false,
+  "challenge_or_verdict_created": false,
+  "content_change_allowed": false,
+  "job_status": "planned_not_executed",
+  "model": "claude-sonnet-5",
+  "reason": "two_transport_attempts_ended_without_result_envelope",
+  "review_content_sha256": "be68fab9b67b5c34be4dd639d41c2f60ba280a0dd908f450da17ab07d45a5348",
+  "review_snapshot_id": "mas_001d2455743c0ae540914fa7338359311675d8022cc0c24e7a17b134fee74058",
+  "safe_mode": {
+    "chrome_enabled": false,
+    "hooks_enabled": false,
+    "mcp_enabled": false,
+    "session_persistence_enabled": false,
+    "tools_enabled": false,
+    "web_fetch_requests_required": 0,
+    "web_search_requests_required": 0
+  },
+  "transport_identity": "rp001-claude-transport-pending-03"
+}
